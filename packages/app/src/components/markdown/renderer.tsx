@@ -38,6 +38,8 @@ import {
 } from "./html-ish";
 import { resolveInlineImageSize, type InlineImageDimensions } from "./inline-image-size";
 import { groupMarkdownParts, type MarkdownPartGroup } from "./part-groups";
+import { MathExpression } from "./math-expression";
+import { enableMarkdownMath } from "./math-parser";
 
 export type MarkdownStyles = Record<string, TextStyle & ViewStyle & { [key: string]: unknown }>;
 
@@ -62,7 +64,7 @@ function compactMarkdownStyleMapping(theme: Theme): Partial<MarkdownWithStableRe
   return { style: createCompactMarkdownStyles(theme) };
 }
 
-const defaultMarkdownParser = MarkdownIt({ typographer: true, linkify: true });
+const defaultMarkdownParser = enableMarkdownMath(MarkdownIt({ typographer: true, linkify: true }));
 const EMPTY_TEXT_STYLE: TextStyle = {};
 const MARKDOWN_LIST_ITEM_CONTENT_FLEX: ViewStyle = { flex: 1, flexShrink: 1, minWidth: 0 };
 export interface MarkdownRendererProps {
@@ -498,6 +500,7 @@ function getMarkdownLinkHref(node: ASTNode): string {
 
 export function createSharedMarkdownRules(): RenderRules {
   return {
+    ...createMarkdownMathRules(),
     text: (
       node: ASTNode,
       _children: ReactNode[],
@@ -718,6 +721,22 @@ export function createSharedMarkdownRules(): RenderRules {
         {children}
       </SharedMarkdownLink>
     ),
+  };
+}
+
+export function createMarkdownMathRules(): RenderRules {
+  const inline = (node: ASTNode) => (
+    <MathExpression key={node.key} expression={node.content ?? ""} display={false} />
+  );
+  const block = (node: ASTNode) => (
+    <MathExpression key={node.key} expression={node.content ?? ""} display />
+  );
+
+  return {
+    math_inline: inline,
+    math_inline_double: inline,
+    math_block: block,
+    math_block_eqno: block,
   };
 }
 
