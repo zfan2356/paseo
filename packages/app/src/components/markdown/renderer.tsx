@@ -725,19 +725,56 @@ export function createSharedMarkdownRules(): RenderRules {
 }
 
 export function createMarkdownMathRules(): RenderRules {
-  const inline = (node: ASTNode) => (
-    <MathExpression key={node.key} expression={node.content ?? ""} display={false} />
-  );
-  const block = (node: ASTNode) => (
-    <MathExpression key={node.key} expression={node.content ?? ""} display />
-  );
-
   return {
-    math_inline: inline,
-    math_inline_double: inline,
-    math_block: block,
-    math_block_eqno: block,
+    math_inline: renderInlineMath,
+    math_inline_double: renderInlineMath,
+    math_block: renderBlockMath,
+    math_block_eqno: renderBlockMath,
   };
+}
+
+function renderInlineMath(
+  node: ASTNode,
+  _children: ReactNode[],
+  _parent: ASTNode[],
+  styles: MarkdownStyles,
+  inheritedStyles: TextStyle = {},
+) {
+  return (
+    <MathExpression
+      key={node.key}
+      expression={node.content ?? ""}
+      display={false}
+      color={getMarkdownMathColor(styles, inheritedStyles)}
+    />
+  );
+}
+
+function renderBlockMath(
+  node: ASTNode,
+  _children: ReactNode[],
+  _parent: ASTNode[],
+  styles: MarkdownStyles,
+  inheritedStyles: TextStyle = {},
+) {
+  return (
+    <MathExpression
+      key={node.key}
+      expression={node.content ?? ""}
+      display
+      color={getMarkdownMathColor(styles, inheritedStyles)}
+    />
+  );
+}
+
+function getMarkdownMathColor(styles: MarkdownStyles, inheritedStyles: TextStyle): string {
+  if (typeof inheritedStyles.color === "string") {
+    return inheritedStyles.color;
+  }
+  if (typeof styles.text.color === "string") {
+    return styles.text.color;
+  }
+  return "inherit";
 }
 
 const detailsStyles = StyleSheet.create((theme) => ({

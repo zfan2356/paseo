@@ -19,16 +19,21 @@ const blockStyle: CSSProperties = {
 export const MathExpression = memo(function MathExpression({
   expression,
   display,
+  color,
 }: MathExpressionProps) {
   const markup = useMemo(() => renderMathToMarkup(expression, display), [display, expression]);
   const renderedMarkup = useMemo(() => ({ __html: markup }), [markup]);
+  const style = useMemo(
+    () => ({ ...(display ? blockStyle : inlineStyle), color }),
+    [color, display],
+  );
   const Element = display ? "div" : "span";
 
   return (
     <Element
       aria-label={expression}
       data-paseo-math={display ? "block" : "inline"}
-      style={display ? blockStyle : inlineStyle}
+      style={style}
       dangerouslySetInnerHTML={renderedMarkup}
     />
   );
