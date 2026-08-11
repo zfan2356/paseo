@@ -146,6 +146,7 @@ async function waitForSessionExit(session: TerminalSession): Promise<void> {
 
 afterEach(async () => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   await Promise.all(sessions.map(waitForSessionExit));
   sessions.length = 0;
   while (temporaryDirs.length > 0) {
@@ -185,6 +186,48 @@ async function waitForScheduledTimers(expectedTimerCount: number): Promise<void>
 }
 
 describe("createTerminal", () => {
+  it("isolates terminal color support from daemon color preferences", () => {
+    vi.stubEnv("NO_COLOR", "1");
+    vi.stubEnv("FORCE_COLOR", "0");
+    vi.stubEnv("CLICOLOR", "0");
+    vi.stubEnv("CLICOLOR_FORCE", "0");
+
+    const env = buildTerminalEnvironment({
+      shell: "/bin/sh",
+      env: {},
+      paseoCliBinDir: null,
+      paseoHookCliPath: null,
+    });
+
+    expect(env).toMatchObject({
+      COLORTERM: "truecolor",
+      TERM: "xterm-256color",
+      TERM_PROGRAM: "kitty",
+    });
+    expect(env.NO_COLOR).toBeUndefined();
+    expect(env.FORCE_COLOR).toBeUndefined();
+    expect(env.CLICOLOR).toBeUndefined();
+    expect(env.CLICOLOR_FORCE).toBeUndefined();
+  });
+
+  it("preserves explicit terminal color preferences", () => {
+    vi.stubEnv("NO_COLOR", "inherited");
+    vi.stubEnv("FORCE_COLOR", "inherited");
+
+    const env = buildTerminalEnvironment({
+      shell: "/bin/sh",
+      env: {
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+      },
+      paseoCliBinDir: null,
+      paseoHookCliPath: null,
+    });
+
+    expect(env.NO_COLOR).toBe("1");
+    expect(env.FORCE_COLOR).toBe("0");
+  });
+
   it("keeps full process titles while stripping path prefixes", () => {
     expect(normalizeProcessTitle("   /usr/local/bin/npm   run   dev   ")).toBe("npm run dev");
     expect(normalizeProcessTitle("/opt/homebrew/bin/node /tmp/work/npm-cli.js run dev")).toBe(

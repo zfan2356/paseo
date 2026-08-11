@@ -17,6 +17,12 @@ import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol
 const { Terminal } = xterm;
 const require = createRequire(import.meta.url);
 const PASEO_CLI_BIN_ENTRY = "@getpaseo/cli/bin/paseo";
+const INHERITED_COLOR_PREFERENCE_ENV_KEYS = [
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "CLICOLOR",
+  "CLICOLOR_FORCE",
+] as const;
 let nodePtySpawnHelperChecked = false;
 const TERMINAL_TITLE_DEBOUNCE_MS = 150;
 const TERMINAL_EXIT_OUTPUT_LINE_LIMIT = 12;
@@ -492,7 +498,14 @@ function prepareZshShellIntegrationRuntimeDir(sourceDir = resolveZshShellIntegra
 export function buildTerminalEnvironment(
   input: BuildTerminalEnvironmentInput,
 ): Record<string, string> {
-  const baseEnv: Record<string, string> = createExternalProcessEnv(process.env, input.env, {
+  const inheritedEnv = { ...process.env };
+  for (const key of INHERITED_COLOR_PREFERENCE_ENV_KEYS) {
+    if (!Object.hasOwn(input.env, key)) {
+      delete inheritedEnv[key];
+    }
+  }
+  const baseEnv: Record<string, string> = createExternalProcessEnv(inheritedEnv, input.env, {
+    COLORTERM: "truecolor",
     TERM: "xterm-256color",
     TERM_PROGRAM: "kitty",
   });
