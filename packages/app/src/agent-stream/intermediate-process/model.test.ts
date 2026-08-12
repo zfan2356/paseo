@@ -39,6 +39,16 @@ function tool(
   };
 }
 
+function compaction(id: string, seed: number): StreamItem {
+  return {
+    kind: "compaction",
+    id,
+    timestamp: timestamp(seed),
+    status: "completed",
+    trigger: "auto",
+  };
+}
+
 describe("projectIntermediateProcess", () => {
   it("collapses intermediate messages and steps while preserving the final answer", () => {
     const tail = [
@@ -79,6 +89,30 @@ describe("projectIntermediateProcess", () => {
     expect(projection.head).toHaveLength(0);
     expect(projection.groupsByHostId.get("intro")?.isActive).toBe(true);
     expect(projection.historyGroupUpdatesByHostId.has("intro")).toBe(true);
+  });
+
+  it("keeps context compaction inside one intermediate process group", () => {
+    const tail = [
+      user("user", 1),
+      assistant("intro", 2),
+      tool("before-compaction", 3),
+      compaction("compaction", 4),
+      assistant("continued", 5),
+      tool("after-compaction", 6),
+      assistant("final", 7),
+    ];
+
+    const projection = projectIntermediateProcess({ tail, head: [], isTurnActive: false });
+
+    expect(projection.tail.map((item) => item.id)).toEqual(["user", "intro", "final"]);
+    expect(projection.groupsByHostId.size).toBe(1);
+    expect(projection.groupsByHostId.get("intro")?.items.map((item) => item.id)).toEqual([
+      "intro",
+      "before-compaction",
+      "compaction",
+      "continued",
+      "after-compaction",
+    ]);
   });
 
   it("forces failed process groups into the error presentation", () => {

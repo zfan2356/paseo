@@ -2,7 +2,7 @@ import type { StreamItem } from "@/types/stream";
 
 export type IntermediateProcessItem = Extract<
   StreamItem,
-  { kind: "assistant_message" | "thought" | "tool_call" | "todo_list" }
+  { kind: "assistant_message" | "thought" | "tool_call" | "todo_list" | "compaction" }
 >;
 
 export interface IntermediateProcessGroup {
@@ -40,7 +40,8 @@ function isIntermediateProcessItem(item: StreamItem): item is IntermediateProces
     item.kind === "assistant_message" ||
     item.kind === "thought" ||
     item.kind === "tool_call" ||
-    item.kind === "todo_list"
+    item.kind === "todo_list" ||
+    item.kind === "compaction"
   );
 }
 
@@ -59,6 +60,9 @@ function isRunningItem(item: IntermediateProcessItem): boolean {
   if (item.kind === "tool_call") {
     const status = getToolCallStatus(item);
     return status === "running" || status === "executing";
+  }
+  if (item.kind === "compaction") {
+    return item.status === "loading";
   }
   return false;
 }

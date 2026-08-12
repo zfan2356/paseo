@@ -54,6 +54,9 @@ test("expands the live intermediate process and folds it after the final answer"
 });
 
 test("renders the assistant boundary as one compact Markdown block", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("@paseo:app-settings", JSON.stringify({ theme: "pureBlack" }));
+  });
   const agent = await seedMockAgentWorkspace({
     repoPrefix: "compact-assistant-boundary-",
     title: "Compact assistant boundary",
@@ -69,8 +72,13 @@ test("renders the assistant boundary as one compact Markdown block", async ({ pa
     await expectAgentIdle(page, 30_000);
 
     const assistantMessage = page.getByTestId("assistant-message").last();
+    const boundary = assistantMessage.locator('[data-paseo-markdown-tag="hr"]');
     await expect(assistantMessage.locator(":scope > *")).toHaveCount(1);
-    await expect(assistantMessage.locator('[data-paseo-markdown-tag="hr"]')).toBeVisible();
+    await expect(boundary).toBeVisible();
+    await expect(boundary).toHaveCSS("background-color", "rgb(113, 113, 122)");
+    await expect(boundary).toHaveCSS("height", "1px");
+    await expect(boundary).toHaveCSS("margin-top", "8px");
+    await expect(boundary).toHaveCSS("margin-bottom", "8px");
     await expect(assistantMessage).toContainText("Final answer");
   } finally {
     await agent.cleanup();
