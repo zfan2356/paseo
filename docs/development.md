@@ -38,6 +38,26 @@ Linux produces the `paseo-desktop` launcher and desktop entry. macOS produces
 Electron runtime and the checkout's built daemon, client, and renderer rather
 than downloading a published desktop release.
 
+## Installing a local macOS desktop build
+
+After building and verifying a signed `Paseo.app`, replace the installed client
+with the repository-owned one-shot installer:
+
+```bash
+npm run install:desktop:local -- --app /path/to/Paseo.app
+```
+
+The installer verifies the candidate signature, schedules a non-restarting
+LaunchAgent, waits ten seconds for the current conversation to finish, quits the
+app and daemon, swaps `/Applications/Paseo.app`, verifies and launches the new
+copy, and removes the rollback copy after launch succeeds. A failed install
+restores and reopens the previous app. It never uses `launchctl submit`, whose
+inferred keepalive behavior can replay a completed installer.
+
+Use `--dry-run` to validate the candidate and inspect the LaunchAgent without
+loading it. Override the grace period with `--delay <seconds>`; the minimum is
+five seconds. The install log is `/tmp/paseo-local-install.log`.
+
 ### PASEO_HOME
 
 `PASEO_HOME` is the directory that holds runtime state (agents, worktrees, workspace config, sockets, daemon log). Resolution rules:
