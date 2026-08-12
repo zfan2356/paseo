@@ -10,7 +10,7 @@ test("expands the live intermediate process and folds it after the final answer"
     localStorage.setItem(
       "@paseo:app-settings",
       JSON.stringify({
-        autoExpandReasoning: false,
+        autoExpandReasoning: true,
         toolCallDetailLevel: "detailed",
       }),
     );
@@ -26,9 +26,15 @@ test("expands the live intermediate process and folds it after the final answer"
     await agent.client.sendAgentMessage(agent.agentId, "Show the intermediate process lifecycle.");
 
     const process = page.getByTestId("intermediate-process-group");
+    const processToggle = process.getByRole("button").first();
     await expect(process).toBeVisible({ timeout: 30_000 });
     await expect(process.getByTestId("assistant-message").first()).toBeVisible();
     await expect(process.getByTestId("tool-call-badge").first()).toBeVisible();
+
+    await processToggle.click();
+    await expect(process.getByTestId("assistant-message")).toHaveCount(0);
+    await processToggle.click();
+    await expect(process.getByTestId("assistant-message").first()).toBeVisible();
 
     await expectAgentIdle(page, 30_000);
     await expect(process.getByTestId("assistant-message")).toHaveCount(0);
@@ -39,9 +45,33 @@ test("expands the live intermediate process and folds it after the final answer"
         .filter({ hasText: "The change should keep scroll-to-bottom working" }),
     ).toBeVisible();
 
-    await process.click();
+    await processToggle.click();
     await expect(process.getByTestId("assistant-message").first()).toBeVisible();
     await expect(process.getByTestId("tool-call-badge").first()).toBeVisible();
+  } finally {
+    await agent.cleanup();
+  }
+});
+
+test("renders the assistant boundary as one compact Markdown block", async ({ page }) => {
+  const agent = await seedMockAgentWorkspace({
+    repoPrefix: "compact-assistant-boundary-",
+    title: "Compact assistant boundary",
+    featureValues: {
+      mockStreamingAssistantResponse: "---\nFinal answer",
+      mockStreamingAssistantIntervalMs: 1,
+    },
+  });
+
+  try {
+    await openAgentRoute(page, agent);
+    await agent.client.sendAgentMessage(agent.agentId, "Render the compact boundary.");
+    await expectAgentIdle(page, 30_000);
+
+    const assistantMessage = page.getByTestId("assistant-message").last();
+    await expect(assistantMessage.locator(":scope > *")).toHaveCount(1);
+    await expect(assistantMessage.locator('[data-paseo-markdown-tag="hr"]')).toBeVisible();
+    await expect(assistantMessage).toContainText("Final answer");
   } finally {
     await agent.cleanup();
   }

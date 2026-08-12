@@ -93,6 +93,7 @@ import {
   resolveBinaryVersion,
 } from "./diagnostic-utils.js";
 import { appendOrReplaceGrowingAssistantMessage, runProviderTurn } from "./provider-runner.js";
+import { ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN } from "../assistant-message-boundary.js";
 import {
   MODE_APPLIES_NEXT_TURN_NOTICE,
   THINKING_APPLIES_NEXT_TURN_NOTICE,
@@ -140,7 +141,6 @@ const CODEX_NON_ORIGINATING_APP_SERVER_CLIENT_INFO = {
   title: "Codex App Server Daemon",
   version: "0.0.0",
 } as const;
-const ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN = "\n\n---\n\n";
 const MAX_PENDING_SUB_AGENT_THREADS = 32;
 const MAX_PENDING_SUB_AGENT_NOTIFICATIONS_PER_THREAD = 128;
 // COMPAT(codexLegacyCollabAgentToolCall): Codex <0.143 emits this shape. Added in

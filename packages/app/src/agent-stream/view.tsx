@@ -287,6 +287,11 @@ const EMPTY_PENDING_MESSAGE_SUBMISSIONS: readonly PendingMessageSubmission[] = [
 const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
 const EMPTY_INTERMEDIATE_PROCESS_LAYOUT_ITEMS: StreamLayoutItem[] = [];
 
+interface IntermediateProcessExpansionOverride {
+  expanded: boolean;
+  phase: "active" | "complete";
+}
+
 function isIntermediateToolSequenceItem(item: StreamItem | null): boolean {
   return item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
 }
@@ -364,7 +369,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       new Set(),
     );
     const [intermediateProcessExpansionById, setIntermediateProcessExpansionById] = useState<
-      Map<string, boolean>
+      Map<string, IntermediateProcessExpansionOverride>
     >(new Map());
     const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
     const setExplorerTabForCheckout = usePanelStore((state) => state.setExplorerTabForCheckout);
@@ -661,13 +666,23 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       });
     }, []);
 
-    const setIntermediateProcessExpanded = useCallback((groupId: string, expanded: boolean) => {
-      setIntermediateProcessExpansionById((previous) => {
-        const next = new Map(previous);
-        next.set(groupId, expanded);
-        return next;
-      });
-    }, []);
+    const setIntermediateProcessExpanded = useCallback(
+      (groupId: string, expanded: boolean) => {
+        const group = projectedIntermediateProcess.groupsByHostId.get(groupId);
+        if (!group) {
+          return;
+        }
+        setIntermediateProcessExpansionById((previous) => {
+          const next = new Map(previous);
+          next.set(groupId, {
+            expanded,
+            phase: group.isActive ? "active" : "complete",
+          });
+          return next;
+        });
+      },
+      [projectedIntermediateProcess.groupsByHostId],
+    );
 
     const renderUserMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
@@ -882,9 +897,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         if (!group) {
           return renderRegularStreamItemContent(layoutItem);
         }
+        const phase = group.isActive ? "active" : "complete";
+        const expansionOverride = intermediateProcessExpansionById.get(group.id);
         const expanded =
-          intermediateProcessExpansionById.get(group.id) ??
-          (group.isActive || group.hasError || autoExpandReasoning);
+          (expansionOverride?.phase === phase ? expansionOverride.expanded : undefined) ??
+          (group.isActive || group.hasError);
         const memberLayouts = expanded
           ? layoutIntermediateProcessItems(group, layoutItem)
           : EMPTY_INTERMEDIATE_PROCESS_LAYOUT_ITEMS;
@@ -903,7 +920,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         );
       },
       [
-        autoExpandReasoning,
         intermediateProcessExpansionById,
         projectedIntermediateProcess.groupsByHostId,
         renderRegularStreamItemContent,

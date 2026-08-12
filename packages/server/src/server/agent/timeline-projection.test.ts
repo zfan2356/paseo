@@ -198,6 +198,36 @@ describe("projectTimelineRows", () => {
     expect(projected[0]?.collapsed).toEqual([]);
     expect(projected[1]?.collapsed).toEqual([]);
   });
+
+  test.each(["canonical", "projected"] as const)(
+    "compacts a persisted Codex assistant divider in %s mode",
+    (mode) => {
+      const rows: AgentTimelineRow[] = [
+        {
+          seq: 1,
+          timestamp: "2026-02-13T00:00:00.000Z",
+          item: { type: "assistant_message", text: "Progress", messageId: "msg-1" },
+        },
+        {
+          seq: 2,
+          timestamp: "2026-02-13T00:00:00.100Z",
+          item: {
+            type: "assistant_message",
+            text: "\n\n---\n\nFinal answer",
+            messageId: "msg-2",
+          },
+        },
+      ];
+
+      const projected = projectTimelineRows({ rows, mode });
+
+      expect(projected[1]?.item).toEqual({
+        type: "assistant_message",
+        text: "---\nFinal answer",
+        messageId: "msg-2",
+      });
+    },
+  );
 });
 
 describe("selectTimelineWindowByProjectedLimit", () => {

@@ -4795,7 +4795,7 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
-  test("emits a markdown divider when a new Codex assistant item starts after the previous one completed", () => {
+  test("injects a compact divider when a new Codex assistant item starts", () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
@@ -4836,7 +4836,7 @@ describe("Codex app-server provider", () => {
         item: {
           type: "assistant_message",
           messageId: "assistant-item-4",
-          text: "\n\n---\n\nCI is still cooking. I’m staying on the current run rather than jumping around, because the first red job will tell us exactly whether anything else needs work.",
+          text: "---\nCI is still cooking. I’m staying on the current run rather than jumping around, because the first red job will tell us exactly whether anything else needs work.",
         },
       },
     ]);

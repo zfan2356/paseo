@@ -1,5 +1,6 @@
 import type { AgentTimelineItem, ToolCallDetail } from "./agent-sdk-types.js";
 import type { AgentTimelineRow } from "./agent-manager.js";
+import { normalizeAssistantMessageBoundary } from "./assistant-message-boundary.js";
 
 export type TimelineProjectionMode = "canonical" | "projected";
 
@@ -107,9 +108,23 @@ function mergeToolCallItems(
   return merged;
 }
 
+function normalizeAssistantBoundary(item: AgentTimelineItem): AgentTimelineItem {
+  if (item.type !== "assistant_message") {
+    return item;
+  }
+  const text = normalizeAssistantMessageBoundary(item.text);
+  if (text === item.text) {
+    return item;
+  }
+  return {
+    ...item,
+    text,
+  };
+}
+
 function makeCanonicalEntries(rows: readonly AgentTimelineRow[]): WorkingEntry[] {
   return rows.map((row) => ({
-    item: row.item,
+    item: normalizeAssistantBoundary(row.item),
     timestamp: row.timestamp,
     seqStart: row.seq,
     seqEnd: row.seq,
