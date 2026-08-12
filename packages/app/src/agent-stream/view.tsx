@@ -81,6 +81,7 @@ import {
 import { layoutStream, type StreamLayoutItem } from "./layout";
 import { getAssistantBlockSpacing, getGapBetweenStreamItems } from "./spacing";
 import {
+  getIntermediateProcessDefaultExpanded,
   projectIntermediateProcess,
   type IntermediateProcessGroup,
 } from "./intermediate-process/model";
@@ -901,7 +902,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         const expansionOverride = intermediateProcessExpansionById.get(group.id);
         const expanded =
           (expansionOverride?.phase === phase ? expansionOverride.expanded : undefined) ??
-          (group.isActive || group.hasError);
+          getIntermediateProcessDefaultExpanded(group);
         const memberLayouts = expanded
           ? layoutIntermediateProcessItems(group, layoutItem)
           : EMPTY_INTERMEDIATE_PROCESS_LAYOUT_ITEMS;

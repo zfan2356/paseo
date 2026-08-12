@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
-import { projectIntermediateProcess } from "./model";
+import { getIntermediateProcessDefaultExpanded, projectIntermediateProcess } from "./model";
 
 function timestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
@@ -115,17 +115,22 @@ describe("projectIntermediateProcess", () => {
     ]);
   });
 
-  it("forces failed process groups into the error presentation", () => {
+  it("marks a failed completed group as an error without forcing it open", () => {
     const projection = projectIntermediateProcess({
       tail: [user("user", 1), thought("thought", 2), tool("failed", 3, "failed")],
       head: [],
       isTurnActive: false,
     });
 
-    expect(projection.groupsByHostId.get("thought")).toMatchObject({
+    const group = projection.groupsByHostId.get("thought");
+    if (!group) {
+      throw new Error("Expected a failed intermediate-process group");
+    }
+    expect(group).toMatchObject({
       hasError: true,
       isActive: false,
     });
+    expect(getIntermediateProcessDefaultExpanded(group)).toBe(false);
   });
 
   it("does not fold assistant-only turns", () => {

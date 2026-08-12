@@ -21,6 +21,10 @@ export interface IntermediateProcessProjection {
   historyGroupUpdatesByHostId: ReadonlySet<string>;
 }
 
+export function getIntermediateProcessDefaultExpanded(group: IntermediateProcessGroup): boolean {
+  return group.isActive;
+}
+
 interface PositionedItem {
   item: StreamItem;
   segment: "tail" | "head";
