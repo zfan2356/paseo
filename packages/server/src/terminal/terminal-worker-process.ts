@@ -1,6 +1,16 @@
+import { randomBytes } from "node:crypto";
 import { createTerminalManager } from "./terminal-manager.js";
 import { captureTerminalLines } from "./terminal-capture.js";
 import { TerminalOutputCoalescer } from "./terminal-output-coalescer.js";
+import {
+  isPersistentTerminalWorkerLauncherProcess,
+  isPersistentTerminalWorkerProcess,
+  launchPersistentTerminalWorkerFromLauncher,
+  listenPersistentTerminalWorkerServer,
+  resolvePersistentTerminalWorkerRuntimeFromEnv,
+  type PersistentTerminalWorkerServer,
+  type PersistentTerminalWorkerServerConnection,
+} from "./persistent-terminal-worker-transport.js";
 import type { TerminalSession, TerminalStateSnapshotOptions } from "./terminal.js";
 import type {
   TerminalWorkerRequest,
@@ -10,15 +20,28 @@ import type {
 } from "./terminal-worker-protocol.js";
 
 type TerminalCreateRequest = Extract<TerminalWorkerRequest, { type: "createTerminal" }>;
+const PERSISTENT_ATTACH_TIMEOUT_MS = 3000;
 
 const manager = createTerminalManager();
 const unsubscribeByTerminalId = new Map<string, Array<() => void>>();
 const outputCoalescerByTerminalId = new Map<string, TerminalOutputCoalescer>();
-let ipcClosing = false;
+const terminalSessionsById = new Map<string, TerminalSession>();
+const activityTokenByTerminalId = new Map<string, string>();
+
+type WorkerMessageSender = (message: TerminalWorkerToParentMessage) => void;
+
+let legacyMessageSender: WorkerMessageSender | null = null;
+let legacyIpcClosing = false;
+let persistentServer: PersistentTerminalWorkerServer | null = null;
+const attachedPersistentConnections = new Set<
+  PersistentTerminalWorkerServerConnection<TerminalWorkerRequest, TerminalWorkerToParentMessage>
+>();
+let persistentExitStarted = false;
 
 interface InFlightTerminalCreateRequest {
   requestId: string;
   errorReported: boolean;
+  sendResponse: WorkerMessageSender;
 }
 
 let inFlightTerminalCreateRequest: InFlightTerminalCreateRequest | null = null;
@@ -36,19 +59,51 @@ process.on("uncaughtException", (error) => {
   reportInFlightTerminalCreateFailure(error);
 });
 
-function sendToParent(message: TerminalWorkerToParentMessage): void {
-  if (ipcClosing || !process.connected || !process.send) {
+function createPersistentMessageSender(
+  connection: PersistentTerminalWorkerServerConnection<
+    TerminalWorkerRequest,
+    TerminalWorkerToParentMessage
+  >,
+): WorkerMessageSender {
+  return (message) => {
+    try {
+      connection.transport.send(message);
+    } catch (error) {
+      connection.transport.destroy(
+        error instanceof Error ? error : new Error("Terminal worker send failed"),
+      );
+    }
+  };
+}
+
+function broadcastToParents(message: TerminalWorkerToParentMessage): void {
+  legacyMessageSender?.(message);
+  for (const connection of attachedPersistentConnections) {
+    createPersistentMessageSender(connection)(message);
+  }
+}
+
+function maybeExitPersistentWorker(): void {
+  if (
+    !isPersistentTerminalWorkerProcess() ||
+    terminalSessionsById.size > 0 ||
+    persistentExitStarted
+  ) {
     return;
   }
-  try {
-    process.send(message, (error) => {
-      if (error) {
-        ipcClosing = true;
-      }
-    });
-  } catch {
-    ipcClosing = true;
+  const server = persistentServer;
+  if (!server) {
+    setImmediate(maybeExitPersistentWorker);
+    return;
   }
+  if (server.connectionCount > 0) {
+    return;
+  }
+  persistentExitStarted = true;
+  void server
+    .close()
+    .catch(() => undefined)
+    .finally(() => process.exit(0));
 }
 
 function buildTerminalStateResult(
@@ -69,7 +124,14 @@ function toTerminalInfo(session: TerminalSession): WorkerTerminalInfo {
     workspaceId: session.workspaceId,
     ...(session.getTitle() ? { title: session.getTitle() } : {}),
     activity: session.getActivity(),
+    ...(activityTokenByTerminalId.get(session.id)
+      ? { activityToken: activityTokenByTerminalId.get(session.id) }
+      : {}),
   };
+}
+
+function createActivityToken(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 function terminalWorkerErrorMessage(error: unknown): string {
@@ -81,7 +143,7 @@ function reportInFlightTerminalCreateFailure(error: unknown): void {
     return;
   }
   inFlightTerminalCreateRequest.errorReported = true;
-  sendToParent({
+  inFlightTerminalCreateRequest.sendResponse({
     type: "response",
     requestId: inFlightTerminalCreateRequest.requestId,
     ok: false,
@@ -110,6 +172,7 @@ function clearTerminalSubscriptions(terminalId: string): void {
 
 function watchTerminal(session: TerminalSession): void {
   clearTerminalSubscriptions(session.id);
+  terminalSessionsById.set(session.id, session);
 
   // Coalesce pty output chunks into a single IPC message per ~5ms window so a
   // burst of small chunks no longer costs one process.send each. The batch
@@ -121,7 +184,7 @@ function watchTerminal(session: TerminalSession): void {
     onFlush: ({ payload }) => {
       const revision = pendingOutputRevision;
       pendingOutputRevision = undefined;
-      sendToParent({
+      broadcastToParents({
         type: "terminalMessage",
         terminalId: session.id,
         message: { type: "output", data: payload.toString("utf8"), revision },
@@ -140,7 +203,7 @@ function watchTerminal(session: TerminalSession): void {
       // Non-output messages (snapshot/snapshotReady/titleChange) must not jump
       // ahead of buffered output: flush the coalescer first, then forward.
       outputCoalescer.flush();
-      sendToParent({
+      broadcastToParents({
         type: "terminalMessage",
         terminalId: session.id,
         message,
@@ -154,15 +217,18 @@ function watchTerminal(session: TerminalSession): void {
   const unsubscribeExit = session.onExit((info) => {
     outputCoalescer.flush();
     clearTerminalSubscriptions(session.id);
-    sendToParent({
+    terminalSessionsById.delete(session.id);
+    activityTokenByTerminalId.delete(session.id);
+    broadcastToParents({
       type: "terminalExit",
       terminalId: session.id,
       info,
     });
+    maybeExitPersistentWorker();
   });
   const unsubscribeTitle = session.onTitleChange((title) => {
     outputCoalescer.flush();
-    sendToParent({
+    broadcastToParents({
       type: "terminalTitleChange",
       terminalId: session.id,
       title,
@@ -170,14 +236,14 @@ function watchTerminal(session: TerminalSession): void {
   });
   const unsubscribeCommandFinished = session.onCommandFinished((info) => {
     outputCoalescer.flush();
-    sendToParent({
+    broadcastToParents({
       type: "terminalCommandFinished",
       terminalId: session.id,
       info,
     });
   });
   const unsubscribeActivity = session.onActivityChange((transition) => {
-    sendToParent({
+    broadcastToParents({
       type: "terminalActivityChange",
       terminalId: session.id,
       activity: transition.activity,
@@ -194,16 +260,25 @@ function watchTerminal(session: TerminalSession): void {
   ]);
 }
 
-function enqueueCreateTerminalRequest(message: TerminalCreateRequest): Promise<void> {
-  const nextRequest = createTerminalQueue.then(() => handleCreateTerminalRequest(message));
+function enqueueCreateTerminalRequest(
+  message: TerminalCreateRequest,
+  sendResponse: WorkerMessageSender,
+): Promise<void> {
+  const nextRequest = createTerminalQueue.then(() =>
+    handleCreateTerminalRequest(message, sendResponse),
+  );
   createTerminalQueue = nextRequest.catch(() => {});
   return nextRequest;
 }
 
-async function handleCreateTerminalRequest(message: TerminalCreateRequest): Promise<void> {
+async function handleCreateTerminalRequest(
+  message: TerminalCreateRequest,
+  sendResponse: WorkerMessageSender,
+): Promise<void> {
   const request: InFlightTerminalCreateRequest = {
     requestId: message.requestId,
     errorReported: false,
+    sendResponse,
   };
   inFlightTerminalCreateRequest = request;
   try {
@@ -211,19 +286,25 @@ async function handleCreateTerminalRequest(message: TerminalCreateRequest): Prom
     if (!workspaceId) {
       throw new Error("workspaceId is required");
     }
-    const session = await manager.createTerminal({ ...message.options, workspaceId });
+    const activityToken = message.options.activityToken ?? createActivityToken();
+    const session = await manager.createTerminal({
+      ...message.options,
+      workspaceId,
+      activityToken,
+    });
     if (request.errorReported) {
       session.kill();
       return;
     }
+    activityTokenByTerminalId.set(session.id, activityToken);
     watchTerminal(session);
     const initialSnapshot = session.getStateSnapshot();
-    sendToParent({
+    broadcastToParents({
       type: "terminalCreated",
       terminal: toTerminalInfo(session),
       state: initialSnapshot.state,
     });
-    sendToParent({
+    sendResponse({
       type: "response",
       requestId: message.requestId,
       ok: true,
@@ -233,6 +314,10 @@ async function handleCreateTerminalRequest(message: TerminalCreateRequest): Prom
       },
     });
   } catch (error) {
+    const terminalId = message.options.id;
+    if (terminalId) {
+      activityTokenByTerminalId.delete(terminalId);
+    }
     reportInFlightTerminalCreateFailure(error);
   } finally {
     if (inFlightTerminalCreateRequest === request) {
@@ -241,28 +326,50 @@ async function handleCreateTerminalRequest(message: TerminalCreateRequest): Prom
   }
 }
 
-async function handleRequest(message: TerminalWorkerRequest): Promise<void> {
+async function handleRequest(
+  message: TerminalWorkerRequest,
+  sendResponse: WorkerMessageSender,
+): Promise<void> {
   switch (message.type) {
+    case "attach": {
+      for (const session of terminalSessionsById.values()) {
+        outputCoalescerByTerminalId.get(session.id)?.flush();
+        sendResponse({
+          type: "terminalCreated",
+          terminal: toTerminalInfo(session),
+          state: session.getStateSnapshot().state,
+        });
+      }
+      sendResponse({ type: "response", requestId: message.requestId, ok: true });
+      return;
+    }
+
     case "createTerminal": {
-      await enqueueCreateTerminalRequest(message);
+      await enqueueCreateTerminalRequest(message, sendResponse);
       return;
     }
 
     case "registerCwdEnv": {
       manager.registerCwdEnv({ cwd: message.cwd, env: message.env });
-      sendToParent({ type: "response", requestId: message.requestId, ok: true });
+      sendResponse({ type: "response", requestId: message.requestId, ok: true });
       return;
     }
 
     case "setActivity": {
       await manager.setTerminalActivity(message.terminalId, message.state);
-      sendToParent({ type: "response", requestId: message.requestId, ok: true });
+      sendResponse({ type: "response", requestId: message.requestId, ok: true });
       return;
     }
 
     case "clearAttention": {
       await manager.clearTerminalAttention(message.terminalId);
-      sendToParent({ type: "response", requestId: message.requestId, ok: true });
+      sendResponse({ type: "response", requestId: message.requestId, ok: true });
+      return;
+    }
+
+    case "setTitle": {
+      manager.setTerminalTitle(message.terminalId, message.title);
+      sendResponse({ type: "response", requestId: message.requestId, ok: true });
       return;
     }
 
@@ -270,15 +377,14 @@ async function handleRequest(message: TerminalWorkerRequest): Promise<void> {
       manager.killTerminal(message.terminalId);
       // Removal is owned by session.onExit -> terminalExit; the parent mirror
       // clears contribution and emits terminalsChanged from that single path.
-      clearTerminalSubscriptions(message.terminalId);
-      sendToParent({ type: "response", requestId: message.requestId, ok: true });
+      sendResponse({ type: "response", requestId: message.requestId, ok: true });
       return;
     }
 
     case "killTerminalAndWait": {
       await manager.killTerminalAndWait(message.terminalId, message.options);
       clearTerminalSubscriptions(message.terminalId);
-      sendToParent({ type: "response", requestId: message.requestId, ok: true });
+      sendResponse({ type: "response", requestId: message.requestId, ok: true });
       return;
     }
 
@@ -288,7 +394,7 @@ async function handleRequest(message: TerminalWorkerRequest): Promise<void> {
       // snapshot's) the controller's revision dedup wouldn't drop it and the client would
       // see the bytes twice. Flushing first sends them with a revision <= the snapshot's.
       outputCoalescerByTerminalId.get(message.terminalId)?.flush();
-      sendToParent({
+      sendResponse({
         type: "response",
         requestId: message.requestId,
         ok: true,
@@ -306,7 +412,7 @@ async function handleRequest(message: TerminalWorkerRequest): Promise<void> {
             stripAnsi: message.stripAnsi,
           })
         : { lines: [], totalLines: 0 };
-      sendToParent({
+      sendResponse({
         type: "response",
         requestId: message.requestId,
         ok: true,
@@ -320,31 +426,121 @@ async function handleRequest(message: TerminalWorkerRequest): Promise<void> {
       for (const terminalId of Array.from(unsubscribeByTerminalId.keys())) {
         clearTerminalSubscriptions(terminalId);
       }
-      sendToParent({ type: "response", requestId: message.requestId, ok: true });
+      terminalSessionsById.clear();
+      activityTokenByTerminalId.clear();
+      sendResponse({ type: "response", requestId: message.requestId, ok: true });
       return;
     }
 
     case "send": {
       const session = manager.getTerminal(message.terminalId);
       session?.send(message.message);
-      sendToParent({ type: "response", requestId: message.requestId, ok: true });
+      sendResponse({ type: "response", requestId: message.requestId, ok: true });
       return;
     }
   }
 }
 
-process.on("message", (message: TerminalWorkerRequest) => {
-  void handleRequest(message).catch((error: unknown) => {
-    sendToParent({
+function handleRequestWithErrorResponse(
+  message: TerminalWorkerRequest,
+  sendResponse: WorkerMessageSender,
+): void {
+  void handleRequest(message, sendResponse).catch((error: unknown) => {
+    sendResponse({
       type: "response",
       requestId: message.requestId,
       ok: false,
       error: terminalWorkerErrorMessage(error),
     });
   });
-});
+}
 
-process.once("disconnect", () => {
-  ipcClosing = true;
-  manager.killAll();
-});
+function startLegacyIpcWorker(): void {
+  legacyMessageSender = (message) => {
+    if (legacyIpcClosing || !process.connected || !process.send) {
+      return;
+    }
+    try {
+      process.send(message, (error) => {
+        if (error) {
+          legacyIpcClosing = true;
+        }
+      });
+    } catch {
+      legacyIpcClosing = true;
+    }
+  };
+  process.on("message", (message: TerminalWorkerRequest) => {
+    if (legacyMessageSender) {
+      handleRequestWithErrorResponse(message, legacyMessageSender);
+    }
+  });
+  process.once("disconnect", () => {
+    legacyIpcClosing = true;
+    legacyMessageSender = null;
+    manager.killAll();
+  });
+}
+
+async function startPersistentWorker(): Promise<void> {
+  process.title = "Paseo Terminal Worker";
+  if (process.connected) {
+    await new Promise<void>((resolve) => process.once("disconnect", resolve));
+  }
+  const runtime = resolvePersistentTerminalWorkerRuntimeFromEnv();
+  persistentServer = await listenPersistentTerminalWorkerServer<
+    TerminalWorkerRequest,
+    TerminalWorkerToParentMessage
+  >({
+    runtime,
+    singleClient: false,
+    onConnectionCountChange: () => maybeExitPersistentWorker(),
+    onConnection: (connection) => {
+      let attached = false;
+      const sendResponse = createPersistentMessageSender(connection);
+      const attachTimeout = setTimeout(() => {
+        if (!attached) {
+          connection.transport.destroy(new Error("Timed out waiting for terminal worker attach"));
+        }
+      }, PERSISTENT_ATTACH_TIMEOUT_MS);
+      attachTimeout.unref();
+      connection.transport.onMessage((message) => {
+        if (!attached) {
+          if (message.type !== "attach") {
+            connection.transport.destroy(
+              new Error("The first terminal worker request must be attach"),
+            );
+            return;
+          }
+          attached = true;
+          clearTimeout(attachTimeout);
+          attachedPersistentConnections.add(connection);
+        }
+        handleRequestWithErrorResponse(message, sendResponse);
+      });
+      connection.transport.onClose(() => {
+        clearTimeout(attachTimeout);
+        if (attached) {
+          attachedPersistentConnections.delete(connection);
+        }
+        maybeExitPersistentWorker();
+      });
+    },
+  });
+}
+
+if (isPersistentTerminalWorkerLauncherProcess()) {
+  void launchPersistentTerminalWorkerFromLauncher()
+    .then(() => process.exit(0))
+    .catch((error: unknown) => {
+      console.error("Persistent terminal worker launcher failed:", error);
+      process.exit(1);
+    });
+} else if (isPersistentTerminalWorkerProcess()) {
+  void startPersistentWorker().catch((error: unknown) => {
+    console.error("Persistent terminal worker failed to start:", error);
+    process.exit(1);
+  });
+} else {
+  startLegacyIpcWorker();
+}

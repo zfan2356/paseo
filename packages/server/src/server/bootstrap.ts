@@ -161,6 +161,7 @@ import { setupAutoArchiveOnMerge } from "./auto-archive-on-merge/index.js";
 import { wrapSessionMessage, type SessionOutboundMessage } from "./messages.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
 import { createConfiguredTerminalManager } from "../terminal/terminal-manager-factory.js";
+import { detachWorkerTerminalManager } from "../terminal/worker-terminal-manager.js";
 import { applyTerminalAgentHookSetting } from "../terminal/agent-hooks/terminal-agent-hook-setting.js";
 import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
 import { createRelayRuntime, type RelayRuntime } from "./relay-runtime.js";
@@ -591,7 +592,8 @@ export async function createPaseoDaemon(
   app.set("trust proxy", resolveExpressTrustProxySetting(config));
   let boundListenTarget: ListenTarget | null = null;
   let workspaceRegistry: FileBackedWorkspaceRegistry | null = null;
-  const terminalManager = createConfiguredTerminalManager({
+  const terminalManager = await createConfiguredTerminalManager({
+    paseoHome: config.paseoHome,
     getTerminalActivityUrl: () => createTerminalActivityUrl(boundListenTarget),
   });
   applyTerminalAgentHookSetting({ store: daemonConfigStore, logger });
@@ -1616,7 +1618,7 @@ export async function createPaseoDaemon(
     detachAgentStoragePersistence();
     await agentStorage.flush().catch(() => undefined);
     await providerSnapshotManager.shutdown();
-    terminalManager.killAll();
+    await detachWorkerTerminalManager(terminalManager);
     speechService.stop();
     await scheduleService.stop().catch(() => undefined);
     await relayRuntime?.stop().catch(() => undefined);
