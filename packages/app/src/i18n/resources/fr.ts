@@ -1727,6 +1727,11 @@ export const fr: TranslationResources = {
     },
     and: "et",
   },
+  intermediateProcess: {
+    label: "Processus intermédiaire",
+    running: "En cours...",
+    steps: "{{count}} étapes",
+  },
   renameModal: {
     rename: "Rebaptiser",
     saving: "Sauvegarde...",

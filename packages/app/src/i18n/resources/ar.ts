@@ -1680,6 +1680,11 @@ export const ar: TranslationResources = {
     },
     and: "و",
   },
+  intermediateProcess: {
+    label: "العملية الوسيطة",
+    running: "جارٍ العمل...",
+    steps: "{{count}} خطوات",
+  },
   renameModal: {
     rename: "إعادة تسمية",
     saving: "جارٍ الحفظ...",

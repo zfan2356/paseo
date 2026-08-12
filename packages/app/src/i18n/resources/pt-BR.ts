@@ -1709,6 +1709,11 @@ export const ptBR: TranslationResources = {
     },
     and: "e",
   },
+  intermediateProcess: {
+    label: "Processo intermediário",
+    running: "Trabalhando...",
+    steps: "{{count}} etapas",
+  },
   renameModal: {
     rename: "Renomear",
     saving: "Salvando...",

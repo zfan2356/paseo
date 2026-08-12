@@ -79,6 +79,12 @@ import {
   type TurnContentStrategy,
 } from "./turn-footer";
 import { layoutStream, type StreamLayoutItem } from "./layout";
+import { getAssistantBlockSpacing, getGapBetweenStreamItems } from "./spacing";
+import {
+  projectIntermediateProcess,
+  type IntermediateProcessGroup,
+} from "./intermediate-process/model";
+import { IntermediateProcessGroupView } from "./intermediate-process/view";
 import {
   type BottomAnchorLocalRequest,
   type BottomAnchorRouteRequest,
@@ -279,6 +285,38 @@ function useRetainedValue<T>(value: T, active: boolean): T {
 }
 const EMPTY_PENDING_MESSAGE_SUBMISSIONS: readonly PendingMessageSubmission[] = [];
 const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
+const EMPTY_INTERMEDIATE_PROCESS_LAYOUT_ITEMS: StreamLayoutItem[] = [];
+
+function isIntermediateToolSequenceItem(item: StreamItem | null): boolean {
+  return item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
+}
+
+function layoutIntermediateProcessItems(
+  group: IntermediateProcessGroup,
+  hostLayoutItem: StreamLayoutItem,
+): StreamLayoutItem[] {
+  return group.items.map((item, index, items) => {
+    const aboveItem = items[index - 1] ?? null;
+    const belowItem = items[index + 1] ?? null;
+    return {
+      item,
+      index,
+      items: [...items],
+      aboveItem,
+      belowItem,
+      gapBelow: getGapBetweenStreamItems(item, belowItem),
+      assistantSpacing: getAssistantBlockSpacing({ item, aboveItem, belowItem }),
+      completedFooter: null,
+      toolSequence: "none",
+      isFirstInUserGroup: false,
+      isLastInUserGroup: false,
+      isLastInToolSequence:
+        isIntermediateToolSequenceItem(item) && !isIntermediateToolSequenceItem(belowItem),
+      frameOrder: hostLayoutItem.frameOrder,
+      phase: "complete",
+    };
+  });
+}
 
 const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamViewProps>(
   function AgentStreamView(
@@ -325,6 +363,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const [expandedToolCallGroupIds, setExpandedToolCallGroupIds] = useState<Set<string>>(
       new Set(),
     );
+    const [intermediateProcessExpansionById, setIntermediateProcessExpansionById] = useState<
+      Map<string, boolean>
+    >(new Map());
     const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
     const setExplorerTabForCheckout = usePanelStore((state) => state.setExplorerTabForCheckout);
 
@@ -385,6 +426,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       setIsNearBottom(true);
       setExpandedInlineToolCallIds(new Set());
       setExpandedToolCallGroupIds(new Set());
+      setIntermediateProcessExpansionById(new Map());
     }, [agentId]);
 
     const handleInlinePathPress = useStableEvent(
@@ -504,21 +546,30 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         toolCallDetailLevel,
       ],
     );
+    const projectedIntermediateProcess = useMemo(
+      () =>
+        projectIntermediateProcess({
+          tail: projectedToolCalls.tail,
+          head: projectedToolCalls.head,
+          isTurnActive,
+        }),
+      [isTurnActive, projectedToolCalls.head, projectedToolCalls.tail],
+    );
 
     const baseRenderModel = useMemo(() => {
       return buildAgentStreamRenderModel({
         isTurnActive,
         activeTurnStartedAt: effectiveTurnPresentation.startedAt,
-        tail: projectedToolCalls.tail,
-        head: projectedToolCalls.head,
+        tail: projectedIntermediateProcess.tail,
+        head: projectedIntermediateProcess.head,
         platform: isWeb ? "web" : "native",
         isMobileBreakpoint: isMobile,
       });
     }, [
       isMobile,
       isTurnActive,
-      projectedToolCalls.head,
-      projectedToolCalls.tail,
+      projectedIntermediateProcess.head,
+      projectedIntermediateProcess.tail,
       effectiveTurnPresentation.startedAt,
     ]);
     const streamLayout = useMemo(
@@ -606,6 +657,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         } else {
           next.delete(groupId);
         }
+        return next;
+      });
+    }, []);
+
+    const setIntermediateProcessExpanded = useCallback((groupId: string, expanded: boolean) => {
+      setIntermediateProcessExpansionById((previous) => {
+        const next = new Map(previous);
+        next.set(groupId, expanded);
         return next;
       });
     }, []);
@@ -772,7 +831,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ],
     );
 
-    const renderStreamItemContent = useCallback(
+    const renderRegularStreamItemContent = useCallback(
       (layoutItem: StreamLayoutItem) => {
         const item = layoutItem.item;
         switch (item.kind) {
@@ -815,6 +874,41 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         }
       },
       [renderUserMessageItem, renderAssistantMessageItem, renderThoughtItem, renderToolCallItem],
+    );
+
+    const renderStreamItemContent = useCallback(
+      (layoutItem: StreamLayoutItem) => {
+        const group = projectedIntermediateProcess.groupsByHostId.get(layoutItem.item.id);
+        if (!group) {
+          return renderRegularStreamItemContent(layoutItem);
+        }
+        const expanded =
+          intermediateProcessExpansionById.get(group.id) ??
+          (group.isActive || group.hasError || autoExpandReasoning);
+        const memberLayouts = expanded
+          ? layoutIntermediateProcessItems(group, layoutItem)
+          : EMPTY_INTERMEDIATE_PROCESS_LAYOUT_ITEMS;
+        return (
+          <IntermediateProcessGroupView
+            group={group}
+            expanded={expanded}
+            onExpandedChange={setIntermediateProcessExpanded}
+          >
+            {memberLayouts.map((memberLayout) => (
+              <React.Fragment key={memberLayout.item.id}>
+                {renderRegularStreamItemContent(memberLayout)}
+              </React.Fragment>
+            ))}
+          </IntermediateProcessGroupView>
+        );
+      },
+      [
+        autoExpandReasoning,
+        intermediateProcessExpansionById,
+        projectedIntermediateProcess.groupsByHostId,
+        renderRegularStreamItemContent,
+        setIntermediateProcessExpanded,
+      ],
     );
 
     const bottomTurnFooterHost = streamLayout.auxiliaryTurnFooter;
@@ -972,11 +1066,24 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       expandedInlineToolCallIds.size === 0;
     const historyRowRevision = useMemo(
       () => ({
-        contentById: projectedToolCalls.historyGroupUpdatesByHostId,
-        displayStateById: expandedToolCallGroupIds,
+        contentById: {
+          has: (id: string) =>
+            projectedToolCalls.historyGroupUpdatesByHostId.has(id) ||
+            projectedIntermediateProcess.historyGroupUpdatesByHostId.has(id),
+        },
+        displayStateById: {
+          has: (id: string) =>
+            expandedToolCallGroupIds.has(id) || intermediateProcessExpansionById.has(id),
+        },
         globalDisplayState: isMobile,
       }),
-      [expandedToolCallGroupIds, isMobile, projectedToolCalls.historyGroupUpdatesByHostId],
+      [
+        expandedToolCallGroupIds,
+        intermediateProcessExpansionById,
+        isMobile,
+        projectedIntermediateProcess.historyGroupUpdatesByHostId,
+        projectedToolCalls.historyGroupUpdatesByHostId,
+      ],
     );
 
     return (
@@ -987,7 +1094,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               agentId,
               segments: renderModel.segments,
               historyRowRevision,
-              liveHeadRowRevision: expandedToolCallGroupIds,
+              liveHeadRowRevision: {
+                expandedToolCallGroupIds,
+                intermediateProcessExpansionById,
+              },
               boundary,
               renderers,
               listEmptyComponent,

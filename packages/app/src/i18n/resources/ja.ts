@@ -1696,6 +1696,11 @@ export const ja: TranslationResources = {
     },
     and: "および",
   },
+  intermediateProcess: {
+    label: "中間プロセス",
+    running: "処理中...",
+    steps: "{{count}} ステップ",
+  },
   renameModal: {
     rename: "名前を変更",
     saving: "保存中...",

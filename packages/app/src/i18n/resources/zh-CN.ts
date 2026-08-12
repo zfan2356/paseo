@@ -1660,6 +1660,11 @@ export const zhCN: TranslationResources = {
     },
     and: "并",
   },
+  intermediateProcess: {
+    label: "中间过程",
+    running: "处理中...",
+    steps: "{{count}} 个步骤",
+  },
   renameModal: {
     rename: "重命名",
     saving: "正在保存...",

@@ -1714,6 +1714,11 @@ export const ru: TranslationResources = {
     },
     and: "и",
   },
+  intermediateProcess: {
+    label: "Промежуточный процесс",
+    running: "Выполняется...",
+    steps: "Шагов: {{count}}",
+  },
   renameModal: {
     rename: "Переименовать",
     saving: "Сохранение...",

@@ -1723,6 +1723,11 @@ export const es: TranslationResources = {
     },
     and: "y",
   },
+  intermediateProcess: {
+    label: "Proceso intermedio",
+    running: "Trabajando...",
+    steps: "{{count}} pasos",
+  },
   renameModal: {
     rename: "Rebautizar",
     saving: "Guardando...",

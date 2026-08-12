@@ -1691,6 +1691,11 @@ export const en = {
     },
     and: "and",
   },
+  intermediateProcess: {
+    label: "Intermediate process",
+    running: "Working...",
+    steps: "{{count}} steps",
+  },
   renameModal: {
     rename: "Rename",
     saving: "Saving...",

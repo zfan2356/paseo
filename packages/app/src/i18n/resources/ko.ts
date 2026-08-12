@@ -1690,6 +1690,11 @@ export const ko: TranslationResources = {
     },
     and: "그리고",
   },
+  intermediateProcess: {
+    label: "중간 과정",
+    running: "작업 중...",
+    steps: "{{count}}단계",
+  },
   renameModal: {
     rename: "이름 변경",
     saving: "저장하는 중...",
