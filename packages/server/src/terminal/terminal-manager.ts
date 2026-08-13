@@ -11,6 +11,7 @@ import { resolve, sep } from "node:path";
 import { assertAbsolutePath, isSameOrDescendantPath } from "../server/path-utils.js";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
 import { deriveTerminalActivityStatusBucket } from "@getpaseo/protocol/terminal-activity";
+import { AGENT_CONVERSATION_TERMINAL_ENV } from "./agent-hooks/agent-hook-installer.js";
 
 export interface TerminalListItem {
   id: string;
@@ -344,6 +345,7 @@ export function createTerminalManager(
       const activityEnv = {
         PASEO_TERMINAL_ID: terminalId,
         PASEO_ACTIVITY_TOKEN: activityToken,
+        ...(options.linkedAgentId ? { [AGENT_CONVERSATION_TERMINAL_ENV]: "1" } : {}),
         ...(terminalActivityUrl ? { PASEO_TERMINAL_ACTIVITY_URL: terminalActivityUrl } : {}),
       };
       terminalActivityTokenById.set(terminalId, activityToken);

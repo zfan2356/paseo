@@ -1,8 +1,9 @@
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute } from "../support/helpers/mock-agent";
 import { seedProviderConfiguration } from "../support/helpers/agent-profiles";
+import { getServerId } from "../support/helpers/server-id";
 import { seedWorkspace } from "../support/helpers/seed-client";
-import { expectTerminalSurfaceVisible } from "../support/helpers/terminal-perf";
+import { expectTerminalSurfaceVisible, navigateToTerminal } from "../support/helpers/terminal-perf";
 
 async function getCodexConversationTerminal(workspace: Awaited<ReturnType<typeof seedWorkspace>>) {
   return getConversationTerminal(workspace, "Codex Conversation");
@@ -18,22 +19,60 @@ async function getConversationTerminal(
   return result.terminals.find((terminal) => terminal.name === name) ?? null;
 }
 
+function conversationTerminalTab(
+  page: Parameters<typeof expectTerminalSurfaceVisible>[0],
+  terminalId: string,
+) {
+  return page.getByTestId(`workspace-tab-terminal_${terminalId}`).first();
+}
+
+function workspaceRow(
+  page: Parameters<typeof expectTerminalSurfaceVisible>[0],
+  workspaceId: string,
+) {
+  return page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspaceId}`).first();
+}
+
+async function expectActiveTerminalSurface(
+  page: Parameters<typeof expectTerminalSurfaceVisible>[0],
+) {
+  await expect(page.locator('[data-testid="terminal-surface"]:visible').first()).toBeVisible({
+    timeout: 20_000,
+  });
+}
+
+async function createActivityFocusTerminal(workspace: Awaited<ReturnType<typeof seedWorkspace>>) {
+  const result = await workspace.client.createTerminal(
+    workspace.repoPath,
+    "Activity focus",
+    undefined,
+    { workspaceId: workspace.workspaceId },
+  );
+  if (!result.terminal) {
+    throw new Error(result.error ?? "Failed to create activity focus terminal");
+  }
+  return result.terminal;
+}
+
 async function pastePngIntoTerminal(page: Parameters<typeof expectTerminalSurfaceVisible>[0]) {
   const pngBase64 =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-  await page.getByTestId("terminal-surface").evaluate((surface, base64) => {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([bytes], "clipboard.png", { type: "image/png" }));
-    const event = new Event("paste", { bubbles: true, cancelable: true });
-    Object.defineProperty(event, "clipboardData", { value: transfer });
-    const target = surface.querySelector("textarea") ?? surface;
-    target.dispatchEvent(event);
-  }, pngBase64);
+  await page
+    .locator('[data-testid="terminal-surface"]:visible')
+    .first()
+    .evaluate((surface, base64) => {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], "clipboard.png", { type: "image/png" }));
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", { value: transfer });
+      const target = surface.querySelector("textarea") ?? surface;
+      target.dispatchEvent(event);
+    }, pngBase64);
 }
 
 test.describe("Codex conversation view switch", () => {
@@ -81,6 +120,24 @@ test.describe("Codex conversation view switch", () => {
         throw new Error("Codex conversation terminal disappeared after the view switch");
       }
       expect(terminal.linkedAgentId).toBe(agent.id);
+      let codexStartupText = "";
+      await expect
+        .poll(
+          async () => {
+            codexStartupText = (
+              await workspace.client.captureTerminal(terminal.id, { stripAnsi: true })
+            ).lines.join("\n");
+            return (
+              codexStartupText.includes("Hooks need review") ||
+              codexStartupText.includes("AGENT_SIDE_SENTINEL")
+            );
+          },
+          { timeout: 30_000 },
+        )
+        .toBe(true);
+      if (codexStartupText.includes("Hooks need review")) {
+        workspace.client.sendTerminalInput(terminal.id, { type: "input", data: "\x1b[B\r" });
+      }
       await expect
         .poll(
           async () =>
@@ -91,12 +148,24 @@ test.describe("Codex conversation view switch", () => {
         )
         .toContain("AGENT_SIDE_SENTINEL");
 
+      const activityFocusTerminal = await createActivityFocusTerminal(workspace);
+
       const terminalSurface = page.getByTestId("terminal-surface").first();
       await terminalSurface.click();
       await terminalSurface.pressSequentially("Reply with exactly TUI_SIDE_SENTINEL.", {
         delay: 15,
       });
       await page.keyboard.press("Enter");
+      await expect(
+        conversationTerminalTab(page, terminal.id).locator('[data-status-bucket="running"]'),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(
+        workspaceRow(page, workspace.workspaceId).getByTestId("workspace-status-indicator-running"),
+      ).toBeVisible({ timeout: 30_000 });
+      await navigateToTerminal(page, {
+        workspaceId: workspace.workspaceId,
+        terminalId: activityFocusTerminal.id,
+      });
       await expect
         .poll(
           async () => {
@@ -113,6 +182,17 @@ test.describe("Codex conversation view switch", () => {
           timeout: 30_000,
         })
         .not.toBe("working");
+
+      await expect(
+        conversationTerminalTab(page, terminal.id).locator('[data-status-bucket="attention"]'),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(
+        workspaceRow(page, workspace.workspaceId).getByTestId(
+          "workspace-status-indicator-attention",
+        ),
+      ).toBeVisible({ timeout: 30_000 });
+      await conversationTerminalTab(page, terminal.id).click();
+      await expectTerminalSurfaceVisible(page);
 
       await viewToggle.click();
       await expect(page.getByText("TUI_SIDE_SENTINEL", { exact: true }).last()).toBeVisible({
@@ -138,7 +218,7 @@ test.describe("Codex conversation view switch", () => {
       });
 
       await viewToggle.click();
-      await expectTerminalSurfaceVisible(page);
+      await expectActiveTerminalSurface(page);
       await expect
         .poll(async () => await getCodexConversationTerminal(workspace), { timeout: 30_000 })
         .not.toBeNull();
@@ -271,12 +351,28 @@ test.describe("Claude Code and Cursor conversation view switch", () => {
           )
           .toContain(initialSentinel);
 
+        const activityFocusTerminal = await createActivityFocusTerminal(workspace);
+
         workspace.client.sendTerminalInput(linkedTerminal.id, {
           type: "input",
           data: `Reply with exactly ${terminalSentinel}.`,
         });
         await page.waitForTimeout(100);
         workspace.client.sendTerminalInput(linkedTerminal.id, { type: "input", data: "\r" });
+        await expect(
+          conversationTerminalTab(page, linkedTerminal.id).locator(
+            '[data-status-bucket="running"]',
+          ),
+        ).toBeVisible({ timeout: 30_000 });
+        await expect(
+          workspaceRow(page, workspace.workspaceId).getByTestId(
+            "workspace-status-indicator-running",
+          ),
+        ).toBeVisible({ timeout: 30_000 });
+        await navigateToTerminal(page, {
+          workspaceId: workspace.workspaceId,
+          terminalId: activityFocusTerminal.id,
+        });
         await expect
           .poll(
             async () => {
@@ -293,6 +389,19 @@ test.describe("Claude Code and Cursor conversation view switch", () => {
             timeout: 30_000,
           })
           .not.toMatchObject({ activity: { state: "working" } });
+
+        await expect(
+          conversationTerminalTab(page, linkedTerminal.id).locator(
+            '[data-status-bucket="attention"]',
+          ),
+        ).toBeVisible({ timeout: 30_000 });
+        await expect(
+          workspaceRow(page, workspace.workspaceId).getByTestId(
+            "workspace-status-indicator-attention",
+          ),
+        ).toBeVisible({ timeout: 30_000 });
+        await conversationTerminalTab(page, linkedTerminal.id).click();
+        await expectTerminalSurfaceVisible(page);
 
         await viewToggle.click();
         await expect(page.getByText(terminalSentinel, { exact: true }).last()).toBeVisible({
@@ -321,7 +430,7 @@ test.describe("Claude Code and Cursor conversation view switch", () => {
         });
 
         await viewToggle.click();
-        await expectTerminalSurfaceVisible(page);
+        await expectActiveTerminalSurface(page);
         await expect
           .poll(async () => {
             const terminal = await getConversationTerminal(workspace, providerCase.terminalName);

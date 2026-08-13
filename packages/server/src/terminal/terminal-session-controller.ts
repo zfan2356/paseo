@@ -45,6 +45,7 @@ import {
   getAgentConversationTerminalProvider,
   parseAgentConversationTerminalLink,
   type AgentConversationTerminalLaunch,
+  type AgentConversationTerminalProvider,
 } from "./codex-fork-terminal.js";
 
 const MAX_TERMINAL_STREAM_SLOTS = 256;
@@ -96,6 +97,7 @@ export interface TerminalSessionControllerOptions {
     cwd: string;
     workspaceId: string;
   }) => Promise<AgentConversationTerminalLaunch>;
+  prepareAgentTerminalHooks?: (provider: AgentConversationTerminalProvider) => void;
   releaseAgentTerminalOwnership?: (input: { agentId: string; terminalId: string }) => Promise<void>;
   resumeAgentFromTerminal?: (input: { agentId: string; terminalId: string }) => Promise<void>;
   // Whether the connected client can reflow restored snapshots. When true the
@@ -168,6 +170,9 @@ export class TerminalSessionController {
         workspaceId: string;
       }) => Promise<AgentConversationTerminalLaunch>)
     | null;
+  private readonly prepareAgentTerminalHooks:
+    | ((provider: AgentConversationTerminalProvider) => void)
+    | null;
   private readonly releaseAgentTerminalOwnership:
     | ((input: { agentId: string; terminalId: string }) => Promise<void>)
     | null;
@@ -206,6 +211,7 @@ export class TerminalSessionController {
       options.listTerminalWorkspaceRoots ??
       (async () => (await this.listTerminalWorkspaceRefs()).map((workspace) => workspace.cwd));
     this.resolveAgentTerminalLaunch = options.resolveAgentTerminalLaunch ?? null;
+    this.prepareAgentTerminalHooks = options.prepareAgentTerminalHooks ?? null;
     this.releaseAgentTerminalOwnership = options.releaseAgentTerminalOwnership ?? null;
     this.resumeAgentFromTerminal = options.resumeAgentFromTerminal ?? null;
     this.clientSupportsWrapReflow = options.clientSupportsWrapReflow ?? (() => false);
@@ -700,6 +706,16 @@ export class TerminalSessionController {
     });
     if (!launch) {
       throw new Error(`Agent terminal launch is not supported for agent ${msg.agentId}`);
+    }
+    if (this.prepareAgentTerminalHooks) {
+      try {
+        this.prepareAgentTerminalHooks(launch.provider);
+      } catch (error) {
+        this.sessionLogger.warn(
+          { err: error, provider: launch.provider, agentId: msg.agentId },
+          "Failed to install conversation terminal activity hooks",
+        );
+      }
     }
 
     return {

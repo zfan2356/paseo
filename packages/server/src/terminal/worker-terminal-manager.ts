@@ -5,6 +5,7 @@ import { assertAbsolutePath, isSameOrDescendantPath } from "../server/path-utils
 import type { TerminalState } from "@getpaseo/protocol/messages";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
 import { deriveTerminalActivityStatusBucket } from "@getpaseo/protocol/terminal-activity";
+import { AGENT_CONVERSATION_TERMINAL_ENV } from "./agent-hooks/agent-hook-installer.js";
 import type {
   ClientMessage,
   ServerMessage,
@@ -805,6 +806,12 @@ export async function createWorkerTerminalManager(
       const terminalId = options.id ?? randomUUID();
       const activityToken = createActivityToken();
       const terminalActivityUrl = managerOptions.getTerminalActivityUrl?.() ?? null;
+      const workerOptions = options.linkedAgentId
+        ? {
+            ...options,
+            env: { ...options.env, [AGENT_CONVERSATION_TERMINAL_ENV]: "1" },
+          }
+        : options;
       terminalActivityTokenById.set(terminalId, activityToken);
       let result: {
         terminal: RequiredWorkerTerminalInfo;
@@ -814,7 +821,7 @@ export async function createWorkerTerminalManager(
         result = (await sendRequest({
           type: "createTerminal",
           options: {
-            ...options,
+            ...workerOptions,
             id: terminalId,
             activityToken,
             activityUrl: terminalActivityUrl,

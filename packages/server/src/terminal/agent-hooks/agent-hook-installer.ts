@@ -35,6 +35,8 @@ interface AgentHookInstallStrategyBase {
   configFile: string;
   configDirEnvOverride?: string;
   hookMarker: string;
+  activationEnv?: string;
+  hookCliPath?: string;
 }
 
 export interface AgentHookConfigFileInstallStrategy<TConfig> extends AgentHookInstallStrategyBase {
@@ -60,6 +62,7 @@ export interface AgentHookInstallOptions {
   env?: NodeJS.ProcessEnv;
   homeDir?: string;
   configDir?: string;
+  hookCliPath?: string;
 }
 
 export interface AgentHookInstallLogger {
@@ -70,6 +73,8 @@ export interface AgentHookInstallResult {
   configPath: string;
   changed: boolean;
 }
+
+export const AGENT_CONVERSATION_TERMINAL_ENV = "PASEO_AGENT_CONVERSATION_TERMINAL";
 
 export function installAgentHooks<TConfig>(
   provider: AgentHookProvider<TConfig>,
@@ -137,16 +142,34 @@ export function buildAgentHookShellCommand<TConfig>(
   provider: AgentHookProvider<TConfig>,
   event: AgentHookEventDefinition,
 ): string {
-  const hookCommand = `"\${PASEO_HOOK_CLI:-paseo}" hooks ${shellToken(provider.id)} ${shellToken(event.event)}`;
-  return `if [ -n "$PASEO_TERMINAL_ID" ]; then ${hookCommand}; fi`;
+  const activationEnv = provider.install.activationEnv ?? "PASEO_TERMINAL_ID";
+  const executable = provider.install.hookCliPath
+    ? shellToken(provider.install.hookCliPath)
+    : `"\${PASEO_HOOK_CLI:-paseo}"`;
+  const hookCommand = `${executable} hooks ${shellToken(provider.id)} ${shellToken(event.event)}`;
+  return `if [ -n "$${activationEnv}" ]; then ${hookCommand}; fi`;
 }
 
 export function buildAgentHookWindowsCommand<TConfig>(
   provider: AgentHookProvider<TConfig>,
   event: AgentHookEventDefinition,
 ): string {
+  const activationEnv = provider.install.activationEnv ?? "PASEO_TERMINAL_ID";
   const hookArgs = `hooks ${windowsToken(provider.id)} ${windowsToken(event.event)}`;
-  return `if defined PASEO_TERMINAL_ID (if defined PASEO_HOOK_CLI ("%PASEO_HOOK_CLI%" ${hookArgs}) else (paseo ${hookArgs})) else (exit /b 0)`;
+  if (provider.install.hookCliPath) {
+    return `if defined ${activationEnv} (${windowsToken(provider.install.hookCliPath)} ${hookArgs}) else (exit /b 0)`;
+  }
+  return `if defined ${activationEnv} (if defined PASEO_HOOK_CLI ("%PASEO_HOOK_CLI%" ${hookArgs}) else (paseo ${hookArgs})) else (exit /b 0)`;
+}
+
+export function buildAgentHookCommand<TConfig>(
+  provider: AgentHookProvider<TConfig>,
+  event: AgentHookEventDefinition,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "win32"
+    ? buildAgentHookWindowsCommand(provider, event)
+    : buildAgentHookShellCommand(provider, event);
 }
 
 function installAgentHookPluginFile(

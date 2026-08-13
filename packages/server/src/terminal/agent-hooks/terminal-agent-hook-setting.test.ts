@@ -36,6 +36,7 @@ function hookPaths(root: string) {
   return {
     claude: join(root, "claude", "settings.json"),
     codex: join(root, "codex", "hooks.json"),
+    cursor: join(root, "home", ".cursor", "hooks.json"),
     opencode: join(root, "opencode", "plugins", "paseo-terminal-activity.js"),
   };
 }
@@ -65,6 +66,7 @@ describe("applyTerminalAgentHookSetting", () => {
     const paths = hookPaths(root);
     expect(existsSync(paths.claude)).toBe(false);
     expect(existsSync(paths.codex)).toBe(false);
+    expect(existsSync(paths.cursor)).toBe(false);
     expect(existsSync(paths.opencode)).toBe(false);
   });
 
@@ -77,6 +79,7 @@ describe("applyTerminalAgentHookSetting", () => {
     const paths = hookPaths(root);
     expect(existsSync(paths.claude)).toBe(true);
     expect(existsSync(paths.codex)).toBe(true);
+    expect(existsSync(paths.cursor)).toBe(true);
     expect(existsSync(paths.opencode)).toBe(true);
   });
 
@@ -90,6 +93,7 @@ describe("applyTerminalAgentHookSetting", () => {
 
     store.patch({ enableTerminalAgentHooks: true });
     expect(existsSync(paths.codex)).toBe(true);
+    expect(existsSync(paths.cursor)).toBe(true);
     expect(existsSync(paths.opencode)).toBe(true);
 
     store.patch({ enableTerminalAgentHooks: false });

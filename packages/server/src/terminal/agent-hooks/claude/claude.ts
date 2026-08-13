@@ -22,7 +22,7 @@ export const claudeAgentHookProvider: AgentHookProvider<ClaudeSettings> = {
     configDir: ".claude",
     configFile: "settings.json",
     configDirEnvOverride: "CLAUDE_CONFIG_DIR",
-    hookMarker: "hooks claude",
+    hookMarker: "PASEO_TERMINAL_ID",
     format: claudeSettingsFormat,
   },
   async resolveActivity({ event, input }) {

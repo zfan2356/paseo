@@ -151,6 +151,11 @@ export async function startE2EWorker(
   const fakeEditorBin = await createFakeEditorBin();
   const editorRecordPath = path.join(paseoHome, "editor-open-records.jsonl");
   const serverId = `srv_e2e_worker_${workerIndex}`;
+  const paseoCli = path.resolve(
+    __dirname,
+    "../../../../../node_modules/.bin",
+    process.platform === "win32" ? "paseo.cmd" : "paseo",
+  );
 
   try {
     await applyMetadataFork(paseoHome, options.forkProviders ?? []);
@@ -160,6 +165,7 @@ export async function startE2EWorker(
       environment: {
         NODE_ENV: "development",
         PATH: `${fakeEditorBin}${path.delimiter}${process.env.PATH ?? ""}`,
+        PASEO_CLI: paseoCli,
         PASEO_E2E_EDITOR_RECORD_PATH: editorRecordPath,
       },
     });

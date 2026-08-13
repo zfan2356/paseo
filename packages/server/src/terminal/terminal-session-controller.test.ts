@@ -355,6 +355,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
       args: ["--resume", "session-1"],
       env: { CLAUDE_CONFIG_DIR: "/tmp/claude-config" },
     }));
+    const prepareAgentTerminalHooks = vi.fn();
     const controller = new TerminalSessionController({
       terminalManager,
       emit: (message) => outboundMessages.push(message),
@@ -363,6 +364,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
       isPathWithinRoot: isSameOrDescendantPath,
       sessionLogger: createLogger(),
       resolveAgentTerminalLaunch,
+      prepareAgentTerminalHooks,
     });
 
     await controller.dispatch({
@@ -379,6 +381,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
       cwd: "/work/repo",
       workspaceId: "ws-1",
     });
+    expect(prepareAgentTerminalHooks).toHaveBeenCalledWith("claude");
     expect(createTerminal).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: "/work/repo",

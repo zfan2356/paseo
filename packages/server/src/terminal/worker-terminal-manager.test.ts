@@ -28,6 +28,7 @@ import type {
   TerminalWorkerToParentMessage,
 } from "./terminal-worker-protocol.js";
 import { terminateWithTreeKill } from "../utils/tree-kill.js";
+import { AGENT_CONVERSATION_TERMINAL_ENV } from "./agent-hooks/agent-hook-installer.js";
 
 type TerminalRow = TerminalState["grid"][number];
 
@@ -1004,6 +1005,53 @@ it("lists terminals locally without waiting on the worker", async () => {
     "terminal-subdir",
   ]);
   expect(worker.sentMessages.some((message) => message.type === "getTerminals")).toBe(false);
+});
+
+it("sends the conversation hook gate through the version-one worker env", async () => {
+  const worker = new FakeTerminalWorker();
+  manager = await createWorkerTerminalManager({
+    requestTimeoutMs: 1000,
+    forkWorker: () => worker,
+  });
+
+  const creating = manager.createTerminal({
+    cwd: "/workspace",
+    workspaceId: "ws-test",
+    linkedAgentId: "agent-1",
+    env: { EXISTING_ENV: "kept" },
+  });
+  const request = worker.sentMessages.find((message) => message.type === "createTerminal");
+  expect(request).toMatchObject({
+    type: "createTerminal",
+    options: {
+      linkedAgentId: "agent-1",
+      env: {
+        EXISTING_ENV: "kept",
+        [AGENT_CONVERSATION_TERMINAL_ENV]: "1",
+      },
+    },
+  });
+  if (!request || request.type !== "createTerminal") {
+    throw new Error("createTerminal request not sent");
+  }
+  worker.emitWorkerMessage({
+    type: "response",
+    requestId: request.requestId,
+    ok: true,
+    result: {
+      terminal: {
+        id: request.options.id!,
+        name: "Conversation",
+        cwd: "/workspace",
+        workspaceId: "ws-test",
+        linkedAgentId: "agent-1",
+        activity: null,
+      },
+      state: createTerminalState(),
+    },
+  });
+
+  await expect(creating).resolves.toMatchObject({ linkedAgentId: "agent-1" });
 });
 
 it("includes only stamped terminals in workspace-scoped local reads", async () => {

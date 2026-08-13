@@ -33,6 +33,8 @@ import {
   type AgentConversationTerminalSource,
 } from "../terminal/codex-fork-terminal.js";
 import { prepareCursorConversationTerminalStore } from "../terminal/cursor-conversation-store.js";
+import { installAgentConversationHooks } from "../terminal/agent-hooks/provider-registry.js";
+import { resolvePaseoCliExecutablePath } from "../terminal/terminal.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type { BinaryFrame } from "@getpaseo/protocol/binary-frames/index";
 import { CursorError } from "./pagination/cursor.js";
@@ -916,6 +918,10 @@ export class Session {
       sessionLogger: this.sessionLogger,
       listTerminalWorkspaceRefs: () => this.listActiveWorkspaceRefs(),
       resolveAgentTerminalLaunch: (input) => this.resolveAgentTerminalLaunch(input),
+      prepareAgentTerminalHooks: (provider) => {
+        const hookCliPath = resolvePaseoCliExecutablePath();
+        installAgentConversationHooks(provider, hookCliPath ? { hookCliPath } : {});
+      },
       releaseAgentTerminalOwnership: (input) => this.releaseAgentTerminalOwnership(input),
       resumeAgentFromTerminal: (input) => this.resumeAgentFromTerminal(input),
       clientSupportsWrapReflow: () =>

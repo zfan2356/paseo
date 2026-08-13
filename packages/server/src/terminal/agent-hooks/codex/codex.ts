@@ -23,7 +23,7 @@ export const codexAgentHookProvider: AgentHookProvider<CodexHooksFile> = {
     configDir: ".codex",
     configFile: "hooks.json",
     configDirEnvOverride: "CODEX_HOME",
-    hookMarker: "hooks codex",
+    hookMarker: "PASEO_TERMINAL_ID",
     format: codexHooksFormat,
   },
   async resolveActivity({ event }) {
