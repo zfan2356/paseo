@@ -316,6 +316,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
   });
 
   test("creates an agent fork terminal from the server-resolved launch", async () => {
+    const outboundMessages: SessionOutboundMessage[] = [];
     const createTerminal = vi.fn(
       async (options: Parameters<TerminalManager["createTerminal"]>[0]) =>
         listSession({
@@ -351,7 +352,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
     }));
     const controller = new TerminalSessionController({
       terminalManager,
-      emit: vi.fn(),
+      emit: (message) => outboundMessages.push(message),
       emitBinary: vi.fn(),
       hasBinaryChannel: () => true,
       isPathWithinRoot: isSameOrDescendantPath,
@@ -381,6 +382,21 @@ describe("terminal-session-controller legacy terminal creation", () => {
         args: ["fork", "thread-1"],
       }),
     );
+    expect(outboundMessages).toContainEqual({
+      type: "create_terminal_response",
+      payload: {
+        terminal: {
+          id: "term-fork",
+          name: "Codex Fork",
+          cwd: "/work/repo",
+          workspaceId: "ws-1",
+          activity: null,
+          capabilities: { imagePaste: true },
+        },
+        error: null,
+        requestId: "req-fork",
+      },
+    });
   });
 });
 

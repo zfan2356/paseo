@@ -548,6 +548,14 @@ export const es: TranslationResources = {
       hostDisconnected: "Hostno está conectado",
       updateHost: "Actualiza el host para usar el renderizador de terminal nativo.",
       unableToSubscribe: "No se puede suscribir al terminal",
+      imagePaste: {
+        uploading: "Uploading pasted image...",
+        inProgress: "A pasted image is already uploading.",
+        complete: "Attached {{count}} pasted image(s).",
+        failed: "Failed to paste the clipboard image.",
+        terminalChanged: "The active terminal changed before the image finished uploading.",
+        terminalUnavailable: "The terminal is not ready for image paste.",
+      },
     },
     tabs: {
       loading: "Cargando...",

@@ -35,6 +35,11 @@ import {
   type TerminalVirtualKeyboardControl,
 } from "@/terminal/runtime/terminal-virtual-keyboard";
 import { pasteTerminalClipboard } from "@/terminal/runtime/terminal-paste";
+import {
+  terminalPastedImageFromDataUrl,
+  uploadTerminalPastedImages,
+  type TerminalPastedImage,
+} from "@/terminal/runtime/terminal-image-paste";
 import { getWorkspaceTerminalSession } from "@/terminal/runtime/workspace-terminal-session";
 import {
   EMPTY_FOCUS_CLAIM_STATE,
@@ -78,11 +83,14 @@ import {
   type OpenFileDisposition,
   type WorkspaceFileOpenRequest,
 } from "@/workspace/file-open";
+import { readClipboardImage } from "@/composer/clipboard-image";
+import { useToast } from "@/contexts/toast-context";
 
 interface TerminalPaneProps {
   serverId: string;
   cwd: string;
   terminalId: string;
+  supportsImagePaste: boolean;
   isWorkspaceFocused: boolean;
   isPaneFocused: boolean;
   onOpenFileExplorer: () => void;
@@ -204,12 +212,14 @@ export function TerminalPane({
   serverId,
   cwd,
   terminalId,
+  supportsImagePaste,
   isWorkspaceFocused,
   isPaneFocused,
   onOpenFileExplorer,
   onOpenWorkspaceFile,
 }: TerminalPaneProps) {
   const { t } = useTranslation();
+  const toast = useToast();
   const retainedPanelActive = useRetainedPanelActive();
   const isAppActivelyVisible = useAppActivelyVisible();
   const { theme } = useUnistyles();
@@ -262,6 +272,8 @@ export function TerminalPane({
   const [modifiers, setModifiers] = useState<ModifierState>(EMPTY_MODIFIERS);
   const [hasSelection, setHasSelection] = useState(false);
   const [hasClipboardText, setHasClipboardText] = useState(false);
+  const [hasClipboardImage, setHasClipboardImage] = useState(false);
+  const [isPastingImage, setIsPastingImage] = useState(false);
   const [isKeyboardToggleVisible, setIsKeyboardToggleVisible] = useState(false);
   const [focusRequestToken, setFocusRequestToken] = useState(0);
   const [resizeRequestToken, setResizeRequestToken] = useState(0);
@@ -269,6 +281,7 @@ export function TerminalPane({
   const emulatorRef = useRef<TerminalEmulatorHandle>(null);
   const terminalIdRef = useRef<string>(terminalId);
   const terminalActiveRef = useRef(isTerminalActive);
+  const imagePasteInFlightRef = useRef(false);
   terminalActiveRef.current = isTerminalActive;
   const inputModeRef = useRef<TerminalInputModeState>(DEFAULT_TERMINAL_INPUT_MODE_STATE);
   const pendingTerminalInputRef = useRef<PendingTerminalInput[]>([]);
@@ -286,15 +299,21 @@ export function TerminalPane({
   const refreshClipboardAvailability = useCallback(async () => {
     if (!isMobile) {
       setHasClipboardText(false);
+      setHasClipboardImage(false);
       return;
     }
     try {
-      const hasText = await Clipboard.hasStringAsync();
+      const [hasText, hasImage] = await Promise.all([
+        Clipboard.hasStringAsync(),
+        supportsImagePaste ? Clipboard.hasImageAsync() : Promise.resolve(false),
+      ]);
       setHasClipboardText(hasText);
+      setHasClipboardImage(hasImage);
     } catch {
       setHasClipboardText(false);
+      setHasClipboardImage(false);
     }
-  }, [isMobile]);
+  }, [isMobile, supportsImagePaste]);
 
   useEffect(() => {
     void refreshClipboardAvailability();
@@ -855,13 +874,91 @@ export function TerminalPane({
     clearPendingModifiers();
   }, [clearPendingModifiers]);
 
+  const handleTerminalImagePaste = useStableEvent(async (images: TerminalPastedImage[]) => {
+    if (!supportsImagePaste || images.length === 0) {
+      return;
+    }
+    if (imagePasteInFlightRef.current) {
+      toast.show(t("workspace.terminal.imagePaste.inProgress"), { variant: "info" });
+      return;
+    }
+    if (!client) {
+      toast.error(t("workspace.terminal.hostDisconnected"));
+      return;
+    }
+
+    const targetTerminalId = terminalIdRef.current;
+    imagePasteInFlightRef.current = true;
+    setIsPastingImage(true);
+    toast.show(t("workspace.terminal.imagePaste.uploading"), {
+      variant: "info",
+      durationMs: null,
+      testID: "terminal-image-paste-uploading",
+    });
+
+    try {
+      requestTerminalReflow();
+      const paths = await uploadTerminalPastedImages({
+        images,
+        uploadFile: (image) => client.uploadFile(image),
+        pastePath: (path) => {
+          if (terminalIdRef.current !== targetTerminalId) {
+            throw new Error(t("workspace.terminal.imagePaste.terminalChanged"));
+          }
+          const emulator = emulatorRef.current;
+          if (!emulator) {
+            throw new Error(t("workspace.terminal.imagePaste.terminalUnavailable"));
+          }
+          emulator.paste(path);
+        },
+      });
+      toast.show(t("workspace.terminal.imagePaste.complete", { count: paths.length }), {
+        variant: "success",
+        testID: "terminal-image-paste-complete",
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t("workspace.terminal.imagePaste.failed"),
+      );
+    } finally {
+      imagePasteInFlightRef.current = false;
+      setIsPastingImage(false);
+      void refreshClipboardAvailability();
+    }
+  });
+
   const handleTerminalPaste = useCallback(() => {
     requestTerminalReflow();
-    void pasteTerminalClipboard({
-      clipboard: { readText: () => Clipboard.getStringAsync() },
-      terminal: { paste: (text) => emulatorRef.current?.paste(text) },
-    }).then(() => refreshClipboardAvailability());
-  }, [requestTerminalReflow, refreshClipboardAvailability]);
+    void (async () => {
+      if (supportsImagePaste) {
+        const image = await readClipboardImage(Clipboard);
+        if (image) {
+          if (image.source.kind !== "data_url") {
+            throw new Error(t("workspace.terminal.imagePaste.failed"));
+          }
+          await handleTerminalImagePaste([terminalPastedImageFromDataUrl(image.source.dataUrl)]);
+          return;
+        }
+      }
+
+      await pasteTerminalClipboard({
+        clipboard: { readText: () => Clipboard.getStringAsync() },
+        terminal: { paste: (text) => emulatorRef.current?.paste(text) },
+      });
+      await refreshClipboardAvailability();
+    })().catch((error) => {
+      toast.error(
+        error instanceof Error ? error.message : t("workspace.terminal.imagePaste.failed"),
+      );
+    });
+  }, [
+    handleTerminalImagePaste,
+    refreshClipboardAvailability,
+    requestTerminalReflow,
+    supportsImagePaste,
+    t,
+    toast,
+  ]);
 
   const handleTerminalCopy = useCallback(() => {
     void emulatorRef.current
@@ -1008,7 +1105,7 @@ export function TerminalPane({
         return showPasteAction ? (
           <TerminalPasteAction
             key={controlId}
-            hasClipboardText={hasClipboardText}
+            hasClipboardContent={(hasClipboardText || hasClipboardImage) && !isPastingImage}
             onPaste={handleTerminalPaste}
           />
         ) : null;
@@ -1066,6 +1163,8 @@ export function TerminalPane({
             onTerminalKey={handleTerminalKey}
             onInputModeChange={handleInputModeChange}
             onSelectionChange={handleSelectionChange}
+            onPasteImages={supportsImagePaste ? handleTerminalImagePaste : undefined}
+            onPasteImagesError={toast.error}
             onResolveLocalFileLink={handleResolveLocalFileLink}
             onOpenLocalFileLink={handleOpenLocalFileLink}
             onPendingModifiersConsumed={handlePendingModifiersConsumed}

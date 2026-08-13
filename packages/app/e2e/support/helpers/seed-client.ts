@@ -88,6 +88,7 @@ export interface SeedDaemonClient {
       cwd: string;
       title?: string;
       activity?: TerminalActivity | null;
+      capabilities?: { imagePaste?: boolean };
     }>;
     error?: string | null;
   }>;

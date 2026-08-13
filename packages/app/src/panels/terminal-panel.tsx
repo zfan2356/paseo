@@ -77,13 +77,35 @@ function useTerminalPanelDescriptor(
 
 function TerminalPanel() {
   const { serverId, workspaceId, target, openFileInWorkspace } = usePaneContext();
+  invariant(target.kind === "terminal", "TerminalPanel requires terminal target");
   const { isWorkspaceFocused, isPaneFocused } = usePaneFocus();
+  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const workspaceFields = useWorkspaceFields(serverId, workspaceId, (w) => ({
     workspaceDirectory: w.workspaceDirectory,
     isGitCheckout: w.projectKind === "git",
   }));
   const workspaceDirectory = workspaceFields?.workspaceDirectory || null;
   const isGitCheckout = workspaceFields?.isGitCheckout ?? false;
+  const terminalsQuery = useQuery(
+    {
+      queryKey: buildTerminalsQueryKey(serverId, workspaceDirectory, workspaceId || null),
+      enabled: Boolean(client && workspaceDirectory),
+      queryFn: async (): Promise<ListTerminalsPayload> => {
+        if (!client || !workspaceDirectory) {
+          throw new Error("Workspace directory not found");
+        }
+        return client.listTerminals(workspaceDirectory, undefined, {
+          workspaceId: workspaceId || undefined,
+        });
+      },
+      staleTime: 5_000,
+    },
+    queryClient,
+  );
+  const terminal = terminalsQuery.data?.terminals.find((entry) => entry.id === target.terminalId);
+  const supportsCodexTerminalImagePaste = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.codexTerminalImagePaste === true,
+  );
   const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
   const handleOpenFileExplorer = useCallback(() => {
     if (!workspaceDirectory) {
@@ -94,8 +116,6 @@ function TerminalPanel() {
       checkout: { serverId, cwd: workspaceDirectory, isGit: isGitCheckout },
     });
   }, [isGitCheckout, openFileExplorerForCheckout, serverId, workspaceDirectory]);
-  invariant(target.kind === "terminal", "TerminalPanel requires terminal target");
-
   if (!workspaceDirectory) {
     return (
       <View style={CENTERED_PADDED_STYLE}>
@@ -109,6 +129,9 @@ function TerminalPanel() {
       serverId={serverId}
       cwd={workspaceDirectory}
       terminalId={target.terminalId}
+      supportsImagePaste={
+        supportsCodexTerminalImagePaste && terminal?.capabilities?.imagePaste === true
+      }
       isWorkspaceFocused={isWorkspaceFocused}
       isPaneFocused={isPaneFocused}
       onOpenFileExplorer={handleOpenFileExplorer}

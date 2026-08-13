@@ -39,6 +39,11 @@ import {
   prepareDroppedPathsForTerminal,
 } from "../terminal/drop/terminal-file-drop";
 import { getDesktopHost } from "@/desktop/host";
+import { collectImageFilesFromClipboardData } from "@/utils/image-attachments-from-files";
+import {
+  createTerminalPastedImage,
+  type TerminalPastedImage,
+} from "@/terminal/runtime/terminal-image-paste";
 
 export interface TerminalEmulatorHandle {
   writeOutput: (data: TerminalOutputData) => void;
@@ -129,6 +134,8 @@ interface TerminalEmulatorProps {
   onPendingModifiersConsumed?: () => Promise<void> | void;
   onInputModeChange?: (state: TerminalInputModeState) => Promise<void> | void;
   onSelectionChange?: (hasSelection: boolean) => void;
+  onPasteImages?: (images: TerminalPastedImage[]) => Promise<void> | void;
+  onPasteImagesError?: (message: string) => void;
   onResolveLocalFileLink?: (
     source: TerminalLocalFileLinkSource,
   ) => Promise<TerminalLocalFileLinkTarget | null> | TerminalLocalFileLinkTarget | null;
@@ -178,6 +185,8 @@ export default function TerminalEmulator({
   onTerminalKey,
   onPendingModifiersConsumed,
   onInputModeChange,
+  onPasteImages,
+  onPasteImagesError,
   onResolveLocalFileLink,
   onOpenLocalFileLink,
   onRendererReadyChange,
@@ -642,6 +651,43 @@ export default function TerminalEmulator({
       clearDropActiveTimeout();
     };
   }, [clearDropActiveTimeout, clearTerminalDropActive, keepTerminalDropActive]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !onPasteImages) {
+      return () => {};
+    }
+
+    const handlePaste = (event: ClipboardEvent) => {
+      const files = collectImageFilesFromClipboardData(event.clipboardData);
+      if (files.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      runtimeRef.current?.focus();
+
+      void Promise.all(
+        files.map(async ({ file, mimeType }) =>
+          createTerminalPastedImage({
+            mimeType,
+            bytes: new Uint8Array(await file.arrayBuffer()),
+          }),
+        ),
+      )
+        .then((images) => onPasteImages(images))
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : "Failed to read pasted image.";
+          onPasteImagesError?.(message);
+        });
+    };
+
+    root.addEventListener("paste", handlePaste, { capture: true });
+    return () => {
+      root.removeEventListener("paste", handlePaste, { capture: true });
+    };
+  }, [onPasteImages, onPasteImagesError]);
 
   const handleRootDragLeave = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {

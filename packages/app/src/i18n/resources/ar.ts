@@ -544,6 +544,14 @@ export const ar: TranslationResources = {
       hostDisconnected: "Host غير متصل",
       updateHost: "حدّث المضيف لاستخدام عارض الطرفية الأصلي.",
       unableToSubscribe: "غير قادر على الاشتراك في المحطة",
+      imagePaste: {
+        uploading: "Uploading pasted image...",
+        inProgress: "A pasted image is already uploading.",
+        complete: "Attached {{count}} pasted image(s).",
+        failed: "Failed to paste the clipboard image.",
+        terminalChanged: "The active terminal changed before the image finished uploading.",
+        terminalUnavailable: "The terminal is not ready for image paste.",
+      },
     },
     tabs: {
       loading: "تحميل...",

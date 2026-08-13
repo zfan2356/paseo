@@ -548,6 +548,14 @@ export const ptBR: TranslationResources = {
       hostDisconnected: "Host não está conectado",
       updateHost: "Atualize o host para usar o renderizador de terminal nativo.",
       unableToSubscribe: "Não foi possível assinar o terminal",
+      imagePaste: {
+        uploading: "Uploading pasted image...",
+        inProgress: "A pasted image is already uploading.",
+        complete: "Attached {{count}} pasted image(s).",
+        failed: "Failed to paste the clipboard image.",
+        terminalChanged: "The active terminal changed before the image finished uploading.",
+        terminalUnavailable: "The terminal is not ready for image paste.",
+      },
     },
     tabs: {
       loading: "Carregando...",

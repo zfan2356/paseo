@@ -544,6 +544,14 @@ export const zhCN: TranslationResources = {
       hostDisconnected: "Host 未连接",
       updateHost: "请更新主机以使用原生终端渲染器。",
       unableToSubscribe: "无法订阅 Terminal",
+      imagePaste: {
+        uploading: "正在上传粘贴的图片...",
+        inProgress: "已有一张粘贴图片正在上传。",
+        complete: "已附加 {{count}} 张粘贴图片。",
+        failed: "无法粘贴剪贴板图片。",
+        terminalChanged: "图片上传完成前，当前 Terminal 已发生变化。",
+        terminalUnavailable: "Terminal 尚未准备好接收图片。",
+      },
     },
     tabs: {
       loading: "正在加载...",

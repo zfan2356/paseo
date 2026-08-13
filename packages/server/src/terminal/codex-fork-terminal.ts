@@ -29,6 +29,8 @@ export interface CodexForkTerminalLaunch {
   args: string[];
 }
 
+export const CODEX_FORK_TERMINAL_NAME = "Codex Fork";
+
 const CODEX_MODE_PRESETS: Record<
   string,
   { approvalPolicy: string; sandboxMode: string; approvalsReviewer?: string }
@@ -196,7 +198,7 @@ export function buildCodexForkTerminalLaunch(
 
   args.push("--cd", source.cwd, threadId);
   return {
-    name: "Codex Fork",
+    name: CODEX_FORK_TERMINAL_NAME,
     command: "codex",
     args,
   };

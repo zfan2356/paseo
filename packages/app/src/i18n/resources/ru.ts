@@ -548,6 +548,14 @@ export const ru: TranslationResources = {
       hostDisconnected: "Host не подключен",
       updateHost: "Обновите хост, чтобы использовать нативный терминал.",
       unableToSubscribe: "Невозможно подписаться на терминал",
+      imagePaste: {
+        uploading: "Uploading pasted image...",
+        inProgress: "A pasted image is already uploading.",
+        complete: "Attached {{count}} pasted image(s).",
+        failed: "Failed to paste the clipboard image.",
+        terminalChanged: "The active terminal changed before the image finished uploading.",
+        terminalUnavailable: "The terminal is not ready for image paste.",
+      },
     },
     tabs: {
       loading: "Загрузка...",

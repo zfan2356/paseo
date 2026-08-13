@@ -36,9 +36,13 @@ import type { TerminalManager, TerminalsChangedEvent } from "./terminal-manager.
 import { applyTerminalSize } from "./terminal-size-ownership.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import { terminalSubscriptionKey } from "@getpaseo/protocol/terminal-subscription-key";
-import type { CodexForkTerminalLaunch } from "./codex-fork-terminal.js";
+import { CODEX_FORK_TERMINAL_NAME, type CodexForkTerminalLaunch } from "./codex-fork-terminal.js";
 
 const MAX_TERMINAL_STREAM_SLOTS = 256;
+
+function getTerminalCapabilities(name: string): { imagePaste: true } | undefined {
+  return name === CODEX_FORK_TERMINAL_NAME ? { imagePaste: true } : undefined;
+}
 
 interface BufferedTerminalOutput {
   data: string;
@@ -327,13 +331,20 @@ export class TerminalSessionController {
       workspaceId: string;
       title?: string;
       activity: TerminalActivity | null;
+      capabilities?: { imagePaste: true };
     }>;
   }): void {
     this.emit({
       type: "terminals_changed",
       payload: {
         cwd: input.cwd,
-        terminals: input.terminals,
+        terminals: input.terminals.map((terminal) => {
+          const capabilities = getTerminalCapabilities(terminal.name);
+          return {
+            ...terminal,
+            ...(capabilities ? { capabilities } : {}),
+          };
+        }),
       },
     });
   }
@@ -346,15 +357,18 @@ export class TerminalSessionController {
     workspaceId: string;
     title?: string;
     activity: TerminalActivity | null;
+    capabilities?: { imagePaste: true };
   } {
     const title = terminal.getTitle();
     const activity = terminal.getActivity();
+    const capabilities = getTerminalCapabilities(terminal.name);
     return {
       id: terminal.id,
       name: terminal.name,
       workspaceId: terminal.workspaceId,
       ...(title ? { title } : {}),
       activity,
+      ...(capabilities ? { capabilities } : {}),
     };
   }
 
@@ -572,12 +586,8 @@ export class TerminalSessionController {
         type: "create_terminal_response",
         payload: {
           terminal: {
-            id: session.id,
-            name: session.name,
+            ...this.toTerminalInfo(session),
             cwd: session.cwd,
-            workspaceId: session.workspaceId,
-            ...(session.getTitle() ? { title: session.getTitle() } : {}),
-            activity: session.getActivity(),
           },
           error: null,
           requestId: msg.requestId,

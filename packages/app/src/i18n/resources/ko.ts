@@ -545,6 +545,14 @@ export const ko: TranslationResources = {
       hostDisconnected: "호스트가 연결되어 있지 않습니다",
       updateHost: "기본 터미널 렌더러를 사용하도록 호스트를 업데이트합니다.",
       unableToSubscribe: "터미널을 구독할 수 없습니다",
+      imagePaste: {
+        uploading: "Uploading pasted image...",
+        inProgress: "A pasted image is already uploading.",
+        complete: "Attached {{count}} pasted image(s).",
+        failed: "Failed to paste the clipboard image.",
+        terminalChanged: "The active terminal changed before the image finished uploading.",
+        terminalUnavailable: "The terminal is not ready for image paste.",
+      },
     },
     tabs: {
       loading: "불러오는 중...",

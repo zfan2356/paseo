@@ -3096,6 +3096,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentForkContextCursor: z.boolean().optional(),
         // COMPAT(codexForkTerminal): added in the custom fork on 2026-08-13.
         codexForkTerminal: z.boolean().optional(),
+        // COMPAT(codexTerminalImagePaste): added in the custom fork on 2026-08-13.
+        codexTerminalImagePaste: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.
@@ -5390,6 +5392,11 @@ const TerminalInfoSchema = z.object({
   workspaceId: z.string().optional(),
   title: z.string().optional(),
   activity: TerminalActivitySchema.nullable().optional(),
+  capabilities: z
+    .object({
+      imagePaste: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const TerminalCellSchema = z.object({
