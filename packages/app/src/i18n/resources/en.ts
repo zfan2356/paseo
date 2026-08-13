@@ -661,7 +661,7 @@ export const en = {
         newAgent: "New agent",
         newTerminal: "New terminal",
         forkToCodexTerminal: "Fork conversation to Codex terminal",
-        switchToCodexTerminal: "Switch to Codex terminal",
+        switchToConversationTerminal: "Switch to terminal view",
         switchToAgentView: "Switch to Agent view",
         newBrowser: "New browser tab",
         importSession: "Import session",
@@ -670,7 +670,7 @@ export const en = {
         showSetup: "Show setup",
       },
       toasts: {
-        codexViewSwitchFailed: "Failed to switch conversation view",
+        conversationViewSwitchFailed: "Failed to switch conversation view",
         workspacePathUnavailable: "Workspace path is not available yet",
         branchNameUnavailable: "Branch name not available",
         terminalQueued: "Preparing workspace, opening terminal when ready...",

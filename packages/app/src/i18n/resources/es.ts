@@ -669,7 +669,7 @@ export const es: TranslationResources = {
         newAgent: "Nuevo agente",
         newTerminal: "Nueva terminal",
         forkToCodexTerminal: "Bifurcar conversación a terminal Codex",
-        switchToCodexTerminal: "Cambiar al terminal Codex",
+        switchToConversationTerminal: "Cambiar a la vista de terminal",
         switchToAgentView: "Cambiar a la vista Agent",
         newBrowser: "Nueva pestaña del navegador",
         importSession: "Importar sesión",
@@ -678,7 +678,7 @@ export const es: TranslationResources = {
         showSetup: "Mostrar configuración",
       },
       toasts: {
-        codexViewSwitchFailed: "No se pudo cambiar la vista de la conversación",
+        conversationViewSwitchFailed: "No se pudo cambiar la vista de la conversación",
         workspacePathUnavailable: "La rutaWorkspaceaún no está disponible",
         branchNameUnavailable: "Nombre de la sucursal no disponible",
         terminalQueued:

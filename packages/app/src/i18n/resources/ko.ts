@@ -664,7 +664,7 @@ export const ko: TranslationResources = {
         newAgent: "새 에이전트",
         newTerminal: "새 터미널",
         forkToCodexTerminal: "대화를 Codex 터미널로 포크",
-        switchToCodexTerminal: "Codex 터미널로 전환",
+        switchToConversationTerminal: "터미널 보기로 전환",
         switchToAgentView: "Agent 보기로 전환",
         newBrowser: "새 브라우저 탭",
         importSession: "세션 가져오기",
@@ -673,7 +673,7 @@ export const ko: TranslationResources = {
         showSetup: "설정 표시",
       },
       toasts: {
-        codexViewSwitchFailed: "대화 보기 전환에 실패했습니다",
+        conversationViewSwitchFailed: "대화 보기 전환에 실패했습니다",
         workspacePathUnavailable: "워크스페이스 경로를 아직 사용할 수 없습니다",
         branchNameUnavailable: "브랜치 이름을 사용할 수 없습니다",
         terminalQueued: "워크스페이스 준비 중, 준비되면 터미널을 엽니다...",

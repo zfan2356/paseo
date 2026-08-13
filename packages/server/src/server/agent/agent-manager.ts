@@ -6,8 +6,8 @@ import {
   type AgentLifecycleStatus,
 } from "@getpaseo/protocol/agent-lifecycle";
 import {
-  CODEX_TERMINAL_OWNER_LABEL,
-  getCodexTerminalOwnerId,
+  AGENT_TERMINAL_OWNER_LABEL,
+  getAgentTerminalOwnerId,
   getParentAgentIdFromLabels,
   hasOpenAgentTab,
   isDelegatedAgent,
@@ -18,6 +18,11 @@ import type { Logger } from "pino";
 import type { ProviderOptions, ToolPolicy } from "@getpaseo/protocol/agent-types";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
+import {
+  isAgentConversationTerminalProvider,
+  resolveAgentConversationSessionId,
+} from "../../terminal/codex-fork-terminal.js";
+import { syncCursorConversationTerminalStore } from "../../terminal/cursor-conversation-store.js";
 
 import {
   getAgentStreamEventTurnId,
@@ -756,12 +761,12 @@ export class AgentManager {
   async assertAgentRuntimeAvailable(agentId: string): Promise<void> {
     const claimedOwnerId = this.externalRuntimeOwners.get(agentId);
     if (claimedOwnerId) {
-      throw new Error(`Agent '${agentId}' is open in Codex terminal '${claimedOwnerId}'`);
+      throw new Error(`Agent '${agentId}' is open in conversation terminal '${claimedOwnerId}'`);
     }
 
-    const liveOwnerId = getCodexTerminalOwnerId(this.agents.get(agentId)?.labels);
+    const liveOwnerId = getAgentTerminalOwnerId(this.agents.get(agentId)?.labels);
     const storedRecord = liveOwnerId || !this.registry ? null : await this.registry.get(agentId);
-    const ownerId = liveOwnerId ?? getCodexTerminalOwnerId(storedRecord?.labels);
+    const ownerId = liveOwnerId ?? getAgentTerminalOwnerId(storedRecord?.labels);
     if (!ownerId) {
       return;
     }
@@ -770,7 +775,7 @@ export class AgentManager {
       ? await this.externalRuntimeOwnerResolver(agentId, ownerId)
       : true;
     if (ownerIsActive) {
-      throw new Error(`Agent '${agentId}' is open in Codex terminal '${ownerId}'`);
+      throw new Error(`Agent '${agentId}' is open in conversation terminal '${ownerId}'`);
     }
 
     await this.releaseAgentExternalRuntime(agentId, ownerId);
@@ -785,19 +790,26 @@ export class AgentManager {
     const claim = this.runLifecycleMutation(agentId, async () => {
       const liveAgent = this.getAgent(agentId);
       if (liveAgent) {
+        if (!isAgentConversationTerminalProvider(liveAgent.provider)) {
+          throw new Error(
+            `Provider '${liveAgent.provider}' does not support a conversation terminal`,
+          );
+        }
         if (
           (liveAgent.lifecycle !== "idle" && liveAgent.lifecycle !== "error") ||
           liveAgent.activeForegroundTurnId ||
           this.runs.hasRun(agentId)
         ) {
           throw new Error(
-            "Wait for the current Agent turn to finish before opening Codex terminal",
+            "Wait for the current Agent turn to finish before opening the conversation terminal",
           );
         }
         if (liveAgent.pendingPermissions.size > 0) {
-          throw new Error("Resolve the pending Agent permission before opening Codex terminal");
+          throw new Error(
+            "Resolve the pending Agent permission before opening the conversation terminal",
+          );
         }
-        await this.writeLabels(agentId, { [CODEX_TERMINAL_OWNER_LABEL]: ownerId });
+        await this.writeLabels(agentId, { [AGENT_TERMINAL_OWNER_LABEL]: ownerId });
         await this.closeAgent(agentId);
         return;
       }
@@ -806,19 +818,19 @@ export class AgentManager {
       if (!record) {
         throw new Error(`Agent not found: ${agentId}`);
       }
-      if (record.provider !== "codex") {
-        throw new Error("Only Codex agents can be opened in Codex terminal");
+      if (!isAgentConversationTerminalProvider(record.provider)) {
+        throw new Error(`Provider '${record.provider}' does not support a conversation terminal`);
       }
       if (record.archivedAt) {
         throw new Error(`Agent is archived: ${agentId}`);
       }
-      await this.writeLabels(agentId, { [CODEX_TERMINAL_OWNER_LABEL]: ownerId });
+      await this.writeLabels(agentId, { [AGENT_TERMINAL_OWNER_LABEL]: ownerId });
     });
 
     return claim.catch(async (error) => {
       this.externalRuntimeOwners.delete(agentId);
       try {
-        await this.writeLabels(agentId, { [CODEX_TERMINAL_OWNER_LABEL]: null });
+        await this.writeLabels(agentId, { [AGENT_TERMINAL_OWNER_LABEL]: null });
       } catch {
         // The original claim error is more useful than best-effort lease cleanup.
       }
@@ -828,18 +840,31 @@ export class AgentManager {
 
   async releaseAgentExternalRuntime(agentId: string, ownerId: string): Promise<void> {
     await this.runLifecycleMutation(agentId, async () => {
-      const liveOwnerId = getCodexTerminalOwnerId(this.agents.get(agentId)?.labels);
+      const liveAgent = this.agents.get(agentId);
+      const liveOwnerId = getAgentTerminalOwnerId(liveAgent?.labels);
       const record = liveOwnerId || !this.registry ? null : await this.registry.get(agentId);
-      const persistedOwnerId = liveOwnerId ?? getCodexTerminalOwnerId(record?.labels);
+      const persistedOwnerId = liveOwnerId ?? getAgentTerminalOwnerId(record?.labels);
       const claimedOwnerId = this.externalRuntimeOwners.get(agentId);
       const currentOwnerId = claimedOwnerId ?? persistedOwnerId;
       if (!currentOwnerId) {
         return;
       }
       if (currentOwnerId !== ownerId) {
-        throw new Error(`Agent '${agentId}' is owned by a different Codex terminal`);
+        throw new Error(`Agent '${agentId}' is owned by a different conversation terminal`);
       }
-      await this.writeLabels(agentId, { [CODEX_TERMINAL_OWNER_LABEL]: null });
+      const sourceAgent = liveAgent ?? record;
+      if (sourceAgent?.provider === "cursor") {
+        const sessionId = resolveAgentConversationSessionId({
+          provider: sourceAgent.provider,
+          cwd: sourceAgent.cwd,
+          persistence: sourceAgent.persistence ?? null,
+          runtimeInfo: sourceAgent.runtimeInfo,
+        });
+        if (sessionId) {
+          await syncCursorConversationTerminalStore({ cwd: sourceAgent.cwd, sessionId });
+        }
+      }
+      await this.writeLabels(agentId, { [AGENT_TERMINAL_OWNER_LABEL]: null });
       this.externalRuntimeOwners.delete(agentId);
     });
   }

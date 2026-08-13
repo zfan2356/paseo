@@ -28,9 +28,11 @@ import type {
 } from "../terminal/terminal-manager.js";
 import { TerminalSessionController } from "../terminal/terminal-session-controller.js";
 import {
-  buildCodexConversationTerminalLaunch,
-  type CodexConversationTerminalSource,
+  buildAgentConversationTerminalLaunch,
+  resolveAgentConversationSessionId,
+  type AgentConversationTerminalSource,
 } from "../terminal/codex-fork-terminal.js";
+import { prepareCursorConversationTerminalStore } from "../terminal/cursor-conversation-store.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type { BinaryFrame } from "@getpaseo/protocol/binary-frames/index";
 import { CursorError } from "./pagination/cursor.js";
@@ -1304,16 +1306,16 @@ export class Session {
 
     if (sourceAgent.workspaceId) {
       if (sourceAgent.workspaceId !== input.workspaceId) {
-        throw new Error("The Codex conversation belongs to a different workspace");
+        throw new Error("The Agent conversation belongs to a different workspace");
       }
     } else if (
       !this.isPathWithinRoot(sourceAgent.cwd, input.cwd) ||
       !this.isPathWithinRoot(input.cwd, sourceAgent.cwd)
     ) {
-      throw new Error("The Codex conversation belongs to a different workspace path");
+      throw new Error("The Agent conversation belongs to a different workspace path");
     }
 
-    const source: CodexConversationTerminalSource = liveAgent
+    const source: AgentConversationTerminalSource = liveAgent
       ? {
           provider: liveAgent.provider,
           cwd: liveAgent.cwd,
@@ -1334,8 +1336,30 @@ export class Session {
           config: storedAgent!.config,
           features: storedAgent!.features,
         };
-    const launch = buildCodexConversationTerminalLaunch(source);
+    const launch = buildAgentConversationTerminalLaunch(source);
     await this.agentManager.claimAgentExternalRuntime(input.agentId, input.terminalId);
+    if (launch.provider === "cursor") {
+      try {
+        await prepareCursorConversationTerminalStore({
+          cwd: source.cwd,
+          sessionId: resolveAgentConversationSessionId(source)!,
+          configDir: launch.env?.CURSOR_CONFIG_DIR,
+        });
+      } catch (error) {
+        try {
+          await this.resumeAgentFromTerminal({
+            agentId: input.agentId,
+            terminalId: input.terminalId,
+          });
+        } catch (restoreError) {
+          this.sessionLogger.warn(
+            { err: restoreError, agentId: input.agentId, terminalId: input.terminalId },
+            "Failed to restore Cursor Agent after conversation store handoff failure",
+          );
+        }
+        throw error;
+      }
+    }
     return launch;
   }
 

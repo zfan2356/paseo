@@ -3,8 +3,9 @@ import type {
   AgentPersistenceHandle,
   AgentRuntimeInfo,
 } from "../server/agent/agent-sdk-types.js";
+import { resolveCursorConfigDirectory } from "./cursor-conversation-store.js";
 
-interface CodexConversationTerminalConfig {
+interface AgentConversationTerminalConfig {
   model?: string | null;
   thinkingOptionId?: string | null;
   modeId?: string | null;
@@ -12,25 +13,93 @@ interface CodexConversationTerminalConfig {
   providerOptions?: Record<string, unknown> | null;
 }
 
-export interface CodexConversationTerminalSource {
+export interface AgentConversationTerminalSource {
   provider: string;
   cwd: string;
   workspaceId?: string;
   persistence: AgentPersistenceHandle | null;
   runtimeInfo?: AgentRuntimeInfo | null;
   currentModeId?: string | null;
-  config?: CodexConversationTerminalConfig | null;
+  config?: AgentConversationTerminalConfig | null;
   features?: AgentFeature[] | null;
 }
 
-export interface CodexConversationTerminalLaunch {
+export interface AgentConversationTerminalLaunch {
+  provider: AgentConversationTerminalProvider;
   name: string;
   command: string;
   args: string[];
+  env?: Record<string, string>;
 }
 
 export const CODEX_CONVERSATION_TERMINAL_NAME = "Codex Conversation";
+export type AgentConversationTerminalProvider = "codex" | "claude" | "cursor";
+
+const AGENT_CONVERSATION_TERMINAL_NAMES: Record<AgentConversationTerminalProvider, string> = {
+  codex: CODEX_CONVERSATION_TERMINAL_NAME,
+  claude: "Claude Code Conversation",
+  cursor: "Cursor Conversation",
+};
+const AGENT_CONVERSATION_TERMINAL_PREFIX = "__paseo_agent_conversation__:";
 const CODEX_CONVERSATION_TERMINAL_PREFIX = "__paseo_codex_conversation__:";
+
+export type CodexConversationTerminalSource = AgentConversationTerminalSource;
+export type CodexConversationTerminalLaunch = AgentConversationTerminalLaunch;
+
+export function isAgentConversationTerminalProvider(
+  provider: string,
+): provider is AgentConversationTerminalProvider {
+  return provider === "codex" || provider === "claude" || provider === "cursor";
+}
+
+export function getAgentConversationTerminalDisplayName(
+  provider: AgentConversationTerminalProvider,
+): string {
+  return AGENT_CONVERSATION_TERMINAL_NAMES[provider];
+}
+
+export function buildAgentConversationTerminalName(
+  agentId: string,
+  provider: AgentConversationTerminalProvider,
+): string {
+  return `${AGENT_CONVERSATION_TERMINAL_PREFIX}${provider}:${encodeURIComponent(agentId)}`;
+}
+
+export function parseAgentConversationTerminalLink(
+  name: string,
+): { agentId: string; provider: AgentConversationTerminalProvider } | null {
+  if (name.startsWith(AGENT_CONVERSATION_TERMINAL_PREFIX)) {
+    const encodedLink = name.slice(AGENT_CONVERSATION_TERMINAL_PREFIX.length);
+    const separatorIndex = encodedLink.indexOf(":");
+    if (separatorIndex <= 0) return null;
+    const provider = encodedLink.slice(0, separatorIndex);
+    if (!isAgentConversationTerminalProvider(provider)) return null;
+    const encodedAgentId = encodedLink.slice(separatorIndex + 1).trim();
+    if (!encodedAgentId) return null;
+    try {
+      const agentId = decodeURIComponent(encodedAgentId).trim();
+      return agentId ? { agentId, provider } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const legacyCodexAgentId = parseCodexConversationTerminalAgentId(name);
+  return legacyCodexAgentId ? { agentId: legacyCodexAgentId, provider: "codex" } : null;
+}
+
+export function getAgentConversationTerminalProvider(
+  name: string,
+): AgentConversationTerminalProvider | null {
+  const linkedProvider = parseAgentConversationTerminalLink(name)?.provider;
+  if (linkedProvider) return linkedProvider;
+  for (const provider of Object.keys(
+    AGENT_CONVERSATION_TERMINAL_NAMES,
+  ) as AgentConversationTerminalProvider[]) {
+    if (AGENT_CONVERSATION_TERMINAL_NAMES[provider] === name) return provider;
+  }
+  return null;
+}
 
 export function buildCodexConversationTerminalName(agentId: string): string {
   return `${CODEX_CONVERSATION_TERMINAL_PREFIX}${agentId}`;
@@ -109,7 +178,7 @@ function pushConfigArg(args: string[], key: string, value: unknown): void {
 }
 
 function resolveFeatureToggle(
-  source: CodexConversationTerminalSource,
+  source: AgentConversationTerminalSource,
   featureId: string,
 ): boolean | null {
   if (source.features !== null && source.features !== undefined) {
@@ -157,7 +226,7 @@ function appendProviderOptions(args: string[], providerOptions: Record<string, u
 
 function appendModelAndPerformanceArgs(
   args: string[],
-  source: CodexConversationTerminalSource,
+  source: AgentConversationTerminalSource,
 ): void {
   const model = nonEmptyString(source.runtimeInfo?.model ?? source.config?.model);
   if (model) {
@@ -177,7 +246,7 @@ function appendModelAndPerformanceArgs(
   }
 }
 
-function appendPermissionArgs(args: string[], source: CodexConversationTerminalSource): void {
+function appendPermissionArgs(args: string[], source: AgentConversationTerminalSource): void {
   const providerOptions = source.config?.providerOptions;
   const modeId = nonEmptyString(source.config ? source.config.modeId : source.currentModeId);
   const modePreset = modeId ? CODEX_MODE_PRESETS[modeId] : undefined;
@@ -195,6 +264,128 @@ function appendPermissionArgs(args: string[], source: CodexConversationTerminalS
   }
 }
 
+export function resolveAgentConversationSessionId(
+  source: AgentConversationTerminalSource,
+): string | null {
+  return nonEmptyString(
+    source.persistence?.nativeHandle ??
+      source.persistence?.sessionId ??
+      source.runtimeInfo?.sessionId,
+  );
+}
+
+function buildCodexLaunch(
+  source: AgentConversationTerminalSource,
+  threadId: string,
+): AgentConversationTerminalLaunch {
+  const args = ["resume", "--include-non-interactive"];
+  appendModelAndPerformanceArgs(args, source);
+  appendPermissionArgs(args, source);
+
+  args.push("--cd", source.cwd, threadId);
+  return {
+    provider: "codex",
+    name: CODEX_CONVERSATION_TERMINAL_NAME,
+    command: "codex",
+    args,
+  };
+}
+
+function resolveActiveMode(source: AgentConversationTerminalSource): string | null {
+  return nonEmptyString(
+    source.currentModeId ?? source.runtimeInfo?.modeId ?? source.config?.modeId,
+  );
+}
+
+const CLAUDE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
+const CLAUDE_PERMISSION_MODES = new Set([
+  "plan",
+  "default",
+  "acceptEdits",
+  "auto",
+  "bypassPermissions",
+]);
+
+function buildClaudeLaunch(
+  source: AgentConversationTerminalSource,
+  sessionId: string,
+): AgentConversationTerminalLaunch {
+  const args = ["--resume", sessionId];
+  const model = nonEmptyString(source.runtimeInfo?.model ?? source.config?.model);
+  if (model) {
+    args.push("--model", model);
+  }
+
+  const effort = nonEmptyString(
+    source.runtimeInfo?.thinkingOptionId ?? source.config?.thinkingOptionId,
+  );
+  if (effort && CLAUDE_EFFORT_LEVELS.has(effort)) {
+    args.push("--effort", effort);
+  }
+
+  const mode = resolveActiveMode(source);
+  if (mode && CLAUDE_PERMISSION_MODES.has(mode)) {
+    args.push("--permission-mode", mode);
+  }
+
+  return {
+    provider: "claude",
+    name: AGENT_CONVERSATION_TERMINAL_NAMES.claude,
+    command: "claude",
+    args,
+  };
+}
+
+function buildCursorLaunch(
+  source: AgentConversationTerminalSource,
+  sessionId: string,
+): AgentConversationTerminalLaunch {
+  const args = ["--resume", sessionId, "--workspace", source.cwd, "--trust"];
+  const model = nonEmptyString(source.runtimeInfo?.model ?? source.config?.model);
+  if (model) {
+    args.push("--model", model);
+  }
+
+  const mode = resolveActiveMode(source);
+  if (mode === "plan" || mode === "ask") {
+    args.push("--mode", mode);
+  }
+
+  if (source.config?.featureValues?.auto_accept === true) {
+    args.push("--yolo");
+  }
+
+  return {
+    provider: "cursor",
+    name: AGENT_CONVERSATION_TERMINAL_NAMES.cursor,
+    command: "cursor-agent",
+    args,
+    env: { CURSOR_CONFIG_DIR: resolveCursorConfigDirectory(source.cwd) },
+  };
+}
+
+export function buildAgentConversationTerminalLaunch(
+  source: AgentConversationTerminalSource,
+): AgentConversationTerminalLaunch {
+  if (!isAgentConversationTerminalProvider(source.provider)) {
+    throw new Error(`Provider '${source.provider}' does not support a conversation terminal`);
+  }
+
+  const sessionId = resolveAgentConversationSessionId(source);
+  if (!sessionId) {
+    throw new Error(`The ${source.provider} conversation does not have a resumable session id yet`);
+  }
+
+  switch (source.provider) {
+    case "codex":
+      return buildCodexLaunch(source, sessionId);
+    case "claude":
+      return buildClaudeLaunch(source, sessionId);
+    case "cursor":
+      return buildCursorLaunch(source, sessionId);
+  }
+}
+
 export function buildCodexConversationTerminalLaunch(
   source: CodexConversationTerminalSource,
 ): CodexConversationTerminalLaunch {
@@ -202,23 +393,9 @@ export function buildCodexConversationTerminalLaunch(
     throw new Error("Only Codex conversations can be opened in a Codex terminal");
   }
 
-  const threadId = nonEmptyString(
-    source.persistence?.nativeHandle ??
-      source.persistence?.sessionId ??
-      source.runtimeInfo?.sessionId,
-  );
+  const threadId = resolveAgentConversationSessionId(source);
   if (!threadId) {
     throw new Error("The Codex conversation does not have a resumable thread id yet");
   }
-
-  const args = ["resume", "--include-non-interactive"];
-  appendModelAndPerformanceArgs(args, source);
-  appendPermissionArgs(args, source);
-
-  args.push("--cd", source.cwd, threadId);
-  return {
-    name: CODEX_CONVERSATION_TERMINAL_NAME,
-    command: "codex",
-    args,
-  };
+  return buildCodexLaunch(source, threadId);
 }

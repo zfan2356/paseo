@@ -286,10 +286,13 @@ const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
 const GATED_WORKSPACE_HEADER_LEFT = <SidebarMenuToggle />;
 
-function useCodexConversationAgentId(input: {
+const AGENT_CONVERSATION_TERMINAL_PROVIDERS = new Set(["codex", "claude", "cursor"]);
+
+function useAgentConversationAgentId(input: {
   activeTab: WorkspaceTabDescriptor | null;
   serverId: string;
   supported: boolean;
+  supportsLegacyCodex: boolean;
 }): string | null {
   const activeAgentId =
     input.activeTab?.target.kind === "agent" ? input.activeTab.target.agentId : null;
@@ -299,8 +302,9 @@ function useCodexConversationAgentId(input: {
     return session?.agents?.get(activeAgentId) ?? session?.agentDetails?.get(activeAgentId) ?? null;
   });
   if (
-    !input.supported ||
-    activeAgent?.provider !== "codex" ||
+    (!input.supported && !(input.supportsLegacyCodex && activeAgent?.provider === "codex")) ||
+    !activeAgent?.provider ||
+    !AGENT_CONVERSATION_TERMINAL_PROVIDERS.has(activeAgent.provider) ||
     !activeAgent.persistence?.sessionId ||
     activeAgent.archivedAt
   ) {
@@ -1784,7 +1788,12 @@ function WorkspaceScreenContent({
   const supportsProvidersSnapshot = useSessionStore(
     (state) => state.sessions[normalizedServerId]?.serverInfo?.features?.providersSnapshot === true,
   );
-  const supportsCodexConversationViewSwitch = useSessionStore(
+  const supportsAgentConversationViewSwitch = useSessionStore(
+    (state) =>
+      state.sessions[normalizedServerId]?.serverInfo?.features?.agentConversationViewSwitch ===
+      true,
+  );
+  const supportsLegacyCodexConversationViewSwitch = useSessionStore(
     (state) =>
       state.sessions[normalizedServerId]?.serverInfo?.features?.codexConversationViewSwitch ===
       true,
@@ -3325,41 +3334,58 @@ function WorkspaceScreenContent({
   });
 
   const activeTabDescriptor = useMemo(() => activeTab?.descriptor ?? null, [activeTab]);
-  const codexConversationAgentId = useCodexConversationAgentId({
+  const agentConversationAgentId = useAgentConversationAgentId({
     activeTab: activeTabDescriptor,
     serverId: normalizedServerId,
-    supported: supportsCodexConversationViewSwitch,
+    supported: supportsAgentConversationViewSwitch,
+    supportsLegacyCodex: supportsLegacyCodexConversationViewSwitch,
   });
-  const activeCodexConversationTerminal = useMemo(() => {
-    if (!supportsCodexConversationViewSwitch || activeTabDescriptor?.target.kind !== "terminal") {
+  const activeAgentConversationTerminal = useMemo(() => {
+    if (
+      (!supportsAgentConversationViewSwitch && !supportsLegacyCodexConversationViewSwitch) ||
+      activeTabDescriptor?.target.kind !== "terminal"
+    ) {
       return null;
     }
     const terminalId = activeTabDescriptor.target.terminalId;
-    return (
-      terminals.find((terminal) => terminal.id === terminalId && terminal.linkedAgentId) ?? null
-    );
-  }, [activeTabDescriptor, supportsCodexConversationViewSwitch, terminals]);
-  const [isSwitchingCodexConversationView, setIsSwitchingCodexConversationView] = useState(false);
-  const handleToggleCodexConversationView = useCallback(async () => {
-    if (codexConversationAgentId) {
+    const terminal =
+      terminals.find((candidate) => candidate.id === terminalId && candidate.linkedAgentId) ?? null;
+    if (
+      terminal &&
+      (supportsAgentConversationViewSwitch || terminal.name === "Codex Conversation")
+    ) {
+      return terminal;
+    }
+    return null;
+  }, [
+    activeTabDescriptor,
+    supportsAgentConversationViewSwitch,
+    supportsLegacyCodexConversationViewSwitch,
+    terminals,
+  ]);
+  const [isSwitchingAgentConversationView, setIsSwitchingAgentConversationView] = useState(false);
+  const handleToggleAgentConversationView = useCallback(async () => {
+    if (agentConversationAgentId) {
       if (!activeTabDescriptor) return;
       createTerminal({
-        agentId: codexConversationAgentId,
+        agentId: agentConversationAgentId,
         replaceTabId: activeTabDescriptor.tabId,
       });
       return;
     }
 
-    const terminal = activeCodexConversationTerminal;
+    const terminal = activeAgentConversationTerminal;
     if (!terminal?.linkedAgentId || !client || !persistenceKey || !activeTabDescriptor) {
       return;
     }
 
-    setIsSwitchingCodexConversationView(true);
+    setIsSwitchingAgentConversationView(true);
     try {
-      const result = await client.switchCodexTerminalToAgent(terminal.id);
+      const result = supportsAgentConversationViewSwitch
+        ? await client.switchAgentTerminalToAgent(terminal.id)
+        : await client.switchCodexTerminalToAgent(terminal.id);
       if (!result.success || !result.agentId) {
-        throw new Error(result.error ?? t("workspace.header.toasts.codexViewSwitchFailed"));
+        throw new Error(result.error ?? t("workspace.header.toasts.conversationViewSwitchFailed"));
       }
       removeTerminalFromCache(terminal.id);
       try {
@@ -3380,21 +3406,24 @@ function WorkspaceScreenContent({
       }
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : t("workspace.header.toasts.codexViewSwitchFailed"),
+        error instanceof Error
+          ? error.message
+          : t("workspace.header.toasts.conversationViewSwitchFailed"),
       );
     } finally {
-      setIsSwitchingCodexConversationView(false);
+      setIsSwitchingAgentConversationView(false);
     }
   }, [
-    activeCodexConversationTerminal,
+    activeAgentConversationTerminal,
     activeTabDescriptor,
     client,
-    codexConversationAgentId,
+    agentConversationAgentId,
     createTerminal,
     normalizedServerId,
     persistenceKey,
     removeTerminalFromCache,
     retargetWorkspaceTab,
+    supportsAgentConversationViewSwitch,
     t,
     toast,
   ]);
@@ -3649,13 +3678,13 @@ function WorkspaceScreenContent({
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
-        {codexConversationAgentId || activeCodexConversationTerminal ? (
+        {agentConversationAgentId || activeAgentConversationTerminal ? (
           <HeaderToggleButton
-            testID="workspace-toggle-codex-conversation-view"
-            onPress={handleToggleCodexConversationView}
+            testID="workspace-toggle-agent-conversation-view"
+            onPress={handleToggleAgentConversationView}
             tooltipLabel={t(
-              codexConversationAgentId
-                ? "workspace.header.actions.switchToCodexTerminal"
+              agentConversationAgentId
+                ? "workspace.header.actions.switchToConversationTerminal"
                 : "workspace.header.actions.switchToAgentView",
             )}
             tooltipKeys={[]}
@@ -3663,15 +3692,15 @@ function WorkspaceScreenContent({
             style={isMobile ? styles.headerActionButton : styles.compactHeaderActionButton}
             disabled={
               createTerminalDisabled ||
-              isSwitchingCodexConversationView ||
+              isSwitchingAgentConversationView ||
               !isConnected ||
               !workspaceDirectory
             }
             accessible
             accessibilityRole="button"
             accessibilityLabel={t(
-              codexConversationAgentId
-                ? "workspace.header.actions.switchToCodexTerminal"
+              agentConversationAgentId
+                ? "workspace.header.actions.switchToConversationTerminal"
                 : "workspace.header.actions.switchToAgentView",
             )}
           >
@@ -3806,10 +3835,10 @@ function WorkspaceScreenContent({
     ),
     [
       isMobile,
-      codexConversationAgentId,
-      activeCodexConversationTerminal,
-      handleToggleCodexConversationView,
-      isSwitchingCodexConversationView,
+      agentConversationAgentId,
+      activeAgentConversationTerminal,
+      handleToggleAgentConversationView,
+      isSwitchingAgentConversationView,
       createTerminalDisabled,
       isConnected,
       workspaceDescriptor,

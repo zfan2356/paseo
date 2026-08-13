@@ -2624,6 +2624,12 @@ export const SwitchCodexTerminalToAgentRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const SwitchAgentTerminalToAgentRequestSchema = z.object({
+  type: z.literal("agent_terminal.switch_to_agent.request"),
+  terminalId: z.string(),
+  requestId: z.string(),
+});
+
 export const CaptureTerminalRequestSchema = z.object({
   type: z.literal("capture_terminal_request"),
   terminalId: z.string(),
@@ -2854,6 +2860,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   TerminalInputSchema,
   KillTerminalRequestSchema,
   SwitchCodexTerminalToAgentRequestSchema,
+  SwitchAgentTerminalToAgentRequestSchema,
   CaptureTerminalRequestSchema,
   ChatCreateRequestSchema,
   ChatListRequestSchema,
@@ -3105,6 +3112,8 @@ export const ServerInfoStatusPayloadSchema = z
         codexForkTerminal: z.boolean().optional(),
         // COMPAT(codexConversationViewSwitch): added in the custom fork on 2026-08-13.
         codexConversationViewSwitch: z.boolean().optional(),
+        // COMPAT(agentConversationViewSwitch): added in the custom fork on 2026-08-13.
+        agentConversationViewSwitch: z.boolean().optional(),
         // COMPAT(codexTerminalImagePaste): added in the custom fork on 2026-08-13.
         codexTerminalImagePaste: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
@@ -5521,6 +5530,17 @@ export const SwitchCodexTerminalToAgentResponseSchema = z.object({
   }),
 });
 
+export const SwitchAgentTerminalToAgentResponseSchema = z.object({
+  type: z.literal("agent_terminal.switch_to_agent.response"),
+  payload: z.object({
+    terminalId: z.string(),
+    agentId: z.string().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
 export const CaptureTerminalResponseSchema = z.object({
   type: z.literal("capture_terminal_response"),
   payload: z.object({
@@ -5833,6 +5853,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SubscribeTerminalResponseSchema,
   KillTerminalResponseSchema,
   SwitchCodexTerminalToAgentResponseSchema,
+  SwitchAgentTerminalToAgentResponseSchema,
   CaptureTerminalResponseSchema,
   TerminalStreamExitSchema,
   TerminalAttentionRequiredSchema,
@@ -6302,6 +6323,12 @@ export type SwitchCodexTerminalToAgentRequest = z.infer<
 >;
 export type SwitchCodexTerminalToAgentResponse = z.infer<
   typeof SwitchCodexTerminalToAgentResponseSchema
+>;
+export type SwitchAgentTerminalToAgentRequest = z.infer<
+  typeof SwitchAgentTerminalToAgentRequestSchema
+>;
+export type SwitchAgentTerminalToAgentResponse = z.infer<
+  typeof SwitchAgentTerminalToAgentResponseSchema
 >;
 export type CaptureTerminalRequest = z.infer<typeof CaptureTerminalRequestSchema>;
 export type CaptureTerminalResponse = z.infer<typeof CaptureTerminalResponseSchema>;

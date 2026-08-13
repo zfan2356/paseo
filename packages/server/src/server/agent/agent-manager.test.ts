@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -44,6 +44,10 @@ import type {
 } from "./agent-sdk-types.js";
 import type { PaseoToolCatalog } from "./tools/types.js";
 import type { ProviderDefinition } from "./provider-registry.js";
+import {
+  getCursorConversationStorePathsForTest,
+  prepareCursorConversationTerminalStore,
+} from "../../terminal/cursor-conversation-store.js";
 
 const DESKTOP_OPEN_AGENT_TAB_LABEL = getOpenAgentTabLabel("desktop-client");
 const MOBILE_OPEN_AGENT_TAB_LABEL = getOpenAgentTabLabel("mobile-client");
@@ -448,7 +452,7 @@ class TestAgentSession implements AgentSession {
   async close(): Promise<void> {}
 }
 
-test("hands a Codex thread to an external terminal and resumes it after release", async () => {
+test("hands an Agent session to an external terminal and resumes it after release", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-codex-terminal-handoff-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
   const client = new TestAgentClient();
@@ -470,7 +474,7 @@ test("hands a Codex thread to an external terminal and resumes it after release"
     expect((await storage.get(agentId))?.labels[CODEX_TERMINAL_OWNER_LABEL]).toBe("terminal-1");
     await expect(
       ensureAgentLoaded(agentId, { agentManager: manager, agentStorage: storage, logger }),
-    ).rejects.toThrow("open in Codex terminal");
+    ).rejects.toThrow("open in conversation terminal");
 
     await manager.releaseAgentExternalRuntime(agentId, "terminal-1");
     const resumed = await ensureAgentLoaded(agentId, {
@@ -483,6 +487,55 @@ test("hands a Codex thread to an external terminal and resumes it after release"
   } finally {
     if (manager.getAgent(agentId)) {
       await manager.closeAgent(agentId);
+    }
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("syncs a Paseo-managed Cursor TUI store before releasing the Agent lease", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-cursor-terminal-handoff-"));
+  const cursorConfigDir = join(workdir, "cursor-config");
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const agentId = "00000000-0000-4000-8000-000000000402";
+  const sessionId = "610786d6-3ec9-4ac8-b9a8-5db7535c785e";
+  const previousCursorConfigDir = process.env.CURSOR_CONFIG_DIR;
+  process.env.CURSOR_CONFIG_DIR = cursorConfigDir;
+  const manager = new AgentManager({
+    clients: { cursor: new TestAgentClient("cursor") },
+    registry: storage,
+    logger,
+  });
+
+  try {
+    const now = new Date().toISOString();
+    await storage.upsert({
+      id: agentId,
+      provider: "cursor",
+      cwd: workdir,
+      createdAt: now,
+      updatedAt: now,
+      labels: {},
+      lastStatus: "closed",
+      config: null,
+      persistence: { provider: "cursor", sessionId },
+    });
+    const paths = await getCursorConversationStorePathsForTest({ cwd: workdir, sessionId });
+    mkdirSync(paths.acpSessionDir, { recursive: true });
+    writeFileSync(join(paths.acpSessionDir, "store.db"), "agent-history");
+
+    await manager.claimAgentExternalRuntime(agentId, "terminal-1");
+    await prepareCursorConversationTerminalStore({ cwd: workdir, sessionId });
+    writeFileSync(join(paths.terminalSessionDir, "store.db"), "tui-history");
+
+    await manager.releaseAgentExternalRuntime(agentId, "terminal-1");
+
+    expect(readFileSync(join(paths.acpSessionDir, "store.db"), "utf8")).toBe("tui-history");
+    expect((await storage.get(agentId))?.labels[CODEX_TERMINAL_OWNER_LABEL]).toBeUndefined();
+  } finally {
+    if (previousCursorConfigDir === undefined) {
+      delete process.env.CURSOR_CONFIG_DIR;
+    } else {
+      process.env.CURSOR_CONFIG_DIR = previousCursorConfigDir;
     }
     rmSync(workdir, { recursive: true, force: true });
   }

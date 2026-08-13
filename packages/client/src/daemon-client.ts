@@ -92,6 +92,7 @@ import type {
   SubscribeTerminalRequest,
   CloseItemsResponse,
   KillTerminalResponse,
+  SwitchAgentTerminalToAgentResponse,
   SwitchCodexTerminalToAgentResponse,
   CaptureTerminalResponse,
   TerminalInput,
@@ -496,6 +497,7 @@ export type RenameTerminalResult = z.infer<typeof RenameTerminalResponseSchema>[
 type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
 type KillTerminalPayload = KillTerminalResponse["payload"];
+type SwitchAgentTerminalToAgentPayload = SwitchAgentTerminalToAgentResponse["payload"];
 type SwitchCodexTerminalToAgentPayload = SwitchCodexTerminalToAgentResponse["payload"];
 type CaptureTerminalPayload = CaptureTerminalResponse["payload"];
 type ScheduleCreatePayload = Extract<
@@ -5056,6 +5058,24 @@ export class DaemonClient {
       requestId: resolvedRequestId,
       message,
       responseType: "codex_terminal.switch_to_agent.response",
+      options: { skipQueue: true },
+    });
+  }
+
+  async switchAgentTerminalToAgent(
+    terminalId: string,
+    requestId?: string,
+  ): Promise<SwitchAgentTerminalToAgentPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent_terminal.switch_to_agent.request",
+      terminalId,
+      requestId: resolvedRequestId,
+    });
+    return this.sendCorrelatedRequest({
+      requestId: resolvedRequestId,
+      message,
+      responseType: "agent_terminal.switch_to_agent.response",
       options: { skipQueue: true },
     });
   }

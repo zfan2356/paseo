@@ -1,9 +1,140 @@
 import { describe, expect, test } from "vitest";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
+  buildAgentConversationTerminalLaunch,
+  buildAgentConversationTerminalName,
   buildCodexConversationTerminalLaunch,
   buildCodexConversationTerminalName,
+  getAgentConversationTerminalDisplayName,
+  parseAgentConversationTerminalLink,
   parseCodexConversationTerminalAgentId,
 } from "./codex-fork-terminal.js";
+
+describe("agent conversation terminal metadata", () => {
+  test.each([
+    ["codex", "Codex Conversation"],
+    ["claude", "Claude Code Conversation"],
+    ["cursor", "Cursor Conversation"],
+  ] as const)("round-trips a %s terminal link", (provider, displayName) => {
+    const name = buildAgentConversationTerminalName("agent-1", provider);
+    expect(parseAgentConversationTerminalLink(name)).toEqual({ agentId: "agent-1", provider });
+    expect(getAgentConversationTerminalDisplayName(provider)).toBe(displayName);
+  });
+
+  test("recognizes legacy Codex terminal names", () => {
+    expect(
+      parseAgentConversationTerminalLink(buildCodexConversationTerminalName("agent-1")),
+    ).toEqual({
+      agentId: "agent-1",
+      provider: "codex",
+    });
+  });
+});
+
+describe("buildAgentConversationTerminalLaunch", () => {
+  test("resumes a Claude Code session with its active model, effort, and permission mode", () => {
+    expect(
+      buildAgentConversationTerminalLaunch({
+        provider: "claude",
+        cwd: "/work/paseo",
+        persistence: {
+          provider: "claude",
+          sessionId: "session-1",
+          nativeHandle: "session-native",
+        },
+        runtimeInfo: {
+          provider: "claude",
+          sessionId: "session-native",
+          model: "claude-opus-5[1m]",
+          thinkingOptionId: "xhigh",
+          modeId: "bypassPermissions",
+        },
+        currentModeId: "bypassPermissions",
+        config: {
+          model: "stale-model",
+          thinkingOptionId: "medium",
+          modeId: "bypassPermissions",
+        },
+      }),
+    ).toEqual({
+      provider: "claude",
+      name: "Claude Code Conversation",
+      command: "claude",
+      args: [
+        "--resume",
+        "session-native",
+        "--model",
+        "claude-opus-5[1m]",
+        "--effort",
+        "xhigh",
+        "--permission-mode",
+        "bypassPermissions",
+      ],
+    });
+  });
+
+  test("resumes a Cursor chat with its workspace, model, mode, and auto-accept setting", () => {
+    expect(
+      buildAgentConversationTerminalLaunch({
+        provider: "cursor",
+        cwd: "/work/paseo",
+        persistence: {
+          provider: "cursor",
+          sessionId: "chat-1",
+        },
+        runtimeInfo: {
+          provider: "cursor",
+          sessionId: "chat-1",
+          model: "grok-4.6",
+          thinkingOptionId: "high",
+          modeId: "plan",
+        },
+        currentModeId: "plan",
+        config: {
+          model: "stale-model",
+          modeId: "plan",
+          featureValues: { auto_accept: true },
+        },
+      }),
+    ).toEqual({
+      provider: "cursor",
+      name: "Cursor Conversation",
+      command: "cursor-agent",
+      env: { CURSOR_CONFIG_DIR: join(homedir(), ".cursor") },
+      args: [
+        "--resume",
+        "chat-1",
+        "--workspace",
+        "/work/paseo",
+        "--trust",
+        "--model",
+        "grok-4.6",
+        "--mode",
+        "plan",
+        "--yolo",
+      ],
+    });
+  });
+
+  test("rejects unsupported providers and missing persistence handles", () => {
+    expect(() =>
+      buildAgentConversationTerminalLaunch({
+        provider: "opencode",
+        cwd: "/work/paseo",
+        persistence: { provider: "opencode", sessionId: "session-1" },
+      }),
+    ).toThrow("does not support a conversation terminal");
+
+    expect(() =>
+      buildAgentConversationTerminalLaunch({
+        provider: "claude",
+        cwd: "/work/paseo",
+        persistence: null,
+      }),
+    ).toThrow("resumable session id");
+  });
+});
 
 describe("buildCodexConversationTerminalLaunch", () => {
   test("round-trips the linked Agent id through the persistent terminal name", () => {
@@ -47,6 +178,7 @@ describe("buildCodexConversationTerminalLaunch", () => {
         ],
       }),
     ).toEqual({
+      provider: "codex",
       name: "Codex Conversation",
       command: "codex",
       args: [

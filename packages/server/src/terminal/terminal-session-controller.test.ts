@@ -317,7 +317,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
     );
   });
 
-  test("creates a linked Codex conversation terminal from the server-resolved launch", async () => {
+  test("creates a linked conversation terminal from the server-resolved launch", async () => {
     const outboundMessages: SessionOutboundMessage[] = [];
     const createTerminal = vi.fn(
       async (options: Parameters<TerminalManager["createTerminal"]>[0]) =>
@@ -349,9 +349,11 @@ describe("terminal-session-controller legacy terminal creation", () => {
       subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
     } as unknown as TerminalManager;
     const resolveAgentTerminalLaunch = vi.fn(async () => ({
-      name: "Codex Conversation",
-      command: "codex",
-      args: ["resume", "--include-non-interactive", "thread-1"],
+      provider: "claude" as const,
+      name: "Claude Code Conversation",
+      command: "claude",
+      args: ["--resume", "session-1"],
+      env: { CLAUDE_CONFIG_DIR: "/tmp/claude-config" },
     }));
     const controller = new TerminalSessionController({
       terminalManager,
@@ -382,9 +384,10 @@ describe("terminal-session-controller legacy terminal creation", () => {
         cwd: "/work/repo",
         workspaceId: "ws-1",
         linkedAgentId: "agent-1",
-        name: "__paseo_codex_conversation__:agent-1",
-        command: "codex",
-        args: ["resume", "--include-non-interactive", "thread-1"],
+        name: "__paseo_agent_conversation__:claude:agent-1",
+        command: "claude",
+        args: ["--resume", "session-1"],
+        env: { CLAUDE_CONFIG_DIR: "/tmp/claude-config" },
       }),
     );
     expect(outboundMessages).toContainEqual({
@@ -392,12 +395,11 @@ describe("terminal-session-controller legacy terminal creation", () => {
       payload: {
         terminal: {
           id: expect.any(String),
-          name: "Codex Conversation",
+          name: "Claude Code Conversation",
           cwd: "/work/repo",
           workspaceId: "ws-1",
           linkedAgentId: "agent-1",
           activity: null,
-          capabilities: { imagePaste: true },
         },
         error: null,
         requestId: "req-fork",
@@ -405,12 +407,15 @@ describe("terminal-session-controller legacy terminal creation", () => {
     });
   });
 
-  test("stops a linked Codex terminal before resuming its Agent", async () => {
+  test.each([
+    ["agent_terminal.switch_to_agent.request", "agent_terminal.switch_to_agent.response"],
+    ["codex_terminal.switch_to_agent.request", "codex_terminal.switch_to_agent.response"],
+  ] as const)("stops a linked conversation terminal for %s", async (requestType, responseType) => {
     const outboundMessages: SessionOutboundMessage[] = [];
     const actions: string[] = [];
     const terminal = listSession({
       id: "term-conversation",
-      name: "Codex Conversation",
+      name: "Cursor Conversation",
       cwd: "/work/repo",
       workspaceId: "ws-1",
       linkedAgentId: "agent-1",
@@ -435,7 +440,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
     });
 
     await controller.dispatch({
-      type: "codex_terminal.switch_to_agent.request",
+      type: requestType,
       terminalId: terminal.id,
       requestId: "req-switch",
     });
@@ -446,7 +451,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
       terminalId: "term-conversation",
     });
     expect(outboundMessages).toContainEqual({
-      type: "codex_terminal.switch_to_agent.response",
+      type: responseType,
       payload: {
         terminalId: "term-conversation",
         agentId: "agent-1",
