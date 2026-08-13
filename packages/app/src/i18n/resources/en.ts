@@ -652,6 +652,7 @@ export const en = {
         workspaceActions: "Workspace actions",
         newAgent: "New agent",
         newTerminal: "New terminal",
+        forkToCodexTerminal: "Fork conversation to Codex terminal",
         newBrowser: "New browser tab",
         importSession: "Import session",
         copyPath: "Copy workspace path",

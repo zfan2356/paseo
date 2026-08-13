@@ -655,6 +655,7 @@ export const ar: TranslationResources = {
         workspaceActions: "إجراءات Workspace",
         newAgent: "وكيل جديد",
         newTerminal: "محطة جديدة",
+        forkToCodexTerminal: "تشعيب المحادثة إلى محطة Codex",
         newBrowser: "علامة تبويب متصفح جديدة",
         importSession: "جلسة الاستيراد",
         copyPath: "نسخ مسار مساحة العمل",

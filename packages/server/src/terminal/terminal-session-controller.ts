@@ -36,6 +36,7 @@ import type { TerminalManager, TerminalsChangedEvent } from "./terminal-manager.
 import { applyTerminalSize } from "./terminal-size-ownership.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import { terminalSubscriptionKey } from "@getpaseo/protocol/terminal-subscription-key";
+import type { CodexForkTerminalLaunch } from "./codex-fork-terminal.js";
 
 const MAX_TERMINAL_STREAM_SLOTS = 256;
 
@@ -71,6 +72,11 @@ export interface TerminalSessionControllerOptions {
   sessionLogger: pino.Logger;
   listTerminalWorkspaceRefs?: () => Promise<readonly TerminalWorkspaceRef[]>;
   listTerminalWorkspaceRoots?: () => Promise<readonly string[]>;
+  resolveAgentTerminalLaunch?: (input: {
+    agentId: string;
+    cwd: string;
+    workspaceId: string;
+  }) => Promise<CodexForkTerminalLaunch>;
   // Whether the connected client can reflow restored snapshots. When true the
   // daemon attaches per-row soft-wrap flags to snapshots; otherwise it omits them
   // so old (strict-schema) clients still parse the snapshot.
@@ -129,6 +135,13 @@ export class TerminalSessionController {
   private readonly sessionLogger: pino.Logger;
   private readonly listTerminalWorkspaceRefs: () => Promise<readonly TerminalWorkspaceRef[]>;
   private readonly listTerminalWorkspaceRoots: () => Promise<readonly string[]>;
+  private readonly resolveAgentTerminalLaunch:
+    | ((input: {
+        agentId: string;
+        cwd: string;
+        workspaceId: string;
+      }) => Promise<CodexForkTerminalLaunch>)
+    | null;
   private readonly clientSupportsWrapReflow: () => boolean;
   private readonly getClientBufferedAmount: () => number | null;
   private readonly terminalSizeOwner = {};
@@ -158,6 +171,7 @@ export class TerminalSessionController {
     this.listTerminalWorkspaceRoots =
       options.listTerminalWorkspaceRoots ??
       (async () => (await this.listTerminalWorkspaceRefs()).map((workspace) => workspace.cwd));
+    this.resolveAgentTerminalLaunch = options.resolveAgentTerminalLaunch ?? null;
     this.clientSupportsWrapReflow = options.clientSupportsWrapReflow ?? (() => false);
     this.getClientBufferedAmount = options.getClientBufferedAmount ?? (() => 0);
   }
@@ -520,18 +534,6 @@ export class TerminalSessionController {
     }
 
     try {
-      if (msg.agentId) {
-        this.emit({
-          type: "create_terminal_response",
-          payload: {
-            terminal: null,
-            error: `Agent-backed terminals are no longer supported for agent ${msg.agentId}`,
-            requestId: msg.requestId,
-          },
-        });
-        return;
-      }
-
       const workspaceId = msg.workspaceId ?? (await this.resolveLegacyTerminalWorkspaceId(msg.cwd));
       if (!workspaceId) {
         this.emit({
@@ -545,12 +547,23 @@ export class TerminalSessionController {
         return;
       }
 
+      const agentLaunch = msg.agentId
+        ? await this.resolveAgentTerminalLaunch?.({
+            agentId: msg.agentId,
+            cwd: msg.cwd,
+            workspaceId,
+          })
+        : null;
+      if (msg.agentId && !agentLaunch) {
+        throw new Error(`Agent terminal launch is not supported for agent ${msg.agentId}`);
+      }
+
       const session = await this.terminalManager.createTerminal({
         cwd: msg.cwd,
         workspaceId,
-        name: msg.name,
-        command: msg.command,
-        args: msg.args,
+        name: agentLaunch?.name ?? msg.name,
+        command: agentLaunch?.command ?? msg.command,
+        args: agentLaunch?.args ?? msg.args,
         rows: msg.size?.rows,
         cols: msg.size?.cols,
       });

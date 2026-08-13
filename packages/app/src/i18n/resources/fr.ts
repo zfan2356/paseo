@@ -660,6 +660,7 @@ export const fr: TranslationResources = {
         workspaceActions: "ActionsWorkspace",
         newAgent: "Nouvel agent",
         newTerminal: "Nouvelle borne",
+        forkToCodexTerminal: "Dupliquer la conversation dans le terminal Codex",
         newBrowser: "Nouvel onglet du navigateur",
         importSession: "Session d'importation",
         copyPath: "Copier le chemin de l'espace de travail",

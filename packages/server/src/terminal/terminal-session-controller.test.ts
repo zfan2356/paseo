@@ -314,6 +314,74 @@ describe("terminal-session-controller legacy terminal creation", () => {
       expect.objectContaining({ cwd: "/work/repo", workspaceId: "ws-1", rows: 55, cols: 136 }),
     );
   });
+
+  test("creates an agent fork terminal from the server-resolved launch", async () => {
+    const createTerminal = vi.fn(
+      async (options: Parameters<TerminalManager["createTerminal"]>[0]) =>
+        listSession({
+          id: "term-fork",
+          name: options.name ?? "Terminal 1",
+          cwd: options.cwd,
+          workspaceId: options.workspaceId,
+        }),
+    );
+    const terminalManager = {
+      getTerminals: vi.fn(),
+      createTerminal,
+      registerCwdEnv: vi.fn(),
+      validateTerminalActivityToken: vi.fn(() => "unknown"),
+      getTerminal: vi.fn(),
+      getTerminalState: vi.fn(),
+      setTerminalTitle: vi.fn(),
+      setTerminalActivity: vi.fn(),
+      clearTerminalAttention: vi.fn(),
+      killTerminal: vi.fn(),
+      killTerminalAndWait: vi.fn(),
+      captureTerminal: vi.fn(),
+      listDirectories: vi.fn(() => []),
+      killAll: vi.fn(),
+      subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeTerminalActivity: vi.fn(() => vi.fn()),
+      subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
+    } as unknown as TerminalManager;
+    const resolveAgentTerminalLaunch = vi.fn(async () => ({
+      name: "Codex Fork",
+      command: "codex",
+      args: ["fork", "thread-1"],
+    }));
+    const controller = new TerminalSessionController({
+      terminalManager,
+      emit: vi.fn(),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+      resolveAgentTerminalLaunch,
+    });
+
+    await controller.dispatch({
+      type: "create_terminal_request",
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+      agentId: "agent-1",
+      requestId: "req-fork",
+    });
+
+    expect(resolveAgentTerminalLaunch).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+    });
+    expect(createTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: "/work/repo",
+        workspaceId: "ws-1",
+        name: "Codex Fork",
+        command: "codex",
+        args: ["fork", "thread-1"],
+      }),
+    );
+  });
 });
 
 async function flushMicrotasks(): Promise<void> {

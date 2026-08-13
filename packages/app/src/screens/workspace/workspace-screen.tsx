@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Copy,
   Ellipsis,
+  GitFork,
   Globe,
   Import as ImportIcon,
   PanelRight,
@@ -249,6 +250,7 @@ const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedCopy = withUnistyles(Copy);
 const ThemedSquarePen = withUnistyles(SquarePen);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
+const ThemedGitFork = withUnistyles(GitFork);
 const ThemedGlobe = withUnistyles(Globe);
 const ThemedImport = withUnistyles(ImportIcon);
 const ThemedSettings = withUnistyles(Settings);
@@ -283,6 +285,29 @@ const MENU_IMPORT_ICON = <ThemedImport size={16} uniProps={mutedColorMapping} />
 const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
 const GATED_WORKSPACE_HEADER_LEFT = <SidebarMenuToggle />;
+
+function useCodexForkTerminalAgentId(input: {
+  activeTab: WorkspaceTabDescriptor | null;
+  serverId: string;
+  supported: boolean;
+}): string | null {
+  const activeAgentId =
+    input.activeTab?.target.kind === "agent" ? input.activeTab.target.agentId : null;
+  const activeAgent = useSessionStore((state) => {
+    if (!activeAgentId) return null;
+    const session = state.sessions[input.serverId];
+    return session?.agents?.get(activeAgentId) ?? session?.agentDetails?.get(activeAgentId) ?? null;
+  });
+  if (
+    !input.supported ||
+    activeAgent?.provider !== "codex" ||
+    !activeAgent.persistence?.sessionId ||
+    activeAgent.archivedAt
+  ) {
+    return null;
+  }
+  return activeAgentId;
+}
 
 interface WorkspaceScreenProps {
   serverId: string;
@@ -1736,6 +1761,9 @@ function WorkspaceScreenContent({
   const isConnected = useHostRuntimeIsConnected(normalizedServerId);
   const supportsProvidersSnapshot = useSessionStore(
     (state) => state.sessions[normalizedServerId]?.serverInfo?.features?.providersSnapshot === true,
+  );
+  const supportsCodexForkTerminal = useSessionStore(
+    (state) => state.sessions[normalizedServerId]?.serverInfo?.features?.codexForkTerminal === true,
   );
   const workspaceDirectory = workspaceDescriptor?.workspaceDirectory || null;
   const isMissingWorkspaceDirectory = Boolean(workspaceDescriptor) && !workspaceDirectory;
@@ -3272,6 +3300,15 @@ function WorkspaceScreenContent({
   });
 
   const activeTabDescriptor = useMemo(() => activeTab?.descriptor ?? null, [activeTab]);
+  const codexForkTerminalAgentId = useCodexForkTerminalAgentId({
+    activeTab: activeTabDescriptor,
+    serverId: normalizedServerId,
+    supported: supportsCodexForkTerminal,
+  });
+  const handleForkActiveAgentToCodexTerminal = useCallback(() => {
+    if (!codexForkTerminalAgentId) return;
+    createTerminal({ agentId: codexForkTerminalAgentId });
+  }, [codexForkTerminalAgentId, createTerminal]);
   const activeFileFields = getWorkspaceFileLocationFields(activeTabDescriptor);
   const activeFilePath = activeFileFields.path;
   const activeFileLineStart = activeFileFields.lineStart;
@@ -3515,9 +3552,34 @@ function WorkspaceScreenContent({
     workspaceKey: persistenceKey,
   });
 
+  const createTerminalDisabled = useMemo(
+    () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,
+    [createTerminalMutation.isPending, pendingTerminalCreateInput],
+  );
+
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
+        {codexForkTerminalAgentId ? (
+          <HeaderToggleButton
+            testID="workspace-fork-codex-terminal"
+            onPress={handleForkActiveAgentToCodexTerminal}
+            tooltipLabel={t("workspace.header.actions.forkToCodexTerminal")}
+            tooltipKeys={[]}
+            tooltipSide="bottom"
+            style={isMobile ? styles.headerActionButton : styles.compactHeaderActionButton}
+            disabled={createTerminalDisabled || !isConnected || !workspaceDirectory}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={t("workspace.header.actions.forkToCodexTerminal")}
+          >
+            {({ hovered, pressed }) => {
+              const active = hovered || pressed;
+              const colorMapping = active ? foregroundColorMapping : extraMutedColorMapping;
+              return <ThemedGitFork size={isMobile ? 20 : 16} uniProps={colorMapping} />;
+            }}
+          </HeaderToggleButton>
+        ) : null}
         {!isMobile && workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
           <WorkspaceScriptsButton
             serverId={normalizedServerId}
@@ -3642,6 +3704,10 @@ function WorkspaceScreenContent({
     ),
     [
       isMobile,
+      codexForkTerminalAgentId,
+      handleForkActiveAgentToCodexTerminal,
+      createTerminalDisabled,
+      isConnected,
       workspaceDescriptor,
       normalizedServerId,
       normalizedWorkspaceId,
@@ -3669,10 +3735,6 @@ function WorkspaceScreenContent({
   const showExplorerSidebar = useMemo(
     () => shouldShowWorkspaceExplorerSidebar({ isRouteFocused, isFocusModeEnabled, isMobile }),
     [isRouteFocused, isFocusModeEnabled, isMobile],
-  );
-  const createTerminalDisabled = useMemo(
-    () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,
-    [createTerminalMutation.isPending, pendingTerminalCreateInput],
   );
   const showCreateBrowserTab = getIsElectron();
   const focusedPaneIdOrUndefined = useMemo(() => focusedPaneId ?? undefined, [focusedPaneId]);

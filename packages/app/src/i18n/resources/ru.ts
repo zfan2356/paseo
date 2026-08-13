@@ -660,6 +660,7 @@ export const ru: TranslationResources = {
         workspaceActions: "Действия Workspace",
         newAgent: "Новый агент",
         newTerminal: "Новый терминал",
+        forkToCodexTerminal: "Ответвить разговор в терминал Codex",
         newBrowser: "Новая вкладка браузера",
         importSession: "Импортировать сеанс",
         copyPath: "Копировать путь к рабочей области",

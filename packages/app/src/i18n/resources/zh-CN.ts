@@ -651,6 +651,7 @@ export const zhCN: TranslationResources = {
         workspaceActions: "Workspace 操作",
         newAgent: "新建 Agent",
         newTerminal: "新建 Terminal",
+        forkToCodexTerminal: "转为 Codex Terminal 会话",
         newBrowser: "新建浏览器标签",
         importSession: "导入会话",
         copyPath: "复制 workspace 路径",

@@ -657,6 +657,7 @@ export const ja: TranslationResources = {
         workspaceActions: "ワークスペースアクション",
         newAgent: "新しいエージェント",
         newTerminal: "新しいターミナル",
+        forkToCodexTerminal: "会話を Codex ターミナルにフォーク",
         newBrowser: "新しいブラウザタブ",
         importSession: "セッションをインポート",
         copyPath: "ワークスペースパスをコピー",

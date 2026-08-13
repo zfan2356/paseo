@@ -655,6 +655,7 @@ export const ko: TranslationResources = {
         workspaceActions: "워크스페이스 작업",
         newAgent: "새 에이전트",
         newTerminal: "새 터미널",
+        forkToCodexTerminal: "대화를 Codex 터미널로 포크",
         newBrowser: "새 브라우저 탭",
         importSession: "세션 가져오기",
         copyPath: "워크스페이스 경로 복사",

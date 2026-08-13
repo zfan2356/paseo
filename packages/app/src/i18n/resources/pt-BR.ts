@@ -658,6 +658,7 @@ export const ptBR: TranslationResources = {
         workspaceActions: "Ações do workspace",
         newAgent: "Novo agente",
         newTerminal: "Novo terminal",
+        forkToCodexTerminal: "Bifurcar conversa para o terminal Codex",
         newBrowser: "Nova aba de navegador",
         importSession: "Importar sessão",
         copyPath: "Copiar caminho do workspace",

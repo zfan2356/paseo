@@ -660,6 +660,7 @@ export const es: TranslationResources = {
         workspaceActions: "AccionesWorkspace",
         newAgent: "Nuevo agente",
         newTerminal: "Nueva terminal",
+        forkToCodexTerminal: "Bifurcar conversación a terminal Codex",
         newBrowser: "Nueva pestaña del navegador",
         importSession: "Importar sesión",
         copyPath: "Copiar ruta del espacio de trabajo",

@@ -27,6 +27,10 @@ import type {
   TerminalWorkspaceContributionChangedEvent,
 } from "../terminal/terminal-manager.js";
 import { TerminalSessionController } from "../terminal/terminal-session-controller.js";
+import {
+  buildCodexForkTerminalLaunch,
+  type CodexForkTerminalSource,
+} from "../terminal/codex-fork-terminal.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type { BinaryFrame } from "@getpaseo/protocol/binary-frames/index";
 import { CursorError } from "./pagination/cursor.js";
@@ -909,6 +913,7 @@ export class Session {
       isPathWithinRoot: (rootPath, candidatePath) => this.isPathWithinRoot(rootPath, candidatePath),
       sessionLogger: this.sessionLogger,
       listTerminalWorkspaceRefs: () => this.listActiveWorkspaceRefs(),
+      resolveAgentTerminalLaunch: (input) => this.resolveAgentTerminalLaunch(input),
       clientSupportsWrapReflow: () =>
         this.clientCapabilities.has(CLIENT_CAPS.terminalReflowableSnapshot),
       getClientBufferedAmount: () => this.getTransportBufferedAmount(),
@@ -1280,6 +1285,53 @@ export class Session {
       thinkingOptionId:
         agent.runtimeInfo?.thinkingOptionId ?? agent.config.thinkingOptionId ?? null,
     };
+  }
+
+  private async resolveAgentTerminalLaunch(input: {
+    agentId: string;
+    cwd: string;
+    workspaceId: string;
+  }) {
+    const liveAgent = this.agentManager.getAgent(input.agentId);
+    const storedAgent = liveAgent ? null : await this.agentStorage.get(input.agentId);
+    const sourceAgent = liveAgent ?? storedAgent;
+    if (!sourceAgent) {
+      throw new Error(`Agent not found: ${input.agentId}`);
+    }
+
+    if (sourceAgent.workspaceId) {
+      if (sourceAgent.workspaceId !== input.workspaceId) {
+        throw new Error("The Codex conversation belongs to a different workspace");
+      }
+    } else if (
+      !this.isPathWithinRoot(sourceAgent.cwd, input.cwd) ||
+      !this.isPathWithinRoot(input.cwd, sourceAgent.cwd)
+    ) {
+      throw new Error("The Codex conversation belongs to a different workspace path");
+    }
+
+    const source: CodexForkTerminalSource = liveAgent
+      ? {
+          provider: liveAgent.provider,
+          cwd: liveAgent.cwd,
+          workspaceId: liveAgent.workspaceId,
+          persistence: liveAgent.persistence,
+          runtimeInfo: liveAgent.runtimeInfo,
+          currentModeId: liveAgent.currentModeId,
+          config: liveAgent.config,
+          features: liveAgent.features,
+        }
+      : {
+          provider: storedAgent!.provider,
+          cwd: storedAgent!.cwd,
+          workspaceId: storedAgent!.workspaceId,
+          persistence: toAgentPersistenceHandle([storedAgent!.provider], storedAgent!.persistence),
+          runtimeInfo: storedAgent!.runtimeInfo,
+          currentModeId: storedAgent!.lastModeId,
+          config: storedAgent!.config,
+          features: storedAgent!.features,
+        };
+    return buildCodexForkTerminalLaunch(source);
   }
 
   private readStructuredGenerationDaemonConfig(): StructuredGenerationDaemonConfig {
