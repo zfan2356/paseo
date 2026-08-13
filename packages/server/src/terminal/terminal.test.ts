@@ -566,6 +566,32 @@ describe("createTerminal", () => {
     expect(withoutFlags.scrollbackWrapped).toBeUndefined();
   });
 
+  it("preserves wide-character cell widths in snapshots", async () => {
+    const session = trackSession(
+      await createTerminal({
+        workspaceId: "ws-test",
+        cwd: realpathSync(tmpdir()),
+        cols: 20,
+        rows: 4,
+        command: process.execPath,
+        args: ["-e", "process.stdout.write('A界B'); setInterval(() => {}, 100000);"],
+      }),
+    );
+
+    const state = await waitForState(session, (snapshot) =>
+      getRowText(snapshot, 0).startsWith("A界 B"),
+    );
+
+    expect(
+      state.grid[0].slice(0, 4).map((cell) => ({ char: cell.char, width: cell.width })),
+    ).toEqual([
+      { char: "A", width: undefined },
+      { char: "界", width: 2 },
+      { char: " ", width: 0 },
+      { char: "B", width: undefined },
+    ]);
+  });
+
   it("captures exit diagnostics from the terminal buffer", async () => {
     const session = trackSession(
       await createTerminal({

@@ -43,7 +43,7 @@ import {
 import { getWorkspaceTerminalSession } from "@/terminal/runtime/workspace-terminal-session";
 import {
   EMPTY_FOCUS_CLAIM_STATE,
-  canRequestFocusClaim,
+  canRequestPassiveFocusClaim,
   reconcileFocusClaim,
   resolveTerminalResizeClaim,
   settleFocusClaim,
@@ -374,14 +374,17 @@ export function TerminalPane({
   }, [isMobile, isPaneFocused, isWorkspaceFocused, requestTerminalFocus, scopeKey, terminalId]);
 
   useEffect(() => {
-    const canRequest = canRequestFocusClaim({
-      isWorkspaceFocused: isTerminalActive,
-      isPaneFocused,
-      isAppActivelyVisible,
-      isClientReady: client !== null,
-      isConnected,
-      isRendererReady: rendererReadyStreamKey === terminalStreamKey,
-    });
+    const canRequest = canRequestPassiveFocusClaim(
+      {
+        isWorkspaceFocused: isTerminalActive,
+        isPaneFocused,
+        isAppActivelyVisible,
+        isClientReady: client !== null,
+        isConnected,
+        isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+      },
+      isMobile,
+    );
     const step = reconcileFocusClaim(paneFocusResizeClaimRef.current, {
       key: !isPaneFocused || !terminalId ? null : `${scopeKey}:${terminalId}`,
       canRequest,
@@ -396,6 +399,7 @@ export function TerminalPane({
     client,
     isAppActivelyVisible,
     isConnected,
+    isMobile,
     isPaneFocused,
     isTerminalActive,
     rendererReadyStreamKey,
@@ -506,14 +510,17 @@ export function TerminalPane({
 
   const getPreferredStreamSize = useStableEvent(() => {
     if (
-      !canRequestFocusClaim({
-        isWorkspaceFocused: terminalActiveRef.current,
-        isPaneFocused,
-        isAppActivelyVisible,
-        isClientReady: client !== null,
-        isConnected,
-        isRendererReady: rendererReadyStreamKey === terminalStreamKey,
-      })
+      !canRequestPassiveFocusClaim(
+        {
+          isWorkspaceFocused: terminalActiveRef.current,
+          isPaneFocused,
+          isAppActivelyVisible,
+          isClientReady: client !== null,
+          isConnected,
+          isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+        },
+        isMobile,
+      )
     ) {
       return null;
     }
@@ -552,14 +559,17 @@ export function TerminalPane({
   const getStreamRestoreOptions = useStableEvent(() =>
     resolveTerminalRestoreOptions({
       supportsTerminalRestoreModes,
-      canClaimSize: canRequestFocusClaim({
-        isWorkspaceFocused: terminalActiveRef.current,
-        isPaneFocused,
-        isAppActivelyVisible,
-        isClientReady: client !== null,
-        isConnected,
-        isRendererReady: rendererReadyStreamKey === terminalStreamKey,
-      }),
+      canClaimSize: canRequestPassiveFocusClaim(
+        {
+          isWorkspaceFocused: terminalActiveRef.current,
+          isPaneFocused,
+          isAppActivelyVisible,
+          isClientReady: client !== null,
+          isConnected,
+          isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+        },
+        isMobile,
+      ),
       size: measuredTerminalSizeRef.current,
     }),
   );

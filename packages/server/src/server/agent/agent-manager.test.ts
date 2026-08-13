@@ -526,11 +526,29 @@ test("syncs a Paseo-managed Cursor TUI store before releasing the Agent lease", 
     await manager.claimAgentExternalRuntime(agentId, "terminal-1");
     await prepareCursorConversationTerminalStore({ cwd: workdir, sessionId });
     writeFileSync(join(paths.terminalSessionDir, "store.db"), "tui-history");
+    writeFileSync(
+      join(cursorConfigDir, "cli-config.json"),
+      JSON.stringify({
+        selectedModel: {
+          modelId: "grok-4.6",
+          parameters: [
+            { id: "effort", value: "xhigh" },
+            { id: "fast", value: "false" },
+          ],
+        },
+      }),
+    );
 
     await manager.releaseAgentExternalRuntime(agentId, "terminal-1");
 
     expect(readFileSync(join(paths.acpSessionDir, "store.db"), "utf8")).toBe("tui-history");
-    expect((await storage.get(agentId))?.labels[CODEX_TERMINAL_OWNER_LABEL]).toBeUndefined();
+    const stored = await storage.get(agentId);
+    expect(stored?.labels[CODEX_TERMINAL_OWNER_LABEL]).toBeUndefined();
+    expect(stored?.config).toMatchObject({
+      model: "grok-4.6",
+      thinkingOptionId: "xhigh",
+      featureValues: { fast: "false" },
+    });
   } finally {
     if (previousCursorConfigDir === undefined) {
       delete process.env.CURSOR_CONFIG_DIR;

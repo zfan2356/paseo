@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   getCursorConversationStorePathsForTest,
   prepareCursorConversationTerminalStore,
+  readCursorConversationSettings,
   resolveCursorConfigDirectory,
   syncCursorConversationTerminalStore,
 } from "./cursor-conversation-store.js";
@@ -50,6 +51,35 @@ describe("resolveCursorConfigDirectory", () => {
 });
 
 describe("Cursor conversation store handoff", () => {
+  test("reads the model controls selected by Cursor TUI", async () => {
+    const fixture = await createFixture();
+    await writeFile(
+      join(fixture.configDir, "cli-config.json"),
+      JSON.stringify({
+        selectedModel: {
+          modelId: "grok-4.6",
+          parameters: [
+            { id: "effort", value: "xhigh" },
+            { id: "fast", value: "false" },
+          ],
+        },
+      }),
+      "utf8",
+    );
+
+    await expect(
+      readCursorConversationSettings({
+        cwd: fixture.cwd,
+        configDir: fixture.configDir,
+        sessionId: fixture.sessionId,
+      }),
+    ).resolves.toEqual({
+      model: "grok-4.6",
+      thinkingOptionId: "xhigh",
+      fast: "false",
+    });
+  });
+
   test("copies Agent history to the TUI and returns TUI history to ACP", async () => {
     const fixture = await createFixture();
     const options = {

@@ -298,6 +298,7 @@ test.describe("Claude Code and Cursor conversation view switch", () => {
         await expect(page.getByText(terminalSentinel, { exact: true }).last()).toBeVisible({
           timeout: 45_000,
         });
+        await expect(viewToggle).toBeEnabled({ timeout: 1_000 });
         await expect
           .poll(() => getConversationTerminal(workspace, providerCase.terminalName), {
             timeout: 30_000,

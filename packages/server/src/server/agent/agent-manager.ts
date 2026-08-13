@@ -22,7 +22,11 @@ import {
   isAgentConversationTerminalProvider,
   resolveAgentConversationSessionId,
 } from "../../terminal/codex-fork-terminal.js";
-import { syncCursorConversationTerminalStore } from "../../terminal/cursor-conversation-store.js";
+import {
+  readCursorConversationSettings,
+  syncCursorConversationTerminalStore,
+  type CursorConversationSettings,
+} from "../../terminal/cursor-conversation-store.js";
 
 import {
   getAgentStreamEventTurnId,
@@ -861,11 +865,54 @@ export class AgentManager {
           runtimeInfo: sourceAgent.runtimeInfo,
         });
         if (sessionId) {
+          let settings: CursorConversationSettings | null = null;
+          try {
+            settings = await readCursorConversationSettings({ cwd: sourceAgent.cwd, sessionId });
+          } catch (error) {
+            this.logger.warn(
+              { err: error, agentId },
+              "Failed to read Cursor TUI conversation settings",
+            );
+          }
           await syncCursorConversationTerminalStore({ cwd: sourceAgent.cwd, sessionId });
+          if (
+            settings &&
+            (settings.model || settings.thinkingOptionId || settings.fast !== undefined)
+          ) {
+            await this.writeCursorConversationSettings(agentId, settings);
+          }
         }
       }
       await this.writeLabels(agentId, { [AGENT_TERMINAL_OWNER_LABEL]: null });
       this.externalRuntimeOwners.delete(agentId);
+    });
+  }
+
+  private async writeCursorConversationSettings(
+    agentId: string,
+    settings: CursorConversationSettings,
+  ): Promise<void> {
+    const registry = this.requireRegistry();
+    const record = await registry.get(agentId);
+    if (!record) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    const config = record.config ?? {};
+    const featureValues =
+      settings.fast === undefined
+        ? config.featureValues
+        : { ...config.featureValues, fast: settings.fast };
+
+    await registry.upsert({
+      ...record,
+      config: {
+        ...config,
+        ...(settings.model ? { model: settings.model } : {}),
+        ...(settings.thinkingOptionId ? { thinkingOptionId: settings.thinkingOptionId } : {}),
+        ...(featureValues ? { featureValues } : {}),
+      },
+      updatedAt: this.nextStoredUpdatedAt(record),
     });
   }
 

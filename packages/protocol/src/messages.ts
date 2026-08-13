@@ -5420,6 +5420,7 @@ const TerminalInfoSchema = z.object({
 
 export const TerminalCellSchema = z.object({
   char: z.string(),
+  width: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
   fg: z.number().optional(),
   bg: z.number().optional(),
   fgMode: z.number().optional(),

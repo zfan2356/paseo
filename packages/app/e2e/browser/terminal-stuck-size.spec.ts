@@ -1,8 +1,11 @@
+import type { JSHandle } from "@playwright/test";
 import { test, expect, type Page } from "../support/fixtures";
 import { TerminalE2EHarness, withTerminalInApp } from "../support/helpers/terminal-dsl";
 import { getTerminalBufferText } from "../support/helpers/terminal-perf";
 import { buildHostWorkspaceRoute } from "../../src/utils/host-routes";
 import { getServerId } from "../support/helpers/server-id";
+
+const MOBILE_VIEWPORT = { width: 390, height: 844 };
 
 /**
  * Regression: a terminal created while the window is unfocused must still claim its PTY size
@@ -47,6 +50,31 @@ interface RenderedTerminalSize {
   cols: number;
 }
 
+interface InspectableTerminal {
+  buffer: {
+    active: {
+      length: number;
+      getLine(index: number): { translateToString(trim: boolean): string } | null | undefined;
+    };
+  };
+}
+
+function terminalHandleText(terminal: InspectableTerminal | undefined): string {
+  if (!terminal) return "";
+  const lines: string[] = [];
+  for (let index = 0; index < terminal.buffer.active.length; index += 1) {
+    const line = terminal.buffer.active.getLine(index);
+    if (line) lines.push(line.translateToString(true));
+  }
+  return lines.join("\n");
+}
+
+async function readTerminalHandleText(
+  terminal: JSHandle<InspectableTerminal | undefined>,
+): Promise<string> {
+  return terminal.evaluate(terminalHandleText);
+}
+
 async function readRenderedTerminalSize(page: Page): Promise<RenderedTerminalSize | null> {
   return await page.evaluate(() => {
     const terminal = (window as Window & { __paseoTerminal?: { rows: number; cols: number } })
@@ -58,6 +86,22 @@ async function readRenderedTerminalSize(page: Page): Promise<RenderedTerminalSiz
 async function createTerminalViaMenu(page: Page): Promise<void> {
   await page.getByTestId("workspace-new-tab-menu-trigger").click();
   await page.getByTestId("workspace-new-tab-menu-terminal").click();
+}
+
+async function openTerminalWithoutSurfaceInteraction(
+  page: Page,
+  input: { baseUrl: string; workspaceId: string; terminalId: string },
+): Promise<void> {
+  const route = buildHostWorkspaceRoute(getServerId(), input.workspaceId);
+  const destination = new URL(route, input.baseUrl);
+  destination.searchParams.set("open", `terminal:${input.terminalId}`);
+  await page.goto(destination.toString());
+  await page.waitForURL(
+    (currentUrl) => currentUrl.pathname === route && !currentUrl.searchParams.has("open"),
+    { timeout: 30_000 },
+  );
+  await expect(page.getByTestId("terminal-surface").first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("terminal-attach-loading")).toBeHidden({ timeout: 10_000 });
 }
 
 async function listTerminalIds(harness: TerminalE2EHarness): Promise<string[]> {
@@ -201,5 +245,99 @@ test.describe("terminal PTY size claim under lost window focus", () => {
 
       await waitForTerminalMarker(page, marker);
     });
+  });
+
+  test("a passive phone viewer preserves desktop PTY size and CJK snapshot text", async ({
+    browser,
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const primary = await harness.createTerminal({ name: "desktop-primary" });
+    const secondary = await harness.createTerminal({ name: "desktop-secondary" });
+    const phoneContext = await browser.newContext({
+      viewport: MOBILE_VIEWPORT,
+      isMobile: true,
+      hasTouch: true,
+    });
+    const phonePage = await phoneContext.newPage();
+    await phonePage.route(/:(6767)\b/, (route) => route.abort());
+    await phonePage.routeWebSocket(/:(6767)\b/, async (webSocket) => {
+      await webSocket.close({ code: 1008, reason: "Blocked production daemon during E2E." });
+    });
+
+    try {
+      await harness.openTerminal(page, { terminalId: primary.id });
+      const desktopSize = requireTerminalSize(await readRenderedTerminalSize(page));
+      const primaryTerminal = await page.evaluateHandle(() => window.__paseoTerminal);
+      const baseUrl = new URL(page.url()).origin;
+      const seededStorage = await page.evaluate(() => Object.entries(localStorage));
+      await phonePage.addInitScript(
+        ({ entries }) => {
+          for (const [key, value] of entries) localStorage.setItem(key, value);
+          localStorage.setItem("@paseo:client-id-v1", "cid_passive_phone_viewer");
+        },
+        { entries: seededStorage },
+      );
+      await harness.client.subscribeTerminal(primary.id);
+
+      let probe = 1;
+      await expect
+        .poll(
+          async () => {
+            harness.client.sendTerminalInput(primary.id, {
+              type: "input",
+              data: `echo "S${probe++}=$(stty size)="\n`,
+            });
+            return parseLatestSttySize(await captureTerminalText(harness, primary.id));
+          },
+          { timeout: 15_000, intervals: [100, 250, 500] },
+        )
+        .toEqual(desktopSize);
+
+      harness.client.sendTerminalInput(primary.id, {
+        type: "input",
+        data: "printf '\\n测试cursor对话\\n'\n",
+      });
+      await waitForTerminalMarker(page, "测试cursor对话");
+
+      await phonePage.setViewportSize(MOBILE_VIEWPORT);
+      await openTerminalWithoutSurfaceInteraction(phonePage, {
+        baseUrl,
+        workspaceId: harness.workspaceId,
+        terminalId: primary.id,
+      });
+      await phonePage.waitForTimeout(2_500);
+
+      await expect
+        .poll(
+          async () => {
+            harness.client.sendTerminalInput(primary.id, {
+              type: "input",
+              data: `echo "S${probe++}=$(stty size)="\n`,
+            });
+            return parseLatestSttySize(await captureTerminalText(harness, primary.id));
+          },
+          { timeout: 15_000, intervals: [100, 250, 500] },
+        )
+        .toEqual(desktopSize);
+
+      await page.getByTestId(`workspace-tab-terminal_${secondary.id}`).first().click();
+      await expect(
+        page.getByTestId("terminal-surface").filter({ visible: true }).first(),
+      ).toBeVisible();
+      await page.getByTestId(`workspace-tab-terminal_${primary.id}`).first().click();
+
+      await expect
+        .poll(() => readTerminalHandleText(primaryTerminal), {
+          message: "CJK text should remain contiguous after snapshot restore",
+          timeout: 15_000,
+        })
+        .toContain("测试cursor对话");
+    } finally {
+      await phoneContext.close();
+      await harness.killTerminal(primary.id);
+      await harness.killTerminal(secondary.id);
+    }
   });
 });

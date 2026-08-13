@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { z } from "zod";
 
 const HANDOFF_MARKER = ".paseo-agent-terminal.json";
 const HANDOFF_VERSION = 1;
@@ -20,6 +21,12 @@ interface CursorConversationStoreOptions {
   cwd: string;
   sessionId: string;
   configDir?: string;
+}
+
+export interface CursorConversationSettings {
+  model?: string;
+  thinkingOptionId?: string;
+  fast?: string;
 }
 
 interface CursorConversationStorePaths {
@@ -37,8 +44,38 @@ interface CursorConversationHandoffMarker {
   workspaceHash: string;
 }
 
+const CURSOR_CLI_CONFIG_SCHEMA = z.object({
+  selectedModel: z
+    .object({
+      modelId: z.string().optional(),
+      parameters: z.array(z.object({ id: z.string(), value: z.string() })).optional(),
+    })
+    .optional(),
+});
+
+type CursorSelectedModel = NonNullable<z.infer<typeof CURSOR_CLI_CONFIG_SCHEMA>["selectedModel"]>;
+
 function resolveConfigRoot(cwd: string, configuredPath: string): string {
   return isAbsolute(configuredPath) ? configuredPath : resolve(cwd, configuredPath);
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function selectedParameter(
+  selectedModel: CursorSelectedModel,
+  parameterIds: string[],
+): string | undefined {
+  const parameters = selectedModel.parameters;
+  if (!Array.isArray(parameters)) return undefined;
+
+  for (const parameter of parameters) {
+    if (!parameterIds.includes(parameter.id)) continue;
+    const value = nonEmptyString(parameter.value);
+    if (value) return value;
+  }
+  return undefined;
 }
 
 export function resolveCursorConfigDirectory(
@@ -256,6 +293,26 @@ export async function syncCursorConversationTerminalStore(
     if (code !== "ENOTEMPTY" && code !== "EEXIST" && code !== "ENOENT") throw error;
   });
   return true;
+}
+
+export async function readCursorConversationSettings(
+  options: CursorConversationStoreOptions,
+): Promise<CursorConversationSettings> {
+  const paths = await resolveStorePaths(options);
+  const config = CURSOR_CLI_CONFIG_SCHEMA.parse(
+    JSON.parse(await readFile(join(paths.configDir, "cli-config.json"), "utf8")),
+  );
+  const selectedModel = config.selectedModel;
+  if (!selectedModel) return {};
+  const model = nonEmptyString(selectedModel.modelId);
+  const thinkingOptionId = selectedParameter(selectedModel, ["effort", "reasoning"]);
+  const fast = selectedParameter(selectedModel, ["fast"]);
+
+  return {
+    ...(model ? { model } : {}),
+    ...(thinkingOptionId ? { thinkingOptionId } : {}),
+    ...(fast ? { fast } : {}),
+  };
 }
 
 export async function getCursorConversationStorePathsForTest(

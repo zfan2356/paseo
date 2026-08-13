@@ -8,7 +8,7 @@ import type { TerminalCell, TerminalState } from "@getpaseo/protocol/messages";
 
 export type NativeTerminalWriteData = Uint8Array | string;
 export interface NativeTerminalCell extends TerminalCell {
-  width?: number;
+  width?: 0 | 1 | 2;
 }
 
 export type TerminalCellRow = NativeTerminalCell[];
@@ -115,6 +115,11 @@ function blankCell(): NativeTerminalCell {
   return { char: " ", width: 1, fg: undefined, bg: undefined };
 }
 
+function normalizeTerminalCellWidth(width: number): 0 | 1 | 2 {
+  if (width === 0 || width === 2) return width;
+  return 1;
+}
+
 function extractCell(
   line: IBufferLine | undefined,
   col: number,
@@ -138,7 +143,7 @@ function extractCell(
 
   return {
     char: cell.getChars() || " ",
-    width: cell.getWidth(),
+    width: normalizeTerminalCellWidth(cell.getWidth()),
     fg,
     bg,
     fgMode: fgMode !== 0 ? fgMode : undefined,

@@ -288,6 +288,13 @@ const GATED_WORKSPACE_HEADER_LEFT = <SidebarMenuToggle />;
 
 const AGENT_CONVERSATION_TERMINAL_PROVIDERS = new Set(["codex", "claude", "cursor"]);
 
+function resolveTerminalToAgentSwitchPending(input: {
+  isSwitching: boolean;
+  hasTerminal: boolean;
+}): boolean {
+  return input.isSwitching && input.hasTerminal;
+}
+
 function useAgentConversationAgentId(input: {
   activeTab: WorkspaceTabDescriptor | null;
   serverId: string;
@@ -3674,6 +3681,10 @@ function WorkspaceScreenContent({
     () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,
     [createTerminalMutation.isPending, pendingTerminalCreateInput],
   );
+  const isTerminalToAgentSwitchPending = resolveTerminalToAgentSwitchPending({
+    isSwitching: isSwitchingAgentConversationView,
+    hasTerminal: activeAgentConversationTerminal !== null,
+  });
 
   const headerRight = useMemo(
     () => (
@@ -3692,7 +3703,7 @@ function WorkspaceScreenContent({
             style={isMobile ? styles.headerActionButton : styles.compactHeaderActionButton}
             disabled={
               createTerminalDisabled ||
-              isSwitchingAgentConversationView ||
+              isTerminalToAgentSwitchPending ||
               !isConnected ||
               !workspaceDirectory
             }
@@ -3838,7 +3849,7 @@ function WorkspaceScreenContent({
       agentConversationAgentId,
       activeAgentConversationTerminal,
       handleToggleAgentConversationView,
-      isSwitchingAgentConversationView,
+      isTerminalToAgentSwitchPending,
       createTerminalDisabled,
       isConnected,
       workspaceDescriptor,

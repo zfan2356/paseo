@@ -571,6 +571,11 @@ function prependPathEntry(currentPath: string, entry: string): string {
   return [entry, ...entries].join(delimiter);
 }
 
+function normalizeTerminalCellWidth(width: number): 0 | 1 | 2 {
+  if (width === 0 || width === 2) return width;
+  return 1;
+}
+
 function extractCell(terminal: TerminalType, row: number, col: number): TerminalCell {
   const buffer = terminal.buffer.active;
   const line = buffer.getLine(row);
@@ -593,9 +598,11 @@ function extractCell(terminal: TerminalType, row: number, col: number): Terminal
   // Only return color if not default (mode 0)
   const fg = fgMode !== 0 ? cell.getFgColor() : undefined;
   const bg = bgMode !== 0 ? cell.getBgColor() : undefined;
+  const width = normalizeTerminalCellWidth(cell.getWidth());
 
   return {
     char: cell.getChars() || " ",
+    ...(width !== 1 ? { width } : {}),
     fg,
     bg,
     fgMode: fgMode !== 0 ? fgMode : undefined,
@@ -653,8 +660,10 @@ function extractScrollback(
           const bgMode = bgModeRaw >> 24;
           const fg = fgMode !== 0 ? cell.getFgColor() : undefined;
           const bg = bgMode !== 0 ? cell.getBgColor() : undefined;
+          const width = normalizeTerminalCellWidth(cell.getWidth());
           rowCells.push({
             char: cell.getChars() || " ",
+            ...(width !== 1 ? { width } : {}),
             fg,
             bg,
             fgMode: fgMode !== 0 ? fgMode : undefined,

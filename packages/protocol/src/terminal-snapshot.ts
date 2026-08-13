@@ -26,6 +26,19 @@ const DEFAULT_STYLE: TerminalStyle = {
   strikethrough: false,
 };
 
+const WIDE_CHARACTER_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x1100, 0x115f],
+  [0x2329, 0x232a],
+  [0x2e80, 0xa4cf],
+  [0xac00, 0xd7a3],
+  [0xf900, 0xfaff],
+  [0xfe10, 0xfe19],
+  [0xfe30, 0xfe6f],
+  [0xff00, 0xff60],
+  [0xffe0, 0xffe6],
+  [0x1f300, 0x1faff],
+];
+
 export function renderTerminalSnapshotToAnsi(state: TerminalState): string {
   const rows = [...state.scrollback, ...state.grid];
   const wrapFlags = [...(state.scrollbackWrapped ?? []), ...(state.gridWrapped ?? [])];
@@ -87,12 +100,24 @@ function renderTerminalRow(row: TerminalCell[], padToCols?: number): string {
 
   for (let index = 0; index < length; index += 1) {
     const cell = row[index] ?? { char: " " };
+    if (cell.width === 0) {
+      continue;
+    }
+    // COMPAT(terminalCellWidth): added in the custom fork on 2026-08-13, remove after 2027-02-13 once persistent worker floor includes cell widths.
+    const skipsLegacyWideSpacer =
+      cell.width === undefined &&
+      terminalCharacterWidth(cell.char) === 2 &&
+      row[index + 1]?.width === undefined &&
+      row[index + 1]?.char === " ";
     const nextStyle = getTerminalStyle(cell);
     if (!terminalStylesEqual(previousStyle, nextStyle)) {
       output.push(styleToAnsi(nextStyle));
       previousStyle = nextStyle;
     }
     output.push(cell.char || " ");
+    if (skipsLegacyWideSpacer) {
+      index += 1;
+    }
   }
 
   if (!terminalStylesEqual(previousStyle, DEFAULT_STYLE)) {
@@ -100,6 +125,14 @@ function renderTerminalRow(row: TerminalCell[], padToCols?: number): string {
   }
 
   return output.join("");
+}
+
+function terminalCharacterWidth(char: string): 1 | 2 {
+  const codePoint = char.codePointAt(0);
+  if (codePoint === undefined) return 1;
+  return WIDE_CHARACTER_RANGES.some(([start, end]) => codePoint >= start && codePoint <= end)
+    ? 2
+    : 1;
 }
 
 function getTerminalRowLength(row: TerminalCell[]): number {

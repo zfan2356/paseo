@@ -7,6 +7,48 @@ function cells(text: string): TerminalState["grid"][number] {
 }
 
 describe("renderTerminalSnapshotToAnsi", () => {
+  it("does not replay wide-character continuation cells as spaces", () => {
+    const state: TerminalState = {
+      rows: 1,
+      cols: 14,
+      scrollback: [],
+      grid: [
+        [
+          { char: "测", width: 2 },
+          { char: " ", width: 0 },
+          { char: "试", width: 2 },
+          { char: " ", width: 0 },
+          ...cells("cursor"),
+          { char: "对", width: 2 },
+          { char: " ", width: 0 },
+          { char: "话", width: 2 },
+          { char: " ", width: 0 },
+        ],
+      ],
+      cursor: { row: 0, col: 14 },
+    };
+
+    const ansi = renderTerminalSnapshotToAnsi(state);
+
+    expect(ansi).toContain("测试cursor对话");
+    expect(ansi).not.toContain("测 试 cursor对 话");
+  });
+
+  it("keeps wide characters contiguous for snapshots from older terminal workers", () => {
+    const state: TerminalState = {
+      rows: 1,
+      cols: 6,
+      scrollback: [],
+      grid: [[{ char: "测" }, { char: " " }, { char: "试" }, { char: " " }, ...cells("ok")]],
+      cursor: { row: 0, col: 6 },
+    };
+
+    const ansi = renderTerminalSnapshotToAnsi(state);
+
+    expect(ansi).toContain("测试ok");
+    expect(ansi).not.toContain("测 试 ok");
+  });
+
   it("renders soft-wrapped rows as one contiguous logical line when wrap flags are present", () => {
     // The server soft-wrapped one logical line "ABCDEFGHIJKLMNOP" at 10 cols into
     // two grid rows. gridWrapped[0] = true marks row 0 as continuing into row 1.
