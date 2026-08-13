@@ -12,6 +12,7 @@ import { findExecutable } from "../executable-resolution/executable-resolution.j
 import type { TerminalCell, TerminalState } from "@getpaseo/protocol/messages";
 import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode";
 import { TerminalActivityTracker } from "./activity/terminal-activity-tracker.js";
+import { KittyGraphicsReplyTracker } from "./kitty-graphics-protocol.js";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
 
 const { Terminal } = xterm;
@@ -947,6 +948,7 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
   let inputFlushImmediate: ReturnType<typeof setImmediate> | null = null;
   let stateRevision = 0;
   const inputModeTracker = new TerminalInputModeTracker();
+  const kittyGraphicsReplyTracker = new KittyGraphicsReplyTracker();
   const activityTracker = new TerminalActivityTracker();
   const activityChangeListeners = new Set<(transition: TerminalActivityTransition) => void>();
   let titleChangeSubscription: { dispose(): void } | null = null;
@@ -1169,6 +1171,7 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
     recentOutputChunks.length = 0;
     recentOutputLength = 0;
     inputModeTracker.reset();
+    kittyGraphicsReplyTracker.reset();
     if (inputFlushImmediate) {
       clearImmediate(inputFlushImmediate);
       inputFlushImmediate = null;
@@ -1202,6 +1205,9 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
     if (killed) return;
     const inputModeUpdate = inputModeTracker.feed(data);
     for (const response of inputModeUpdate.responses) {
+      ptyProcess.write(response);
+    }
+    for (const response of kittyGraphicsReplyTracker.feed(data)) {
       ptyProcess.write(response);
     }
     recentOutputChunks.push(data);

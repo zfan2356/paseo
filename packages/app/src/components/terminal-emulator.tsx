@@ -519,7 +519,7 @@ export default function TerminalEmulator({
     if (focusRequestToken <= 0) {
       return () => {};
     }
-    runtimeRef.current?.resize({ forceClaim: true, shouldClaim: true });
+    runtimeRef.current?.resize({ forceRefresh: true, forceClaim: true, shouldClaim: true });
     return focusWithRetries({
       focus: () => {
         runtimeRef.current?.focus();
@@ -539,7 +539,7 @@ export default function TerminalEmulator({
     if (resizeRequestToken <= 0) {
       return;
     }
-    runtimeRef.current?.resize({ forceClaim: false, shouldClaim: false });
+    runtimeRef.current?.resize({ forceRefresh: true, shouldClaim: false });
   }, [resizeRequestToken]);
 
   const showTerminalContextMenu = useCallback(() => {

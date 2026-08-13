@@ -295,6 +295,59 @@ describe("terminal emulator runtime in a real browser", () => {
     });
   });
 
+  it("does not forward Kitty graphics replies as typed input", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+    await nextFrame();
+    await nextFrame();
+
+    mounted.runtime.write({
+      data: terminalOutput("\x1b_Gi=469108283,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\"),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(mounted.inputs.some((value) => value.includes("\x1b_G") || value.includes("_Gi="))).toBe(
+      false,
+    );
+  });
+
+  it("refreshes after the host is hidden with display none and shown again", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    mounted.runtime.write({
+      data: terminalOutput("\x1b[?25lhello\x1b[7m \x1b[27m"),
+    });
+    await waitFor({
+      predicate: () => readActiveCell(5)?.bgRgb === true,
+    });
+
+    const terminal = getBrowserTerminal();
+    const refreshCalls: Array<[number, number]> = [];
+    const originalRefresh = terminal.refresh.bind(terminal);
+    terminal.refresh = (start, end) => {
+      refreshCalls.push([start, end]);
+      originalRefresh(start, end);
+    };
+
+    mounted.root.style.display = "none";
+    await nextFrame();
+    mounted.root.style.display = "block";
+    await waitFor({ predicate: () => refreshCalls.length > 0 });
+
+    expect(refreshCalls.at(-1)).toEqual([0, terminal.rows - 1]);
+    expect(readActiveCell(5)).toEqual({
+      chars: " ",
+      bgRgb: true,
+      bgColor: 0xe6e6e6,
+      inverse: 0,
+    });
+  });
+
   it("does not claim PTY ownership from passive mount refits", async () => {
     await page.viewport(900, 600);
     const mounted = createTerminalHost({ width: 720, height: 360 });

@@ -50,7 +50,13 @@ type BridgeInboundMessage =
   | { type: "paste"; streamKey: string; text: string }
   | { type: "clear"; streamKey: string }
   | { type: "focus"; streamKey: string; forceRefocus?: boolean }
-  | { type: "resize"; streamKey: string; forceClaim: boolean; shouldClaim?: boolean }
+  | {
+      type: "resize";
+      streamKey: string;
+      forceClaim: boolean;
+      shouldClaim?: boolean;
+      forceRefresh?: boolean;
+    }
   | { type: "setTheme"; streamKey: string; theme: ITheme }
   | { type: "setScrollback"; streamKey: string; lines: number }
   | { type: "setFont"; streamKey: string; fontFamily?: string; fontSize?: number }
@@ -414,7 +420,13 @@ export default function WebViewTerminalEmulator({
 
   useEffect(() => {
     if (resizeRequestToken <= 0) return;
-    sendToWebView({ type: "resize", streamKey, forceClaim: false, shouldClaim: false });
+    sendToWebView({
+      type: "resize",
+      streamKey,
+      forceClaim: false,
+      shouldClaim: false,
+      forceRefresh: true,
+    });
   }, [resizeRequestToken, sendToWebView, streamKey]);
 
   useEffect(() => {

@@ -24,6 +24,7 @@ import {
 } from "@/utils/terminal-keys";
 import { renderTerminalSnapshotToAnsi } from "./terminal-snapshot";
 import { materializeDefaultInverseSgr } from "./inverse-sgr";
+import { isEmulatorGeneratedProtocolReply } from "./terminal-protocol-reply";
 import {
   createTerminalLocalFileLinkProvider,
   type TerminalLocalFileLinkSource,
@@ -194,6 +195,7 @@ export class TerminalEmulatorRuntime {
   private readonly inputModeTracker = new TerminalInputModeTracker();
   private lastInputModeState: TerminalInputModeState = this.inputModeTracker.getState();
   private themeBackgroundElements: HTMLElement[] = [];
+  private needsRefreshAfterHiddenFit = false;
 
   private handleVisibilityRestore = (): void => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
@@ -225,6 +227,7 @@ export class TerminalEmulatorRuntime {
 
     input.host.innerHTML = "";
     this.lastSize = null;
+    this.needsRefreshAfterHiddenFit = false;
     this.inputModeTracker.reset();
     this.emitInputModeChange();
 
@@ -342,7 +345,7 @@ export class TerminalEmulatorRuntime {
           disposeWebglRenderer();
         });
         terminal.loadAddon(webglAddon);
-        imageAddon = new ImageAddon();
+        imageAddon = new ImageAddon({ enableSizeReports: false });
         terminal.loadAddon(imageAddon);
         registerProtocolQuerySuppression();
         this.fitAndEmitResize?.({ forceRefresh: true, shouldClaim: false });
@@ -373,6 +376,7 @@ export class TerminalEmulatorRuntime {
       }
 
       if (input.root.offsetWidth === 0 || input.root.offsetHeight === 0) {
+        this.needsRefreshAfterHiddenFit = true;
         return;
       }
 
@@ -385,8 +389,10 @@ export class TerminalEmulatorRuntime {
       const nextRows = currentTerminal.rows;
       const nextCols = currentTerminal.cols;
       const previous = this.lastSize;
+      const refreshAfterHidden = this.needsRefreshAfterHiddenFit;
+      const shouldRefresh = forceRefresh || refreshAfterHidden;
       if (
-        !forceRefresh &&
+        !shouldRefresh &&
         !forceClaim &&
         previous &&
         previous.rows === nextRows &&
@@ -395,6 +401,7 @@ export class TerminalEmulatorRuntime {
         return;
       }
 
+      this.needsRefreshAfterHiddenFit = false;
       this.lastSize = { rows: nextRows, cols: nextCols };
       this.refreshVisibleRows();
       this.callbacks.onResize?.(
@@ -412,6 +419,9 @@ export class TerminalEmulatorRuntime {
 
     const inputDisposable = terminal.onData((data) => {
       if (this.suppressInput) {
+        return;
+      }
+      if (isEmulatorGeneratedProtocolReply(data)) {
         return;
       }
       this.callbacks.onInput?.(data);
@@ -803,6 +813,7 @@ export class TerminalEmulatorRuntime {
     this.fitAddon = null;
     this.fitAndEmitResize = null;
     this.lastSize = null;
+    this.needsRefreshAfterHiddenFit = false;
     this.themeBackgroundElements = [];
     this.suppressInput = false;
     this.inputModeDecoder.decode();
