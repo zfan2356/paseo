@@ -1,5 +1,6 @@
 import { page } from "@vitest/browser/context";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Terminal } from "@xterm/xterm";
 import type { TerminalInputModeState } from "@getpaseo/protocol/terminal-input-mode";
 import { encodeTerminalOutput, TerminalEmulatorRuntime } from "./terminal-emulator-runtime";
 
@@ -162,6 +163,34 @@ function getBrowserTerminal(): BrowserTerminal {
   return terminal;
 }
 
+function inspectMountedTerminal(): Terminal {
+  const terminal = window.__paseoTerminal;
+  if (!terminal) {
+    throw new Error("Expected xterm to be exposed for browser test inspection");
+  }
+  return terminal;
+}
+
+function readActiveCell(col: number): {
+  chars: string;
+  bgRgb: boolean;
+  bgColor: number;
+  inverse: number;
+} | null {
+  const terminal = window.__paseoTerminal;
+  const line = terminal?.buffer.active.getLine(terminal.buffer.active.baseY);
+  const cell = line?.getCell(col);
+  if (!cell) {
+    return null;
+  }
+  return {
+    chars: cell.getChars(),
+    bgRgb: cell.isBgRGB(),
+    bgColor: cell.getBgColor(),
+    inverse: cell.isInverse(),
+  };
+}
+
 function dispatchTerminalKey(input: {
   host: HTMLElement;
   key: string;
@@ -220,6 +249,50 @@ describe("terminal emulator runtime in a real browser", () => {
 
     expect(window.__paseoTerminal).toBe(terminal);
     expect(window.__paseoTerminal?.options.scrollback).toBe(42_000);
+  });
+
+  it("keeps a solid bar caret visible while the pane is unfocused", async () => {
+    await page.viewport(900, 600);
+    createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({
+      predicate: () => window.__paseoTerminal !== undefined,
+    });
+
+    const options = inspectMountedTerminal().options;
+    expect({
+      cursorBlink: options.cursorBlink,
+      cursorStyle: options.cursorStyle,
+      cursorInactiveStyle: options.cursorInactiveStyle,
+      cursorWidth: options.cursorWidth,
+    }).toEqual({
+      cursorBlink: false,
+      cursorStyle: "bar",
+      cursorInactiveStyle: "bar",
+      cursorWidth: 2,
+    });
+  });
+
+  it("paints an Ink inverse-space caret after the hardware cursor is hidden", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    mounted.runtime.write({
+      data: terminalOutput("\x1b[?25lhello\x1b[7m \x1b[27m"),
+    });
+
+    await waitFor({
+      predicate: () => readActiveCell(5)?.bgRgb === true,
+    });
+
+    expect(readActiveCell(5)).toEqual({
+      chars: " ",
+      bgRgb: true,
+      bgColor: 0xe6e6e6,
+      inverse: 0,
+    });
   });
 
   it("does not claim PTY ownership from passive mount refits", async () => {

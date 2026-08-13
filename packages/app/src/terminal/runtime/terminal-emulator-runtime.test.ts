@@ -322,6 +322,28 @@ describe("terminal-emulator-runtime", () => {
     });
   });
 
+  it("paints Ink inverse-space carets with explicit theme colors before xterm write", () => {
+    const { runtime, terminal, writeTexts } = createRuntimeWithTerminal();
+    terminal.options = {
+      theme: { foreground: "#e6e6e6", background: "#0b0b0b" },
+    };
+
+    runtime.write({ data: terminalOutput("hello\x1b[7m \x1b[27m") });
+
+    expect(writeTexts).toEqual(["hello\x1b[38;2;11;11;11;48;2;230;230;230m \x1b[39;49m"]);
+  });
+
+  it("paints snapshot inverse-space carets with explicit theme colors", () => {
+    const { runtime, terminal, writeTexts } = createRuntimeWithTerminal();
+    terminal.options = {
+      theme: { foreground: "#e6e6e6", background: "#0b0b0b" },
+    };
+
+    runtime.restoreOutput({ data: terminalOutput("hello\x1b[7m \x1b[27m") });
+
+    expect(writeTexts).toEqual(["\x1bchello\x1b[38;2;11;11;11;48;2;230;230;230m \x1b[39;49m"]);
+  });
+
   it("commits each drained plain write through its own xterm callback", () => {
     const { runtime, writeTexts, writeCallbacks } = createRuntimeWithTerminal();
     const committed: string[] = [];

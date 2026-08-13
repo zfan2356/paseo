@@ -23,6 +23,7 @@ import {
   shouldInterceptDomTerminalKey,
 } from "@/utils/terminal-keys";
 import { renderTerminalSnapshotToAnsi } from "./terminal-snapshot";
+import { materializeDefaultInverseSgr } from "./inverse-sgr";
 import {
   createTerminalLocalFileLinkProvider,
   type TerminalLocalFileLinkSource,
@@ -227,11 +228,14 @@ export class TerminalEmulatorRuntime {
     this.inputModeTracker.reset();
     this.emitInputModeChange();
 
+    // Solid bar stays visible on Pure Black when the pane blurs; blink can stick off under WebGL.
     const terminal = new Terminal({
       allowProposedApi: true,
       convertEol: false,
-      cursorBlink: true,
+      cursorBlink: false,
+      cursorInactiveStyle: "bar",
       cursorStyle: "bar",
+      cursorWidth: 2,
       fontFamily: resolveTerminalFontFamily(input.fontFamily),
       fontSize: resolveTerminalFontSize(input.fontSize),
       lineHeight: 1.0,
@@ -878,10 +882,11 @@ export class TerminalEmulatorRuntime {
       this.emitInputModeChange();
     }
     this.hasUngatedWrites = true;
+    const data = this.paintDefaultInverseSgr(terminal, operation.data);
     const onCommitted = operation.onCommitted;
     if (!onCommitted) {
       try {
-        terminal.write(operation.data);
+        terminal.write(data);
       } catch {
         // Match existing behavior: a failed write still proceeds with no commit callback.
       }
@@ -895,7 +900,7 @@ export class TerminalEmulatorRuntime {
     };
     this.pendingWriteCommits.add(commit);
     try {
-      terminal.write(operation.data, commit);
+      terminal.write(data, commit);
     } catch {
       commit();
     }
@@ -962,12 +967,22 @@ export class TerminalEmulatorRuntime {
     }, OUTPUT_OPERATION_TIMEOUT_MS);
 
     try {
-      terminal.write(data, () => {
+      terminal.write(this.paintDefaultInverseSgr(terminal, data), () => {
         finalizeOperation(operation);
       });
     } catch {
       finalizeOperation(operation);
     }
+  }
+
+  private paintDefaultInverseSgr(terminal: Terminal, data: Uint8Array): Uint8Array {
+    // Ink TUIs hide the hardware cursor and draw a caret as inverse+default-color
+    // space. WebGL skips that background, so paint the swapped theme colors explicitly.
+    return materializeDefaultInverseSgr({
+      data,
+      foreground: terminal.options.theme?.foreground,
+      background: terminal.options.theme?.background,
+    });
   }
 
   private clearInFlightOutputTimeout(): void {
