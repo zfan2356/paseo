@@ -388,6 +388,7 @@ it("reattaches to a live terminal after the daemon-side manager disconnects", as
     cleanupManager = firstManager;
     const firstSession = await firstManager.createTerminal({
       workspaceId: "ws-persistent",
+      linkedAgentId: "agent-persistent",
       cwd,
       env: {
         PASEO_RESTART_GATE: gatePath,
@@ -435,6 +436,7 @@ it("reattaches to a live terminal after the daemon-side manager disconnects", as
     cleanupManager = secondManager;
     const restored = secondManager.getTerminal(firstSession.id);
     expect(restored).toBeDefined();
+    expect(restored?.linkedAgentId).toBe("agent-persistent");
     expect(restored?.getTitle()).toBe("Persistent shell");
     expect((await secondManager.getTerminals(cwd)).map((terminal) => terminal.id)).toEqual([
       firstSession.id,

@@ -1,10 +1,12 @@
 import type pino from "pino";
+import { randomUUID } from "node:crypto";
 import type {
   CaptureTerminalRequest,
   CreateTerminalRequest,
   KillTerminalRequest,
   ListTerminalsRequest,
   RenameTerminalRequest,
+  SwitchCodexTerminalToAgentRequest,
   SessionInboundMessage,
   SessionOutboundMessage,
   SubscribeTerminalRequest,
@@ -36,17 +38,29 @@ import type { TerminalManager, TerminalsChangedEvent } from "./terminal-manager.
 import { applyTerminalSize } from "./terminal-size-ownership.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import { terminalSubscriptionKey } from "@getpaseo/protocol/terminal-subscription-key";
-import { CODEX_FORK_TERMINAL_NAME, type CodexForkTerminalLaunch } from "./codex-fork-terminal.js";
+import {
+  buildCodexConversationTerminalName,
+  CODEX_CONVERSATION_TERMINAL_NAME,
+  parseCodexConversationTerminalAgentId,
+  type CodexConversationTerminalLaunch,
+} from "./codex-fork-terminal.js";
 
 const MAX_TERMINAL_STREAM_SLOTS = 256;
 
 function getTerminalCapabilities(name: string): { imagePaste: true } | undefined {
-  return name === CODEX_FORK_TERMINAL_NAME ? { imagePaste: true } : undefined;
+  return name === CODEX_CONVERSATION_TERMINAL_NAME || parseCodexConversationTerminalAgentId(name)
+    ? { imagePaste: true }
+    : undefined;
 }
 
 interface BufferedTerminalOutput {
   data: string;
   revision?: number;
+}
+
+interface ResolvedTerminalCreate {
+  options: Parameters<TerminalManager["createTerminal"]>[0];
+  claimedAgentTerminal: { agentId: string; terminalId: string } | null;
 }
 
 interface ActiveTerminalStream {
@@ -78,9 +92,12 @@ export interface TerminalSessionControllerOptions {
   listTerminalWorkspaceRoots?: () => Promise<readonly string[]>;
   resolveAgentTerminalLaunch?: (input: {
     agentId: string;
+    terminalId: string;
     cwd: string;
     workspaceId: string;
-  }) => Promise<CodexForkTerminalLaunch>;
+  }) => Promise<CodexConversationTerminalLaunch>;
+  releaseAgentTerminalOwnership?: (input: { agentId: string; terminalId: string }) => Promise<void>;
+  resumeAgentFromTerminal?: (input: { agentId: string; terminalId: string }) => Promise<void>;
   // Whether the connected client can reflow restored snapshots. When true the
   // daemon attaches per-row soft-wrap flags to snapshots; otherwise it omits them
   // so old (strict-schema) clients still parse the snapshot.
@@ -114,6 +131,7 @@ type TerminalDispatchableMessage =
   | UnsubscribeTerminalRequest
   | TerminalInput
   | KillTerminalRequest
+  | SwitchCodexTerminalToAgentRequest
   | CaptureTerminalRequest
   | RenameTerminalRequest;
 
@@ -126,6 +144,7 @@ const TERMINAL_MESSAGE_TYPES: ReadonlySet<TerminalDispatchableMessage["type"]> =
   "unsubscribe_terminal_request",
   "terminal_input",
   "kill_terminal_request",
+  "codex_terminal.switch_to_agent.request",
   "capture_terminal_request",
   "terminal.rename.request",
 ]);
@@ -142,9 +161,16 @@ export class TerminalSessionController {
   private readonly resolveAgentTerminalLaunch:
     | ((input: {
         agentId: string;
+        terminalId: string;
         cwd: string;
         workspaceId: string;
-      }) => Promise<CodexForkTerminalLaunch>)
+      }) => Promise<CodexConversationTerminalLaunch>)
+    | null;
+  private readonly releaseAgentTerminalOwnership:
+    | ((input: { agentId: string; terminalId: string }) => Promise<void>)
+    | null;
+  private readonly resumeAgentFromTerminal:
+    | ((input: { agentId: string; terminalId: string }) => Promise<void>)
     | null;
   private readonly clientSupportsWrapReflow: () => boolean;
   private readonly getClientBufferedAmount: () => number | null;
@@ -160,6 +186,8 @@ export class TerminalSessionController {
   >();
   private unsubscribeTerminalsChanged: (() => void) | null = null;
   private readonly exitSubscriptions = new Map<string, () => void>();
+  private readonly linkedAgentByTerminalId = new Map<string, string>();
+  private readonly switchingAgentTerminalIds = new Set<string>();
   private readonly activeStreams = new Map<number, ActiveTerminalStream>();
   private readonly idToSlot = new Map<string, number>();
   private nextSlot = 0;
@@ -176,6 +204,8 @@ export class TerminalSessionController {
       options.listTerminalWorkspaceRoots ??
       (async () => (await this.listTerminalWorkspaceRefs()).map((workspace) => workspace.cwd));
     this.resolveAgentTerminalLaunch = options.resolveAgentTerminalLaunch ?? null;
+    this.releaseAgentTerminalOwnership = options.releaseAgentTerminalOwnership ?? null;
+    this.resumeAgentFromTerminal = options.resumeAgentFromTerminal ?? null;
     this.clientSupportsWrapReflow = options.clientSupportsWrapReflow ?? (() => false);
     this.getClientBufferedAmount = options.getClientBufferedAmount ?? (() => 0);
   }
@@ -221,6 +251,8 @@ export class TerminalSessionController {
         return undefined;
       case "kill_terminal_request":
         return this.handleKillTerminalRequest(msg);
+      case "codex_terminal.switch_to_agent.request":
+        return this.handleSwitchCodexTerminalToAgentRequest(msg);
       case "capture_terminal_request":
         return this.handleCaptureTerminalRequest(msg);
       case "terminal.rename.request":
@@ -308,19 +340,40 @@ export class TerminalSessionController {
     if (this.exitSubscriptions.has(terminal.id)) {
       return;
     }
+    const linkedAgentId =
+      terminal.linkedAgentId ?? parseCodexConversationTerminalAgentId(terminal.name);
+    if (linkedAgentId) {
+      this.linkedAgentByTerminalId.set(terminal.id, linkedAgentId);
+    }
     const unsubscribeExit = terminal.onExit(() => {
-      this.handleTerminalExited(terminal.id);
+      void this.handleTerminalExited(terminal.id);
     });
     this.exitSubscriptions.set(terminal.id, unsubscribeExit);
   }
 
-  private handleTerminalExited(terminalId: string): void {
+  private async handleTerminalExited(terminalId: string): Promise<void> {
     const unsubscribeExit = this.exitSubscriptions.get(terminalId);
     if (unsubscribeExit) {
       unsubscribeExit();
       this.exitSubscriptions.delete(terminalId);
     }
     this.detachStream(terminalId, { emitExit: true });
+    const agentId = this.linkedAgentByTerminalId.get(terminalId);
+    this.linkedAgentByTerminalId.delete(terminalId);
+    if (
+      agentId &&
+      !this.switchingAgentTerminalIds.has(terminalId) &&
+      this.releaseAgentTerminalOwnership
+    ) {
+      try {
+        await this.releaseAgentTerminalOwnership({ agentId, terminalId });
+      } catch (error) {
+        this.sessionLogger.warn(
+          { err: error, agentId, terminalId },
+          "Failed to release Agent ownership after Codex terminal exit",
+        );
+      }
+    }
   }
 
   private emitTerminalsChangedSnapshot(input: {
@@ -332,6 +385,7 @@ export class TerminalSessionController {
       title?: string;
       activity: TerminalActivity | null;
       capabilities?: { imagePaste: true };
+      linkedAgentId?: string;
     }>;
   }): void {
     this.emit({
@@ -350,24 +404,31 @@ export class TerminalSessionController {
   }
 
   private toTerminalInfo(
-    terminal: Pick<TerminalSession, "id" | "name" | "workspaceId" | "getTitle" | "getActivity">,
+    terminal: Pick<
+      TerminalSession,
+      "id" | "name" | "workspaceId" | "linkedAgentId" | "getTitle" | "getActivity"
+    >,
   ): {
     id: string;
     name: string;
     workspaceId: string;
+    linkedAgentId?: string;
     title?: string;
     activity: TerminalActivity | null;
     capabilities?: { imagePaste: true };
   } {
     const title = terminal.getTitle();
     const activity = terminal.getActivity();
+    const linkedAgentId =
+      terminal.linkedAgentId ?? parseCodexConversationTerminalAgentId(terminal.name);
     const capabilities = getTerminalCapabilities(terminal.name);
     return {
       id: terminal.id,
-      name: terminal.name,
+      name: linkedAgentId ? CODEX_CONVERSATION_TERMINAL_NAME : terminal.name,
       workspaceId: terminal.workspaceId,
       ...(title ? { title } : {}),
       activity,
+      ...(linkedAgentId ? { linkedAgentId } : {}),
       ...(capabilities ? { capabilities } : {}),
     };
   }
@@ -547,6 +608,7 @@ export class TerminalSessionController {
       return;
     }
 
+    let claimedAgentTerminal: { agentId: string; terminalId: string } | null = null;
     try {
       const workspaceId = msg.workspaceId ?? (await this.resolveLegacyTerminalWorkspaceId(msg.cwd));
       if (!workspaceId) {
@@ -561,26 +623,9 @@ export class TerminalSessionController {
         return;
       }
 
-      const agentLaunch = msg.agentId
-        ? await this.resolveAgentTerminalLaunch?.({
-            agentId: msg.agentId,
-            cwd: msg.cwd,
-            workspaceId,
-          })
-        : null;
-      if (msg.agentId && !agentLaunch) {
-        throw new Error(`Agent terminal launch is not supported for agent ${msg.agentId}`);
-      }
-
-      const session = await this.terminalManager.createTerminal({
-        cwd: msg.cwd,
-        workspaceId,
-        name: agentLaunch?.name ?? msg.name,
-        command: agentLaunch?.command ?? msg.command,
-        args: agentLaunch?.args ?? msg.args,
-        rows: msg.size?.rows,
-        cols: msg.size?.cols,
-      });
+      const resolvedCreate = await this.resolveTerminalCreate(msg, workspaceId);
+      claimedAgentTerminal = resolvedCreate.claimedAgentTerminal;
+      const session = await this.terminalManager.createTerminal(resolvedCreate.options);
       this.ensureExitSubscription(session);
       this.emit({
         type: "create_terminal_response",
@@ -594,6 +639,16 @@ export class TerminalSessionController {
         },
       });
     } catch (error) {
+      if (claimedAgentTerminal && this.resumeAgentFromTerminal) {
+        try {
+          await this.resumeAgentFromTerminal(claimedAgentTerminal);
+        } catch (resumeError) {
+          this.sessionLogger.warn(
+            { err: resumeError, ...claimedAgentTerminal },
+            "Failed to restore Agent after Codex terminal launch failure",
+          );
+        }
+      }
       this.sessionLogger.error({ err: error, cwd: msg.cwd }, "Failed to create terminal");
       this.emit({
         type: "create_terminal_response",
@@ -604,6 +659,52 @@ export class TerminalSessionController {
         },
       });
     }
+  }
+
+  private async resolveTerminalCreate(
+    msg: CreateTerminalRequest,
+    workspaceId: string,
+  ): Promise<ResolvedTerminalCreate> {
+    const baseOptions = {
+      cwd: msg.cwd,
+      workspaceId,
+      rows: msg.size?.rows,
+      cols: msg.size?.cols,
+    };
+    if (!msg.agentId) {
+      return {
+        options: {
+          ...baseOptions,
+          name: msg.name,
+          command: msg.command,
+          args: msg.args,
+        },
+        claimedAgentTerminal: null,
+      };
+    }
+
+    const terminalId = randomUUID();
+    const launch = await this.resolveAgentTerminalLaunch?.({
+      agentId: msg.agentId,
+      terminalId,
+      cwd: msg.cwd,
+      workspaceId,
+    });
+    if (!launch) {
+      throw new Error(`Agent terminal launch is not supported for agent ${msg.agentId}`);
+    }
+
+    return {
+      options: {
+        ...baseOptions,
+        id: terminalId,
+        linkedAgentId: msg.agentId,
+        name: buildCodexConversationTerminalName(msg.agentId),
+        command: launch.command,
+        args: launch.args,
+      },
+      claimedAgentTerminal: { agentId: msg.agentId, terminalId },
+    };
   }
 
   private async resolveLegacyTerminalWorkspaceId(cwd: string): Promise<string | null> {
@@ -765,6 +866,59 @@ export class TerminalSessionController {
         requestId: msg.requestId,
       },
     });
+  }
+
+  private async handleSwitchCodexTerminalToAgentRequest(
+    msg: SwitchCodexTerminalToAgentRequest,
+  ): Promise<void> {
+    const terminal = this.terminalManager?.getTerminal(msg.terminalId);
+    const agentId = terminal
+      ? (terminal.linkedAgentId ?? parseCodexConversationTerminalAgentId(terminal.name))
+      : null;
+    if (!terminal || !agentId || !this.resumeAgentFromTerminal || !this.terminalManager) {
+      this.emit({
+        type: "codex_terminal.switch_to_agent.response",
+        payload: {
+          terminalId: msg.terminalId,
+          agentId,
+          success: false,
+          error: "This terminal is not linked to a resumable Agent conversation",
+          requestId: msg.requestId,
+        },
+      });
+      return;
+    }
+
+    this.switchingAgentTerminalIds.add(msg.terminalId);
+    try {
+      this.detachStream(msg.terminalId, { emitExit: true });
+      await this.terminalManager.killTerminalAndWait(msg.terminalId);
+      await this.resumeAgentFromTerminal({ agentId, terminalId: msg.terminalId });
+      this.linkedAgentByTerminalId.delete(msg.terminalId);
+      this.emit({
+        type: "codex_terminal.switch_to_agent.response",
+        payload: {
+          terminalId: msg.terminalId,
+          agentId,
+          success: true,
+          error: null,
+          requestId: msg.requestId,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "codex_terminal.switch_to_agent.response",
+        payload: {
+          terminalId: msg.terminalId,
+          agentId,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          requestId: msg.requestId,
+        },
+      });
+    } finally {
+      this.switchingAgentTerminalIds.delete(msg.terminalId);
+    }
   }
 
   private async handleCaptureTerminalRequest(msg: CaptureTerminalRequest): Promise<void> {

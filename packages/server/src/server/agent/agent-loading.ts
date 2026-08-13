@@ -26,7 +26,7 @@ export type AgentLoaderManager = Pick<
   | "hydrateTimelineFromProvider"
   | "resumeAgentFromPersistence"
 > &
-  Partial<Pick<AgentManager, "waitForAgentClose">>;
+  Partial<Pick<AgentManager, "assertAgentRuntimeAvailable" | "waitForAgentClose">>;
 
 export interface EnsureAgentLoadedDeps {
   agentManager: AgentLoaderManager;
@@ -63,6 +63,13 @@ export async function ensureAgentLoaded(
   agentId: string,
   deps: EnsureAgentLoadedDeps,
 ): Promise<ManagedAgent> {
+  const existingInflight = pendingAgentInitializations.get(agentId);
+  if (existingInflight) {
+    existingInflight.options.broadcastTimeline ||= deps.broadcastTimeline === true;
+    return existingInflight.promise;
+  }
+
+  await deps.agentManager.assertAgentRuntimeAvailable?.(agentId);
   await deps.agentManager.waitForAgentClose?.(agentId);
 
   const inflight = pendingAgentInitializations.get(agentId);
@@ -70,6 +77,8 @@ export async function ensureAgentLoaded(
     inflight.options.broadcastTimeline ||= deps.broadcastTimeline === true;
     return inflight.promise;
   }
+
+  await deps.agentManager.assertAgentRuntimeAvailable?.(agentId);
 
   const existing = deps.agentManager.getAgent(agentId);
   if (existing) {
@@ -80,6 +89,7 @@ export async function ensureAgentLoaded(
   // work. Once the live lookup is empty, this second barrier closes that gap
   // before storage-backed resume begins.
   await deps.agentManager.waitForAgentClose?.(agentId);
+  await deps.agentManager.assertAgentRuntimeAvailable?.(agentId);
 
   const laterInflight = pendingAgentInitializations.get(agentId);
   if (laterInflight) {

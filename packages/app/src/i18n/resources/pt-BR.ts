@@ -667,6 +667,8 @@ export const ptBR: TranslationResources = {
         newAgent: "Novo agente",
         newTerminal: "Novo terminal",
         forkToCodexTerminal: "Bifurcar conversa para o terminal Codex",
+        switchToCodexTerminal: "Alternar para o terminal Codex",
+        switchToAgentView: "Alternar para a visão do Agent",
         newBrowser: "Nova aba de navegador",
         importSession: "Importar sessão",
         copyPath: "Copiar caminho do workspace",
@@ -674,6 +676,7 @@ export const ptBR: TranslationResources = {
         showSetup: "Mostrar configuração",
       },
       toasts: {
+        codexViewSwitchFailed: "Falha ao alternar a visualização da conversa",
         workspacePathUnavailable: "O caminho do workspace ainda não está disponível",
         branchNameUnavailable: "Nome da branch indisponível",
         terminalQueued: "Preparando workspace, abrindo terminal quando estiver pronto...",

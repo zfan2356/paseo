@@ -24,7 +24,7 @@ import {
   ChevronDown,
   Copy,
   Ellipsis,
-  GitFork,
+  ArrowLeftRight,
   Globe,
   Import as ImportIcon,
   PanelRight,
@@ -250,7 +250,7 @@ const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedCopy = withUnistyles(Copy);
 const ThemedSquarePen = withUnistyles(SquarePen);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
-const ThemedGitFork = withUnistyles(GitFork);
+const ThemedArrowLeftRight = withUnistyles(ArrowLeftRight);
 const ThemedGlobe = withUnistyles(Globe);
 const ThemedImport = withUnistyles(ImportIcon);
 const ThemedSettings = withUnistyles(Settings);
@@ -286,7 +286,7 @@ const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
 const GATED_WORKSPACE_HEADER_LEFT = <SidebarMenuToggle />;
 
-function useCodexForkTerminalAgentId(input: {
+function useCodexConversationAgentId(input: {
   activeTab: WorkspaceTabDescriptor | null;
   serverId: string;
   supported: boolean;
@@ -1656,6 +1656,11 @@ interface WorkspaceTerminalTabActionsInput {
   persistenceKey: string | null;
   focusWorkspacePane: (workspaceKey: string, paneId: string) => void;
   openWorkspaceTabFocused: (workspaceKey: string, target: WorkspaceTabTarget) => string | null;
+  retargetWorkspaceTab: (
+    workspaceKey: string,
+    tabId: string,
+    target: WorkspaceTabTarget,
+  ) => string | null;
   labels: {
     workspacePathUnavailable: string;
     terminalQueued: string;
@@ -1667,7 +1672,11 @@ interface WorkspaceTerminalTabActionsInput {
 }
 
 interface WorkspaceTerminalTabActions {
-  handleTerminalCreated: (input: { terminalId: string; paneId?: string }) => void;
+  handleTerminalCreated: (input: {
+    terminalId: string;
+    paneId?: string;
+    replaceTabId?: string;
+  }) => void;
   handleScriptTerminalSelected: (terminalId: string) => void;
   handleWorkspacePathUnavailable: () => void;
   handleTerminalCreateQueued: () => void;
@@ -1678,12 +1687,25 @@ function useWorkspaceTerminalTabActions({
   persistenceKey,
   focusWorkspacePane,
   openWorkspaceTabFocused,
+  retargetWorkspaceTab,
   labels,
   toast,
 }: WorkspaceTerminalTabActionsInput): WorkspaceTerminalTabActions {
   const handleTerminalCreated = useCallback(
-    ({ terminalId, paneId }: { terminalId: string; paneId?: string }) => {
+    ({
+      terminalId,
+      paneId,
+      replaceTabId,
+    }: {
+      terminalId: string;
+      paneId?: string;
+      replaceTabId?: string;
+    }) => {
       if (!persistenceKey) {
+        return;
+      }
+      if (replaceTabId) {
+        retargetWorkspaceTab(persistenceKey, replaceTabId, { kind: "terminal", terminalId });
         return;
       }
       if (paneId) {
@@ -1691,7 +1713,7 @@ function useWorkspaceTerminalTabActions({
       }
       openWorkspaceTabFocused(persistenceKey, { kind: "terminal", terminalId });
     },
-    [focusWorkspacePane, openWorkspaceTabFocused, persistenceKey],
+    [focusWorkspacePane, openWorkspaceTabFocused, persistenceKey, retargetWorkspaceTab],
   );
   const handleScriptTerminalSelected = useCallback(
     (terminalId: string) => {
@@ -1762,8 +1784,10 @@ function WorkspaceScreenContent({
   const supportsProvidersSnapshot = useSessionStore(
     (state) => state.sessions[normalizedServerId]?.serverInfo?.features?.providersSnapshot === true,
   );
-  const supportsCodexForkTerminal = useSessionStore(
-    (state) => state.sessions[normalizedServerId]?.serverInfo?.features?.codexForkTerminal === true,
+  const supportsCodexConversationViewSwitch = useSessionStore(
+    (state) =>
+      state.sessions[normalizedServerId]?.serverInfo?.features?.codexConversationViewSwitch ===
+      true,
   );
   const workspaceDirectory = workspaceDescriptor?.workspaceDirectory || null;
   const isMissingWorkspaceDirectory = Boolean(workspaceDescriptor) && !workspaceDirectory;
@@ -1805,6 +1829,7 @@ function WorkspaceScreenContent({
     [normalizedServerId, normalizedWorkspaceId],
   );
   const openWorkspaceTabFocused = useWorkspaceLayoutStore((state) => state.openTabFocused);
+  const retargetWorkspaceTab = useWorkspaceLayoutStore((state) => state.retargetTab);
   const openWorkspaceChildTabFocused = useWorkspaceLayoutStore(
     (state) => state.openChildTabFocused,
   );
@@ -1855,6 +1880,7 @@ function WorkspaceScreenContent({
     persistenceKey,
     focusWorkspacePane,
     openWorkspaceTabFocused,
+    retargetWorkspaceTab,
     labels: {
       workspacePathUnavailable: t("workspace.header.toasts.workspacePathUnavailable"),
       terminalQueued: t("workspace.header.toasts.terminalQueued"),
@@ -2019,7 +2045,6 @@ function WorkspaceScreenContent({
   const closeWorkspaceTab = useWorkspaceLayoutStore((state) => state.closeTab);
   const unpinWorkspaceAgent = useWorkspaceLayoutStore((state) => state.unpinAgent);
   const hideWorkspaceAgent = useWorkspaceLayoutStore((state) => state.hideAgent);
-  const retargetWorkspaceTab = useWorkspaceLayoutStore((state) => state.retargetTab);
   const reconcileWorkspaceTabs = useWorkspaceLayoutStore((state) => state.reconcileTabs);
   const splitWorkspacePane = useWorkspaceLayoutStore((state) => state.splitPane);
   const splitWorkspacePaneEmpty = useWorkspaceLayoutStore((state) => state.splitPaneEmpty);
@@ -3300,15 +3325,79 @@ function WorkspaceScreenContent({
   });
 
   const activeTabDescriptor = useMemo(() => activeTab?.descriptor ?? null, [activeTab]);
-  const codexForkTerminalAgentId = useCodexForkTerminalAgentId({
+  const codexConversationAgentId = useCodexConversationAgentId({
     activeTab: activeTabDescriptor,
     serverId: normalizedServerId,
-    supported: supportsCodexForkTerminal,
+    supported: supportsCodexConversationViewSwitch,
   });
-  const handleForkActiveAgentToCodexTerminal = useCallback(() => {
-    if (!codexForkTerminalAgentId) return;
-    createTerminal({ agentId: codexForkTerminalAgentId });
-  }, [codexForkTerminalAgentId, createTerminal]);
+  const activeCodexConversationTerminal = useMemo(() => {
+    if (!supportsCodexConversationViewSwitch || activeTabDescriptor?.target.kind !== "terminal") {
+      return null;
+    }
+    const terminalId = activeTabDescriptor.target.terminalId;
+    return (
+      terminals.find((terminal) => terminal.id === terminalId && terminal.linkedAgentId) ?? null
+    );
+  }, [activeTabDescriptor, supportsCodexConversationViewSwitch, terminals]);
+  const [isSwitchingCodexConversationView, setIsSwitchingCodexConversationView] = useState(false);
+  const handleToggleCodexConversationView = useCallback(async () => {
+    if (codexConversationAgentId) {
+      if (!activeTabDescriptor) return;
+      createTerminal({
+        agentId: codexConversationAgentId,
+        replaceTabId: activeTabDescriptor.tabId,
+      });
+      return;
+    }
+
+    const terminal = activeCodexConversationTerminal;
+    if (!terminal?.linkedAgentId || !client || !persistenceKey || !activeTabDescriptor) {
+      return;
+    }
+
+    setIsSwitchingCodexConversationView(true);
+    try {
+      const result = await client.switchCodexTerminalToAgent(terminal.id);
+      if (!result.success || !result.agentId) {
+        throw new Error(result.error ?? t("workspace.header.toasts.codexViewSwitchFailed"));
+      }
+      removeTerminalFromCache(terminal.id);
+      try {
+        const sessionState = useSessionStore.getState().sessions[normalizedServerId];
+        const currentCursor = sessionState?.agentTimelineCursor.get(result.agentId);
+        await getHostRuntimeStore().fetchAgentTimeline(normalizedServerId, result.agentId, {
+          direction: "tail",
+          projection: "projected",
+          ...(currentCursor
+            ? { cursor: { epoch: currentCursor.epoch, seq: currentCursor.endSeq } }
+            : {}),
+        });
+      } finally {
+        retargetWorkspaceTab(persistenceKey, activeTabDescriptor.tabId, {
+          kind: "agent",
+          agentId: result.agentId,
+        });
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t("workspace.header.toasts.codexViewSwitchFailed"),
+      );
+    } finally {
+      setIsSwitchingCodexConversationView(false);
+    }
+  }, [
+    activeCodexConversationTerminal,
+    activeTabDescriptor,
+    client,
+    codexConversationAgentId,
+    createTerminal,
+    normalizedServerId,
+    persistenceKey,
+    removeTerminalFromCache,
+    retargetWorkspaceTab,
+    t,
+    toast,
+  ]);
   const activeFileFields = getWorkspaceFileLocationFields(activeTabDescriptor);
   const activeFilePath = activeFileFields.path;
   const activeFileLineStart = activeFileFields.lineStart;
@@ -3560,23 +3649,36 @@ function WorkspaceScreenContent({
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
-        {codexForkTerminalAgentId ? (
+        {codexConversationAgentId || activeCodexConversationTerminal ? (
           <HeaderToggleButton
-            testID="workspace-fork-codex-terminal"
-            onPress={handleForkActiveAgentToCodexTerminal}
-            tooltipLabel={t("workspace.header.actions.forkToCodexTerminal")}
+            testID="workspace-toggle-codex-conversation-view"
+            onPress={handleToggleCodexConversationView}
+            tooltipLabel={t(
+              codexConversationAgentId
+                ? "workspace.header.actions.switchToCodexTerminal"
+                : "workspace.header.actions.switchToAgentView",
+            )}
             tooltipKeys={[]}
             tooltipSide="bottom"
             style={isMobile ? styles.headerActionButton : styles.compactHeaderActionButton}
-            disabled={createTerminalDisabled || !isConnected || !workspaceDirectory}
+            disabled={
+              createTerminalDisabled ||
+              isSwitchingCodexConversationView ||
+              !isConnected ||
+              !workspaceDirectory
+            }
             accessible
             accessibilityRole="button"
-            accessibilityLabel={t("workspace.header.actions.forkToCodexTerminal")}
+            accessibilityLabel={t(
+              codexConversationAgentId
+                ? "workspace.header.actions.switchToCodexTerminal"
+                : "workspace.header.actions.switchToAgentView",
+            )}
           >
             {({ hovered, pressed }) => {
               const active = hovered || pressed;
               const colorMapping = active ? foregroundColorMapping : extraMutedColorMapping;
-              return <ThemedGitFork size={isMobile ? 20 : 16} uniProps={colorMapping} />;
+              return <ThemedArrowLeftRight size={isMobile ? 20 : 16} uniProps={colorMapping} />;
             }}
           </HeaderToggleButton>
         ) : null}
@@ -3704,8 +3806,10 @@ function WorkspaceScreenContent({
     ),
     [
       isMobile,
-      codexForkTerminalAgentId,
-      handleForkActiveAgentToCodexTerminal,
+      codexConversationAgentId,
+      activeCodexConversationTerminal,
+      handleToggleCodexConversationView,
+      isSwitchingCodexConversationView,
       createTerminalDisabled,
       isConnected,
       workspaceDescriptor,

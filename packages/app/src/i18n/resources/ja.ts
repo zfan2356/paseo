@@ -666,6 +666,8 @@ export const ja: TranslationResources = {
         newAgent: "新しいエージェント",
         newTerminal: "新しいターミナル",
         forkToCodexTerminal: "会話を Codex ターミナルにフォーク",
+        switchToCodexTerminal: "Codex ターミナルに切り替え",
+        switchToAgentView: "Agent ビューに切り替え",
         newBrowser: "新しいブラウザタブ",
         importSession: "セッションをインポート",
         copyPath: "ワークスペースパスをコピー",
@@ -673,6 +675,7 @@ export const ja: TranslationResources = {
         showSetup: "セットアップを表示",
       },
       toasts: {
+        codexViewSwitchFailed: "会話ビューの切り替えに失敗しました",
         workspacePathUnavailable: "ワークスペースパスはまだ利用できません",
         branchNameUnavailable: "ブランチ名が利用できません",
         terminalQueued: "ワークスペースを準備中、準備ができたらターミナルを開きます...",

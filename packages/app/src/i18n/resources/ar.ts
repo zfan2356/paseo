@@ -664,6 +664,8 @@ export const ar: TranslationResources = {
         newAgent: "وكيل جديد",
         newTerminal: "محطة جديدة",
         forkToCodexTerminal: "تشعيب المحادثة إلى محطة Codex",
+        switchToCodexTerminal: "التبديل إلى محطة Codex",
+        switchToAgentView: "التبديل إلى عرض Agent",
         newBrowser: "علامة تبويب متصفح جديدة",
         importSession: "جلسة الاستيراد",
         copyPath: "نسخ مسار مساحة العمل",
@@ -671,6 +673,7 @@ export const ar: TranslationResources = {
         showSetup: "إظهار الإعداد",
       },
       toasts: {
+        codexViewSwitchFailed: "فشل تبديل عرض المحادثة",
         workspacePathUnavailable: "مسار Workspace غير متاح بعد",
         branchNameUnavailable: "اسم الفرع غير متوفر",
         terminalQueued: "تحضير مساحة العمل، وفتح الوحدة الطرفية عندما تكون جاهزة...",

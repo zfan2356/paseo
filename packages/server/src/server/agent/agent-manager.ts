@@ -6,6 +6,8 @@ import {
   type AgentLifecycleStatus,
 } from "@getpaseo/protocol/agent-lifecycle";
 import {
+  CODEX_TERMINAL_OWNER_LABEL,
+  getCodexTerminalOwnerId,
   getParentAgentIdFromLabels,
   hasOpenAgentTab,
   isDelegatedAgent,
@@ -655,6 +657,7 @@ export class AgentManager {
   private readonly agentRegistrationTasks = new Set<Promise<void>>();
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
+  private readonly externalRuntimeOwners = new Map<string, string>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -667,6 +670,9 @@ export class AgentManager {
   private logger: Logger;
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
   private acceptingAgentRegistrations = true;
+  private externalRuntimeOwnerResolver:
+    | ((agentId: string, ownerId: string) => boolean | Promise<boolean>)
+    | null = null;
 
   constructor(options: AgentManagerOptions) {
     this.idFactory = options?.idFactory ?? (() => randomUUID());
@@ -739,6 +745,103 @@ export class AgentManager {
 
   setAgentArchivedCallback(callback: AgentArchivedCallback): void {
     this.onAgentArchived = callback;
+  }
+
+  setExternalRuntimeOwnerResolver(
+    resolver: ((agentId: string, ownerId: string) => boolean | Promise<boolean>) | null,
+  ): void {
+    this.externalRuntimeOwnerResolver = resolver;
+  }
+
+  async assertAgentRuntimeAvailable(agentId: string): Promise<void> {
+    const claimedOwnerId = this.externalRuntimeOwners.get(agentId);
+    if (claimedOwnerId) {
+      throw new Error(`Agent '${agentId}' is open in Codex terminal '${claimedOwnerId}'`);
+    }
+
+    const liveOwnerId = getCodexTerminalOwnerId(this.agents.get(agentId)?.labels);
+    const storedRecord = liveOwnerId || !this.registry ? null : await this.registry.get(agentId);
+    const ownerId = liveOwnerId ?? getCodexTerminalOwnerId(storedRecord?.labels);
+    if (!ownerId) {
+      return;
+    }
+
+    const ownerIsActive = this.externalRuntimeOwnerResolver
+      ? await this.externalRuntimeOwnerResolver(agentId, ownerId)
+      : true;
+    if (ownerIsActive) {
+      throw new Error(`Agent '${agentId}' is open in Codex terminal '${ownerId}'`);
+    }
+
+    await this.releaseAgentExternalRuntime(agentId, ownerId);
+  }
+
+  claimAgentExternalRuntime(agentId: string, ownerId: string): Promise<void> {
+    if (this.externalRuntimeOwners.has(agentId)) {
+      return Promise.reject(new Error(`Agent '${agentId}' already has an external runtime owner`));
+    }
+    this.externalRuntimeOwners.set(agentId, ownerId);
+
+    const claim = this.runLifecycleMutation(agentId, async () => {
+      const liveAgent = this.getAgent(agentId);
+      if (liveAgent) {
+        if (
+          (liveAgent.lifecycle !== "idle" && liveAgent.lifecycle !== "error") ||
+          liveAgent.activeForegroundTurnId ||
+          this.runs.hasRun(agentId)
+        ) {
+          throw new Error(
+            "Wait for the current Agent turn to finish before opening Codex terminal",
+          );
+        }
+        if (liveAgent.pendingPermissions.size > 0) {
+          throw new Error("Resolve the pending Agent permission before opening Codex terminal");
+        }
+        await this.writeLabels(agentId, { [CODEX_TERMINAL_OWNER_LABEL]: ownerId });
+        await this.closeAgent(agentId);
+        return;
+      }
+
+      const record = this.registry ? await this.registry.get(agentId) : null;
+      if (!record) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+      if (record.provider !== "codex") {
+        throw new Error("Only Codex agents can be opened in Codex terminal");
+      }
+      if (record.archivedAt) {
+        throw new Error(`Agent is archived: ${agentId}`);
+      }
+      await this.writeLabels(agentId, { [CODEX_TERMINAL_OWNER_LABEL]: ownerId });
+    });
+
+    return claim.catch(async (error) => {
+      this.externalRuntimeOwners.delete(agentId);
+      try {
+        await this.writeLabels(agentId, { [CODEX_TERMINAL_OWNER_LABEL]: null });
+      } catch {
+        // The original claim error is more useful than best-effort lease cleanup.
+      }
+      throw error;
+    });
+  }
+
+  async releaseAgentExternalRuntime(agentId: string, ownerId: string): Promise<void> {
+    await this.runLifecycleMutation(agentId, async () => {
+      const liveOwnerId = getCodexTerminalOwnerId(this.agents.get(agentId)?.labels);
+      const record = liveOwnerId || !this.registry ? null : await this.registry.get(agentId);
+      const persistedOwnerId = liveOwnerId ?? getCodexTerminalOwnerId(record?.labels);
+      const claimedOwnerId = this.externalRuntimeOwners.get(agentId);
+      const currentOwnerId = claimedOwnerId ?? persistedOwnerId;
+      if (!currentOwnerId) {
+        return;
+      }
+      if (currentOwnerId !== ownerId) {
+        throw new Error(`Agent '${agentId}' is owned by a different Codex terminal`);
+      }
+      await this.writeLabels(agentId, { [CODEX_TERMINAL_OWNER_LABEL]: null });
+      this.externalRuntimeOwners.delete(agentId);
+    });
   }
 
   setMcpBaseUrl(url: string | null): void {

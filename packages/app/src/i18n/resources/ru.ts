@@ -669,6 +669,8 @@ export const ru: TranslationResources = {
         newAgent: "Новый агент",
         newTerminal: "Новый терминал",
         forkToCodexTerminal: "Ответвить разговор в терминал Codex",
+        switchToCodexTerminal: "Переключиться в терминал Codex",
+        switchToAgentView: "Переключиться в режим Agent",
         newBrowser: "Новая вкладка браузера",
         importSession: "Импортировать сеанс",
         copyPath: "Копировать путь к рабочей области",
@@ -676,6 +678,7 @@ export const ru: TranslationResources = {
         showSetup: "Показать настройки",
       },
       toasts: {
+        codexViewSwitchFailed: "Не удалось переключить вид разговора",
         workspacePathUnavailable: "Путь Workspace пока недоступен.",
         branchNameUnavailable: "Название филиала недоступно",
         terminalQueued: "Подготовка рабочего пространства, открытие терминала по готовности...",

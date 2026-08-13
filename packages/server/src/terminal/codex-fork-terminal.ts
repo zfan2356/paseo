@@ -4,7 +4,7 @@ import type {
   AgentRuntimeInfo,
 } from "../server/agent/agent-sdk-types.js";
 
-interface CodexForkConfig {
+interface CodexConversationTerminalConfig {
   model?: string | null;
   thinkingOptionId?: string | null;
   modeId?: string | null;
@@ -12,24 +12,37 @@ interface CodexForkConfig {
   providerOptions?: Record<string, unknown> | null;
 }
 
-export interface CodexForkTerminalSource {
+export interface CodexConversationTerminalSource {
   provider: string;
   cwd: string;
   workspaceId?: string;
   persistence: AgentPersistenceHandle | null;
   runtimeInfo?: AgentRuntimeInfo | null;
   currentModeId?: string | null;
-  config?: CodexForkConfig | null;
+  config?: CodexConversationTerminalConfig | null;
   features?: AgentFeature[] | null;
 }
 
-export interface CodexForkTerminalLaunch {
+export interface CodexConversationTerminalLaunch {
   name: string;
   command: string;
   args: string[];
 }
 
-export const CODEX_FORK_TERMINAL_NAME = "Codex Fork";
+export const CODEX_CONVERSATION_TERMINAL_NAME = "Codex Conversation";
+const CODEX_CONVERSATION_TERMINAL_PREFIX = "__paseo_codex_conversation__:";
+
+export function buildCodexConversationTerminalName(agentId: string): string {
+  return `${CODEX_CONVERSATION_TERMINAL_PREFIX}${agentId}`;
+}
+
+export function parseCodexConversationTerminalAgentId(name: string): string | null {
+  if (!name.startsWith(CODEX_CONVERSATION_TERMINAL_PREFIX)) {
+    return null;
+  }
+  const agentId = name.slice(CODEX_CONVERSATION_TERMINAL_PREFIX.length).trim();
+  return agentId.length > 0 ? agentId : null;
+}
 
 const CODEX_MODE_PRESETS: Record<
   string,
@@ -95,7 +108,10 @@ function pushConfigArg(args: string[], key: string, value: unknown): void {
   }
 }
 
-function resolveFeatureToggle(source: CodexForkTerminalSource, featureId: string): boolean | null {
+function resolveFeatureToggle(
+  source: CodexConversationTerminalSource,
+  featureId: string,
+): boolean | null {
   if (source.features !== null && source.features !== undefined) {
     const liveFeature = source.features.find(
       (feature): feature is Extract<AgentFeature, { type: "toggle" }> =>
@@ -139,7 +155,10 @@ function appendProviderOptions(args: string[], providerOptions: Record<string, u
   }
 }
 
-function appendModelAndPerformanceArgs(args: string[], source: CodexForkTerminalSource): void {
+function appendModelAndPerformanceArgs(
+  args: string[],
+  source: CodexConversationTerminalSource,
+): void {
   const model = nonEmptyString(source.runtimeInfo?.model ?? source.config?.model);
   if (model) {
     args.push("--model", model);
@@ -158,7 +177,7 @@ function appendModelAndPerformanceArgs(args: string[], source: CodexForkTerminal
   }
 }
 
-function appendPermissionArgs(args: string[], source: CodexForkTerminalSource): void {
+function appendPermissionArgs(args: string[], source: CodexConversationTerminalSource): void {
   const providerOptions = source.config?.providerOptions;
   const modeId = nonEmptyString(source.config ? source.config.modeId : source.currentModeId);
   const modePreset = modeId ? CODEX_MODE_PRESETS[modeId] : undefined;
@@ -176,11 +195,11 @@ function appendPermissionArgs(args: string[], source: CodexForkTerminalSource): 
   }
 }
 
-export function buildCodexForkTerminalLaunch(
-  source: CodexForkTerminalSource,
-): CodexForkTerminalLaunch {
+export function buildCodexConversationTerminalLaunch(
+  source: CodexConversationTerminalSource,
+): CodexConversationTerminalLaunch {
   if (source.provider !== "codex") {
-    throw new Error("Only Codex conversations can be forked into a Codex terminal");
+    throw new Error("Only Codex conversations can be opened in a Codex terminal");
   }
 
   const threadId = nonEmptyString(
@@ -189,16 +208,16 @@ export function buildCodexForkTerminalLaunch(
       source.runtimeInfo?.sessionId,
   );
   if (!threadId) {
-    throw new Error("The Codex conversation does not have a forkable thread id yet");
+    throw new Error("The Codex conversation does not have a resumable thread id yet");
   }
 
-  const args = ["fork"];
+  const args = ["resume", "--include-non-interactive"];
   appendModelAndPerformanceArgs(args, source);
   appendPermissionArgs(args, source);
 
   args.push("--cd", source.cwd, threadId);
   return {
-    name: CODEX_FORK_TERMINAL_NAME,
+    name: CODEX_CONVERSATION_TERMINAL_NAME,
     command: "codex",
     args,
   };

@@ -1,4 +1,5 @@
 export const PARENT_AGENT_ID_LABEL = "paseo.parent-agent-id";
+export const CODEX_TERMINAL_OWNER_LABEL = "paseo.codex-terminal-owner";
 const OPEN_AGENT_TAB_LABEL_PREFIX = "paseo.open-agent-tab.";
 
 export function getOpenAgentTabLabel(clientId: string): string {
@@ -18,6 +19,13 @@ export function getParentAgentIdFromLabels(labels: Record<string, unknown> | nul
   return typeof parentAgentId === "string" && parentAgentId.trim().length > 0
     ? parentAgentId.trim()
     : null;
+}
+
+export function getCodexTerminalOwnerId(
+  labels: Record<string, unknown> | null | undefined,
+): string | null {
+  const terminalId = labels?.[CODEX_TERMINAL_OWNER_LABEL];
+  return typeof terminalId === "string" && terminalId.trim().length > 0 ? terminalId.trim() : null;
 }
 
 export function isDelegatedAgent(agent: AgentLabelSource): boolean {

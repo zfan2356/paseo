@@ -8,6 +8,7 @@ import type { AgentManager, AgentMetricsSnapshot } from "./agent/agent-manager.j
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
+import { parseCodexConversationTerminalAgentId } from "../terminal/codex-fork-terminal.js";
 import type pino from "pino";
 import type { ProjectRegistry, WorkspaceRegistry } from "./workspace-registry.js";
 import type { ProjectUpdate } from "./workspace-reconciliation-service.js";
@@ -726,6 +727,17 @@ export class VoiceAssistantWebSocketServer {
   }): void {
     this.speech = params.speech ?? null;
     this.terminalManager = params.terminalManager ?? null;
+    this.agentManager.setExternalRuntimeOwnerResolver(
+      this.terminalManager
+        ? (agentId, terminalId) => {
+            const terminal = this.terminalManager?.getTerminal(terminalId);
+            return (
+              terminal?.linkedAgentId === agentId ||
+              (terminal ? parseCodexConversationTerminalAgentId(terminal.name) === agentId : false)
+            );
+          }
+        : null,
+    );
     if (this.terminalManager) {
       this.unsubscribeTerminalActivity = this.terminalManager.subscribeTerminalActivity((event) => {
         const reason = resolveTerminalAttentionReason({
@@ -1591,8 +1603,10 @@ export class VoiceAssistantWebSocketServer {
         agentForkContext: true,
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: true,
-        // COMPAT(codexForkTerminal): added in the custom fork on 2026-08-13.
-        codexForkTerminal: true,
+        // Legacy clients only understand one-way fork semantics and must hide this action.
+        codexForkTerminal: false,
+        // COMPAT(codexConversationViewSwitch): added in the custom fork on 2026-08-13.
+        codexConversationViewSwitch: true,
         // COMPAT(codexTerminalImagePaste): added in the custom fork on 2026-08-13.
         codexTerminalImagePaste: true,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.

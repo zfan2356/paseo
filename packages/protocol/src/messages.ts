@@ -2618,6 +2618,12 @@ export const KillTerminalRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const SwitchCodexTerminalToAgentRequestSchema = z.object({
+  type: z.literal("codex_terminal.switch_to_agent.request"),
+  terminalId: z.string(),
+  requestId: z.string(),
+});
+
 export const CaptureTerminalRequestSchema = z.object({
   type: z.literal("capture_terminal_request"),
   terminalId: z.string(),
@@ -2847,6 +2853,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   UnsubscribeTerminalRequestSchema,
   TerminalInputSchema,
   KillTerminalRequestSchema,
+  SwitchCodexTerminalToAgentRequestSchema,
   CaptureTerminalRequestSchema,
   ChatCreateRequestSchema,
   ChatListRequestSchema,
@@ -3096,6 +3103,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentForkContextCursor: z.boolean().optional(),
         // COMPAT(codexForkTerminal): added in the custom fork on 2026-08-13.
         codexForkTerminal: z.boolean().optional(),
+        // COMPAT(codexConversationViewSwitch): added in the custom fork on 2026-08-13.
+        codexConversationViewSwitch: z.boolean().optional(),
         // COMPAT(codexTerminalImagePaste): added in the custom fork on 2026-08-13.
         codexTerminalImagePaste: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
@@ -5390,6 +5399,7 @@ const TerminalInfoSchema = z.object({
   name: z.string(),
   cwd: z.string(),
   workspaceId: z.string().optional(),
+  linkedAgentId: z.string().optional(),
   title: z.string().optional(),
   activity: TerminalActivitySchema.nullable().optional(),
   capabilities: z
@@ -5496,6 +5506,17 @@ export const KillTerminalResponseSchema = z.object({
   payload: z.object({
     terminalId: z.string(),
     success: z.boolean(),
+    requestId: z.string(),
+  }),
+});
+
+export const SwitchCodexTerminalToAgentResponseSchema = z.object({
+  type: z.literal("codex_terminal.switch_to_agent.response"),
+  payload: z.object({
+    terminalId: z.string(),
+    agentId: z.string().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
     requestId: z.string(),
   }),
 });
@@ -5811,6 +5832,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   RenameTerminalResponseSchema,
   SubscribeTerminalResponseSchema,
   KillTerminalResponseSchema,
+  SwitchCodexTerminalToAgentResponseSchema,
   CaptureTerminalResponseSchema,
   TerminalStreamExitSchema,
   TerminalAttentionRequiredSchema,
@@ -6275,6 +6297,12 @@ export type CloseItemsRequest = z.infer<typeof CloseItemsRequestMessageSchema>;
 export type CloseItemsResponse = z.infer<typeof CloseItemsResponseSchema>;
 export type KillTerminalRequest = z.infer<typeof KillTerminalRequestSchema>;
 export type KillTerminalResponse = z.infer<typeof KillTerminalResponseSchema>;
+export type SwitchCodexTerminalToAgentRequest = z.infer<
+  typeof SwitchCodexTerminalToAgentRequestSchema
+>;
+export type SwitchCodexTerminalToAgentResponse = z.infer<
+  typeof SwitchCodexTerminalToAgentResponseSchema
+>;
 export type CaptureTerminalRequest = z.infer<typeof CaptureTerminalRequestSchema>;
 export type CaptureTerminalResponse = z.infer<typeof CaptureTerminalResponseSchema>;
 export type TerminalStreamExit = z.infer<typeof TerminalStreamExitSchema>;

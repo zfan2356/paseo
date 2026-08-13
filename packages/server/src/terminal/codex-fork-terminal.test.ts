@@ -1,10 +1,20 @@
 import { describe, expect, test } from "vitest";
-import { buildCodexForkTerminalLaunch } from "./codex-fork-terminal.js";
+import {
+  buildCodexConversationTerminalLaunch,
+  buildCodexConversationTerminalName,
+  parseCodexConversationTerminalAgentId,
+} from "./codex-fork-terminal.js";
 
-describe("buildCodexForkTerminalLaunch", () => {
+describe("buildCodexConversationTerminalLaunch", () => {
+  test("round-trips the linked Agent id through the persistent terminal name", () => {
+    const name = buildCodexConversationTerminalName("agent-1");
+    expect(parseCodexConversationTerminalAgentId(name)).toBe("agent-1");
+    expect(parseCodexConversationTerminalAgentId("Codex Conversation")).toBeNull();
+  });
+
   test("inherits the active model, thinking, full-access, and fast settings", () => {
     expect(
-      buildCodexForkTerminalLaunch({
+      buildCodexConversationTerminalLaunch({
         provider: "codex",
         cwd: "/work/paseo",
         workspaceId: "workspace-1",
@@ -37,10 +47,11 @@ describe("buildCodexForkTerminalLaunch", () => {
         ],
       }),
     ).toEqual({
-      name: "Codex Fork",
+      name: "Codex Conversation",
       command: "codex",
       args: [
-        "fork",
+        "resume",
+        "--include-non-interactive",
         "--model",
         "gpt-5.6-sol",
         "--config",
@@ -60,7 +71,7 @@ describe("buildCodexForkTerminalLaunch", () => {
 
   test("lets validated provider options override the permission preset", () => {
     expect(
-      buildCodexForkTerminalLaunch({
+      buildCodexConversationTerminalLaunch({
         provider: "codex",
         cwd: "/work/paseo",
         persistence: { provider: "codex", sessionId: "thread-2" },
@@ -77,7 +88,8 @@ describe("buildCodexForkTerminalLaunch", () => {
         },
       }).args,
     ).toEqual([
-      "fork",
+      "resume",
+      "--include-non-interactive",
       "--ask-for-approval",
       "on-request",
       "--sandbox",
@@ -94,19 +106,19 @@ describe("buildCodexForkTerminalLaunch", () => {
 
   test("does not turn a provider default mode into an explicit CLI override", () => {
     expect(
-      buildCodexForkTerminalLaunch({
+      buildCodexConversationTerminalLaunch({
         provider: "codex",
         cwd: "/work/paseo",
         persistence: { provider: "codex", sessionId: "thread-default" },
         currentModeId: "auto-review",
         config: {},
       }).args,
-    ).toEqual(["fork", "--cd", "/work/paseo", "thread-default"]);
+    ).toEqual(["resume", "--include-non-interactive", "--cd", "/work/paseo", "thread-default"]);
   });
 
   test("rejects non-Codex agents and missing thread ids", () => {
     expect(() =>
-      buildCodexForkTerminalLaunch({
+      buildCodexConversationTerminalLaunch({
         provider: "claude",
         cwd: "/work/paseo",
         persistence: { provider: "claude", sessionId: "session-1" },
@@ -114,11 +126,11 @@ describe("buildCodexForkTerminalLaunch", () => {
     ).toThrow("Only Codex conversations");
 
     expect(() =>
-      buildCodexForkTerminalLaunch({
+      buildCodexConversationTerminalLaunch({
         provider: "codex",
         cwd: "/work/paseo",
         persistence: null,
       }),
-    ).toThrow("forkable thread id");
+    ).toThrow("resumable thread id");
   });
 });

@@ -3,11 +3,11 @@ import { openAgentRoute } from "../support/helpers/mock-agent";
 import { seedWorkspace } from "../support/helpers/seed-client";
 import { expectTerminalSurfaceVisible } from "../support/helpers/terminal-perf";
 
-async function getCodexForkTerminal(workspace: Awaited<ReturnType<typeof seedWorkspace>>) {
+async function getCodexConversationTerminal(workspace: Awaited<ReturnType<typeof seedWorkspace>>) {
   const result = await workspace.client.listTerminals(workspace.repoPath, undefined, {
     workspaceId: workspace.workspaceId,
   });
-  return result.terminals.find((terminal) => terminal.name === "Codex Fork") ?? null;
+  return result.terminals.find((terminal) => terminal.name === "Codex Conversation") ?? null;
 }
 
 async function pastePngIntoTerminal(page: Parameters<typeof expectTerminalSurfaceVisible>[0]) {
@@ -28,10 +28,10 @@ async function pastePngIntoTerminal(page: Parameters<typeof expectTerminalSurfac
   }, pngBase64);
 }
 
-test.describe("Codex conversation terminal fork", () => {
-  test.setTimeout(180_000);
+test.describe("Codex conversation view switch", () => {
+  test.setTimeout(300_000);
 
-  test("keeps new terminal intact and opens a dedicated Codex fork terminal", async ({ page }) => {
+  test("round-trips one Codex thread between Agent and terminal views", async ({ page }) => {
     const workspace = await seedWorkspace({ repoPrefix: "codex-fork-terminal-" });
 
     try {
@@ -39,9 +39,9 @@ test.describe("Codex conversation terminal fork", () => {
         provider: "codex",
         cwd: workspace.repoPath,
         workspaceId: workspace.workspaceId,
-        title: "Codex terminal fork",
+        title: "Codex conversation switch",
         modeId: "full-access",
-        initialPrompt: "Reply with the single word ready.",
+        initialPrompt: "Reply with exactly AGENT_SIDE_SENTINEL.",
       });
       const finished = await workspace.client.waitForFinish(agent.id, 90_000);
       expect(finished.status).toBe("idle");
@@ -55,20 +55,24 @@ test.describe("Codex conversation terminal fork", () => {
       await expect(page.getByTestId("workspace-header-new-terminal")).toBeVisible();
       await page.keyboard.press("Escape");
 
-      const forkButton = page.getByTestId("workspace-fork-codex-terminal");
-      await expect(forkButton).toBeVisible({ timeout: 30_000 });
-      await forkButton.click();
+      const viewToggle = page.getByTestId("workspace-toggle-codex-conversation-view");
+      await expect(viewToggle).toBeVisible({ timeout: 30_000 });
+      await viewToggle.click();
 
       await expectTerminalSurfaceVisible(page);
       await expect
-        .poll(async () => (await getCodexForkTerminal(workspace))?.capabilities?.imagePaste, {
-          timeout: 30_000,
-        })
+        .poll(
+          async () => (await getCodexConversationTerminal(workspace))?.capabilities?.imagePaste,
+          {
+            timeout: 30_000,
+          },
+        )
         .toBe(true);
-      const terminal = await getCodexForkTerminal(workspace);
+      const terminal = await getCodexConversationTerminal(workspace);
       if (!terminal) {
-        throw new Error("Codex fork terminal disappeared before image paste");
+        throw new Error("Codex conversation terminal disappeared after the view switch");
       }
+      expect(terminal.linkedAgentId).toBe(agent.id);
       await expect
         .poll(
           async () =>
@@ -77,7 +81,66 @@ test.describe("Codex conversation terminal fork", () => {
             ),
           { timeout: 30_000 },
         )
-        .toContain("Thread forked from");
+        .toContain("AGENT_SIDE_SENTINEL");
+
+      const terminalSurface = page.getByTestId("terminal-surface").first();
+      await terminalSurface.click();
+      await terminalSurface.pressSequentially("Reply with exactly TUI_SIDE_SENTINEL.", {
+        delay: 15,
+      });
+      await page.keyboard.press("Enter");
+      await expect
+        .poll(
+          async () => {
+            const text = (
+              await workspace.client.captureTerminal(terminal.id, { stripAnsi: true })
+            ).lines.join("\n");
+            return text.match(/TUI_SIDE_SENTINEL/g)?.length ?? 0;
+          },
+          { timeout: 90_000 },
+        )
+        .toBeGreaterThanOrEqual(2);
+      await expect
+        .poll(async () => (await getCodexConversationTerminal(workspace))?.activity?.state, {
+          timeout: 30_000,
+        })
+        .not.toBe("working");
+
+      await viewToggle.click();
+      await expect(page.getByText("TUI_SIDE_SENTINEL", { exact: true }).last()).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect
+        .poll(async () => await getCodexConversationTerminal(workspace), { timeout: 30_000 })
+        .toBeNull();
+
+      const composer = page.getByRole("textbox", { name: "Message agent..." }).first();
+      await composer.fill("Reply with exactly AGENT_RETURN_SENTINEL.");
+      await composer.press("Enter");
+      const returned = await workspace.client.waitForFinish(agent.id, 90_000);
+      expect(returned.status).toBe("idle");
+      await expect(page.getByText("AGENT_RETURN_SENTINEL", { exact: true }).last()).toBeVisible({
+        timeout: 30_000,
+      });
+
+      await viewToggle.click();
+      await expectTerminalSurfaceVisible(page);
+      await expect
+        .poll(async () => await getCodexConversationTerminal(workspace), { timeout: 30_000 })
+        .not.toBeNull();
+      const secondTerminal = await getCodexConversationTerminal(workspace);
+      if (!secondTerminal) {
+        throw new Error("Codex conversation terminal did not reopen");
+      }
+      await expect
+        .poll(
+          async () =>
+            (
+              await workspace.client.captureTerminal(secondTerminal.id, { stripAnsi: true })
+            ).lines.join("\n"),
+          { timeout: 30_000 },
+        )
+        .toContain("AGENT_RETURN_SENTINEL");
 
       await pastePngIntoTerminal(page);
 
@@ -87,12 +150,14 @@ test.describe("Codex conversation terminal fork", () => {
       await expect
         .poll(
           async () =>
-            (await workspace.client.captureTerminal(terminal.id, { stripAnsi: true })).lines.join(
-              "\n",
-            ),
+            (
+              await workspace.client.captureTerminal(secondTerminal.id, { stripAnsi: true })
+            ).lines.join("\n"),
           { timeout: 15_000 },
         )
         .toContain("[Image #1]");
+
+      await viewToggle.click();
     } finally {
       await workspace.cleanup();
     }

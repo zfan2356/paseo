@@ -142,6 +142,7 @@ function cloneTerminalInfo(info: RequiredWorkerTerminalInfo): RequiredWorkerTerm
     name: info.name,
     cwd: info.cwd,
     workspaceId: info.workspaceId,
+    ...(info.linkedAgentId ? { linkedAgentId: info.linkedAgentId } : {}),
     ...(info.title ? { title: info.title } : {}),
     activity: info.activity,
     ...(info.activityToken ? { activityToken: info.activityToken } : {}),
@@ -320,6 +321,7 @@ export async function createWorkerTerminalManager(
         name: record.info.name,
         cwd: record.info.cwd,
         workspaceId: record.info.workspaceId,
+        ...(record.info.linkedAgentId ? { linkedAgentId: record.info.linkedAgentId } : {}),
         ...(record.info.title ? { title: record.info.title } : {}),
         activity: record.activity,
       });
@@ -367,6 +369,9 @@ export async function createWorkerTerminalManager(
       },
       get workspaceId() {
         return record.info.workspaceId;
+      },
+      get linkedAgentId() {
+        return record.info.linkedAgentId;
       },
       send(message: ClientMessage): void {
         if (message.type === "resize") {

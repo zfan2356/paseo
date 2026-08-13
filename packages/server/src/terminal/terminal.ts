@@ -84,6 +84,7 @@ export interface TerminalSession {
   name: string;
   cwd: string;
   workspaceId: string;
+  linkedAgentId?: string;
   send(msg: ClientMessage): void;
   subscribe(listener: (msg: ServerMessage) => void, options?: TerminalSubscribeOptions): () => void;
   onExit(listener: (info: TerminalExitInfo) => void): () => void;
@@ -125,6 +126,7 @@ export interface CreateTerminalOptions {
   id?: string;
   cwd: string;
   workspaceId: string;
+  linkedAgentId?: string;
   shell?: string;
   env?: Record<string, string>;
   activityEnv?: Record<string, string>;
@@ -1551,6 +1553,7 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
     name,
     cwd,
     workspaceId,
+    ...(options.linkedAgentId ? { linkedAgentId: options.linkedAgentId } : {}),
     send,
     subscribe,
     onExit,

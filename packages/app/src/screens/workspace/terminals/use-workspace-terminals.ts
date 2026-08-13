@@ -25,6 +25,7 @@ interface TerminalProfileInput {
 
 interface PendingTerminalCreateInput {
   paneId?: string;
+  replaceTabId?: string;
   profile?: TerminalProfileInput;
   agentId?: string;
 }
@@ -41,7 +42,11 @@ interface UseWorkspaceTerminalsInput {
   workspaceScripts: WorkspaceDescriptor["scripts"];
   hasHydratedWorkspaces: boolean;
   isMissingWorkspaceDirectory: boolean;
-  onTerminalCreated: (input: { terminalId: string; paneId?: string }) => void;
+  onTerminalCreated: (input: {
+    terminalId: string;
+    paneId?: string;
+    replaceTabId?: string;
+  }) => void;
   onScriptTerminalSelected: (terminalId: string) => void;
   onWorkspacePathUnavailable: () => void;
   onTerminalCreateQueued: () => void;
@@ -178,6 +183,7 @@ export function useWorkspaceTerminals(input: UseWorkspaceTerminalsInput) {
         onTerminalCreated({
           terminalId: createdTerminal.id,
           paneId: createInput?.paneId,
+          replaceTabId: createInput?.replaceTabId,
         });
       }
     },

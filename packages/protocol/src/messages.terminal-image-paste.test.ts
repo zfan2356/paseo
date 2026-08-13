@@ -26,7 +26,7 @@ describe("terminal image paste wire compatibility", () => {
       payload: {
         cwd: "/work/repo",
         requestId: "request-1",
-        terminals: [{ id: "term-1", name: "Codex Fork", workspaceId: "ws-1" }],
+        terminals: [{ id: "term-1", name: "Codex Conversation", workspaceId: "ws-1" }],
       },
     };
 

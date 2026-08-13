@@ -17,6 +17,7 @@ export interface TerminalListItem {
   name: string;
   cwd: string;
   workspaceId: string;
+  linkedAgentId?: string;
   title?: string;
   activity: TerminalActivity | null;
 }
@@ -33,6 +34,7 @@ export interface TerminalActivityTransitionEvent {
   name: string;
   cwd: string;
   workspaceId: string;
+  linkedAgentId?: string;
   activity: TerminalActivity | null;
   previous: TerminalActivity | null;
 }
@@ -55,6 +57,7 @@ export interface TerminalManager {
     id?: string;
     cwd: string;
     workspaceId: string;
+    linkedAgentId?: string;
     name?: string;
     title?: string;
     env?: Record<string, string>;
@@ -219,6 +222,7 @@ export function createTerminalManager(
       name: input.session.name,
       cwd: input.session.cwd,
       workspaceId: input.session.workspaceId,
+      ...(input.session.linkedAgentId ? { linkedAgentId: input.session.linkedAgentId } : {}),
       title: input.session.getTitle(),
       activity: input.session.getActivity(),
     };
@@ -258,6 +262,7 @@ export function createTerminalManager(
       name: input.session.name,
       cwd: input.session.cwd,
       workspaceId: input.session.workspaceId,
+      ...(input.session.linkedAgentId ? { linkedAgentId: input.session.linkedAgentId } : {}),
       activity: input.transition.activity,
       previous: input.transition.previous,
     };
@@ -312,6 +317,7 @@ export function createTerminalManager(
       id?: string;
       cwd: string;
       workspaceId: string;
+      linkedAgentId?: string;
       name?: string;
       title?: string;
       env?: Record<string, string>;
@@ -348,6 +354,7 @@ export function createTerminalManager(
             id: terminalId,
             cwd: options.cwd,
             workspaceId: options.workspaceId,
+            ...(options.linkedAgentId ? { linkedAgentId: options.linkedAgentId } : {}),
             name: options.name ?? defaultName,
             ...(options.title ? { title: options.title } : {}),
             ...(options.command ? { command: options.command } : {}),

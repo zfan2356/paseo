@@ -660,6 +660,8 @@ export const zhCN: TranslationResources = {
         newAgent: "新建 Agent",
         newTerminal: "新建 Terminal",
         forkToCodexTerminal: "转为 Codex Terminal 会话",
+        switchToCodexTerminal: "切换到 Codex Terminal",
+        switchToAgentView: "切换回 Agent 对话",
         newBrowser: "新建浏览器标签",
         importSession: "导入会话",
         copyPath: "复制 workspace 路径",
@@ -667,6 +669,7 @@ export const zhCN: TranslationResources = {
         showSetup: "显示 setup",
       },
       toasts: {
+        codexViewSwitchFailed: "会话视图切换失败",
         workspacePathUnavailable: "Workspace 路径尚不可用",
         branchNameUnavailable: "分支名称不可用",
         terminalQueued: "正在准备 workspace，Terminal 准备好后会打开...",

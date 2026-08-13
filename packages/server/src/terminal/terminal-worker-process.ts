@@ -122,6 +122,7 @@ function toTerminalInfo(session: TerminalSession): WorkerTerminalInfo {
     name: session.name,
     cwd: session.cwd,
     workspaceId: session.workspaceId,
+    ...(session.linkedAgentId ? { linkedAgentId: session.linkedAgentId } : {}),
     ...(session.getTitle() ? { title: session.getTitle() } : {}),
     activity: session.getActivity(),
     ...(activityTokenByTerminalId.get(session.id)

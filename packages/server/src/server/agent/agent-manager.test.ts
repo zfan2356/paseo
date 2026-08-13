@@ -15,7 +15,11 @@ import {
 } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
 import { toAgentPayload } from "./agent-projections.js";
-import { getOpenAgentTabLabel, PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import {
+  CODEX_TERMINAL_OWNER_LABEL,
+  getOpenAgentTabLabel,
+  PARENT_AGENT_ID_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 import { formatSystemNotificationPrompt, startAgentRun } from "./agent-prompt.js";
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent-loading.js";
 import type { StoredAgentRecord } from "./agent-storage.js";
@@ -443,6 +447,46 @@ class TestAgentSession implements AgentSession {
 
   async close(): Promise<void> {}
 }
+
+test("hands a Codex thread to an external terminal and resumes it after release", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-codex-terminal-handoff-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new TestAgentClient();
+  const agentId = "00000000-0000-4000-8000-000000000401";
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    idFactory: () => agentId,
+  });
+
+  try {
+    await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    await manager.claimAgentExternalRuntime(agentId, "terminal-1");
+
+    expect(manager.getAgent(agentId)).toBeNull();
+    expect((await storage.get(agentId))?.labels[CODEX_TERMINAL_OWNER_LABEL]).toBe("terminal-1");
+    await expect(
+      ensureAgentLoaded(agentId, { agentManager: manager, agentStorage: storage, logger }),
+    ).rejects.toThrow("open in Codex terminal");
+
+    await manager.releaseAgentExternalRuntime(agentId, "terminal-1");
+    const resumed = await ensureAgentLoaded(agentId, {
+      agentManager: manager,
+      agentStorage: storage,
+      logger,
+    });
+    expect(resumed.id).toBe(agentId);
+    expect((await storage.get(agentId))?.labels[CODEX_TERMINAL_OWNER_LABEL]).toBeUndefined();
+  } finally {
+    if (manager.getAgent(agentId)) {
+      await manager.closeAgent(agentId);
+    }
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
 
 class McpCapableTestAgentSession extends TestAgentSession {
   override readonly capabilities = {

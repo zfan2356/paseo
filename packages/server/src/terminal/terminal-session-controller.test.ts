@@ -157,12 +157,14 @@ function listSession(input: {
   name: string;
   cwd: string;
   workspaceId?: string;
+  linkedAgentId?: string;
 }): TerminalSession {
   return {
     id: input.id,
     name: input.name,
     cwd: input.cwd,
     workspaceId: input.workspaceId ?? "ws-test",
+    ...(input.linkedAgentId ? { linkedAgentId: input.linkedAgentId } : {}),
     send: vi.fn(),
     subscribe: () => vi.fn(),
     onExit: () => vi.fn(),
@@ -315,15 +317,16 @@ describe("terminal-session-controller legacy terminal creation", () => {
     );
   });
 
-  test("creates an agent fork terminal from the server-resolved launch", async () => {
+  test("creates a linked Codex conversation terminal from the server-resolved launch", async () => {
     const outboundMessages: SessionOutboundMessage[] = [];
     const createTerminal = vi.fn(
       async (options: Parameters<TerminalManager["createTerminal"]>[0]) =>
         listSession({
-          id: "term-fork",
+          id: options.id ?? "term-conversation",
           name: options.name ?? "Terminal 1",
           cwd: options.cwd,
           workspaceId: options.workspaceId,
+          linkedAgentId: options.linkedAgentId,
         }),
     );
     const terminalManager = {
@@ -346,9 +349,9 @@ describe("terminal-session-controller legacy terminal creation", () => {
       subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
     } as unknown as TerminalManager;
     const resolveAgentTerminalLaunch = vi.fn(async () => ({
-      name: "Codex Fork",
+      name: "Codex Conversation",
       command: "codex",
-      args: ["fork", "thread-1"],
+      args: ["resume", "--include-non-interactive", "thread-1"],
     }));
     const controller = new TerminalSessionController({
       terminalManager,
@@ -370,6 +373,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
 
     expect(resolveAgentTerminalLaunch).toHaveBeenCalledWith({
       agentId: "agent-1",
+      terminalId: expect.any(String),
       cwd: "/work/repo",
       workspaceId: "ws-1",
     });
@@ -377,24 +381,78 @@ describe("terminal-session-controller legacy terminal creation", () => {
       expect.objectContaining({
         cwd: "/work/repo",
         workspaceId: "ws-1",
-        name: "Codex Fork",
+        linkedAgentId: "agent-1",
+        name: "__paseo_codex_conversation__:agent-1",
         command: "codex",
-        args: ["fork", "thread-1"],
+        args: ["resume", "--include-non-interactive", "thread-1"],
       }),
     );
     expect(outboundMessages).toContainEqual({
       type: "create_terminal_response",
       payload: {
         terminal: {
-          id: "term-fork",
-          name: "Codex Fork",
+          id: expect.any(String),
+          name: "Codex Conversation",
           cwd: "/work/repo",
           workspaceId: "ws-1",
+          linkedAgentId: "agent-1",
           activity: null,
           capabilities: { imagePaste: true },
         },
         error: null,
         requestId: "req-fork",
+      },
+    });
+  });
+
+  test("stops a linked Codex terminal before resuming its Agent", async () => {
+    const outboundMessages: SessionOutboundMessage[] = [];
+    const actions: string[] = [];
+    const terminal = listSession({
+      id: "term-conversation",
+      name: "Codex Conversation",
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+      linkedAgentId: "agent-1",
+    });
+    const terminalManager = {
+      getTerminal: vi.fn(() => terminal),
+      killTerminalAndWait: vi.fn(async () => {
+        actions.push("terminal-stopped");
+      }),
+    } as unknown as TerminalManager;
+    const resumeAgentFromTerminal = vi.fn(async () => {
+      actions.push("agent-resumed");
+    });
+    const controller = new TerminalSessionController({
+      terminalManager,
+      emit: (message) => outboundMessages.push(message),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+      resumeAgentFromTerminal,
+    });
+
+    await controller.dispatch({
+      type: "codex_terminal.switch_to_agent.request",
+      terminalId: terminal.id,
+      requestId: "req-switch",
+    });
+
+    expect(actions).toEqual(["terminal-stopped", "agent-resumed"]);
+    expect(resumeAgentFromTerminal).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      terminalId: "term-conversation",
+    });
+    expect(outboundMessages).toContainEqual({
+      type: "codex_terminal.switch_to_agent.response",
+      payload: {
+        terminalId: "term-conversation",
+        agentId: "agent-1",
+        success: true,
+        error: null,
+        requestId: "req-switch",
       },
     });
   });

@@ -28,8 +28,8 @@ import type {
 } from "../terminal/terminal-manager.js";
 import { TerminalSessionController } from "../terminal/terminal-session-controller.js";
 import {
-  buildCodexForkTerminalLaunch,
-  type CodexForkTerminalSource,
+  buildCodexConversationTerminalLaunch,
+  type CodexConversationTerminalSource,
 } from "../terminal/codex-fork-terminal.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type { BinaryFrame } from "@getpaseo/protocol/binary-frames/index";
@@ -914,6 +914,8 @@ export class Session {
       sessionLogger: this.sessionLogger,
       listTerminalWorkspaceRefs: () => this.listActiveWorkspaceRefs(),
       resolveAgentTerminalLaunch: (input) => this.resolveAgentTerminalLaunch(input),
+      releaseAgentTerminalOwnership: (input) => this.releaseAgentTerminalOwnership(input),
+      resumeAgentFromTerminal: (input) => this.resumeAgentFromTerminal(input),
       clientSupportsWrapReflow: () =>
         this.clientCapabilities.has(CLIENT_CAPS.terminalReflowableSnapshot),
       getClientBufferedAmount: () => this.getTransportBufferedAmount(),
@@ -1289,6 +1291,7 @@ export class Session {
 
   private async resolveAgentTerminalLaunch(input: {
     agentId: string;
+    terminalId: string;
     cwd: string;
     workspaceId: string;
   }) {
@@ -1310,7 +1313,7 @@ export class Session {
       throw new Error("The Codex conversation belongs to a different workspace path");
     }
 
-    const source: CodexForkTerminalSource = liveAgent
+    const source: CodexConversationTerminalSource = liveAgent
       ? {
           provider: liveAgent.provider,
           cwd: liveAgent.cwd,
@@ -1331,7 +1334,34 @@ export class Session {
           config: storedAgent!.config,
           features: storedAgent!.features,
         };
-    return buildCodexForkTerminalLaunch(source);
+    const launch = buildCodexConversationTerminalLaunch(source);
+    await this.agentManager.claimAgentExternalRuntime(input.agentId, input.terminalId);
+    return launch;
+  }
+
+  private async releaseAgentTerminalOwnership(input: {
+    agentId: string;
+    terminalId: string;
+  }): Promise<void> {
+    await this.agentManager.releaseAgentExternalRuntime(input.agentId, input.terminalId);
+  }
+
+  private async resumeAgentFromTerminal(input: {
+    agentId: string;
+    terminalId: string;
+  }): Promise<void> {
+    await this.agentManager.releaseAgentExternalRuntime(input.agentId, input.terminalId);
+    const snapshot = await ensureAgentLoaded(input.agentId, {
+      agentManager: this.agentManager,
+      agentStorage: this.agentStorage,
+      broadcastTimeline: true,
+      logger: this.sessionLogger,
+    });
+    await this.agentManager.hydrateTimelineFromProvider(input.agentId, {
+      force: true,
+      broadcast: true,
+    });
+    await this.agentUpdates.forwardLiveAgent(snapshot);
   }
 
   private readStructuredGenerationDaemonConfig(): StructuredGenerationDaemonConfig {
