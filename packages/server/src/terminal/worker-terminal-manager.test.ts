@@ -1,10 +1,16 @@
 import { afterEach, expect, it } from "vitest";
 import { isPlatform } from "../test-utils/platform.js";
+import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createConnection } from "node:net";
 import { delimiter, join } from "node:path";
 import { tmpdir } from "node:os";
-import { createWorkerTerminalManager } from "./worker-terminal-manager.js";
+import { resolvePersistentTerminalWorkerRuntime } from "./persistent-terminal-worker-transport.js";
+import {
+  createWorkerTerminalManager,
+  detachWorkerTerminalManager,
+} from "./worker-terminal-manager.js";
 import type {
   TerminalActivityTransitionEvent,
   TerminalManager,
@@ -21,6 +27,7 @@ import type {
   TerminalWorkerRequest,
   TerminalWorkerToParentMessage,
 } from "./terminal-worker-protocol.js";
+import { terminateWithTreeKill } from "../utils/tree-kill.js";
 
 type TerminalRow = TerminalState["grid"][number];
 
@@ -138,6 +145,77 @@ async function removeTemporaryDir(dir: string): Promise<void> {
   throw lastError;
 }
 
+async function isEndpointAcceptingConnections(endpoint: string): Promise<boolean> {
+  const socket = createConnection(endpoint);
+  const acceptingConnections = await Promise.race([
+    new Promise<boolean>((resolve) => socket.once("connect", () => resolve(true))),
+    new Promise<boolean>((resolve) => socket.once("error", () => resolve(false))),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 250)),
+  ]);
+  socket.destroy();
+  return acceptingConnections;
+}
+
+async function cleanupPersistentTerminalWorker(options: {
+  root: string;
+  paseoHome: string;
+  terminalId: string | null;
+  manager: TerminalManager | null;
+}): Promise<void> {
+  const errors: unknown[] = [];
+  const endpoint = resolvePersistentTerminalWorkerRuntime(options.paseoHome).endpoint;
+  let cleanupManager = options.manager;
+
+  if (!cleanupManager) {
+    try {
+      cleanupManager = await createWorkerTerminalManager({ paseoHome: options.paseoHome });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (cleanupManager && options.terminalId) {
+    try {
+      await cleanupManager.killTerminalAndWait(options.terminalId, {
+        gracefulTimeoutMs: 1000,
+        forceTimeoutMs: 500,
+      });
+    } catch (error) {
+      errors.push(error);
+    }
+  } else if (cleanupManager) {
+    cleanupManager.killAll();
+  }
+  if (cleanupManager) {
+    try {
+      await detachWorkerTerminalManager(cleanupManager);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  let endpointClosed = false;
+  try {
+    await waitForCondition(async () => !(await isEndpointAcceptingConnections(endpoint)), 5000);
+    endpointClosed = true;
+  } catch (error) {
+    errors.push(error);
+  }
+  if (endpointClosed) {
+    try {
+      await removeTemporaryDir(options.root);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(errors, "Persistent terminal worker cleanup failed");
+  }
+}
+
 afterEach(async () => {
   const sessions = terminalSessions.splice(0);
   await Promise.all(
@@ -163,7 +241,7 @@ afterEach(async () => {
 it("creates a terminal through the worker and streams output", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-output-"));
   temporaryDirs.push(cwd);
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const session = trackTerminal(
     await manager.createTerminal({
       workspaceId: "ws-test",
@@ -208,7 +286,7 @@ it("delivers rapid small writes complete and in order through worker coalescing"
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-coalesce-"));
   temporaryDirs.push(cwd);
   const burstGatePath = join(cwd, "burst-ready");
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   // The file gate starts the burst after this test subscribes without depending
   // on platform-specific PTY input echo/canonical-mode behavior.
   const session = trackTerminal(
@@ -271,7 +349,7 @@ it("delivers rapid small writes complete and in order through worker coalescing"
 it("pulls fresh terminal state from the worker authority", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-state-"));
   temporaryDirs.push(cwd);
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const session = trackTerminal(
     await manager.createTerminal({
       workspaceId: "ws-test",
@@ -293,6 +371,355 @@ it("pulls fresh terminal state from the worker authority", async () => {
   expect(visibleText).toContain("worker-state-ready");
 });
 
+it("reattaches to a live terminal after the daemon-side manager disconnects", async () => {
+  const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-"));
+  const cwd = join(root, "workspace");
+  const paseoHome = join(root, ".paseo");
+  const gatePath = join(root, "emit-while-detached");
+  const ackPath = join(root, "detached-output-ack");
+  const tokenPath = join(root, "activity-token");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(paseoHome, { recursive: true });
+
+  let cleanupManager: TerminalManager | null = null;
+  let terminalId: string | null = null;
+  try {
+    const firstManager = await createWorkerTerminalManager({ paseoHome });
+    cleanupManager = firstManager;
+    const firstSession = await firstManager.createTerminal({
+      workspaceId: "ws-persistent",
+      cwd,
+      env: {
+        PASEO_RESTART_GATE: gatePath,
+        PASEO_RESTART_ACK: ackPath,
+        PASEO_RESTART_TOKEN_FILE: tokenPath,
+      },
+      ...nodeTerminalCommand(`
+        const fs = require("node:fs");
+        const pid = process.pid;
+        fs.writeFileSync(process.env.PASEO_RESTART_TOKEN_FILE, process.env.PASEO_ACTIVITY_TOKEN);
+        process.stdout.write("READY:" + pid + "\\n");
+        const gate = setInterval(() => {
+          if (!fs.existsSync(process.env.PASEO_RESTART_GATE)) return;
+          clearInterval(gate);
+          process.stdout.write("DURING:" + pid + "\\n");
+          fs.writeFileSync(process.env.PASEO_RESTART_ACK, String(pid));
+        }, 10);
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", (data) => {
+          if (data.includes("a")) process.stdout.write("AFTER:" + pid + "\\n");
+        });
+        setInterval(() => {}, 1000);
+      `),
+    });
+    terminalId = firstSession.id;
+
+    let beforeRestart = "";
+    await waitForCondition(async () => {
+      const snapshot = await firstManager.getTerminalState(firstSession.id);
+      beforeRestart = snapshot ? getRenderedTextFromState(snapshot.state) : "";
+      return beforeRestart.includes("READY:") && existsSync(tokenPath);
+    }, 10000);
+    const pid = beforeRestart.match(/READY:(\d+)/)?.[1];
+    expect(pid).toEqual(expect.stringMatching(/^\d+$/));
+    expect(firstManager.setTerminalTitle(firstSession.id, "Persistent shell")).toBe(true);
+    await firstManager.getTerminalState(firstSession.id);
+
+    await detachWorkerTerminalManager(firstManager);
+    cleanupManager = null;
+    writeFileSync(gatePath, "go");
+    await waitForCondition(() => existsSync(ackPath), 10000);
+    expect(readFileSync(ackPath, "utf8")).toBe(pid);
+
+    const secondManager = await createWorkerTerminalManager({ paseoHome });
+    cleanupManager = secondManager;
+    const restored = secondManager.getTerminal(firstSession.id);
+    expect(restored).toBeDefined();
+    expect(restored?.getTitle()).toBe("Persistent shell");
+    expect((await secondManager.getTerminals(cwd)).map((terminal) => terminal.id)).toEqual([
+      firstSession.id,
+    ]);
+    expect(
+      secondManager.validateTerminalActivityToken(firstSession.id, readFileSync(tokenPath, "utf8")),
+    ).toBe("valid");
+
+    const restoredSnapshot = await secondManager.getTerminalState(firstSession.id);
+    const restoredText = restoredSnapshot ? getRenderedTextFromState(restoredSnapshot.state) : "";
+    expect(restoredText).toContain(`READY:${pid}`);
+    expect(restoredText).toContain(`DURING:${pid}`);
+
+    restored?.send({ type: "input", data: "a\r" });
+    await waitForCondition(async () => {
+      const snapshot = await secondManager.getTerminalState(firstSession.id);
+      return snapshot ? getRenderedTextFromState(snapshot.state).includes(`AFTER:${pid}`) : false;
+    }, 10000);
+  } finally {
+    await cleanupPersistentTerminalWorker({ root, paseoHome, terminalId, manager: cleanupManager });
+  }
+});
+
+it("keeps the existing manager attached while a replacement manager starts", async () => {
+  const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-overlap-"));
+  const cwd = join(root, "workspace");
+  const paseoHome = join(root, ".paseo");
+  const afterPath = join(root, "first-manager-after-overlap");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(paseoHome, { recursive: true });
+
+  let firstManager: TerminalManager | null = null;
+  let cleanupManager: TerminalManager | null = null;
+  let terminalId: string | null = null;
+  try {
+    firstManager = await createWorkerTerminalManager({ paseoHome });
+    cleanupManager = firstManager;
+    const firstSession = await firstManager.createTerminal({
+      workspaceId: "ws-overlap",
+      cwd,
+      ...nodeTerminalCommand(`
+        const fs = require("node:fs");
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", (data) => {
+          if (data.includes("a")) fs.writeFileSync(${JSON.stringify(afterPath)}, "ok");
+        });
+        setInterval(() => {}, 1000);
+      `),
+    });
+    terminalId = firstSession.id;
+
+    const secondManager = await createWorkerTerminalManager({ paseoHome });
+    cleanupManager = secondManager;
+    expect(secondManager.getTerminal(firstSession.id)).toBeDefined();
+    await expect(firstManager.getTerminalState(firstSession.id)).resolves.not.toBeNull();
+
+    await detachWorkerTerminalManager(secondManager);
+    cleanupManager = firstManager;
+    await expect(firstManager.getTerminalState(firstSession.id)).resolves.not.toBeNull();
+
+    firstSession.send({ type: "input", data: "a\r" });
+    await waitForCondition(() => existsSync(afterPath), 10000);
+  } finally {
+    if (firstManager && firstManager !== cleanupManager) {
+      await detachWorkerTerminalManager(firstManager).catch(() => undefined);
+    }
+    await cleanupPersistentTerminalWorker({ root, paseoHome, terminalId, manager: cleanupManager });
+  }
+});
+
+it("recovers immediately from a fresh spawn lock whose owner exited", async () => {
+  const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-dead-lock-"));
+  const paseoHome = join(root, ".paseo");
+  mkdirSync(paseoHome, { recursive: true });
+  const runtime = resolvePersistentTerminalWorkerRuntime(paseoHome);
+  writeFileSync(
+    runtime.spawnLockFile,
+    `${JSON.stringify({ pid: 2_000_000_000, createdAt: new Date().toISOString() })}\n`,
+  );
+
+  let cleanupManager: TerminalManager | null = null;
+  try {
+    cleanupManager = await createWorkerTerminalManager({
+      paseoHome,
+      persistentStartupTimeoutMs: 3000,
+    });
+    expect(cleanupManager.listDirectories()).toEqual([]);
+  } finally {
+    await cleanupPersistentTerminalWorker({
+      root,
+      paseoHome,
+      terminalId: null,
+      manager: cleanupManager,
+    });
+  }
+});
+
+it("reattaches to a live terminal after the daemon process tree is force-stopped", async () => {
+  const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-tree-kill-"));
+  const cwd = join(root, "workspace");
+  const paseoHome = join(root, ".paseo");
+  const readyPath = join(root, "owner-ready.json");
+  const terminalPidPath = join(root, "terminal.pid");
+  const afterPath = join(root, "terminal-after-tree-kill");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(paseoHome, { recursive: true });
+
+  const workerManagerUrl = new URL("./worker-terminal-manager.ts", import.meta.url).href;
+  const loaderUrl = new URL("./terminal-ts-loader.mjs", import.meta.url).href;
+  const loaderImport = [
+    'import { register } from "node:module";',
+    'import { pathToFileURL } from "node:url";',
+    `register(${JSON.stringify(loaderUrl)}, pathToFileURL("./"));`,
+  ].join(" ");
+  const terminalScript = `
+    const fs = require("node:fs");
+    const pid = process.pid;
+    fs.writeFileSync(${JSON.stringify(terminalPidPath)}, String(pid));
+    process.stdout.write("READY:" + pid + "\\n");
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (data) => {
+      if (!data.includes("a")) return;
+      fs.writeFileSync(${JSON.stringify(afterPath)}, String(pid));
+      process.stdout.write("AFTER:" + pid + "\\n");
+    });
+    setInterval(() => {}, 1000);
+  `;
+  const ownerScript = `
+    import { existsSync, readFileSync, writeFileSync } from "node:fs";
+    import { createWorkerTerminalManager } from ${JSON.stringify(workerManagerUrl)};
+
+    const manager = await createWorkerTerminalManager({ paseoHome: ${JSON.stringify(paseoHome)} });
+    const terminal = await manager.createTerminal({
+      workspaceId: "ws-tree-kill",
+      cwd: ${JSON.stringify(cwd)},
+      command: ${JSON.stringify(process.execPath)},
+      args: ["-e", ${JSON.stringify(terminalScript)}],
+    });
+    const deadline = Date.now() + 10000;
+    while (!existsSync(${JSON.stringify(terminalPidPath)})) {
+      if (Date.now() >= deadline) throw new Error("terminal pid was not written");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    writeFileSync(
+      ${JSON.stringify(readyPath)},
+      JSON.stringify({
+        terminalId: terminal.id,
+        pid: readFileSync(${JSON.stringify(terminalPidPath)}, "utf8"),
+      }),
+    );
+    setInterval(() => {}, 1000);
+  `;
+
+  let owner: ChildProcess | null = null;
+  let ownerStderr = "";
+  let cleanupManager: TerminalManager | null = null;
+  let terminalId: string | null = null;
+  try {
+    owner = spawn(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--import",
+        `data:text/javascript,${encodeURIComponent(loaderImport)}`,
+        "--input-type=module",
+        "-e",
+        ownerScript,
+      ],
+      { cwd: root, stdio: ["ignore", "ignore", "pipe"] },
+    );
+    owner.stderr?.setEncoding("utf8");
+    owner.stderr?.on("data", (chunk: string) => {
+      ownerStderr += chunk;
+    });
+
+    await waitForCondition(() => {
+      if (owner?.exitCode !== null) {
+        throw new Error(`terminal owner exited before ready: ${ownerStderr}`);
+      }
+      return existsSync(readyPath);
+    }, 15000);
+    const ready = JSON.parse(readFileSync(readyPath, "utf8")) as {
+      terminalId: string;
+      pid: string;
+    };
+    terminalId = ready.terminalId;
+    expect(ready.pid).toEqual(expect.stringMatching(/^\d+$/));
+
+    const termination = await terminateWithTreeKill(owner, {
+      gracefulTimeoutMs: 1000,
+      forceTimeoutMs: 2000,
+    });
+    expect(["terminated", "killed"]).toContain(termination);
+    expect(owner.exitCode !== null || owner.signalCode !== null).toBe(true);
+    owner = null;
+
+    const secondManager = await createWorkerTerminalManager({ paseoHome });
+    cleanupManager = secondManager;
+    const restored = secondManager.getTerminal(terminalId);
+    expect(restored).toBeDefined();
+    expect((await secondManager.getTerminals(cwd)).map((terminal) => terminal.id)).toEqual([
+      terminalId,
+    ]);
+
+    restored?.send({ type: "input", data: "a\r" });
+    await waitForCondition(() => existsSync(afterPath), 10000);
+    expect(readFileSync(afterPath, "utf8")).toBe(ready.pid);
+  } finally {
+    if (owner && owner.exitCode === null && owner.signalCode === null) {
+      await terminateWithTreeKill(owner, {
+        gracefulTimeoutMs: 500,
+        forceTimeoutMs: 1000,
+      }).catch(() => undefined);
+    }
+    await cleanupPersistentTerminalWorker({ root, paseoHome, terminalId, manager: cleanupManager });
+  }
+}, 30000);
+
+it("reattaches a terminal whose serialized headless state exceeds 16 MiB", async () => {
+  const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-large-state-"));
+  const cwd = join(root, "workspace");
+  const paseoHome = join(root, ".paseo");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(paseoHome, { recursive: true });
+
+  const rows = 384;
+  const cols = 512;
+  const minimumStateBytes = 16 * 1024 * 1024;
+  const maximumStateBytes = 64 * 1024 * 1024;
+  let cleanupManager: TerminalManager | null = null;
+  let terminalId: string | null = null;
+  try {
+    const firstManager = await createWorkerTerminalManager({
+      paseoHome,
+      requestTimeoutMs: 30000,
+    });
+    cleanupManager = firstManager;
+    const firstSession = await firstManager.createTerminal({
+      workspaceId: "ws-persistent-large-state",
+      cwd,
+      rows: 24,
+      cols: 80,
+      ...nodeTerminalCommand("setInterval(() => {}, 1000);"),
+    });
+    terminalId = firstSession.id;
+
+    firstSession.send({ type: "resize", rows, cols });
+    const beforeDetach = await firstManager.getTerminalState(firstSession.id);
+    if (!beforeDetach) {
+      throw new Error("Persistent terminal state was unavailable before detach");
+    }
+    const beforeDetachBytes = Buffer.byteLength(JSON.stringify(beforeDetach.state));
+    expect(beforeDetach.state.rows).toBe(rows);
+    expect(beforeDetach.state.cols).toBe(cols);
+    expect(beforeDetachBytes).toBeGreaterThan(minimumStateBytes);
+    expect(beforeDetachBytes).toBeLessThan(maximumStateBytes);
+
+    await detachWorkerTerminalManager(firstManager);
+    cleanupManager = null;
+
+    const secondManager = await createWorkerTerminalManager({
+      paseoHome,
+      requestTimeoutMs: 30000,
+    });
+    cleanupManager = secondManager;
+    const restored = secondManager.getTerminal(firstSession.id);
+    if (!restored) {
+      throw new Error("Persistent terminal was not restored after reattach");
+    }
+    const restoredState = restored.getState();
+    const restoredBytes = Buffer.byteLength(JSON.stringify(restoredState));
+    expect(restoredState.rows).toBe(rows);
+    expect(restoredState.cols).toBe(cols);
+    expect(restoredBytes).toBeGreaterThan(minimumStateBytes);
+    expect(restoredBytes).toBeLessThan(maximumStateBytes);
+  } finally {
+    await cleanupPersistentTerminalWorker({
+      root,
+      paseoHome,
+      terminalId,
+      manager: cleanupManager,
+    });
+  }
+}, 60000);
+
 // Windows ConPTY normalizes away the kitty keyboard escape the child writes, so it
 // never reaches the worker's input-mode tracker and the preamble stays empty. The
 // preamble-caching contract is verified on Linux/macOS; the daemon's input-mode
@@ -302,7 +729,7 @@ it.skipIf(isPlatform("win32"))(
   async () => {
     const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-preamble-"));
     temporaryDirs.push(cwd);
-    manager = createWorkerTerminalManager();
+    manager = await createWorkerTerminalManager();
     // \x1b[>1u pushes kitty keyboard flag 1, which the worker's input-mode
     // tracker records and reflects in its replay preamble (\x1b[=1;1u).
     const session = trackTerminal(
@@ -328,7 +755,7 @@ it.skipIf(isPlatform("win32"))(
 it("refreshes cached terminal title after worker title changes", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-title-"));
   temporaryDirs.push(cwd);
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const session = trackTerminal(
     await manager.createTerminal({
       workspaceId: "ws-test",
@@ -348,7 +775,7 @@ it("refreshes cached terminal title after worker title changes", async () => {
 it("refreshes cached terminal size after worker resize", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-resize-"));
   temporaryDirs.push(cwd);
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const session = trackTerminal(await manager.createTerminal({ cwd, workspaceId: "ws-test" }));
 
   session.send({ type: "resize", rows: 10, cols: 40 });
@@ -363,7 +790,7 @@ it("refreshes cached terminal size after worker resize", async () => {
 it("captures terminal output from the worker authority", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-capture-"));
   temporaryDirs.push(cwd);
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const session = trackTerminal(await manager.createTerminal({ cwd, workspaceId: "ws-test" }));
 
   session.send({ type: "input", data: "echo hello world\r" });
@@ -380,7 +807,7 @@ it("captures terminal output from the worker authority", async () => {
 
 it("does not surface fire-and-forget send timeouts as unhandled rejections", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 5,
     forkWorker: () => worker,
   });
@@ -416,7 +843,7 @@ it("does not surface fire-and-forget send timeouts as unhandled rejections", asy
 });
 
 it("keeps registered cwd env inheritance behind the worker manager interface", async () => {
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-env-"));
   temporaryDirs.push(cwd);
   const markerPath = join(cwd, "env.txt");
@@ -449,7 +876,7 @@ it("injects parent-minted terminal activity env through the worker", async () =>
   temporaryDirs.push(cwd);
   const envPath = join(cwd, "activity-env.json");
   const activityUrl = "http://127.0.0.1:12345/api/terminal-activity";
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     getTerminalActivityUrl: () => activityUrl,
   });
 
@@ -497,11 +924,13 @@ it("injects parent-minted terminal activity env through the worker", async () =>
 });
 
 it("starts the default shell through the worker and accepts quoted commands", async () => {
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-shell-"));
   temporaryDirs.push(cwd);
   const markerPath = join(cwd, "shell quoted marker.txt");
-  const session = trackTerminal(await manager.createTerminal({ cwd, workspaceId: "ws-test" }));
+  const session = trackTerminal(
+    await manager.createTerminal({ cwd, workspaceId: "ws-test", env: { HOME: cwd } }),
+  );
   const command = [
     "node",
     "-e",
@@ -520,7 +949,7 @@ it("lists subdirectory terminals when querying the workspace root", async () => 
   const subdirCwd = join(rootCwd, "apps", "mobile");
   mkdirSync(subdirCwd, { recursive: true });
   temporaryDirs.push(rootCwd);
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const created = trackTerminal(
     await manager.createTerminal({
       workspaceId: "ws-test",
@@ -536,7 +965,7 @@ it("lists subdirectory terminals when querying the workspace root", async () => 
 
 it("lists terminals locally without waiting on the worker", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 5,
     forkWorker: () => worker,
   });
@@ -577,7 +1006,7 @@ it("lists terminals locally without waiting on the worker", async () => {
 
 it("includes only stamped terminals in workspace-scoped local reads", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 5,
     forkWorker: () => worker,
   });
@@ -629,7 +1058,7 @@ it("includes only stamped terminals in workspace-scoped local reads", async () =
 
 it("rejects non-absolute cwd in getTerminals", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 5,
     forkWorker: () => worker,
   });
@@ -639,7 +1068,7 @@ it("rejects non-absolute cwd in getTerminals", async () => {
 
 it("surfaces worker activity changes via getActivity, onActivityChange, and terminalsChanged", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 50,
     forkWorker: () => worker,
   });
@@ -702,7 +1131,7 @@ it("surfaces worker activity changes via getActivity, onActivityChange, and term
 
 it("sets terminal activity through a worker request", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 50,
     forkWorker: () => worker,
   });
@@ -735,7 +1164,7 @@ it("sets terminal activity through a worker request", async () => {
 
 it("clears terminal attention through a worker request", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 50,
     forkWorker: () => worker,
   });
@@ -768,7 +1197,7 @@ it("clears terminal attention through a worker request", async () => {
 it("clears finished attention on a real terminal", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-attention-"));
   temporaryDirs.push(cwd);
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const session = trackTerminal(
     await manager.createTerminal({
       workspaceId: "ws-test",
@@ -804,7 +1233,7 @@ it("clears finished attention on a real terminal", async () => {
 it("removes worker terminals after killAndWait", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-kill-"));
   temporaryDirs.push(cwd);
-  manager = createWorkerTerminalManager();
+  manager = await createWorkerTerminalManager();
   const session = trackTerminal(
     await manager.createTerminal({
       workspaceId: "ws-test",
@@ -825,9 +1254,30 @@ it("removes worker terminals after killAndWait", async () => {
   expect(manager.listDirectories()).not.toContain(cwd);
 });
 
+it("removes worker terminals after a best-effort kill", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-kill-best-effort-"));
+  temporaryDirs.push(cwd);
+  manager = await createWorkerTerminalManager();
+  const session = trackTerminal(
+    await manager.createTerminal({
+      workspaceId: "ws-test",
+      cwd,
+      ...nodeTerminalCommand("setInterval(() => {}, 1000);"),
+    }),
+  );
+
+  manager.killTerminal(session.id);
+  terminalSessions.splice(terminalSessions.indexOf(session), 1);
+
+  await waitForCondition(() => manager?.getTerminal(session.id) === undefined, 5000);
+
+  expect(manager.getTerminal(session.id)).toBeUndefined();
+  expect(manager.listDirectories()).not.toContain(cwd);
+});
+
 it("produces one terminals-changed snapshot per title change", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 50,
     forkWorker: () => worker,
   });
@@ -864,7 +1314,7 @@ it("produces one terminals-changed snapshot per title change", async () => {
 
 it("produces one terminals-changed snapshot and one contribution event per activity change", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 50,
     forkWorker: () => worker,
   });
@@ -914,7 +1364,7 @@ it("produces one terminals-changed snapshot and one contribution event per activ
 
 it("removes a killed worker terminal from terminalExit without duplicate snapshots", async () => {
   const worker = new FakeTerminalWorker();
-  manager = createWorkerTerminalManager({
+  manager = await createWorkerTerminalManager({
     requestTimeoutMs: 50,
     forkWorker: () => worker,
   });

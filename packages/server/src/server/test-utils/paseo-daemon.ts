@@ -34,6 +34,7 @@ interface TestPaseoDaemonOptions {
   paseoHomeRoot?: string;
   staticDir?: string;
   cleanup?: boolean;
+  preserveTerminalsOnClose?: boolean;
   openai?: PaseoOpenAIConfig;
   speech?: PaseoSpeechConfig;
   voiceLlmProvider?: PaseoDaemonConfig["voiceLlmProvider"];
@@ -108,6 +109,9 @@ export async function createTestPaseoDaemon(
       }
 
       const close = async (): Promise<void> => {
+        if (options.preserveTerminalsOnClose !== true) {
+          daemon.terminalManager.killAll();
+        }
         await daemon.stop().catch(() => undefined);
         await daemon.agentManager.flush().catch(() => undefined);
         if (options.cleanup ?? true) {

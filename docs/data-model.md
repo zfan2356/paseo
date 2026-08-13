@@ -59,6 +59,9 @@ $PASEO_HOME/
 │   ├── workspaces.json                  # Workspace registry
 │   └── icons/                           # Host-local custom project icon images
 ├── runtime/
+│   ├── terminal-worker/
+│   │   ├── auth-token                    # Private daemon-to-worker authentication token
+│   │   └── worker-v{protocol}.sock       # Versioned Unix IPC socket (Windows uses a named pipe)
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
 └── push-tokens.json                     # Expo push notification tokens
@@ -163,7 +166,9 @@ Each agent is stored as a separate JSON file, grouped by project directory.
 
 ## Runtime-only Terminal Sessions
 
-Terminals are live daemon state, not persisted JSON records. A terminal carries a `workspaceId` while it is running; workspace-scoped terminal lists include only terminals with the matching `workspaceId`. Legacy live terminals without an owner remain visible to unscoped terminal reads but contribute to no workspace status.
+Terminals are live state owned by a detached terminal worker, not persisted JSON records. The daemon attaches to that worker through private local IPC and rebuilds its terminal index before accepting clients. Stopping, restarting, or updating the daemon only detaches it; the worker and its PTYs stay alive until their terminals exit. A machine reboot or terminal-worker failure still ends those sessions.
+
+A terminal carries a `workspaceId` while it is running; workspace-scoped terminal lists include only terminals with the matching `workspaceId`. Legacy live terminals without an owner remain visible to unscoped terminal reads but contribute to no workspace status.
 
 Terminal activity contributes to the workspace status bucket **per `workspaceId`**: a working terminal drives `running` onto the workspace it carries only. Same-`cwd` siblings are untouched; terminal visibility is likewise `workspaceId`-scoped.
 

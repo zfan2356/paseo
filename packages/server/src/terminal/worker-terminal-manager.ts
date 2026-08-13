@@ -33,6 +33,10 @@ import type {
   TerminalWorkerStateResult,
   WorkerTerminalInfo,
 } from "./terminal-worker-protocol.js";
+import {
+  connectOrSpawnPersistentTerminalWorker,
+  type PersistentTerminalWorkerConnection,
+} from "./persistent-terminal-worker-transport.js";
 
 const REQUEST_TIMEOUT_MS = 10000;
 
@@ -93,7 +97,11 @@ interface WorkerTerminalManagerOptions {
   requestTimeoutMs?: number;
   forkWorker?: () => TerminalWorkerProcess;
   getTerminalActivityUrl?: () => string | null;
+  paseoHome?: string;
+  persistentStartupTimeoutMs?: number;
 }
+
+const detachWorkerByManager = new WeakMap<TerminalManager, () => Promise<void>>();
 
 function createActivityToken(): string {
   return randomBytes(32).toString("base64url");
@@ -136,6 +144,7 @@ function cloneTerminalInfo(info: RequiredWorkerTerminalInfo): RequiredWorkerTerm
     workspaceId: info.workspaceId,
     ...(info.title ? { title: info.title } : {}),
     activity: info.activity,
+    ...(info.activityToken ? { activityToken: info.activityToken } : {}),
   };
 }
 
@@ -147,10 +156,110 @@ function forkTerminalWorker(): TerminalWorkerProcess {
   }) as TerminalWorkerProcess;
 }
 
-export function createWorkerTerminalManager(
+class PersistentTerminalWorkerProcess implements TerminalWorkerProcess {
+  killed = false;
+  private readonly connection: PersistentTerminalWorkerConnection<
+    TerminalWorkerToParentMessage,
+    TerminalWorkerRequest
+  >;
+  private readonly messageListeners = new Set<(message: TerminalWorkerToParentMessage) => void>();
+  private readonly exitListeners = new Set<
+    (code: number | null, signal: NodeJS.Signals | null) => void
+  >();
+
+  constructor(
+    connection: PersistentTerminalWorkerConnection<
+      TerminalWorkerToParentMessage,
+      TerminalWorkerRequest
+    >,
+  ) {
+    this.connection = connection;
+    connection.transport.onMessage((message) => {
+      for (const listener of Array.from(this.messageListeners)) {
+        listener(message);
+      }
+    });
+    connection.transport.onClose(() => {
+      for (const listener of Array.from(this.exitListeners)) {
+        listener(0, null);
+      }
+    });
+  }
+
+  get connected(): boolean {
+    return !this.connection.transport.isClosed;
+  }
+
+  send(message: TerminalWorkerRequest, callback: (error: Error | null) => void): boolean {
+    try {
+      const accepted = this.connection.transport.send(message);
+      queueMicrotask(() => callback(null));
+      return accepted;
+    } catch (error) {
+      queueMicrotask(() =>
+        callback(error instanceof Error ? error : new Error("Terminal worker send failed")),
+      );
+      return false;
+    }
+  }
+
+  disconnect(): void {
+    this.connection.transport.end();
+  }
+
+  kill(): boolean {
+    this.killed = true;
+    this.connection.transport.destroy();
+    return true;
+  }
+
+  on(event: "message", listener: (message: TerminalWorkerToParentMessage) => void): this;
+  on(event: "exit", listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
+  on(
+    event: "message" | "exit",
+    listener:
+      | ((message: TerminalWorkerToParentMessage) => void)
+      | ((code: number | null, signal: NodeJS.Signals | null) => void),
+  ): this {
+    if (event === "message") {
+      this.messageListeners.add(listener as (message: TerminalWorkerToParentMessage) => void);
+    } else {
+      this.exitListeners.add(
+        listener as (code: number | null, signal: NodeJS.Signals | null) => void,
+      );
+    }
+    return this;
+  }
+}
+
+async function connectTerminalWorker(
+  options: WorkerTerminalManagerOptions,
+): Promise<{ worker: TerminalWorkerProcess; persistent: boolean }> {
+  if (options.forkWorker) {
+    return { worker: options.forkWorker(), persistent: false };
+  }
+  if (!options.paseoHome) {
+    return { worker: forkTerminalWorker(), persistent: false };
+  }
+
+  const connection = await connectOrSpawnPersistentTerminalWorker<
+    TerminalWorkerToParentMessage,
+    TerminalWorkerRequest
+  >({
+    paseoHome: options.paseoHome,
+    entrypoint: fileURLToPath(resolveWorkerUrl()),
+    execArgv: resolveWorkerExecArgv(),
+    ...(options.persistentStartupTimeoutMs === undefined
+      ? {}
+      : { startupTimeoutMs: options.persistentStartupTimeoutMs }),
+  });
+  return { worker: new PersistentTerminalWorkerProcess(connection), persistent: true };
+}
+
+export async function createWorkerTerminalManager(
   managerOptions: WorkerTerminalManagerOptions = {},
-): TerminalManager {
-  const worker = managerOptions.forkWorker ? managerOptions.forkWorker() : forkTerminalWorker();
+): Promise<TerminalManager> {
+  const { worker, persistent } = await connectTerminalWorker(managerOptions);
   const requestTimeoutMs = managerOptions.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   const pendingRequests = new Map<string, PendingRequest>();
   const recordsById = new Map<string, WorkerTerminalRecord>();
@@ -222,6 +331,9 @@ export function createWorkerTerminalManager(
     info: RequiredWorkerTerminalInfo;
     state: TerminalState;
   }): TerminalSession {
+    if (input.info.activityToken) {
+      terminalActivityTokenById.set(input.info.id, input.info.activityToken);
+    }
     const existing = recordsById.get(input.info.id);
     if (existing) {
       existing.info = cloneTerminalInfo(input.info);
@@ -468,6 +580,7 @@ export function createWorkerTerminalManager(
     if (!record) {
       return;
     }
+    const titleChanged = record.info.title !== message.title;
     const nextState = { ...record.state };
     if (message.title) {
       nextState.title = message.title;
@@ -479,8 +592,10 @@ export function createWorkerTerminalManager(
       ...(message.title ? { title: message.title } : { title: undefined }),
     };
     record.state = nextState;
-    for (const listener of Array.from(record.titleChangeListeners)) {
-      listener(message.title);
+    if (titleChanged) {
+      for (const listener of Array.from(record.titleChangeListeners)) {
+        listener(message.title);
+      }
     }
     emitTerminalsChanged({
       cwd: record.info.cwd,
@@ -646,7 +761,7 @@ export function createWorkerTerminalManager(
     });
   }
 
-  return {
+  const manager: TerminalManager = {
     async getTerminals(
       cwd: string,
       options?: { workspaceId?: string },
@@ -758,6 +873,7 @@ export function createWorkerTerminalManager(
         return false;
       }
       session.setTitle(title);
+      sendBestEffortRequest({ type: "setTitle", terminalId: id, title });
       return true;
     },
 
@@ -856,8 +972,45 @@ export function createWorkerTerminalManager(
       };
     },
   };
+
+  if (persistent) {
+    try {
+      await sendRequest({ type: "attach" });
+    } catch (error) {
+      worker.disconnect();
+      throw error;
+    }
+    detachWorkerByManager.set(manager, async () => {
+      if (workerExited || !worker.connected) {
+        return;
+      }
+      const workerExit = new Promise<void>((resolve) => {
+        worker.on("exit", () => resolve());
+      });
+      worker.disconnect();
+      await Promise.race([
+        workerExit,
+        new Promise<void>((resolve) => {
+          const timeout = setTimeout(resolve, 1000);
+          timeout.unref();
+        }),
+      ]);
+    });
+  }
+
+  return manager;
 }
 
 export function terminateWorkerTerminalManager(manager: TerminalManager): void {
   manager.killAll();
+}
+
+export async function detachWorkerTerminalManager(manager: TerminalManager): Promise<void> {
+  const detach = detachWorkerByManager.get(manager);
+  if (!detach) {
+    manager.killAll();
+    return;
+  }
+  detachWorkerByManager.delete(manager);
+  await detach();
 }

@@ -9,6 +9,8 @@ import type { TerminalState } from "@getpaseo/protocol/messages";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
 import type { CaptureTerminalLinesResult } from "./terminal-capture.js";
 
+export const TERMINAL_WORKER_PROTOCOL_VERSION = 1;
+
 export interface WorkerTerminalInfo {
   id: string;
   name: string;
@@ -16,6 +18,7 @@ export interface WorkerTerminalInfo {
   workspaceId?: string;
   title?: string;
   activity: TerminalActivity | null;
+  activityToken?: string;
 }
 
 export interface WorkerCreateTerminalOptions {
@@ -40,6 +43,10 @@ export interface WorkerKillAndWaitOptions {
 
 export type TerminalWorkerRequest =
   | {
+      type: "attach";
+      requestId: string;
+    }
+  | {
       type: "createTerminal";
       requestId: string;
       options: WorkerCreateTerminalOptions;
@@ -60,6 +67,12 @@ export type TerminalWorkerRequest =
       type: "clearAttention";
       requestId: string;
       terminalId: string;
+    }
+  | {
+      type: "setTitle";
+      requestId: string;
+      terminalId: string;
+      title: string;
     }
   | {
       type: "killTerminal";
