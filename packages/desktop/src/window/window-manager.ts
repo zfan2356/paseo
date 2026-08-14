@@ -7,9 +7,9 @@ import {
   clipboard,
   ipcMain,
   nativeTheme,
-  shell,
 } from "electron";
 
+import { openAllowedExternalUrl } from "../features/opener.js";
 import type { WindowState, WindowStateStore } from "../settings/window-state.js";
 
 const WINDOW_STATE_SAVE_DEBOUNCE_MS = 400;
@@ -412,7 +412,7 @@ export function buildStandardContextMenuItems(
     items.push({
       label: "Open Link in Browser",
       click: () => {
-        void shell.openExternal(params.linkURL);
+        void openAllowedExternalUrl(params.linkURL);
       },
     });
     items.push({

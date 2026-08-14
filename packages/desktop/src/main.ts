@@ -45,7 +45,10 @@ import {
   registerNotificationHandlers,
   ensureNotificationCenterRegistration,
 } from "./features/notifications.js";
-import { registerOpenerHandlers } from "./features/opener.js";
+import {
+  installMainWindowExternalLinkHandling,
+  registerOpenerHandlers,
+} from "./features/opener.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { setupApplicationMenu } from "./features/menu.js";
 import {
@@ -756,6 +759,11 @@ async function createWindow(
   }
   setupDefaultContextMenu(mainWindow);
   setupDragDropPrevention(mainWindow);
+  installMainWindowExternalLinkHandling({
+    window: mainWindow,
+    appScheme: APP_SCHEME,
+    devServerOrigin: app.isPackaged ? null : new URL(DEV_SERVER_URL).origin,
+  });
   mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
     if (!isPaseoBrowserWebviewAttach(params)) {
       event.preventDefault();
