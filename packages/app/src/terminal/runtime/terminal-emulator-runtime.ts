@@ -25,11 +25,10 @@ import {
 import { renderTerminalSnapshotToAnsi } from "./terminal-snapshot";
 import { materializeDefaultInverseSgr } from "./inverse-sgr";
 import {
-  csiParamCount,
-  csiParamsInclude,
-  restoreHardwareCursorVisibility,
-  SHOW_HARDWARE_CURSOR,
-} from "./hardware-cursor";
+  findInkSoftwareCaret,
+  lastHardwareCursorHidden,
+  parkHardwareCursorSequence,
+} from "./ink-caret";
 import { isEmulatorGeneratedProtocolReply } from "./terminal-protocol-reply";
 import {
   createTerminalLocalFileLinkProvider,
@@ -111,7 +110,6 @@ interface TerminalEmulatorRuntimeDisposables {
   removeTouchListeners: () => void;
   restoreDocumentStyles: () => void;
   restoreViewportStyles: () => void;
-  cancelShowHardwareCursor: () => void;
   disposeFitAddon: () => void;
   disposeWebglAddon: () => void;
   disposeTerminal: () => void;
@@ -203,14 +201,14 @@ export class TerminalEmulatorRuntime {
   private lastInputModeState: TerminalInputModeState = this.inputModeTracker.getState();
   private themeBackgroundElements: HTMLElement[] = [];
   private needsRefreshAfterHiddenFit = false;
-  private showHardwareCursorRaf: number | null = null;
+  private hardwareCursorHidden = false;
 
   private handleVisibilityRestore = (): void => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       return;
     }
 
-    this.showHardwareCursor();
+    this.parkHardwareCursorOnInkCaret();
     this.fitAndEmitResize?.({ forceRefresh: true, shouldClaim: false });
     if (typeof window.requestAnimationFrame === "function") {
       window.requestAnimationFrame(() => {
@@ -237,6 +235,7 @@ export class TerminalEmulatorRuntime {
     input.host.innerHTML = "";
     this.lastSize = null;
     this.needsRefreshAfterHiddenFit = false;
+    this.hardwareCursorHidden = false;
     this.inputModeTracker.reset();
     this.emitInputModeChange();
 
@@ -344,20 +343,10 @@ export class TerminalEmulatorRuntime {
         terminal.parser.registerOscHandler(code, (data) => data.trim() === "?");
       }
     };
-    // Ink hides the hardware cursor and may switch it to underline. Keep a bar
-    // so the prompt stays visible when the software caret is in its off frame.
+    // Ink may switch the hardware caret to underline. Keep a bar so parking it
+    // onto the software caret stays visible on Pure Black.
     const registerCursorVisibilityGuards = (): void => {
       terminal.parser.registerCsiHandler({ intermediates: " ", final: "q" }, () => true);
-      terminal.parser.registerCsiHandler({ prefix: "?", final: "l" }, (params) => {
-        if (!csiParamsInclude(params, 25)) {
-          return false;
-        }
-        if (csiParamCount(params) === 1) {
-          return true;
-        }
-        this.showHardwareCursor();
-        return false;
-      });
     };
     registerProtocolQuerySuppression();
     registerCursorVisibilityGuards();
@@ -627,9 +616,6 @@ export class TerminalEmulatorRuntime {
       removeTouchListeners,
       restoreDocumentStyles,
       restoreViewportStyles,
-      cancelShowHardwareCursor: () => {
-        this.cancelShowHardwareCursor();
-      },
       disposeFitAddon: () => {
         fitAddon.dispose();
       },
@@ -657,7 +643,6 @@ export class TerminalEmulatorRuntime {
       disposables.clearFitTimeouts();
       disposables.removeFontListeners();
       disposables.removeTouchListeners();
-      disposables.cancelShowHardwareCursor();
       disposables.disposeFitAddon();
       disposables.disposeWebglAddon();
       disposables.disposeTerminal();
@@ -938,7 +923,8 @@ export class TerminalEmulatorRuntime {
     this.hasUngatedWrites = true;
     const data = this.paintTerminalOutput(terminal, operation.data);
     const onCommitted = operation.onCommitted;
-    if (!onCommitted) {
+    const needsPark = this.hardwareCursorHidden;
+    if (!onCommitted && !needsPark) {
       try {
         terminal.write(data);
       } catch {
@@ -947,12 +933,20 @@ export class TerminalEmulatorRuntime {
       return;
     }
     const commit = () => {
+      if (needsPark) {
+        this.parkHardwareCursorOnInkCaret();
+      }
+      if (!onCommitted) {
+        return;
+      }
       if (!this.pendingWriteCommits.delete(commit)) {
         return;
       }
       onCommitted();
     };
-    this.pendingWriteCommits.add(commit);
+    if (onCommitted) {
+      this.pendingWriteCommits.add(commit);
+    }
     try {
       terminal.write(data, commit);
     } catch {
@@ -985,6 +979,7 @@ export class TerminalEmulatorRuntime {
       this.inputModeDecoder.decode();
       this.inputModeTracker.reset();
       this.emitInputModeChange();
+      this.hardwareCursorHidden = false;
       terminal.reset();
       finalizeOperation(operation);
       return;
@@ -1022,58 +1017,44 @@ export class TerminalEmulatorRuntime {
 
     try {
       terminal.write(this.paintTerminalOutput(terminal, data), () => {
+        this.parkHardwareCursorOnInkCaret();
         finalizeOperation(operation);
       });
     } catch {
+      this.parkHardwareCursorOnInkCaret();
       finalizeOperation(operation);
     }
   }
 
   private paintTerminalOutput(terminal: Terminal, data: Uint8Array): Uint8Array {
     // Ink TUIs hide the hardware cursor and draw a caret as inverse+default-color
-    // space. WebGL skips that background, so paint the swapped theme colors explicitly
-    // and put the hardware bar back after any hide sequence.
-    return restoreHardwareCursorVisibility(
-      materializeDefaultInverseSgr({
-        data,
-        foreground: terminal.options.theme?.foreground,
-        background: terminal.options.theme?.background,
-      }),
-    );
-  }
-
-  private showHardwareCursor(): void {
-    const terminal = this.terminal;
-    if (!terminal || this.showHardwareCursorRaf !== null) {
-      return;
+    // space. WebGL skips that background, so paint the swapped theme colors explicitly.
+    const hidden = lastHardwareCursorHidden(data);
+    if (hidden !== null) {
+      this.hardwareCursorHidden = hidden;
     }
-    if (typeof window.requestAnimationFrame !== "function") {
-      this.writeHardwareCursorVisible(terminal);
-      return;
-    }
-    this.showHardwareCursorRaf = window.requestAnimationFrame(() => {
-      this.showHardwareCursorRaf = null;
-      this.writeHardwareCursorVisible(terminal);
+    return materializeDefaultInverseSgr({
+      data,
+      foreground: terminal.options.theme?.foreground,
+      background: terminal.options.theme?.background,
     });
   }
 
-  private writeHardwareCursorVisible(terminal: Terminal): void {
-    if (this.terminal !== terminal) {
+  private parkHardwareCursorOnInkCaret(): void {
+    const terminal = this.terminal;
+    if (!terminal || !this.hardwareCursorHidden) {
+      return;
+    }
+    const caret = findInkSoftwareCaret(terminal);
+    if (!caret) {
       return;
     }
     try {
-      terminal.write(SHOW_HARDWARE_CURSOR);
+      terminal.write(parkHardwareCursorSequence(caret));
+      this.hardwareCursorHidden = false;
     } catch {
       // ignore
     }
-  }
-
-  private cancelShowHardwareCursor(): void {
-    if (this.showHardwareCursorRaf === null) {
-      return;
-    }
-    window.cancelAnimationFrame(this.showHardwareCursorRaf);
-    this.showHardwareCursorRaf = null;
   }
 
   private clearInFlightOutputTimeout(): void {

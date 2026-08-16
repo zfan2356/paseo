@@ -174,6 +174,8 @@ function inspectMountedTerminal(): Terminal {
 function readCursorPresentation(): {
   hidden: boolean;
   style: string | undefined;
+  col: number;
+  row: number;
 } {
   const terminal = window.__paseoTerminal as
     | (Terminal & {
@@ -186,9 +188,12 @@ function readCursorPresentation(): {
       })
     | undefined;
   const service = terminal?._core?.coreService;
+  const buffer = terminal?.buffer.active;
   return {
     hidden: Boolean(service?.isCursorHidden),
     style: service?.decPrivateModes?.cursorStyle,
+    col: buffer?.cursorX ?? -1,
+    row: buffer?.cursorY ?? -1,
   };
 }
 
@@ -317,10 +322,41 @@ describe("terminal emulator runtime in a real browser", () => {
     expect(readCursorPresentation()).toEqual({
       hidden: false,
       style: undefined,
+      col: 5,
+      row: 0,
     });
   });
 
-  it("keeps the hardware bar after the TUI hides the cursor", async () => {
+  it("parks the hardware bar on the prompt caret instead of the leftover bottom row", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    mounted.runtime.write({
+      data: terminalOutput(
+        "\x1b[?25l\x1b[H\x1b[2Jprompt> hello\x1b[7m \x1b[27m\r\nstatus line\r\n~/project",
+      ),
+    });
+
+    await waitFor({
+      predicate: () => {
+        const cursor = readCursorPresentation();
+        return cursor.hidden === false && cursor.row === 0 && cursor.col === 13;
+      },
+    });
+
+    const cursor = readCursorPresentation();
+    expect(cursor).toEqual({
+      hidden: false,
+      style: undefined,
+      col: 13,
+      row: 0,
+    });
+    expect(cursor.row).toBeLessThan((window.__paseoTerminal?.rows ?? 1) - 1);
+  });
+
+  it("leaves the hardware cursor hidden when a TUI hides it without a software caret", async () => {
     await page.viewport(900, 600);
     const mounted = createTerminalHost({ width: 720, height: 360 });
 
@@ -332,7 +368,7 @@ describe("terminal emulator runtime in a real browser", () => {
     await nextFrame();
     await nextFrame();
 
-    expect(readCursorPresentation().hidden).toBe(false);
+    expect(readCursorPresentation().hidden).toBe(true);
   });
 
   it("keeps a bar caret after the TUI requests an underline cursor", async () => {
@@ -347,7 +383,7 @@ describe("terminal emulator runtime in a real browser", () => {
     await nextFrame();
     await nextFrame();
 
-    expect(readCursorPresentation()).toEqual({
+    expect(readCursorPresentation()).toMatchObject({
       hidden: false,
       style: undefined,
     });
