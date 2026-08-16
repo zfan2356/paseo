@@ -171,6 +171,18 @@ function inspectMountedTerminal(): Terminal {
   return terminal;
 }
 
+function cellsFromText(text: string): Array<{ char: string; width: 0 | 1 | 2 }> {
+  const cells: Array<{ char: string; width: 0 | 1 | 2 }> = [];
+  for (const char of text) {
+    const width: 1 | 2 = /[\u4e00-\u9fff]/.test(char) ? 2 : 1;
+    cells.push({ char, width });
+    if (width === 2) {
+      cells.push({ char: " ", width: 0 });
+    }
+  }
+  return cells;
+}
+
 function readCursorPresentation(): {
   hidden: boolean;
   style: string | undefined;
@@ -354,6 +366,46 @@ describe("terminal emulator runtime in a real browser", () => {
       row: 0,
     });
     expect(cursor.row).toBeLessThan((window.__paseoTerminal?.rows ?? 1) - 1);
+  });
+
+  it("parks the hardware bar on an idle follow-up prompt restored from a snapshot", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    const terminal = getBrowserTerminal();
+    mounted.runtime.renderSnapshot({
+      state: {
+        rows: terminal.rows,
+        cols: terminal.cols,
+        scrollback: [],
+        grid: [
+          cellsFromText("history"),
+          cellsFromText("→ Add a follow-up"),
+          cellsFromText("Cursor Grok"),
+          cellsFromText("~/wxg/mimikyu"),
+        ],
+        cursor: {
+          row: 3,
+          col: 0,
+          hidden: true,
+        },
+      },
+    });
+
+    await waitFor({
+      predicate: () => {
+        const cursor = readCursorPresentation();
+        return cursor.hidden === false && cursor.row === 1 && cursor.col === 2;
+      },
+    });
+
+    expect(readCursorPresentation()).toMatchObject({
+      hidden: false,
+      col: 2,
+      row: 1,
+    });
   });
 
   it("leaves the hardware cursor hidden when a TUI hides it without a software caret", async () => {

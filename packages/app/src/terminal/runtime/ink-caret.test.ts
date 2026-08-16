@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   findInkSoftwareCaret,
+  findPromptCaretFallback,
   lastHardwareCursorHidden,
   parkHardwareCursorSequence,
   SHOW_HARDWARE_CURSOR,
@@ -11,6 +12,7 @@ import {
 interface FakeCell {
   chars: string;
   inverse?: boolean;
+  dim?: boolean;
   bgRgb?: number;
   fgRgb?: number;
   width?: number;
@@ -26,6 +28,7 @@ function createCell(input: FakeCell): InkCaretCell {
     getChars: () => input.chars,
     getWidth: () => input.width ?? 1,
     isInverse: () => (input.inverse ? 1 : 0),
+    isDim: () => (input.dim ? 1 : 0),
     isBgRGB: () => input.bgRgb !== undefined,
     isFgRGB: () => input.fgRgb !== undefined,
     getBgColor: () => input.bgRgb ?? 0,
@@ -132,6 +135,66 @@ describe("findInkSoftwareCaret", () => {
     ).toBeNull();
   });
 });
+
+describe("findPromptCaretFallback", () => {
+  it("parks on the first placeholder character of an idle follow-up prompt", () => {
+    expect(
+      findPromptCaretFallback(
+        createTerminal([
+          cellsFromText("history"),
+          cellsFromText("→ Add a follow-up"),
+          cellsFromText("Cursor Grok"),
+          cellsFromText("~/wxg/mimikyu"),
+        ]),
+      ),
+    ).toEqual({ row: 1, col: 2 });
+  });
+
+  it("parks on dim prompt text after the arrow", () => {
+    expect(
+      findPromptCaretFallback(
+        createTerminal([
+          [
+            { chars: "→" },
+            { chars: " " },
+            { chars: "t", dim: true },
+            { chars: "y", dim: true },
+            { chars: "p", dim: true },
+            { chars: "e", dim: true },
+          ],
+        ]),
+      ),
+    ).toEqual({ row: 0, col: 2 });
+  });
+
+  it("parks after typed prompt text on a later snapshot row", () => {
+    expect(
+      findPromptCaretFallback(
+        createTerminal([
+          cellsFromText("history"),
+          cellsFromText("→ 这是"),
+          cellsFromText("~/wxg/mimikyu"),
+        ]),
+      ),
+    ).toEqual({ row: 1, col: 6 });
+  });
+
+  it("returns null when no prompt arrow is present", () => {
+    expect(findPromptCaretFallback(createTerminal([cellsFromText("prompt> hello")]))).toBeNull();
+  });
+});
+
+function cellsFromText(text: string): FakeCell[] {
+  const cells: FakeCell[] = [];
+  for (const chars of text) {
+    const width = /[\u4e00-\u9fff]/.test(chars) ? 2 : 1;
+    cells.push({ chars, width });
+    if (width === 2) {
+      cells.push({ chars: "", width: 0 });
+    }
+  }
+  return cells;
+}
 
 describe("parkHardwareCursorSequence", () => {
   it("moves the hardware bar onto the software caret cell", () => {

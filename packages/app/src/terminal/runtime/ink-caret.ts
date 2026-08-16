@@ -13,6 +13,7 @@ export interface InkCaretCell {
   getChars(): string;
   getWidth(): number;
   isInverse(): number | boolean;
+  isDim(): number | boolean;
   isBgRGB(): number | boolean;
   isFgRGB(): number | boolean;
   getBgColor(): number;
@@ -92,6 +93,113 @@ export function findInkSoftwareCaret(terminal: InkCaretBuffer): InkCaretPosition
   }
 
   return caret;
+}
+
+const PROMPT_ARROW = "→";
+const IDLE_PROMPT_PLACEHOLDERS = new Set(["Add a follow-up"]);
+
+interface PromptRest {
+  text: string;
+  lastNonBlank: number;
+  sawContent: boolean;
+  allDim: boolean;
+}
+
+export function findPromptCaretFallback(terminal: InkCaretBuffer): InkCaretPosition | null {
+  if (terminal.rows <= 0 || terminal.cols <= 0) {
+    return null;
+  }
+
+  const buffer = terminal.buffer.active;
+  let caret: InkCaretPosition | null = null;
+
+  for (let row = 0; row < terminal.rows; row += 1) {
+    const line = buffer.getLine(buffer.baseY + row);
+    if (!line) {
+      continue;
+    }
+    const promptCaret = readPromptCaretOnLine(line, terminal.cols);
+    if (promptCaret !== null) {
+      caret = { row, col: promptCaret };
+    }
+  }
+
+  return caret;
+}
+
+function readPromptCaretOnLine(line: InkCaretLine, cols: number): number | null {
+  const arrowColumn = findArrowColumn(line, cols);
+  if (arrowColumn === null) {
+    return null;
+  }
+
+  const contentColumn = skipBlankCells(
+    line,
+    arrowColumn + (cellWidth(line.getCell(arrowColumn)) || 1),
+    cols,
+  );
+  const rest = readPromptRest(line, contentColumn, cols);
+  if (!rest.sawContent || rest.allDim || isIdlePromptPlaceholder(rest.text)) {
+    return contentColumn;
+  }
+  return rest.lastNonBlank;
+}
+
+function findArrowColumn(line: InkCaretLine, cols: number): number | null {
+  let column = 0;
+  while (column < cols) {
+    const cell = line.getCell(column);
+    const width = cellWidth(cell) || 1;
+    if (cell?.getChars() === PROMPT_ARROW) {
+      return column;
+    }
+    column += width;
+  }
+  return null;
+}
+
+function skipBlankCells(line: InkCaretLine, start: number, cols: number): number {
+  let column = start;
+  while (column < cols && isBlankCell(line.getCell(column))) {
+    column += cellWidth(line.getCell(column)) || 1;
+  }
+  return column;
+}
+
+function readPromptRest(line: InkCaretLine, start: number, cols: number): PromptRest {
+  let text = "";
+  let lastNonBlank = start;
+  let sawContent = false;
+  let allDim = true;
+  let column = start;
+  while (column < cols) {
+    const cell = line.getCell(column);
+    const width = cellWidth(cell) || 1;
+    text += cell?.getChars() || " ";
+    if (!isBlankCell(cell)) {
+      lastNonBlank = column + width;
+      sawContent = true;
+      if (!isEnabled(cell?.isDim() ?? 0)) {
+        allDim = false;
+      }
+    }
+    column += width;
+  }
+  return {
+    text: text.replace(/\s+$/u, ""),
+    lastNonBlank,
+    sawContent,
+    allDim,
+  };
+}
+
+function isBlankCell(cell: InkCaretCell | undefined): boolean {
+  const chars = cell?.getChars() ?? "";
+  return chars === "" || chars === " ";
+}
+
+function isIdlePromptPlaceholder(text: string): boolean {
+  return IDLE_PROMPT_PLACEHOLDERS.has(text);
 }
 
 export function parkHardwareCursorSequence(position: InkCaretPosition): string {

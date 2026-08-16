@@ -26,6 +26,7 @@ import { renderTerminalSnapshotToAnsi } from "./terminal-snapshot";
 import { materializeDefaultInverseSgr } from "./inverse-sgr";
 import {
   findInkSoftwareCaret,
+  findPromptCaretFallback,
   lastHardwareCursorHidden,
   parkHardwareCursorSequence,
 } from "./ink-caret";
@@ -208,7 +209,7 @@ export class TerminalEmulatorRuntime {
       return;
     }
 
-    this.parkHardwareCursorOnInkCaret();
+    this.parkHardwareCursorOnInkCaret({ force: true });
     this.fitAndEmitResize?.({ forceRefresh: true, shouldClaim: false });
     if (typeof window.requestAnimationFrame === "function") {
       window.requestAnimationFrame(() => {
@@ -1017,11 +1018,11 @@ export class TerminalEmulatorRuntime {
 
     try {
       terminal.write(this.paintTerminalOutput(terminal, data), () => {
-        this.parkHardwareCursorOnInkCaret();
+        this.parkHardwareCursorOnInkCaret({ force: operation.type === "snapshot" });
         finalizeOperation(operation);
       });
     } catch {
-      this.parkHardwareCursorOnInkCaret();
+      this.parkHardwareCursorOnInkCaret({ force: operation.type === "snapshot" });
       finalizeOperation(operation);
     }
   }
@@ -1040,12 +1041,12 @@ export class TerminalEmulatorRuntime {
     });
   }
 
-  private parkHardwareCursorOnInkCaret(): void {
+  private parkHardwareCursorOnInkCaret(input: { force?: boolean } = {}): void {
     const terminal = this.terminal;
-    if (!terminal || !this.hardwareCursorHidden) {
+    if (!terminal || (!this.hardwareCursorHidden && !input.force)) {
       return;
     }
-    const caret = findInkSoftwareCaret(terminal);
+    const caret = findInkSoftwareCaret(terminal) ?? findPromptCaretFallback(terminal);
     if (!caret) {
       return;
     }
