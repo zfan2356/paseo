@@ -43,10 +43,12 @@ if [[ -z "$APP" ]]; then
   exit 1
 fi
 
-IDENTITY="$("$IDENTITY_SCRIPT" --ensure "${SIGNING_HOME_ARGS[@]}")"
-SIGNING_HOME="${PASEO_LOCAL_SIGNING_HOME:-${HOME}/Library/Application Support/Paseo/signing}"
 if [[ ${#SIGNING_HOME_ARGS[@]} -eq 2 ]]; then
+  IDENTITY="$("$IDENTITY_SCRIPT" --ensure "${SIGNING_HOME_ARGS[@]}")"
   SIGNING_HOME="${SIGNING_HOME_ARGS[1]}"
+else
+  IDENTITY="$("$IDENTITY_SCRIPT" --ensure)"
+  SIGNING_HOME="${PASEO_LOCAL_SIGNING_HOME:-${HOME}/Library/Application Support/Paseo/signing}"
 fi
 KEYCHAIN="${SIGNING_HOME}/paseo-local.keychain-db"
 PASSWORD="$(/bin/cat "${SIGNING_HOME}/keychain.password")"

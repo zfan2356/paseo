@@ -70,7 +70,29 @@ describe.skipIf(process.platform !== "darwin")("local signing identity", () => {
     },
   );
 
-  it("exposes a local app signer that uses the same identity", () => {
-    expect(SIGN_SCRIPT.endsWith("sign-local-app.sh")).toBe(true);
+  it("signs an app through the local signer without a --home flag", { timeout: 20_000 }, () => {
+    const home = mkdtempSync(join(tmpdir(), "paseo-local-sign-app-"));
+    const dummy = join(home, "dummy");
+    writeFileSync(dummy, "#!/bin/sh\n");
+    chmodSync(dummy, 0o755);
+
+    try {
+      run("/bin/bash", [SIGN_SCRIPT, "--app", dummy], {
+        ...process.env,
+        PASEO_LOCAL_SIGNING_HOME: home,
+      });
+      const requirement = run("/usr/bin/codesign", ["-d", "-r-", dummy]);
+      expect(
+        requirement.includes("certificate root") || requirement.includes("certificate leaf"),
+      ).toBe(true);
+      expect(requirement.includes("designated => cdhash")).toBe(false);
+    } finally {
+      try {
+        run("/usr/bin/security", ["delete-keychain", join(home, "paseo-local.keychain-db")]);
+      } catch {
+        // The keychain may already be gone if create failed.
+      }
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
