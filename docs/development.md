@@ -44,8 +44,19 @@ than downloading a published desktop release.
 
 ## Installing a local macOS desktop build
 
-After building and verifying a signed `Paseo.app`, replace the installed client
-with the repository-owned one-shot installer:
+After `npm run build:desktop -- --dir`, deep-sign the candidate with the
+stable local identity so macOS TCC grants survive rebuilds:
+
+```bash
+npm run sign:desktop:local -- --app /path/to/Paseo.app
+```
+
+Ad-hoc signatures change cdhash every build and force a new authorization.
+The first certificate-signed install still needs one grant; later rebuilds
+reuse the same designated requirement. The identity lives under
+`~/Library/Application Support/Paseo/signing/` and is not a Developer ID.
+
+Then replace the installed client with the repository-owned one-shot installer:
 
 ```bash
 npm run install:desktop:local -- --app /path/to/Paseo.app
