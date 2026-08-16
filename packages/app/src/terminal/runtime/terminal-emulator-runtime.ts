@@ -24,6 +24,12 @@ import {
 } from "@/utils/terminal-keys";
 import { renderTerminalSnapshotToAnsi } from "./terminal-snapshot";
 import { materializeDefaultInverseSgr } from "./inverse-sgr";
+import {
+  csiParamCount,
+  csiParamsInclude,
+  restoreHardwareCursorVisibility,
+  SHOW_HARDWARE_CURSOR,
+} from "./hardware-cursor";
 import { isEmulatorGeneratedProtocolReply } from "./terminal-protocol-reply";
 import {
   createTerminalLocalFileLinkProvider,
@@ -105,6 +111,7 @@ interface TerminalEmulatorRuntimeDisposables {
   removeTouchListeners: () => void;
   restoreDocumentStyles: () => void;
   restoreViewportStyles: () => void;
+  cancelShowHardwareCursor: () => void;
   disposeFitAddon: () => void;
   disposeWebglAddon: () => void;
   disposeTerminal: () => void;
@@ -196,12 +203,14 @@ export class TerminalEmulatorRuntime {
   private lastInputModeState: TerminalInputModeState = this.inputModeTracker.getState();
   private themeBackgroundElements: HTMLElement[] = [];
   private needsRefreshAfterHiddenFit = false;
+  private showHardwareCursorRaf: number | null = null;
 
   private handleVisibilityRestore = (): void => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       return;
     }
 
+    this.showHardwareCursor();
     this.fitAndEmitResize?.({ forceRefresh: true, shouldClaim: false });
     if (typeof window.requestAnimationFrame === "function") {
       window.requestAnimationFrame(() => {
@@ -239,6 +248,7 @@ export class TerminalEmulatorRuntime {
       cursorInactiveStyle: "bar",
       cursorStyle: "bar",
       cursorWidth: 2,
+      showCursorImmediately: true,
       fontFamily: resolveTerminalFontFamily(input.fontFamily),
       fontSize: resolveTerminalFontSize(input.fontSize),
       lineHeight: 1.0,
@@ -334,24 +344,53 @@ export class TerminalEmulatorRuntime {
         terminal.parser.registerOscHandler(code, (data) => data.trim() === "?");
       }
     };
+    // Ink hides the hardware cursor and may switch it to underline. Keep a bar
+    // so the prompt stays visible when the software caret is in its off frame.
+    const registerCursorVisibilityGuards = (): void => {
+      terminal.parser.registerCsiHandler({ intermediates: " ", final: "q" }, () => true);
+      terminal.parser.registerCsiHandler({ prefix: "?", final: "l" }, (params) => {
+        if (!csiParamsInclude(params, 25)) {
+          return false;
+        }
+        if (csiParamCount(params) === 1) {
+          return true;
+        }
+        this.showHardwareCursor();
+        return false;
+      });
+    };
     registerProtocolQuerySuppression();
+    registerCursorVisibilityGuards();
 
-    let webglAddonRaf: number | null = requestAnimationFrame(() => {
-      webglAddonRaf = null;
+    const loadWebglRenderer = (): void => {
+      if (this.terminal !== terminal) {
+        return;
+      }
       try {
         disposeWebglRenderer();
         webglAddon = new WebglAddon();
         webglAddon.onContextLoss(() => {
           disposeWebglRenderer();
+          if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(() => {
+              loadWebglRenderer();
+            });
+          }
         });
         terminal.loadAddon(webglAddon);
         imageAddon = new ImageAddon({ enableSizeReports: false });
         terminal.loadAddon(imageAddon);
         registerProtocolQuerySuppression();
+        registerCursorVisibilityGuards();
         this.fitAndEmitResize?.({ forceRefresh: true, shouldClaim: false });
       } catch {
         disposeWebglRenderer();
       }
+    };
+
+    let webglAddonRaf: number | null = requestAnimationFrame(() => {
+      webglAddonRaf = null;
+      loadWebglRenderer();
     });
 
     const restoreDocumentStyles = this.applyDocumentBoundsStyles({
@@ -588,6 +627,9 @@ export class TerminalEmulatorRuntime {
       removeTouchListeners,
       restoreDocumentStyles,
       restoreViewportStyles,
+      cancelShowHardwareCursor: () => {
+        this.cancelShowHardwareCursor();
+      },
       disposeFitAddon: () => {
         fitAddon.dispose();
       },
@@ -615,6 +657,7 @@ export class TerminalEmulatorRuntime {
       disposables.clearFitTimeouts();
       disposables.removeFontListeners();
       disposables.removeTouchListeners();
+      disposables.cancelShowHardwareCursor();
       disposables.disposeFitAddon();
       disposables.disposeWebglAddon();
       disposables.disposeTerminal();
@@ -893,7 +936,7 @@ export class TerminalEmulatorRuntime {
       this.emitInputModeChange();
     }
     this.hasUngatedWrites = true;
-    const data = this.paintDefaultInverseSgr(terminal, operation.data);
+    const data = this.paintTerminalOutput(terminal, operation.data);
     const onCommitted = operation.onCommitted;
     if (!onCommitted) {
       try {
@@ -978,7 +1021,7 @@ export class TerminalEmulatorRuntime {
     }, OUTPUT_OPERATION_TIMEOUT_MS);
 
     try {
-      terminal.write(this.paintDefaultInverseSgr(terminal, data), () => {
+      terminal.write(this.paintTerminalOutput(terminal, data), () => {
         finalizeOperation(operation);
       });
     } catch {
@@ -986,14 +1029,51 @@ export class TerminalEmulatorRuntime {
     }
   }
 
-  private paintDefaultInverseSgr(terminal: Terminal, data: Uint8Array): Uint8Array {
+  private paintTerminalOutput(terminal: Terminal, data: Uint8Array): Uint8Array {
     // Ink TUIs hide the hardware cursor and draw a caret as inverse+default-color
-    // space. WebGL skips that background, so paint the swapped theme colors explicitly.
-    return materializeDefaultInverseSgr({
-      data,
-      foreground: terminal.options.theme?.foreground,
-      background: terminal.options.theme?.background,
+    // space. WebGL skips that background, so paint the swapped theme colors explicitly
+    // and put the hardware bar back after any hide sequence.
+    return restoreHardwareCursorVisibility(
+      materializeDefaultInverseSgr({
+        data,
+        foreground: terminal.options.theme?.foreground,
+        background: terminal.options.theme?.background,
+      }),
+    );
+  }
+
+  private showHardwareCursor(): void {
+    const terminal = this.terminal;
+    if (!terminal || this.showHardwareCursorRaf !== null) {
+      return;
+    }
+    if (typeof window.requestAnimationFrame !== "function") {
+      this.writeHardwareCursorVisible(terminal);
+      return;
+    }
+    this.showHardwareCursorRaf = window.requestAnimationFrame(() => {
+      this.showHardwareCursorRaf = null;
+      this.writeHardwareCursorVisible(terminal);
     });
+  }
+
+  private writeHardwareCursorVisible(terminal: Terminal): void {
+    if (this.terminal !== terminal) {
+      return;
+    }
+    try {
+      terminal.write(SHOW_HARDWARE_CURSOR);
+    } catch {
+      // ignore
+    }
+  }
+
+  private cancelShowHardwareCursor(): void {
+    if (this.showHardwareCursorRaf === null) {
+      return;
+    }
+    window.cancelAnimationFrame(this.showHardwareCursorRaf);
+    this.showHardwareCursorRaf = null;
   }
 
   private clearInFlightOutputTimeout(): void {

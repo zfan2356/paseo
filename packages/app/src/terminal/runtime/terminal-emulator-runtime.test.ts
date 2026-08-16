@@ -344,6 +344,22 @@ describe("terminal-emulator-runtime", () => {
     expect(writeTexts).toEqual(["\x1bchello\x1b[38;2;11;11;11;48;2;230;230;230m \x1b[39;49m"]);
   });
 
+  it("re-shows the hardware cursor after a TUI hide sequence", () => {
+    const { runtime, writeTexts } = createRuntimeWithTerminal();
+
+    runtime.write({ data: terminalOutput("\x1b[?25lprompt") });
+
+    expect(writeTexts).toEqual(["\x1b[?25lprompt\x1b[?25h"]);
+  });
+
+  it("re-shows the hardware cursor when a snapshot hid it", () => {
+    const { runtime, writeTexts } = createRuntimeWithTerminal();
+
+    runtime.restoreOutput({ data: terminalOutput("hello\x1b[?25l") });
+
+    expect(writeTexts).toEqual(["\x1bchello\x1b[?25l\x1b[?25h"]);
+  });
+
   it("commits each drained plain write through its own xterm callback", () => {
     const { runtime, writeTexts, writeCallbacks } = createRuntimeWithTerminal();
     const committed: string[] = [];

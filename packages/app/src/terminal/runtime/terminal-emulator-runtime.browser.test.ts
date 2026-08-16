@@ -171,6 +171,27 @@ function inspectMountedTerminal(): Terminal {
   return terminal;
 }
 
+function readCursorPresentation(): {
+  hidden: boolean;
+  style: string | undefined;
+} {
+  const terminal = window.__paseoTerminal as
+    | (Terminal & {
+        _core?: {
+          coreService?: {
+            isCursorHidden?: boolean;
+            decPrivateModes?: { cursorStyle?: string };
+          };
+        };
+      })
+    | undefined;
+  const service = terminal?._core?.coreService;
+  return {
+    hidden: Boolean(service?.isCursorHidden),
+    style: service?.decPrivateModes?.cursorStyle,
+  };
+}
+
 function readActiveCell(col: number): {
   chars: string;
   bgRgb: boolean;
@@ -293,6 +314,44 @@ describe("terminal emulator runtime in a real browser", () => {
       bgColor: 0xe6e6e6,
       inverse: 0,
     });
+    expect(readCursorPresentation()).toEqual({
+      hidden: false,
+      style: undefined,
+    });
+  });
+
+  it("keeps the hardware bar after the TUI hides the cursor", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    mounted.runtime.write({
+      data: terminalOutput("\x1b[?25lprompt"),
+    });
+    await nextFrame();
+    await nextFrame();
+
+    expect(readCursorPresentation().hidden).toBe(false);
+  });
+
+  it("keeps a bar caret after the TUI requests an underline cursor", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    mounted.runtime.write({
+      data: terminalOutput("\x1b[4 qprompt"),
+    });
+    await nextFrame();
+    await nextFrame();
+
+    expect(readCursorPresentation()).toEqual({
+      hidden: false,
+      style: undefined,
+    });
+    expect(inspectMountedTerminal().options.cursorStyle).toBe("bar");
   });
 
   it("does not forward Kitty graphics replies as typed input", async () => {
