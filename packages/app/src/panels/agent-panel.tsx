@@ -1,7 +1,7 @@
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { TFunction } from "i18next";
-import { SquarePen } from "lucide-react-native";
+import { SquarePen, SquareTerminal } from "lucide-react-native";
 import React, {
   memo,
   useCallback,
@@ -24,6 +24,11 @@ import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { SidebarCallout } from "@/components/sidebar-callout";
+import { conversationSurfaceSubtitle } from "@/conversation-surface/display";
+import {
+  selectConversationSurface,
+  useConversationSurfaceStore,
+} from "@/conversation-surface/store";
 import { Composer } from "@/composer";
 import { getActiveMessageSubmissions } from "@/composer/submission/model";
 import { RewindComposerRestoreProvider } from "@/components/rewind/composer-restore";
@@ -336,14 +341,22 @@ function useAgentPanelDescriptor(
       };
     }),
   );
+  const surface = useConversationSurfaceStore((state) =>
+    selectConversationSurface(state, target.agentId),
+  );
   const provider = descriptorState.provider;
   const label = resolveWorkspaceAgentTabLabel(descriptorState.title);
-  const icon = getProviderIcon(provider);
+  const providerLabel = formatProviderLabel(provider);
+  const surfaceSubtitle = conversationSurfaceSubtitle({
+    providerLabel,
+    surface,
+  });
+  const icon = surface === "tui" ? SquareTerminal : getProviderIcon(provider);
 
   return {
     label: label ?? "",
-    subtitle: `${formatProviderLabel(provider)} agent`,
-    tooltip: label ?? `${formatProviderLabel(provider)} agent`,
+    subtitle: surfaceSubtitle,
+    tooltip: label ?? surfaceSubtitle,
     titleState: label ? "ready" : "loading",
     icon,
     statusBucket: descriptorState.status
@@ -361,15 +374,20 @@ function AgentPanel() {
   const { serverId, workspaceId, target, openFileInWorkspace } = usePaneContext();
   const { isInteractive } = usePaneFocus();
   invariant(target.kind === "agent", "AgentPanel requires agent target");
+  const surface = useConversationSurfaceStore((state) =>
+    selectConversationSurface(state, target.agentId),
+  );
 
   return (
-    <AgentPanelContent
-      serverId={serverId}
-      workspaceId={workspaceId}
-      agentId={target.agentId}
-      isPaneFocused={isInteractive}
-      onOpenWorkspaceFile={openFileInWorkspace}
-    />
+    <View testID={`conversation-surface-${surface}`} style={styles.container}>
+      <AgentPanelContent
+        serverId={serverId}
+        workspaceId={workspaceId}
+        agentId={target.agentId}
+        isPaneFocused={isInteractive}
+        onOpenWorkspaceFile={openFileInWorkspace}
+      />
+    </View>
   );
 }
 

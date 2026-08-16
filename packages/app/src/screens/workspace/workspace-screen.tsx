@@ -93,6 +93,16 @@ import {
   normalizeWorkspaceTabTarget,
   workspaceTabTargetsEqual,
 } from "@/workspace-tabs/identity";
+import {
+  canOfferConversationSurfaceSwitch,
+  conversationSessionRefFromTabTarget,
+} from "@/conversation-surface/session";
+import { resolveConversationViewSwitchChrome } from "@/conversation-surface/chrome";
+import { planConversationViewSwitch } from "@/conversation-surface/switch";
+import {
+  selectConversationSurface,
+  useConversationSurfaceStore,
+} from "@/conversation-surface/store";
 import { selectVisibleAgentIds } from "./visible-agent-ids";
 import {
   getHostRuntimeStore,
@@ -286,8 +296,6 @@ const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
 const GATED_WORKSPACE_HEADER_LEFT = <SidebarMenuToggle />;
 
-const AGENT_CONVERSATION_TERMINAL_PROVIDERS = new Set(["codex", "claude", "cursor"]);
-
 function resolveTerminalToAgentSwitchPending(input: {
   isSwitching: boolean;
   hasTerminal: boolean;
@@ -301,20 +309,16 @@ function useAgentConversationAgentId(input: {
   supported: boolean;
   supportsLegacyCodex: boolean;
 }): string | null {
-  const activeAgentId =
-    input.activeTab?.target.kind === "agent" ? input.activeTab.target.agentId : null;
+  const sessionRef = conversationSessionRefFromTabTarget(input.activeTab?.target ?? null);
+  const activeAgentId = sessionRef?.agentId ?? null;
   const activeAgent = useSessionStore((state) => {
     if (!activeAgentId) return null;
     const session = state.sessions[input.serverId];
     return session?.agents?.get(activeAgentId) ?? session?.agentDetails?.get(activeAgentId) ?? null;
   });
-  if (
-    (!input.supported && !(input.supportsLegacyCodex && activeAgent?.provider === "codex")) ||
-    !activeAgent?.provider ||
-    !AGENT_CONVERSATION_TERMINAL_PROVIDERS.has(activeAgent.provider) ||
-    !activeAgent.persistence?.sessionId ||
-    activeAgent.archivedAt
-  ) {
+  const featureSupported =
+    input.supported || (input.supportsLegacyCodex && activeAgent?.provider === "codex");
+  if (!featureSupported || !canOfferConversationSurfaceSwitch(activeAgent)) {
     return null;
   }
   return activeAgentId;
@@ -3371,13 +3375,24 @@ function WorkspaceScreenContent({
     terminals,
   ]);
   const [isSwitchingAgentConversationView, setIsSwitchingAgentConversationView] = useState(false);
+  const conversationSurface = useConversationSurfaceStore((state) =>
+    selectConversationSurface(state, agentConversationAgentId),
+  );
+  const setConversationSurface = useConversationSurfaceStore((state) => state.setSurface);
   const handleToggleAgentConversationView = useCallback(async () => {
-    if (agentConversationAgentId) {
-      if (!activeTabDescriptor) return;
-      createTerminal({
-        agentId: agentConversationAgentId,
-        replaceTabId: activeTabDescriptor.tabId,
-      });
+    const plan = planConversationViewSwitch({
+      session: agentConversationAgentId ? { agentId: agentConversationAgentId } : null,
+      surface: selectConversationSurface(
+        useConversationSurfaceStore.getState(),
+        agentConversationAgentId,
+      ),
+      linkedTerminalId: activeAgentConversationTerminal?.id ?? null,
+    });
+    if (plan.action === "toggle-surface") {
+      setConversationSurface(plan.session.agentId, plan.nextSurface);
+      return;
+    }
+    if (plan.action !== "leave-linked-terminal") {
       return;
     }
 
@@ -3406,6 +3421,7 @@ function WorkspaceScreenContent({
             : {}),
         });
       } finally {
+        setConversationSurface(result.agentId, "agent");
         retargetWorkspaceTab(persistenceKey, activeTabDescriptor.tabId, {
           kind: "agent",
           agentId: result.agentId,
@@ -3423,13 +3439,13 @@ function WorkspaceScreenContent({
   }, [
     activeAgentConversationTerminal,
     activeTabDescriptor,
-    client,
     agentConversationAgentId,
-    createTerminal,
+    client,
     normalizedServerId,
     persistenceKey,
     removeTerminalFromCache,
     retargetWorkspaceTab,
+    setConversationSurface,
     supportsAgentConversationViewSwitch,
     t,
     toast,
@@ -3685,35 +3701,30 @@ function WorkspaceScreenContent({
     isSwitching: isSwitchingAgentConversationView,
     hasTerminal: activeAgentConversationTerminal !== null,
   });
+  const conversationViewSwitch = resolveConversationViewSwitchChrome({
+    agentId: agentConversationAgentId,
+    surface: conversationSurface,
+    hasLinkedTerminal: activeAgentConversationTerminal !== null,
+    isLeavingLinkedTerminal: isTerminalToAgentSwitchPending,
+    isConnected,
+    hasWorkspaceDirectory: Boolean(workspaceDirectory),
+  });
 
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
-        {agentConversationAgentId || activeAgentConversationTerminal ? (
+        {conversationViewSwitch.show ? (
           <HeaderToggleButton
             testID="workspace-toggle-agent-conversation-view"
             onPress={handleToggleAgentConversationView}
-            tooltipLabel={t(
-              agentConversationAgentId
-                ? "workspace.header.actions.switchToConversationTerminal"
-                : "workspace.header.actions.switchToAgentView",
-            )}
+            tooltipLabel={t(conversationViewSwitch.labelKey)}
             tooltipKeys={[]}
             tooltipSide="bottom"
             style={isMobile ? styles.headerActionButton : styles.compactHeaderActionButton}
-            disabled={
-              createTerminalDisabled ||
-              isTerminalToAgentSwitchPending ||
-              !isConnected ||
-              !workspaceDirectory
-            }
+            disabled={conversationViewSwitch.disabled}
             accessible
             accessibilityRole="button"
-            accessibilityLabel={t(
-              agentConversationAgentId
-                ? "workspace.header.actions.switchToConversationTerminal"
-                : "workspace.header.actions.switchToAgentView",
-            )}
+            accessibilityLabel={t(conversationViewSwitch.labelKey)}
           >
             {({ hovered, pressed }) => {
               const active = hovered || pressed;
@@ -3846,12 +3857,8 @@ function WorkspaceScreenContent({
     ),
     [
       isMobile,
-      agentConversationAgentId,
-      activeAgentConversationTerminal,
+      conversationViewSwitch,
       handleToggleAgentConversationView,
-      isTerminalToAgentSwitchPending,
-      createTerminalDisabled,
-      isConnected,
       workspaceDescriptor,
       normalizedServerId,
       normalizedWorkspaceId,
