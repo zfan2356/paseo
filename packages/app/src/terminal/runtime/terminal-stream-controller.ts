@@ -1,5 +1,6 @@
 import type { SubscribeTerminalRequest, TerminalState } from "@getpaseo/protocol/messages";
 import type { TerminalOutputData } from "./terminal-emulator-runtime";
+import { restoreSubscriptionSendsFrame } from "./terminal-restore-options";
 import { i18n } from "@/i18n/i18next";
 
 export interface TerminalStreamControllerClient {
@@ -52,6 +53,7 @@ export class TerminalStreamController {
   private readonly unsubscribeStreamEvents: () => void;
   private terminalId: string | null = null;
   private disposed = false;
+  private awaitingRestore = false;
 
   constructor(private readonly options: TerminalStreamControllerOptions) {
     this.unsubscribeStreamEvents = this.options.client.onTerminalStreamEvent((event) => {
@@ -66,6 +68,7 @@ export class TerminalStreamController {
         if (event.data.length > 0) {
           this.options.onRestore?.({ terminalId: event.terminalId, data: event.data });
         }
+        this.finishRestoreAttach(event.terminalId);
         return;
       }
       if (event.data.length > 0) {
@@ -81,6 +84,7 @@ export class TerminalStreamController {
     const nextTerminalId = input.terminalId;
     const previousTerminalId = this.terminalId;
     this.terminalId = nextTerminalId;
+    this.awaitingRestore = false;
     if (previousTerminalId) {
       this.options.client.unsubscribeTerminal(previousTerminalId);
     }
@@ -89,6 +93,7 @@ export class TerminalStreamController {
       return;
     }
     const restore = this.options.getRestoreOptions?.();
+    this.awaitingRestore = restoreSubscriptionSendsFrame(restore);
     this.options.onStatusChange?.({ terminalId: nextTerminalId, isAttaching: true, error: null });
     void this.options.client
       .subscribeTerminal(nextTerminalId, restore ? { restore } : undefined)
@@ -98,6 +103,7 @@ export class TerminalStreamController {
         }
         if (payload.error) {
           this.terminalId = null;
+          this.awaitingRestore = false;
           this.options.onStatusChange?.({
             terminalId: nextTerminalId,
             isAttaching: false,
@@ -114,6 +120,9 @@ export class TerminalStreamController {
             intent: "claim",
           });
         }
+        if (this.awaitingRestore) {
+          return;
+        }
         this.options.onStatusChange?.({
           terminalId: nextTerminalId,
           isAttaching: false,
@@ -126,6 +135,7 @@ export class TerminalStreamController {
           return;
         }
         this.terminalId = null;
+        this.awaitingRestore = false;
         this.options.onStatusChange?.({
           terminalId: nextTerminalId,
           isAttaching: false,
@@ -140,6 +150,7 @@ export class TerminalStreamController {
       return;
     }
     this.terminalId = null;
+    this.awaitingRestore = false;
     this.options.onStatusChange?.({
       terminalId: input.terminalId,
       isAttaching: false,
@@ -152,6 +163,7 @@ export class TerminalStreamController {
       return;
     }
     this.disposed = true;
+    this.awaitingRestore = false;
     const terminalId = this.terminalId;
     this.terminalId = null;
     if (terminalId) {
@@ -159,5 +171,17 @@ export class TerminalStreamController {
     }
     this.unsubscribeStreamEvents();
     this.options.onStatusChange?.({ terminalId: null, isAttaching: false, error: null });
+  }
+
+  private finishRestoreAttach(terminalId: string): void {
+    if (!this.awaitingRestore || this.terminalId !== terminalId) {
+      return;
+    }
+    this.awaitingRestore = false;
+    this.options.onStatusChange?.({
+      terminalId,
+      isAttaching: false,
+      error: null,
+    });
   }
 }

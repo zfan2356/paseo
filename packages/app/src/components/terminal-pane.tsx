@@ -1243,7 +1243,7 @@ const styles = StyleSheet.create((theme) => ({
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.16)",
+    backgroundColor: theme.colors.background,
   },
   floatingCopyContainer: {
     position: "absolute",

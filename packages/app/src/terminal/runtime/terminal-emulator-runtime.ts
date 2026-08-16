@@ -196,6 +196,8 @@ export class TerminalEmulatorRuntime {
   private lastInputModeState: TerminalInputModeState = this.inputModeTracker.getState();
   private themeBackgroundElements: HTMLElement[] = [];
   private needsRefreshAfterHiddenFit = false;
+  private hostElement: HTMLDivElement | null = null;
+  private restoreCoverCount = 0;
 
   private handleVisibilityRestore = (): void => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
@@ -228,6 +230,9 @@ export class TerminalEmulatorRuntime {
     input.host.innerHTML = "";
     this.lastSize = null;
     this.needsRefreshAfterHiddenFit = false;
+    this.hostElement = input.host;
+    this.restoreCoverCount = 0;
+    input.host.style.opacity = "";
     this.inputModeTracker.reset();
     this.emitInputModeChange();
 
@@ -674,13 +679,17 @@ export class TerminalEmulatorRuntime {
     cols?: number;
     onCommitted?: () => void;
   }): void {
+    this.concealHostForRestore();
     this.outputOperations.push({
       type: "snapshot",
       data: prependTerminalOutput(RESET_TERMINAL_OUTPUT, input.data),
       rows: input.rows,
       cols: input.cols,
       suppressInput: true,
-      ...(input.onCommitted ? { onCommitted: input.onCommitted } : {}),
+      onCommitted: () => {
+        this.revealHostAfterRestore();
+        input.onCommitted?.();
+      },
     });
     this.processOutputQueue();
   }
@@ -814,6 +823,11 @@ export class TerminalEmulatorRuntime {
     this.fitAndEmitResize = null;
     this.lastSize = null;
     this.needsRefreshAfterHiddenFit = false;
+    this.restoreCoverCount = 0;
+    if (this.hostElement) {
+      this.hostElement.style.opacity = "";
+    }
+    this.hostElement = null;
     this.themeBackgroundElements = [];
     this.suppressInput = false;
     this.inputModeDecoder.decode();
@@ -983,6 +997,31 @@ export class TerminalEmulatorRuntime {
       });
     } catch {
       finalizeOperation(operation);
+    }
+  }
+
+  private concealHostForRestore(): void {
+    const host = this.hostElement;
+    if (!host) {
+      return;
+    }
+    this.restoreCoverCount += 1;
+    if (this.restoreCoverCount === 1) {
+      host.style.opacity = "0";
+    }
+  }
+
+  private revealHostAfterRestore(): void {
+    if (this.restoreCoverCount === 0) {
+      return;
+    }
+    this.restoreCoverCount -= 1;
+    if (this.restoreCoverCount > 0) {
+      return;
+    }
+    const host = this.hostElement;
+    if (host) {
+      host.style.opacity = "";
     }
   }
 

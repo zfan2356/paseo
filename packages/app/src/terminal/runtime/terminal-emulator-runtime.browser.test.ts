@@ -652,4 +652,38 @@ describe("terminal emulator runtime in a real browser", () => {
 
     expect(reset).not.toHaveBeenCalled();
   });
+
+  it("hides the host until a long snapshot restore commits", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    const scrollback = Array.from({ length: 80 }, (_, index) => [
+      { char: "O" },
+      { char: "L" },
+      { char: "D" },
+      { char: String(Math.floor(index / 10)) },
+      { char: String(index % 10) },
+    ]);
+    let committed = false;
+    mounted.runtime.renderSnapshot({
+      state: {
+        rows: 4,
+        cols: 16,
+        scrollback,
+        grid: [[{ char: "N" }, { char: "O" }, { char: "W" }]],
+        cursor: { row: 0, col: 3 },
+      },
+      onCommitted: () => {
+        committed = true;
+      },
+    });
+
+    expect(committed).toBe(false);
+    expect(mounted.host.style.opacity).toBe("0");
+
+    await waitFor({ predicate: () => committed });
+    expect(mounted.host.style.opacity).toBe("");
+  });
 });

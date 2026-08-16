@@ -245,6 +245,48 @@ describe("terminal-stream-controller", () => {
     expect(harness.outputs).toEqual([]);
   });
 
+  it("keeps attaching until the restore frame arrives", async () => {
+    const client = new FakeTerminalStreamClient();
+    const statuses: TerminalStreamControllerStatus[] = [];
+    client.nextSubscribeResults.push({ terminalId: "term-1", error: null });
+    const controller = new TerminalStreamController({
+      client,
+      getPreferredSize: () => ({ rows: 24, cols: 80 }),
+      getRestoreOptions: () => ({
+        mode: "visible-snapshot",
+        scrollbackLines: 0,
+      }),
+      onOutput: () => {},
+      onRestore: () => {},
+      onSnapshot: () => {},
+      onStatusChange: (status) => {
+        statuses.push(status);
+      },
+    });
+
+    controller.setTerminal({ terminalId: "term-1" });
+    await flushAsyncWork();
+
+    expect(statuses.at(-1)).toEqual({
+      terminalId: "term-1",
+      isAttaching: true,
+      error: null,
+    });
+
+    client.emit({
+      terminalId: "term-1",
+      type: "restore",
+      data: terminalOutput("current-screen"),
+    });
+
+    expect(statuses.at(-1)).toEqual({
+      terminalId: "term-1",
+      isAttaching: false,
+      error: null,
+    });
+    controller.dispose();
+  });
+
   it("unsubscribes when switching terminals and on dispose", async () => {
     const harness = createHarness();
     harness.client.nextSubscribeResults.push({ terminalId: "term-1", error: null });

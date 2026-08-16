@@ -1,6 +1,9 @@
 import type { SubscribeTerminalRequest } from "@getpaseo/protocol/messages";
 
-export const TERMINAL_VISIBLE_RESTORE_SCROLLBACK_LINES = 200;
+// Visible-snapshot restore paints the current viewport only. Extra scrollback is
+// encoded as ANSI and xterm replays those older rows top-down when a long TUI
+// session is reopened.
+export const TERMINAL_VISIBLE_RESTORE_SCROLLBACK_LINES = 0;
 
 export interface ResolveTerminalRestoreOptionsInput {
   supportsTerminalRestoreModes: boolean;
@@ -20,4 +23,10 @@ export function resolveTerminalRestoreOptions(
     scrollbackLines: TERMINAL_VISIBLE_RESTORE_SCROLLBACK_LINES,
     ...(input.canClaimSize && input.size ? { size: input.size } : {}),
   };
+}
+
+export function restoreSubscriptionSendsFrame(
+  restore: SubscribeTerminalRequest["restore"] | undefined,
+): boolean {
+  return restore !== undefined && restore.mode !== "live";
 }
