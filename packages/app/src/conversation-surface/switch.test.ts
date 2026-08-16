@@ -15,6 +15,7 @@ describe("conversation view switch", () => {
         session,
         surface: "agent",
         leftoverTerminalId: null,
+        leftoverVisibleInAnyPane: false,
         focusedLinkedTerminalId: null,
         canReleaseLeftover: false,
       }),
@@ -33,6 +34,7 @@ describe("conversation view switch", () => {
         session,
         surface: "agent",
         leftoverTerminalId: "term-legacy",
+        leftoverVisibleInAnyPane: false,
         focusedLinkedTerminalId: null,
         canReleaseLeftover: true,
       }),
@@ -44,6 +46,24 @@ describe("conversation view switch", () => {
     });
   });
 
+  it("does not release a leftover that is still focused in another pane", () => {
+    const session = { agentId: "agent-1" };
+    expect(
+      planConversationViewSwitch({
+        session,
+        surface: "agent",
+        leftoverTerminalId: "term-legacy",
+        leftoverVisibleInAnyPane: true,
+        focusedLinkedTerminalId: null,
+        canReleaseLeftover: true,
+      }),
+    ).toEqual({
+      action: "toggle-surface",
+      session,
+      nextSurface: "tui",
+    });
+  });
+
   it("flips only the display when leftover release is not available", () => {
     const session = { agentId: "agent-1" };
     expect(
@@ -51,6 +71,7 @@ describe("conversation view switch", () => {
         session,
         surface: "agent",
         leftoverTerminalId: "term-legacy",
+        leftoverVisibleInAnyPane: false,
         focusedLinkedTerminalId: null,
         canReleaseLeftover: false,
       }),
@@ -66,6 +87,7 @@ describe("conversation view switch", () => {
       session: { agentId: "agent-1" },
       surface: "agent",
       leftoverTerminalId: null,
+      leftoverVisibleInAnyPane: false,
       focusedLinkedTerminalId: null,
       canReleaseLeftover: false,
     });
@@ -81,6 +103,7 @@ describe("conversation view switch", () => {
         session: null,
         surface: "agent",
         leftoverTerminalId: null,
+        leftoverVisibleInAnyPane: false,
         focusedLinkedTerminalId: "term-legacy",
         canReleaseLeftover: false,
       }),
@@ -93,6 +116,7 @@ describe("conversation view switch", () => {
         session: null,
         surface: "agent",
         leftoverTerminalId: null,
+        leftoverVisibleInAnyPane: false,
         focusedLinkedTerminalId: null,
         canReleaseLeftover: false,
       }),

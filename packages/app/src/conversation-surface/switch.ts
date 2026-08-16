@@ -25,10 +25,16 @@ export function planConversationViewSwitch(input: {
   session: ConversationSessionRef | null;
   surface: ConversationSurface;
   leftoverTerminalId: string | null;
+  leftoverVisibleInAnyPane: boolean;
   focusedLinkedTerminalId: string | null;
   canReleaseLeftover: boolean;
 }): ConversationViewSwitchPlan {
-  if (input.session && input.leftoverTerminalId && input.canReleaseLeftover) {
+  if (
+    input.session &&
+    input.leftoverTerminalId &&
+    input.canReleaseLeftover &&
+    !input.leftoverVisibleInAnyPane
+  ) {
     return {
       action: "release-then-toggle",
       session: input.session,

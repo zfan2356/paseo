@@ -215,6 +215,12 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
   }, [agentId, isPending, leftoverLinkedAgentId, replaceLeaseBlocked, serverId, terminals]);
 
   useEffect(() => {
+    if (
+      autoReleasedTerminalIdRef.current &&
+      autoReleasedTerminalIdRef.current !== leftoverTerminalId
+    ) {
+      autoReleasedTerminalIdRef.current = null;
+    }
     const shouldRelease = shouldAutoReleaseLeftoverTerminal({
       focusedAgentId: agentId,
       leftoverTerminalId,
@@ -263,6 +269,7 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
       session: agentId ? { agentId } : null,
       surface: selectConversationSurface(useConversationSurfaceStore.getState(), serverId, agentId),
       leftoverTerminalId,
+      leftoverVisibleInAnyPane,
       focusedLinkedTerminalId,
       canReleaseLeftover: Boolean(client && isConnected && workspaceDirectory),
     });
@@ -312,6 +319,7 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
     isConnected,
     leftoverLinkedAgentId,
     leftoverTerminalId,
+    leftoverVisibleInAnyPane,
     onRetargetToAgent,
     serverId,
     workspaceDirectory,
