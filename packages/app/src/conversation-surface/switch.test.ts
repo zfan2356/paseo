@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { conversationSurfaceSubtitle } from "./display";
+import {
+  conversationSurfaceSubtitle,
+  conversationSurfaceTestId,
+  resolveConversationSurfaceAppearance,
+} from "./display";
 import { planConversationViewSwitch, toggleConversationSurface } from "./switch";
 
 describe("conversation view switch", () => {
@@ -10,46 +14,54 @@ describe("conversation view switch", () => {
       planConversationViewSwitch({
         session,
         surface: "agent",
-        linkedTerminalId: null,
+        leftoverTerminalId: null,
+        focusedLinkedTerminalId: null,
       }),
     ).toEqual({
       action: "toggle-surface",
       session,
       nextSurface: "tui",
     });
+    expect(toggleConversationSurface("tui")).toBe("agent");
+  });
+
+  it("releases a leftover PTY before flipping the Agent-tab display", () => {
+    const session = { agentId: "agent-1" };
     expect(
       planConversationViewSwitch({
         session,
-        surface: "tui",
-        linkedTerminalId: "term-legacy",
+        surface: "agent",
+        leftoverTerminalId: "term-legacy",
+        focusedLinkedTerminalId: null,
       }),
     ).toEqual({
-      action: "toggle-surface",
+      action: "release-then-toggle",
       session,
-      nextSurface: "agent",
+      terminalId: "term-legacy",
+      nextSurface: "tui",
     });
-    expect(toggleConversationSurface("tui")).toBe("agent");
   });
 
   it("does not plan a terminal create, retarget, or second tab", () => {
     const plan = planConversationViewSwitch({
       session: { agentId: "agent-1" },
       surface: "agent",
-      linkedTerminalId: null,
+      leftoverTerminalId: null,
+      focusedLinkedTerminalId: null,
     });
 
     expect(plan).not.toMatchObject({ action: "create-terminal" });
     expect(plan).not.toMatchObject({ action: "retarget-tab" });
-    expect(plan).not.toMatchObject({ replaceTabId: expect.anything() });
     expect(plan).toMatchObject({ action: "toggle-surface", nextSurface: "tui" });
   });
 
-  it("leaves a leftover linked PTY without using it as the TUI display", () => {
+  it("leaves a leftover linked PTY when that terminal tab is focused", () => {
     expect(
       planConversationViewSwitch({
         session: null,
         surface: "agent",
-        linkedTerminalId: "term-legacy",
+        leftoverTerminalId: null,
+        focusedLinkedTerminalId: "term-legacy",
       }),
     ).toEqual({
       action: "leave-linked-terminal",
@@ -59,17 +71,46 @@ describe("conversation view switch", () => {
       planConversationViewSwitch({
         session: null,
         surface: "agent",
-        linkedTerminalId: null,
+        leftoverTerminalId: null,
+        focusedLinkedTerminalId: null,
       }),
     ).toEqual({ action: "none" });
   });
 
   it("keeps Agent and TUI as labels over the same provider session", () => {
-    expect(conversationSurfaceSubtitle({ providerLabel: "Codex", surface: "agent" })).toBe(
-      "Codex agent",
-    );
-    expect(conversationSurfaceSubtitle({ providerLabel: "Codex", surface: "tui" })).toBe(
-      "Codex TUI",
-    );
+    expect(
+      conversationSurfaceSubtitle({ providerLabel: "Codex", surface: "agent", ready: true }),
+    ).toBe("Codex agent");
+    expect(
+      conversationSurfaceSubtitle({ providerLabel: "Codex", surface: "tui", ready: true }),
+    ).toBe("Codex TUI");
+    expect(
+      conversationSurfaceSubtitle({ providerLabel: "Codex", surface: "tui", ready: false }),
+    ).toBe("Codex");
+  });
+
+  it("withholds TUI chrome until the surface store has hydrated", () => {
+    expect(resolveConversationSurfaceAppearance({ surface: "tui", hasHydrated: false })).toEqual({
+      surface: "agent",
+      ready: false,
+      hideSessionChrome: false,
+      compact: false,
+    });
+    expect(resolveConversationSurfaceAppearance({ surface: "tui", hasHydrated: true })).toEqual({
+      surface: "tui",
+      ready: true,
+      hideSessionChrome: true,
+      compact: true,
+    });
+    expect(
+      conversationSurfaceTestId(
+        resolveConversationSurfaceAppearance({ surface: "tui", hasHydrated: false }),
+      ),
+    ).toBe("conversation-surface-pending");
+    expect(
+      conversationSurfaceTestId(
+        resolveConversationSurfaceAppearance({ surface: "tui", hasHydrated: true }),
+      ),
+    ).toBe("conversation-surface-tui");
   });
 });

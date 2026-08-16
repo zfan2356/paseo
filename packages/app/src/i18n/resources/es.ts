@@ -672,7 +672,7 @@ export const es: TranslationResources = {
         newAgent: "Nuevo agente",
         newTerminal: "Nueva terminal",
         forkToCodexTerminal: "Bifurcar conversación a terminal Codex",
-        switchToConversationTerminal: "Cambiar a la vista de terminal",
+        switchToTuiView: "Cambiar a la vista TUI",
         switchToAgentView: "Cambiar a la vista Agent",
         newBrowser: "Nueva pestaña del navegador",
         importSession: "Importar sesión",

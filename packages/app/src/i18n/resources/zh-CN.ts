@@ -663,7 +663,7 @@ export const zhCN: TranslationResources = {
         newAgent: "新建 Agent",
         newTerminal: "新建 Terminal",
         forkToCodexTerminal: "转为 Codex Terminal 会话",
-        switchToConversationTerminal: "切换到 Terminal 对话",
+        switchToTuiView: "切换到 TUI 显示",
         switchToAgentView: "切换回 Agent 对话",
         newBrowser: "新建浏览器标签",
         importSession: "导入会话",

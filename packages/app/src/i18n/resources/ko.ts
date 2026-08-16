@@ -667,7 +667,7 @@ export const ko: TranslationResources = {
         newAgent: "새 에이전트",
         newTerminal: "새 터미널",
         forkToCodexTerminal: "대화를 Codex 터미널로 포크",
-        switchToConversationTerminal: "터미널 보기로 전환",
+        switchToTuiView: "TUI 보기로 전환",
         switchToAgentView: "Agent 보기로 전환",
         newBrowser: "새 브라우저 탭",
         importSession: "세션 가져오기",

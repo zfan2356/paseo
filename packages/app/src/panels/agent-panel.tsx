@@ -24,11 +24,16 @@ import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { SidebarCallout } from "@/components/sidebar-callout";
-import { conversationSurfaceSubtitle } from "@/conversation-surface/display";
+import {
+  conversationSurfaceSubtitle,
+  conversationSurfaceTestId,
+  resolveConversationSurfaceAppearance,
+} from "@/conversation-surface/display";
 import {
   selectConversationSurface,
   useConversationSurfaceStore,
 } from "@/conversation-surface/store";
+import { ensureTuiDocumentStyles } from "@/conversation-surface/tui-document-styles";
 import { Composer } from "@/composer";
 import { getActiveMessageSubmissions } from "@/composer/submission/model";
 import { RewindComposerRestoreProvider } from "@/components/rewind/composer-restore";
@@ -344,14 +349,18 @@ function useAgentPanelDescriptor(
   const surface = useConversationSurfaceStore((state) =>
     selectConversationSurface(state, target.agentId),
   );
+  const hasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
+  const appearance = resolveConversationSurfaceAppearance({ surface, hasHydrated });
   const provider = descriptorState.provider;
   const label = resolveWorkspaceAgentTabLabel(descriptorState.title);
   const providerLabel = formatProviderLabel(provider);
   const surfaceSubtitle = conversationSurfaceSubtitle({
     providerLabel,
-    surface,
+    surface: appearance.surface,
+    ready: appearance.ready,
   });
-  const icon = surface === "tui" ? SquareTerminal : getProviderIcon(provider);
+  const icon =
+    appearance.ready && appearance.surface === "tui" ? SquareTerminal : getProviderIcon(provider);
 
   return {
     label: label ?? "",
@@ -377,9 +386,15 @@ function AgentPanel() {
   const surface = useConversationSurfaceStore((state) =>
     selectConversationSurface(state, target.agentId),
   );
+  const hasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
+  const appearance = resolveConversationSurfaceAppearance({ surface, hasHydrated });
+
+  useEffect(() => {
+    ensureTuiDocumentStyles();
+  }, []);
 
   return (
-    <View testID={`conversation-surface-${surface}`} style={styles.container}>
+    <View testID={conversationSurfaceTestId(appearance)} style={styles.container}>
       <AgentPanelContent
         serverId={serverId}
         workspaceId={workspaceId}
@@ -1555,6 +1570,12 @@ function ActiveAgentComposer({
     parentAgentId: agentId,
     rows: subagentRows,
   });
+  const surface = useConversationSurfaceStore((state) => selectConversationSurface(state, agentId));
+  const hasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
+  const hideSessionChrome = resolveConversationSurfaceAppearance({
+    surface,
+    hasHydrated,
+  }).hideSessionChrome;
   const workspaceAttachmentScopeKey = useWorkspaceAttachmentScopeKey({
     serverId,
     cwd,
@@ -1641,16 +1662,20 @@ function ActiveAgentComposer({
 
   return (
     <ReanimatedAnimated.View style={inputAreaStyle} onLayout={onInputAreaLayout}>
-      <AgentTaskList serverId={serverId} agentId={agentId} />
-      <SubagentsTrack
-        rows={subagentRows}
-        onOpenSubagent={handleOpenSubagent}
-        onOpenProviderSubagent={handleOpenProviderSubagent}
-        onArchiveSubagent={handleArchiveSubagent}
-        onArchiveFinished={archiveFinishedSubagents.archiveFinished}
-        archiveFinishedStatus={archiveFinishedSubagents.status}
-        onDetachSubagent={canDetachSubagents ? handleDetachSubagent : undefined}
-      />
+      {hideSessionChrome ? null : (
+        <>
+          <AgentTaskList serverId={serverId} agentId={agentId} />
+          <SubagentsTrack
+            rows={subagentRows}
+            onOpenSubagent={handleOpenSubagent}
+            onOpenProviderSubagent={handleOpenProviderSubagent}
+            onArchiveSubagent={handleArchiveSubagent}
+            onArchiveFinished={archiveFinishedSubagents.archiveFinished}
+            archiveFinishedStatus={archiveFinishedSubagents.status}
+            onDetachSubagent={canDetachSubagents ? handleDetachSubagent : undefined}
+          />
+        </>
+      )}
       <Composer
         agentId={agentId}
         serverId={serverId}

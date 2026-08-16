@@ -667,7 +667,7 @@ export const ar: TranslationResources = {
         newAgent: "وكيل جديد",
         newTerminal: "محطة جديدة",
         forkToCodexTerminal: "تشعيب المحادثة إلى محطة Codex",
-        switchToConversationTerminal: "التبديل إلى عرض المحطة الطرفية",
+        switchToTuiView: "التبديل إلى عرض TUI",
         switchToAgentView: "التبديل إلى عرض Agent",
         newBrowser: "علامة تبويب متصفح جديدة",
         importSession: "جلسة الاستيراد",

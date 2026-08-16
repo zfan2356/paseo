@@ -670,7 +670,7 @@ export const ptBR: TranslationResources = {
         newAgent: "Novo agente",
         newTerminal: "Novo terminal",
         forkToCodexTerminal: "Bifurcar conversa para o terminal Codex",
-        switchToConversationTerminal: "Alternar para a visão do terminal",
+        switchToTuiView: "Alternar para a visão TUI",
         switchToAgentView: "Alternar para a visão do Agent",
         newBrowser: "Nova aba de navegador",
         importSession: "Importar sessão",

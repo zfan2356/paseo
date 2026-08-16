@@ -672,7 +672,7 @@ export const ru: TranslationResources = {
         newAgent: "Новый агент",
         newTerminal: "Новый терминал",
         forkToCodexTerminal: "Ответвить разговор в терминал Codex",
-        switchToConversationTerminal: "Переключиться в режим терминала",
+        switchToTuiView: "Переключиться в режим TUI",
         switchToAgentView: "Переключиться в режим Agent",
         newBrowser: "Новая вкладка браузера",
         importSession: "Импортировать сеанс",

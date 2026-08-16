@@ -8,6 +8,12 @@ export type ConversationViewSwitchPlan =
       session: ConversationSessionRef;
       nextSurface: ConversationSurface;
     }
+  | {
+      action: "release-then-toggle";
+      session: ConversationSessionRef;
+      terminalId: string;
+      nextSurface: ConversationSurface;
+    }
   | { action: "leave-linked-terminal"; terminalId: string }
   | { action: "none" };
 
@@ -18,8 +24,17 @@ export function toggleConversationSurface(surface: ConversationSurface): Convers
 export function planConversationViewSwitch(input: {
   session: ConversationSessionRef | null;
   surface: ConversationSurface;
-  linkedTerminalId: string | null;
+  leftoverTerminalId: string | null;
+  focusedLinkedTerminalId: string | null;
 }): ConversationViewSwitchPlan {
+  if (input.session && input.leftoverTerminalId) {
+    return {
+      action: "release-then-toggle",
+      session: input.session,
+      terminalId: input.leftoverTerminalId,
+      nextSurface: toggleConversationSurface(input.surface),
+    };
+  }
   if (input.session) {
     return {
       action: "toggle-surface",
@@ -27,8 +42,8 @@ export function planConversationViewSwitch(input: {
       nextSurface: toggleConversationSurface(input.surface),
     };
   }
-  if (input.linkedTerminalId) {
-    return { action: "leave-linked-terminal", terminalId: input.linkedTerminalId };
+  if (input.focusedLinkedTerminalId) {
+    return { action: "leave-linked-terminal", terminalId: input.focusedLinkedTerminalId };
   }
   return { action: "none" };
 }

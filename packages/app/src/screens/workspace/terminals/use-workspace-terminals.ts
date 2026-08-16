@@ -27,7 +27,6 @@ interface PendingTerminalCreateInput {
   paneId?: string;
   replaceTabId?: string;
   profile?: TerminalProfileInput;
-  agentId?: string;
 }
 
 export type { TerminalProfileInput };
@@ -142,12 +141,7 @@ export function useWorkspaceTerminals(input: UseWorkspaceTerminalsInput) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
       }
       let payload;
-      if (_input?.agentId) {
-        payload = await client.createTerminal(workspaceDirectory, undefined, undefined, {
-          agentId: _input.agentId,
-          workspaceId: normalizedWorkspaceId || undefined,
-        });
-      } else if (_input?.profile) {
+      if (_input?.profile) {
         payload = await client.createTerminal(workspaceDirectory, _input.profile.name, undefined, {
           command: _input.profile.command,
           args: _input.profile.args,

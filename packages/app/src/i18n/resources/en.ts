@@ -663,7 +663,7 @@ export const en = {
         newAgent: "New agent",
         newTerminal: "New terminal",
         forkToCodexTerminal: "Fork conversation to Codex terminal",
-        switchToConversationTerminal: "Switch to terminal view",
+        switchToTuiView: "Switch to TUI view",
         switchToAgentView: "Switch to Agent view",
         newBrowser: "New browser tab",
         importSession: "Import session",

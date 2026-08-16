@@ -4,8 +4,6 @@ export interface ConversationSessionRef {
   agentId: string;
 }
 
-export const CONVERSATION_SURFACE_PROVIDERS = new Set(["codex", "claude", "cursor"]);
-
 export function conversationSessionRefFromAgentId(
   agentId: string | null | undefined,
 ): ConversationSessionRef | null {
@@ -27,15 +25,8 @@ export function conversationSessionRefFromTabTarget(
 
 export function canOfferConversationSurfaceSwitch(
   agent: {
-    provider?: string | null;
-    persistence?: { sessionId?: string | null } | null;
     archivedAt?: string | number | Date | null;
   } | null,
 ): boolean {
-  if (!agent?.provider || agent.archivedAt) {
-    return false;
-  }
-  return (
-    CONVERSATION_SURFACE_PROVIDERS.has(agent.provider) && Boolean(agent.persistence?.sessionId)
-  );
+  return Boolean(agent && !agent.archivedAt);
 }

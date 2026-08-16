@@ -93,16 +93,7 @@ import {
   normalizeWorkspaceTabTarget,
   workspaceTabTargetsEqual,
 } from "@/workspace-tabs/identity";
-import {
-  canOfferConversationSurfaceSwitch,
-  conversationSessionRefFromTabTarget,
-} from "@/conversation-surface/session";
-import { resolveConversationViewSwitchChrome } from "@/conversation-surface/chrome";
-import { planConversationViewSwitch } from "@/conversation-surface/switch";
-import {
-  selectConversationSurface,
-  useConversationSurfaceStore,
-} from "@/conversation-surface/store";
+import { useWorkspaceConversationSurface } from "@/conversation-surface/use-workspace-conversation-surface";
 import { selectVisibleAgentIds } from "./visible-agent-ids";
 import {
   getHostRuntimeStore,
@@ -295,34 +286,6 @@ const MENU_IMPORT_ICON = <ThemedImport size={16} uniProps={mutedColorMapping} />
 const MENU_COPY_ICON = <ThemedCopy size={16} uniProps={mutedColorMapping} />;
 const MENU_SETTINGS_ICON = <ThemedSettings size={16} uniProps={mutedColorMapping} />;
 const GATED_WORKSPACE_HEADER_LEFT = <SidebarMenuToggle />;
-
-function resolveTerminalToAgentSwitchPending(input: {
-  isSwitching: boolean;
-  hasTerminal: boolean;
-}): boolean {
-  return input.isSwitching && input.hasTerminal;
-}
-
-function useAgentConversationAgentId(input: {
-  activeTab: WorkspaceTabDescriptor | null;
-  serverId: string;
-  supported: boolean;
-  supportsLegacyCodex: boolean;
-}): string | null {
-  const sessionRef = conversationSessionRefFromTabTarget(input.activeTab?.target ?? null);
-  const activeAgentId = sessionRef?.agentId ?? null;
-  const activeAgent = useSessionStore((state) => {
-    if (!activeAgentId) return null;
-    const session = state.sessions[input.serverId];
-    return session?.agents?.get(activeAgentId) ?? session?.agentDetails?.get(activeAgentId) ?? null;
-  });
-  const featureSupported =
-    input.supported || (input.supportsLegacyCodex && activeAgent?.provider === "codex");
-  if (!featureSupported || !canOfferConversationSurfaceSwitch(activeAgent)) {
-    return null;
-  }
-  return activeAgentId;
-}
 
 interface WorkspaceScreenProps {
   serverId: string;
@@ -3345,111 +3308,45 @@ function WorkspaceScreenContent({
   });
 
   const activeTabDescriptor = useMemo(() => activeTab?.descriptor ?? null, [activeTab]);
-  const agentConversationAgentId = useAgentConversationAgentId({
+  const handleReleasedConversationTerminal = useCallback(
+    (input: { tabId: string | null; terminalId: string; closeTab: boolean }) => {
+      removeTerminalFromCache(input.terminalId);
+      if (input.closeTab && input.tabId) {
+        closeWorkspaceTabWithCleanup({
+          tabId: input.tabId,
+          target: { kind: "terminal", terminalId: input.terminalId },
+        });
+      }
+    },
+    [closeWorkspaceTabWithCleanup, removeTerminalFromCache],
+  );
+  const handleRetargetConversationToAgent = useCallback(
+    (agentId: string) => {
+      if (!persistenceKey || !activeTabDescriptor) {
+        return;
+      }
+      retargetWorkspaceTab(persistenceKey, activeTabDescriptor.tabId, {
+        kind: "agent",
+        agentId,
+      });
+    },
+    [activeTabDescriptor, persistenceKey, retargetWorkspaceTab],
+  );
+  const conversationView = useWorkspaceConversationSurface({
     activeTab: activeTabDescriptor,
+    tabs: uiTabs,
     serverId: normalizedServerId,
-    supported: supportsAgentConversationViewSwitch,
-    supportsLegacyCodex: supportsLegacyCodexConversationViewSwitch,
-  });
-  const activeAgentConversationTerminal = useMemo(() => {
-    if (
-      (!supportsAgentConversationViewSwitch && !supportsLegacyCodexConversationViewSwitch) ||
-      activeTabDescriptor?.target.kind !== "terminal"
-    ) {
-      return null;
-    }
-    const terminalId = activeTabDescriptor.target.terminalId;
-    const terminal =
-      terminals.find((candidate) => candidate.id === terminalId && candidate.linkedAgentId) ?? null;
-    if (
-      terminal &&
-      (supportsAgentConversationViewSwitch || terminal.name === "Codex Conversation")
-    ) {
-      return terminal;
-    }
-    return null;
-  }, [
-    activeTabDescriptor,
+    terminals,
+    client,
+    isConnected,
+    workspaceDirectory,
     supportsAgentConversationViewSwitch,
     supportsLegacyCodexConversationViewSwitch,
-    terminals,
-  ]);
-  const [isSwitchingAgentConversationView, setIsSwitchingAgentConversationView] = useState(false);
-  const conversationSurface = useConversationSurfaceStore((state) =>
-    selectConversationSurface(state, agentConversationAgentId),
-  );
-  const setConversationSurface = useConversationSurfaceStore((state) => state.setSurface);
-  const handleToggleAgentConversationView = useCallback(async () => {
-    const plan = planConversationViewSwitch({
-      session: agentConversationAgentId ? { agentId: agentConversationAgentId } : null,
-      surface: selectConversationSurface(
-        useConversationSurfaceStore.getState(),
-        agentConversationAgentId,
-      ),
-      linkedTerminalId: activeAgentConversationTerminal?.id ?? null,
-    });
-    if (plan.action === "toggle-surface") {
-      setConversationSurface(plan.session.agentId, plan.nextSurface);
-      return;
-    }
-    if (plan.action !== "leave-linked-terminal") {
-      return;
-    }
-
-    const terminal = activeAgentConversationTerminal;
-    if (!terminal?.linkedAgentId || !client || !persistenceKey || !activeTabDescriptor) {
-      return;
-    }
-
-    setIsSwitchingAgentConversationView(true);
-    try {
-      const result = supportsAgentConversationViewSwitch
-        ? await client.switchAgentTerminalToAgent(terminal.id)
-        : await client.switchCodexTerminalToAgent(terminal.id);
-      if (!result.success || !result.agentId) {
-        throw new Error(result.error ?? t("workspace.header.toasts.conversationViewSwitchFailed"));
-      }
-      removeTerminalFromCache(terminal.id);
-      try {
-        const sessionState = useSessionStore.getState().sessions[normalizedServerId];
-        const currentCursor = sessionState?.agentTimelineCursor.get(result.agentId);
-        await getHostRuntimeStore().fetchAgentTimeline(normalizedServerId, result.agentId, {
-          direction: "tail",
-          projection: "projected",
-          ...(currentCursor
-            ? { cursor: { epoch: currentCursor.epoch, seq: currentCursor.endSeq } }
-            : {}),
-        });
-      } finally {
-        setConversationSurface(result.agentId, "agent");
-        retargetWorkspaceTab(persistenceKey, activeTabDescriptor.tabId, {
-          kind: "agent",
-          agentId: result.agentId,
-        });
-      }
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : t("workspace.header.toasts.conversationViewSwitchFailed"),
-      );
-    } finally {
-      setIsSwitchingAgentConversationView(false);
-    }
-  }, [
-    activeAgentConversationTerminal,
-    activeTabDescriptor,
-    agentConversationAgentId,
-    client,
-    normalizedServerId,
-    persistenceKey,
-    removeTerminalFromCache,
-    retargetWorkspaceTab,
-    setConversationSurface,
-    supportsAgentConversationViewSwitch,
-    t,
+    onReleasedTerminal: handleReleasedConversationTerminal,
+    onRetargetToAgent: handleRetargetConversationToAgent,
     toast,
-  ]);
+    t,
+  });
   const activeFileFields = getWorkspaceFileLocationFields(activeTabDescriptor);
   const activeFilePath = activeFileFields.path;
   const activeFileLineStart = activeFileFields.lineStart;
@@ -3697,18 +3594,7 @@ function WorkspaceScreenContent({
     () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,
     [createTerminalMutation.isPending, pendingTerminalCreateInput],
   );
-  const isTerminalToAgentSwitchPending = resolveTerminalToAgentSwitchPending({
-    isSwitching: isSwitchingAgentConversationView,
-    hasTerminal: activeAgentConversationTerminal !== null,
-  });
-  const conversationViewSwitch = resolveConversationViewSwitchChrome({
-    agentId: agentConversationAgentId,
-    surface: conversationSurface,
-    hasLinkedTerminal: activeAgentConversationTerminal !== null,
-    isLeavingLinkedTerminal: isTerminalToAgentSwitchPending,
-    isConnected,
-    hasWorkspaceDirectory: Boolean(workspaceDirectory),
-  });
+  const conversationViewSwitch = conversationView.chrome;
 
   const headerRight = useMemo(
     () => (
@@ -3716,7 +3602,7 @@ function WorkspaceScreenContent({
         {conversationViewSwitch.show ? (
           <HeaderToggleButton
             testID="workspace-toggle-agent-conversation-view"
-            onPress={handleToggleAgentConversationView}
+            onPress={conversationView.onToggle}
             tooltipLabel={t(conversationViewSwitch.labelKey)}
             tooltipKeys={[]}
             tooltipSide="bottom"
@@ -3858,7 +3744,7 @@ function WorkspaceScreenContent({
     [
       isMobile,
       conversationViewSwitch,
-      handleToggleAgentConversationView,
+      conversationView.onToggle,
       workspaceDescriptor,
       normalizedServerId,
       normalizedWorkspaceId,

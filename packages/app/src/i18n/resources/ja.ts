@@ -669,7 +669,7 @@ export const ja: TranslationResources = {
         newAgent: "新しいエージェント",
         newTerminal: "新しいターミナル",
         forkToCodexTerminal: "会話を Codex ターミナルにフォーク",
-        switchToConversationTerminal: "ターミナルビューに切り替え",
+        switchToTuiView: "TUIビューに切り替え",
         switchToAgentView: "Agent ビューに切り替え",
         newBrowser: "新しいブラウザタブ",
         importSession: "セッションをインポート",

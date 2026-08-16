@@ -21,34 +21,13 @@ describe("conversation session ref", () => {
     expect(conversationSessionRefFromAgentId("   ")).toBeNull();
   });
 
-  it("offers the display switch only for a live persisted conversation", () => {
+  it("offers the display switch for any live Agent session", () => {
+    expect(canOfferConversationSurfaceSwitch({ archivedAt: null })).toBe(true);
     expect(
       canOfferConversationSurfaceSwitch({
-        provider: "codex",
-        persistence: { sessionId: "sess-1" },
-        archivedAt: null,
-      }),
-    ).toBe(true);
-    expect(
-      canOfferConversationSurfaceSwitch({
-        provider: "mock",
-        persistence: { sessionId: "sess-1" },
-        archivedAt: null,
-      }),
-    ).toBe(false);
-    expect(
-      canOfferConversationSurfaceSwitch({
-        provider: "codex",
-        persistence: { sessionId: "sess-1" },
         archivedAt: "2026-08-16T00:00:00.000Z",
       }),
     ).toBe(false);
-    expect(
-      canOfferConversationSurfaceSwitch({
-        provider: "codex",
-        persistence: { sessionId: null },
-        archivedAt: null,
-      }),
-    ).toBe(false);
+    expect(canOfferConversationSurfaceSwitch(null)).toBe(false);
   });
 });

@@ -7,7 +7,10 @@ import type { ConversationSurface } from "./switch";
 
 interface ConversationSurfaceState {
   surfaceByAgentId: Record<string, ConversationSurface>;
+  hasHydrated: boolean;
   setSurface: (agentId: string, surface: ConversationSurface) => void;
+  pruneToAgentIds: (liveAgentIds: readonly string[]) => void;
+  markHydrated: () => void;
 }
 
 const ConversationSurfacePersistedStateSchema = z.strictObject({
@@ -24,10 +27,29 @@ export function selectConversationSurface(
   return state.surfaceByAgentId[agentId] ?? "agent";
 }
 
+export function pruneSurfaceByAgentId(
+  surfaceByAgentId: Record<string, ConversationSurface>,
+  liveAgentIds: readonly string[],
+): Record<string, ConversationSurface> {
+  const liveIds = new Set(liveAgentIds);
+  let changed = false;
+  const next: Record<string, ConversationSurface> = {};
+  for (const [agentId, surface] of Object.entries(surfaceByAgentId)) {
+    if (!liveIds.has(agentId)) {
+      changed = true;
+      continue;
+    }
+    next[agentId] = surface;
+  }
+  return changed ? next : surfaceByAgentId;
+}
+
 export const useConversationSurfaceStore = create<ConversationSurfaceState>()(
   persist(
     (set) => ({
       surfaceByAgentId: {},
+      hasHydrated: false,
+      markHydrated: () => set((state) => (state.hasHydrated ? state : { hasHydrated: true })),
       setSurface: (agentId, surface) =>
         set((state) => {
           if (state.surfaceByAgentId[agentId] === surface) {
@@ -40,6 +62,11 @@ export const useConversationSurfaceStore = create<ConversationSurfaceState>()(
             },
           };
         }),
+      pruneToAgentIds: (liveAgentIds) =>
+        set((state) => {
+          const surfaceByAgentId = pruneSurfaceByAgentId(state.surfaceByAgentId, liveAgentIds);
+          return surfaceByAgentId === state.surfaceByAgentId ? state : { surfaceByAgentId };
+        }),
     }),
     {
       name: "conversation-surface-state",
@@ -51,6 +78,11 @@ export const useConversationSurfaceStore = create<ConversationSurfaceState>()(
         return {
           ...currentState,
           surfaceByAgentId: result.success ? result.data.surfaceByAgentId : {},
+        };
+      },
+      onRehydrateStorage: () => {
+        return () => {
+          useConversationSurfaceStore.getState().markHydrated();
         };
       },
     },
