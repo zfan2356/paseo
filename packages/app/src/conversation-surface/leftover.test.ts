@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  collectLeaseBlockedAgentIds,
+  collectLinkedAgentIds,
+  collectPaneFocusedTargets,
   findFocusedLinkedConversationTerminal,
   findLinkedConversationTerminal,
   findTerminalTabId,
+  isLeftoverVisibleInAnyPane,
   shouldAutoReleaseLeftoverTerminal,
 } from "./leftover";
 
@@ -17,20 +21,77 @@ describe("leftover conversation terminals", () => {
     expect(findLinkedConversationTerminal([{ id: "term-plain" }], "agent-1")).toBeNull();
   });
 
-  it("auto-releases a leftover PTY only when the Agent display is focused", () => {
+  it("collects every agent that still holds a leftover lease", () => {
+    expect(
+      collectLinkedAgentIds([
+        { linkedAgentId: "agent-1" },
+        { linkedAgentId: null },
+        { linkedAgentId: "agent-2" },
+        { linkedAgentId: "agent-1" },
+      ]),
+    ).toEqual(["agent-1", "agent-2"]);
+    expect(collectLeaseBlockedAgentIds([{ linkedAgentId: "agent-1" }], "agent-1")).toEqual([
+      "agent-1",
+    ]);
+    expect(collectLeaseBlockedAgentIds([{ linkedAgentId: "agent-1" }], "agent-pending")).toEqual([
+      "agent-1",
+      "agent-pending",
+    ]);
+    expect(collectLeaseBlockedAgentIds([], null)).toEqual([]);
+  });
+
+  it("auto-releases a leftover PTY only when no pane is looking at it", () => {
     expect(
       shouldAutoReleaseLeftoverTerminal({
         focusedAgentId: "agent-1",
         leftoverTerminalId: "term-linked",
-        focusedLinkedTerminalId: null,
+        leftoverVisibleInAnyPane: false,
       }),
     ).toBe(true);
     expect(
       shouldAutoReleaseLeftoverTerminal({
+        focusedAgentId: "agent-1",
+        leftoverTerminalId: "term-linked",
+        leftoverVisibleInAnyPane: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoReleaseLeftoverTerminal({
         focusedAgentId: null,
         leftoverTerminalId: "term-linked",
-        focusedLinkedTerminalId: "term-linked",
+        leftoverVisibleInAnyPane: false,
       }),
+    ).toBe(false);
+  });
+
+  it("treats a leftover as visible when any pane's focused tab is that terminal", () => {
+    const tabs = [
+      { tabId: "agent_a", target: { kind: "agent" } },
+      { tabId: "terminal_t", target: { kind: "terminal", terminalId: "term-linked" } },
+    ];
+    expect(
+      collectPaneFocusedTargets(
+        [{ focusedTabId: "agent_a" }, { focusedTabId: "terminal_t" }],
+        tabs,
+      ),
+    ).toEqual([{ kind: "agent" }, { kind: "terminal", terminalId: "term-linked" }]);
+    expect(
+      isLeftoverVisibleInAnyPane("term-linked", [
+        { kind: "agent" },
+        { kind: "terminal", terminalId: "term-linked" },
+      ]),
+    ).toBe(true);
+    expect(
+      isLeftoverVisibleInAnyPane("term-linked", [
+        { kind: "agent" },
+        { kind: "terminal", terminalId: "term-other" },
+      ]),
+    ).toBe(false);
+    expect(
+      isLeftoverVisibleInAnyPane(
+        "term-linked",
+        collectPaneFocusedTargets([{ focusedTabId: "agent_a" }, { focusedTabId: "agent_a" }], tabs),
+      ),
     ).toBe(false);
   });
 

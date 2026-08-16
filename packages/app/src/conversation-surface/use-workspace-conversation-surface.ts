@@ -5,9 +5,12 @@ import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-
 import { useSessionStore } from "@/stores/session-store";
 import { resolveConversationViewSwitchChrome } from "./chrome";
 import {
+  collectLeaseBlockedAgentIds,
+  collectPaneFocusedTargets,
   findFocusedLinkedConversationTerminal,
   findLinkedConversationTerminal,
   findTerminalTabId,
+  isLeftoverVisibleInAnyPane,
   shouldAutoReleaseLeftoverTerminal,
 } from "./leftover";
 import {
@@ -37,6 +40,7 @@ export interface ReleasedConversationTerminal {
 interface UseWorkspaceConversationSurfaceInput {
   activeTab: WorkspaceTabDescriptor | null;
   tabs: readonly ConversationSurfaceTab[];
+  panes: readonly { focusedTabId: string | null }[];
   serverId: string;
   terminals: readonly ConversationSurfaceTerminal[];
   client: ConversationTerminalReleaseClient | null;
@@ -54,6 +58,7 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
   const {
     activeTab,
     tabs,
+    panes,
     serverId,
     terminals,
     client,
@@ -87,10 +92,15 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
     activeTab?.target ?? null,
   );
   const focusedLinkedTerminalId = focusedLinkedTerminal?.id ?? null;
+  const leftoverVisibleInAnyPane = isLeftoverVisibleInAnyPane(
+    leftoverTerminalId,
+    collectPaneFocusedTargets(panes, tabs),
+  );
   const conversationSurface = useConversationSurfaceStore((state) =>
-    selectConversationSurface(state, agentId),
+    selectConversationSurface(state, serverId, agentId),
   );
   const setConversationSurface = useConversationSurfaceStore((state) => state.setSurface);
+  const replaceLeaseBlocked = useConversationSurfaceStore((state) => state.replaceLeaseBlocked);
   const pruneToAgentIds = useConversationSurfaceStore((state) => state.pruneToAgentIds);
   const markHydrated = useConversationSurfaceStore((state) => state.markHydrated);
   const surfaceHasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
@@ -198,10 +208,17 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
   }, [liveAgentIdKey, pruneToAgentIds, serverId, surfaceHasHydrated]);
 
   useEffect(() => {
+    replaceLeaseBlocked(
+      serverId,
+      collectLeaseBlockedAgentIds(terminals, isPending ? (leftoverLinkedAgentId ?? agentId) : null),
+    );
+  }, [agentId, isPending, leftoverLinkedAgentId, replaceLeaseBlocked, serverId, terminals]);
+
+  useEffect(() => {
     const shouldRelease = shouldAutoReleaseLeftoverTerminal({
       focusedAgentId: agentId,
       leftoverTerminalId,
-      focusedLinkedTerminalId,
+      leftoverVisibleInAnyPane,
     });
     if (
       !shouldRelease ||
@@ -232,7 +249,7 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
   }, [
     agentId,
     client,
-    focusedLinkedTerminalId,
+    leftoverVisibleInAnyPane,
     isConnected,
     leftoverLinkedAgentId,
     leftoverTerminalId,
@@ -244,13 +261,13 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
   const onToggle = useCallback(async () => {
     const plan = planConversationViewSwitch({
       session: agentId ? { agentId } : null,
-      surface: selectConversationSurface(useConversationSurfaceStore.getState(), agentId),
+      surface: selectConversationSurface(useConversationSurfaceStore.getState(), serverId, agentId),
       leftoverTerminalId,
       focusedLinkedTerminalId,
       canReleaseLeftover: Boolean(client && isConnected && workspaceDirectory),
     });
     if (plan.action === "toggle-surface") {
-      setConversationSurface(plan.session.agentId, plan.nextSurface);
+      setConversationSurface(serverId, plan.session.agentId, plan.nextSurface);
       return;
     }
     if (plan.action === "none") {
@@ -273,10 +290,10 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
         return;
       }
       if (plan.action === "release-then-toggle") {
-        setConversationSurface(releasedAgentId, plan.nextSurface);
+        setConversationSurface(serverId, releasedAgentId, plan.nextSurface);
         return;
       }
-      setConversationSurface(releasedAgentId, "agent");
+      setConversationSurface(serverId, releasedAgentId, "agent");
       onRetargetToAgent(releasedAgentId);
     } catch (error) {
       toast.error(
@@ -295,8 +312,9 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
     isConnected,
     leftoverLinkedAgentId,
     leftoverTerminalId,
-    workspaceDirectory,
     onRetargetToAgent,
+    serverId,
+    workspaceDirectory,
     releaseTerminal,
     setConversationSurface,
     t,

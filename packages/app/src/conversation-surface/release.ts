@@ -24,7 +24,7 @@ export async function releaseConversationTerminalOwner(input: {
     try {
       const result = await switchToAgent(input.terminalId);
       if (result.success && result.agentId) {
-        await input.fetchTimeline(result.agentId);
+        await refreshReleasedTimeline(input.fetchTimeline, result.agentId);
         return result.agentId;
       }
     } catch {
@@ -60,6 +60,17 @@ async function killLeftoverConversationTerminal(input: {
   if (killed.success === false) {
     throw new Error(input.failedMessage);
   }
-  await input.fetchTimeline(input.agentId);
+  await refreshReleasedTimeline(input.fetchTimeline, input.agentId);
   return input.agentId;
+}
+
+async function refreshReleasedTimeline(
+  fetchTimeline: (agentId: string) => Promise<void>,
+  agentId: string,
+): Promise<void> {
+  try {
+    await fetchTimeline(agentId);
+  } catch {
+    // The leftover lease is already gone; a stale timeline must not undo that.
+  }
 }

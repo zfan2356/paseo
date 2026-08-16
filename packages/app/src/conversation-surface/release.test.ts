@@ -107,6 +107,45 @@ describe("releaseConversationTerminalOwner", () => {
     expect(killTerminal).toHaveBeenCalledWith("term-1");
   });
 
+  it("keeps a successful switch even when timeline refresh fails", async () => {
+    const killTerminal = vi.fn(async () => ({ success: true }));
+    const agentId = await releaseConversationTerminalOwner({
+      terminalId: "term-1",
+      agentId: "agent-1",
+      canSwitchToAgent: true,
+      canSwitchLegacyCodex: false,
+      fetchTimeline: async () => {
+        throw new Error("timeline stale");
+      },
+      failedMessage: "failed",
+      client: {
+        switchAgentTerminalToAgent: async () => ({ success: true, agentId: "agent-1" }),
+        killTerminal,
+      },
+    });
+
+    expect(agentId).toBe("agent-1");
+    expect(killTerminal).not.toHaveBeenCalled();
+  });
+
+  it("keeps a successful kill even when timeline refresh fails", async () => {
+    const agentId = await releaseConversationTerminalOwner({
+      terminalId: "term-1",
+      agentId: "agent-1",
+      canSwitchToAgent: false,
+      canSwitchLegacyCodex: false,
+      fetchTimeline: async () => {
+        throw new Error("timeline stale");
+      },
+      failedMessage: "failed",
+      client: {
+        killTerminal: async () => ({ success: true }),
+      },
+    });
+
+    expect(agentId).toBe("agent-1");
+  });
+
   it("rejects a silent kill failure so leftover release can retry", async () => {
     const fetchTimeline = vi.fn(async () => undefined);
     await expect(

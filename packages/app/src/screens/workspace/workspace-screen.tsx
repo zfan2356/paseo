@@ -74,6 +74,7 @@ import { type ExplorerCheckoutContext } from "@/stores/explorer-checkout-context
 import { traceInstant } from "@/performance/native-trace";
 import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
 import {
+  collectAllPanes,
   collectAllTabs,
   getFocusedBrowserId,
   type WorkspaceLayout,
@@ -210,6 +211,16 @@ import { useWorkspaceCheckoutStatus } from "@/screens/workspace/use-workspace-ch
 const WORKSPACE_SETUP_AUTO_OPEN_WINDOW_MS = 30_000;
 const WORKSPACE_FLOATING_PANEL_PORTAL_HOST_PREFIX = "workspace-floating-panels";
 const EMPTY_UI_TABS: WorkspaceTab[] = [];
+const EMPTY_SPLIT_PANES: { focusedTabId: string | null }[] = [];
+
+function collectWorkspaceConversationPanes(
+  layout: WorkspaceLayout | null,
+): { focusedTabId: string | null }[] {
+  if (!layout) {
+    return EMPTY_SPLIT_PANES;
+  }
+  return collectAllPanes(layout.root);
+}
 const EMPTY_WORKSPACE_SCRIPTS: WorkspaceDescriptor["scripts"] = [];
 const EMPTY_PINNED_AGENT_IDS = new Set<string>();
 const EMPTY_SET = new Set<string>();
@@ -3335,6 +3346,7 @@ function WorkspaceScreenContent({
   const conversationView = useWorkspaceConversationSurface({
     activeTab: activeTabDescriptor,
     tabs: uiTabs,
+    panes: collectWorkspaceConversationPanes(workspaceLayout),
     serverId: normalizedServerId,
     terminals,
     client,

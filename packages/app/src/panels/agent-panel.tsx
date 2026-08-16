@@ -31,8 +31,10 @@ import {
 } from "@/conversation-surface/display";
 import {
   selectConversationSurface,
+  selectLeaseBlocked,
   useConversationSurfaceStore,
 } from "@/conversation-surface/store";
+import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { ensureTuiDocumentStyles } from "@/conversation-surface/tui-document-styles";
 import { Composer } from "@/composer";
 import { getActiveMessageSubmissions } from "@/composer/submission/model";
@@ -347,7 +349,7 @@ function useAgentPanelDescriptor(
     }),
   );
   const surface = useConversationSurfaceStore((state) =>
-    selectConversationSurface(state, target.agentId),
+    selectConversationSurface(state, context.serverId, target.agentId),
   );
   const hasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
   const appearance = resolveConversationSurfaceAppearance({ surface, hasHydrated });
@@ -384,7 +386,7 @@ function AgentPanel() {
   const { isInteractive } = usePaneFocus();
   invariant(target.kind === "agent", "AgentPanel requires agent target");
   const surface = useConversationSurfaceStore((state) =>
-    selectConversationSurface(state, target.agentId),
+    selectConversationSurface(state, serverId, target.agentId),
   );
   const hasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
   const appearance = resolveConversationSurfaceAppearance({ surface, hasHydrated });
@@ -394,7 +396,11 @@ function AgentPanel() {
   }, []);
 
   return (
-    <View testID={conversationSurfaceTestId(appearance)} style={styles.container}>
+    <View
+      testID={conversationSurfaceTestId(appearance)}
+      style={styles.container}
+      dataSet={appearance.compact ? CODE_SURFACE_DATASET : undefined}
+    >
       <AgentPanelContent
         serverId={serverId}
         workspaceId={workspaceId}
@@ -1570,12 +1576,18 @@ function ActiveAgentComposer({
     parentAgentId: agentId,
     rows: subagentRows,
   });
-  const surface = useConversationSurfaceStore((state) => selectConversationSurface(state, agentId));
+  const surface = useConversationSurfaceStore((state) =>
+    selectConversationSurface(state, serverId, agentId),
+  );
   const hasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
-  const hideSessionChrome = resolveConversationSurfaceAppearance({
+  const appearance = resolveConversationSurfaceAppearance({
     surface,
     hasHydrated,
-  }).hideSessionChrome;
+  });
+  const hideSessionChrome = appearance.hideSessionChrome;
+  const leaseBlocked = useConversationSurfaceStore((state) =>
+    selectLeaseBlocked(state, serverId, agentId),
+  );
   const workspaceAttachmentScopeKey = useWorkspaceAttachmentScopeKey({
     serverId,
     cwd,
@@ -1661,7 +1673,11 @@ function ActiveAgentComposer({
   );
 
   return (
-    <ReanimatedAnimated.View style={inputAreaStyle} onLayout={onInputAreaLayout}>
+    <ReanimatedAnimated.View
+      style={inputAreaStyle}
+      onLayout={onInputAreaLayout}
+      dataSet={appearance.compact ? CODE_SURFACE_DATASET : undefined}
+    >
       {hideSessionChrome ? null : (
         <>
           <AgentTaskList serverId={serverId} agentId={agentId} />
@@ -1693,7 +1709,7 @@ function ActiveAgentComposer({
         clearDraft={agentInputDraft.clear}
         autoFocus={isPaneFocused}
         autoFocusKey={String(agentInputDraft.attachmentFocusRequestId)}
-        isSubmitLoading={isSubmitLoading}
+        isSubmitLoading={isSubmitLoading || leaseBlocked}
         onAttentionInputFocus={onAttentionInputFocus}
         onAttentionPromptSend={onAttentionPromptSend}
         onComposerHeightChange={onComposerHeightChange}

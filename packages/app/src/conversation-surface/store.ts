@@ -5,27 +5,61 @@ import { z } from "zod";
 import { createValidatedPersistStorage } from "@/storage/validated-persist-storage";
 import type { ConversationSurface } from "./switch";
 
+const SURFACE_KEY_SEPARATOR = "\0";
+
 interface ConversationSurfaceState {
   surfaceByAgentId: Record<string, ConversationSurface>;
   seenAgentIdsByServerId: Record<string, string[]>;
+  leaseBlockedByKey: Record<string, true>;
   hasHydrated: boolean;
-  setSurface: (agentId: string, surface: ConversationSurface) => void;
+  setSurface: (serverId: string, agentId: string, surface: ConversationSurface) => void;
   pruneToAgentIds: (serverId: string, liveAgentIds: readonly string[]) => void;
+  replaceLeaseBlocked: (serverId: string, agentIds: readonly string[]) => void;
   markHydrated: () => void;
 }
 
 const ConversationSurfacePersistedStateSchema = z.strictObject({
   surfaceByAgentId: z.record(z.string(), z.enum(["agent", "tui"])),
+  seenAgentIdsByServerId: z.record(z.string(), z.array(z.string())).optional(),
 });
+
+export function conversationSurfaceKey(serverId: string, agentId: string): string {
+  return `${serverId}${SURFACE_KEY_SEPARATOR}${agentId}`;
+}
+
+export function parseConversationSurfaceKey(
+  key: string,
+): { serverId: string; agentId: string } | null {
+  const separator = key.indexOf(SURFACE_KEY_SEPARATOR);
+  if (separator <= 0 || separator === key.length - 1) {
+    return null;
+  }
+  return { serverId: key.slice(0, separator), agentId: key.slice(separator + 1) };
+}
 
 export function selectConversationSurface(
   state: Pick<ConversationSurfaceState, "surfaceByAgentId">,
+  serverId: string | null,
   agentId: string | null,
 ): ConversationSurface {
   if (!agentId) {
     return "agent";
   }
+  if (serverId) {
+    const namespaced = state.surfaceByAgentId[conversationSurfaceKey(serverId, agentId)];
+    if (namespaced) {
+      return namespaced;
+    }
+  }
   return state.surfaceByAgentId[agentId] ?? "agent";
+}
+
+export function selectLeaseBlocked(
+  state: Pick<ConversationSurfaceState, "leaseBlockedByKey">,
+  serverId: string,
+  agentId: string,
+): boolean {
+  return state.leaseBlockedByKey[conversationSurfaceKey(serverId, agentId)] === true;
 }
 
 export function removeSurfacesForAgentIds(
@@ -49,6 +83,7 @@ export function removeSurfacesForAgentIds(
 }
 
 export function pruneDeadSurfacesForServer(input: {
+  serverId: string;
   surfaceByAgentId: Record<string, ConversationSurface>;
   seenAgentIds: readonly string[];
   liveAgentIds: readonly string[];
@@ -57,11 +92,50 @@ export function pruneDeadSurfacesForServer(input: {
   seenAgentIds: string[];
 } {
   const liveIds = new Set(input.liveAgentIds);
-  const deadAgentIds = input.seenAgentIds.filter((agentId) => !liveIds.has(agentId));
+  const deadAgentIds = new Set(input.seenAgentIds.filter((agentId) => !liveIds.has(agentId)));
+  const seenAgentIds = [...liveIds].sort();
+  if (deadAgentIds.size === 0) {
+    return { surfaceByAgentId: input.surfaceByAgentId, seenAgentIds };
+  }
+
+  let changed = false;
+  const next: Record<string, ConversationSurface> = {};
+  for (const [key, surface] of Object.entries(input.surfaceByAgentId)) {
+    const parsed = parseConversationSurfaceKey(key);
+    const isDead = parsed
+      ? parsed.serverId === input.serverId && deadAgentIds.has(parsed.agentId)
+      : deadAgentIds.has(key);
+    if (isDead) {
+      changed = true;
+      continue;
+    }
+    next[key] = surface;
+  }
   return {
-    surfaceByAgentId: removeSurfacesForAgentIds(input.surfaceByAgentId, deadAgentIds),
-    seenAgentIds: [...liveIds].sort(),
+    surfaceByAgentId: changed ? next : input.surfaceByAgentId,
+    seenAgentIds,
   };
+}
+
+function replaceLeaseBlockedKeys(
+  leaseBlockedByKey: Record<string, true>,
+  serverId: string,
+  agentIds: readonly string[],
+): Record<string, true> {
+  const next: Record<string, true> = {};
+  for (const [key, value] of Object.entries(leaseBlockedByKey)) {
+    const parsed = parseConversationSurfaceKey(key);
+    if (parsed?.serverId === serverId) {
+      continue;
+    }
+    next[key] = value;
+  }
+  for (const agentId of agentIds) {
+    next[conversationSurfaceKey(serverId, agentId)] = true;
+  }
+  const previousKeys = Object.keys(leaseBlockedByKey).sort().join("\0");
+  const nextKeys = Object.keys(next).sort().join("\0");
+  return previousKeys === nextKeys ? leaseBlockedByKey : next;
 }
 
 export const useConversationSurfaceStore = create<ConversationSurfaceState>()(
@@ -69,23 +143,35 @@ export const useConversationSurfaceStore = create<ConversationSurfaceState>()(
     (set) => ({
       surfaceByAgentId: {},
       seenAgentIdsByServerId: {},
+      leaseBlockedByKey: {},
       hasHydrated: false,
       markHydrated: () => set((state) => (state.hasHydrated ? state : { hasHydrated: true })),
-      setSurface: (agentId, surface) =>
+      setSurface: (serverId, agentId, surface) =>
         set((state) => {
-          if (state.surfaceByAgentId[agentId] === surface) {
+          const key = conversationSurfaceKey(serverId, agentId);
+          if (state.surfaceByAgentId[key] === surface && !(agentId in state.surfaceByAgentId)) {
             return state;
           }
-          return {
-            surfaceByAgentId: {
-              ...state.surfaceByAgentId,
-              [agentId]: surface,
-            },
+          const surfaceByAgentId = {
+            ...state.surfaceByAgentId,
+            [key]: surface,
           };
+          delete surfaceByAgentId[agentId];
+          return { surfaceByAgentId };
+        }),
+      replaceLeaseBlocked: (serverId, agentIds) =>
+        set((state) => {
+          const leaseBlockedByKey = replaceLeaseBlockedKeys(
+            state.leaseBlockedByKey,
+            serverId,
+            agentIds,
+          );
+          return leaseBlockedByKey === state.leaseBlockedByKey ? state : { leaseBlockedByKey };
         }),
       pruneToAgentIds: (serverId, liveAgentIds) =>
         set((state) => {
           const pruned = pruneDeadSurfacesForServer({
+            serverId,
             surfaceByAgentId: state.surfaceByAgentId,
             seenAgentIds: state.seenAgentIdsByServerId[serverId] ?? [],
             liveAgentIds,
@@ -107,14 +193,18 @@ export const useConversationSurfaceStore = create<ConversationSurfaceState>()(
     }),
     {
       name: "conversation-surface-state",
-      version: 1,
+      version: 2,
       storage: createValidatedPersistStorage(AsyncStorage, ConversationSurfacePersistedStateSchema),
-      partialize: (state) => ({ surfaceByAgentId: state.surfaceByAgentId }),
+      partialize: (state) => ({
+        surfaceByAgentId: state.surfaceByAgentId,
+        seenAgentIdsByServerId: state.seenAgentIdsByServerId,
+      }),
       merge: (persistedState, currentState) => {
         const result = ConversationSurfacePersistedStateSchema.safeParse(persistedState);
         return {
           ...currentState,
           surfaceByAgentId: result.success ? result.data.surfaceByAgentId : {},
+          seenAgentIdsByServerId: result.success ? (result.data.seenAgentIdsByServerId ?? {}) : {},
         };
       },
       onRehydrateStorage: () => {
