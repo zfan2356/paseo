@@ -24,12 +24,6 @@ import {
 } from "@/utils/terminal-keys";
 import { renderTerminalSnapshotToAnsi } from "./terminal-snapshot";
 import { materializeDefaultInverseSgr } from "./inverse-sgr";
-import {
-  findInkSoftwareCaret,
-  findPromptCaretFallback,
-  lastHardwareCursorHidden,
-  parkHardwareCursorSequence,
-} from "./ink-caret";
 import { isEmulatorGeneratedProtocolReply } from "./terminal-protocol-reply";
 import {
   createTerminalLocalFileLinkProvider,
@@ -202,14 +196,12 @@ export class TerminalEmulatorRuntime {
   private lastInputModeState: TerminalInputModeState = this.inputModeTracker.getState();
   private themeBackgroundElements: HTMLElement[] = [];
   private needsRefreshAfterHiddenFit = false;
-  private hardwareCursorHidden = false;
 
   private handleVisibilityRestore = (): void => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       return;
     }
 
-    this.parkHardwareCursorOnInkCaret({ force: true });
     this.fitAndEmitResize?.({ forceRefresh: true, shouldClaim: false });
     if (typeof window.requestAnimationFrame === "function") {
       window.requestAnimationFrame(() => {
@@ -236,7 +228,6 @@ export class TerminalEmulatorRuntime {
     input.host.innerHTML = "";
     this.lastSize = null;
     this.needsRefreshAfterHiddenFit = false;
-    this.hardwareCursorHidden = false;
     this.inputModeTracker.reset();
     this.emitInputModeChange();
 
@@ -248,7 +239,6 @@ export class TerminalEmulatorRuntime {
       cursorInactiveStyle: "bar",
       cursorStyle: "bar",
       cursorWidth: 2,
-      showCursorImmediately: true,
       fontFamily: resolveTerminalFontFamily(input.fontFamily),
       fontSize: resolveTerminalFontSize(input.fontSize),
       lineHeight: 1.0,
@@ -344,43 +334,24 @@ export class TerminalEmulatorRuntime {
         terminal.parser.registerOscHandler(code, (data) => data.trim() === "?");
       }
     };
-    // Ink may switch the hardware caret to underline. Keep a bar so parking it
-    // onto the software caret stays visible on Pure Black.
-    const registerCursorVisibilityGuards = (): void => {
-      terminal.parser.registerCsiHandler({ intermediates: " ", final: "q" }, () => true);
-    };
     registerProtocolQuerySuppression();
-    registerCursorVisibilityGuards();
 
-    const loadWebglRenderer = (): void => {
-      if (this.terminal !== terminal) {
-        return;
-      }
+    let webglAddonRaf: number | null = requestAnimationFrame(() => {
+      webglAddonRaf = null;
       try {
         disposeWebglRenderer();
         webglAddon = new WebglAddon();
         webglAddon.onContextLoss(() => {
           disposeWebglRenderer();
-          if (typeof requestAnimationFrame === "function") {
-            requestAnimationFrame(() => {
-              loadWebglRenderer();
-            });
-          }
         });
         terminal.loadAddon(webglAddon);
         imageAddon = new ImageAddon({ enableSizeReports: false });
         terminal.loadAddon(imageAddon);
         registerProtocolQuerySuppression();
-        registerCursorVisibilityGuards();
         this.fitAndEmitResize?.({ forceRefresh: true, shouldClaim: false });
       } catch {
         disposeWebglRenderer();
       }
-    };
-
-    let webglAddonRaf: number | null = requestAnimationFrame(() => {
-      webglAddonRaf = null;
-      loadWebglRenderer();
     });
 
     const restoreDocumentStyles = this.applyDocumentBoundsStyles({
@@ -922,10 +893,9 @@ export class TerminalEmulatorRuntime {
       this.emitInputModeChange();
     }
     this.hasUngatedWrites = true;
-    const data = this.paintTerminalOutput(terminal, operation.data);
+    const data = this.paintDefaultInverseSgr(terminal, operation.data);
     const onCommitted = operation.onCommitted;
-    const needsPark = this.hardwareCursorHidden;
-    if (!onCommitted && !needsPark) {
+    if (!onCommitted) {
       try {
         terminal.write(data);
       } catch {
@@ -934,20 +904,12 @@ export class TerminalEmulatorRuntime {
       return;
     }
     const commit = () => {
-      if (needsPark) {
-        this.parkHardwareCursorOnInkCaret();
-      }
-      if (!onCommitted) {
-        return;
-      }
       if (!this.pendingWriteCommits.delete(commit)) {
         return;
       }
       onCommitted();
     };
-    if (onCommitted) {
-      this.pendingWriteCommits.add(commit);
-    }
+    this.pendingWriteCommits.add(commit);
     try {
       terminal.write(data, commit);
     } catch {
@@ -980,7 +942,6 @@ export class TerminalEmulatorRuntime {
       this.inputModeDecoder.decode();
       this.inputModeTracker.reset();
       this.emitInputModeChange();
-      this.hardwareCursorHidden = false;
       terminal.reset();
       finalizeOperation(operation);
       return;
@@ -1017,45 +978,22 @@ export class TerminalEmulatorRuntime {
     }, OUTPUT_OPERATION_TIMEOUT_MS);
 
     try {
-      terminal.write(this.paintTerminalOutput(terminal, data), () => {
-        this.parkHardwareCursorOnInkCaret({ force: operation.type === "snapshot" });
+      terminal.write(this.paintDefaultInverseSgr(terminal, data), () => {
         finalizeOperation(operation);
       });
     } catch {
-      this.parkHardwareCursorOnInkCaret({ force: operation.type === "snapshot" });
       finalizeOperation(operation);
     }
   }
 
-  private paintTerminalOutput(terminal: Terminal, data: Uint8Array): Uint8Array {
+  private paintDefaultInverseSgr(terminal: Terminal, data: Uint8Array): Uint8Array {
     // Ink TUIs hide the hardware cursor and draw a caret as inverse+default-color
     // space. WebGL skips that background, so paint the swapped theme colors explicitly.
-    const hidden = lastHardwareCursorHidden(data);
-    if (hidden !== null) {
-      this.hardwareCursorHidden = hidden;
-    }
     return materializeDefaultInverseSgr({
       data,
       foreground: terminal.options.theme?.foreground,
       background: terminal.options.theme?.background,
     });
-  }
-
-  private parkHardwareCursorOnInkCaret(input: { force?: boolean } = {}): void {
-    const terminal = this.terminal;
-    if (!terminal || (!this.hardwareCursorHidden && !input.force)) {
-      return;
-    }
-    const caret = findInkSoftwareCaret(terminal) ?? findPromptCaretFallback(terminal);
-    if (!caret) {
-      return;
-    }
-    try {
-      terminal.write(parkHardwareCursorSequence(caret));
-      this.hardwareCursorHidden = false;
-    } catch {
-      // ignore
-    }
   }
 
   private clearInFlightOutputTimeout(): void {
