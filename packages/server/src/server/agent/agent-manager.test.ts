@@ -492,6 +492,129 @@ test("hands an Agent session to an external terminal and resumes it after releas
   }
 });
 
+test("TUI resume keeps Agent timeline when provider history is empty", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-tui-empty-history-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new TestAgentClient();
+  const agentId = "00000000-0000-4000-8000-000000000403";
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    idFactory: () => agentId,
+  });
+
+  try {
+    await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    await manager.appendTimelineItem(agentId, {
+      type: "user_message",
+      text: "agent-side turn",
+    });
+    await manager.appendTimelineItem(agentId, {
+      type: "assistant_message",
+      text: "agent-side reply",
+    });
+    const beforeSwitch = manager.getTimeline(agentId);
+
+    await manager.claimAgentExternalRuntime(agentId, "terminal-1");
+    await manager.releaseAgentExternalRuntime(agentId, "terminal-1");
+    await ensureAgentLoaded(agentId, {
+      agentManager: manager,
+      agentStorage: storage,
+      broadcastTimeline: true,
+      logger,
+    });
+    await manager.hydrateTimelineFromProvider(agentId, {
+      force: true,
+      broadcast: true,
+      retainExistingOnEmptyHistory: true,
+    });
+
+    expect(manager.getTimeline(agentId)).toEqual(beforeSwitch);
+  } finally {
+    if (manager.getAgent(agentId)) {
+      await manager.closeAgent(agentId);
+    }
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("TUI resume replaces Agent timeline from provider history after the terminal", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-tui-history-replace-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const agentId = "00000000-0000-4000-8000-000000000404";
+  class TuiHistoryClient extends TestAgentClient {
+    override async resumeSession(
+      _handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ): Promise<AgentSession> {
+      return new (class extends TestAgentSession {
+        override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+          yield {
+            type: "timeline",
+            provider: "codex",
+            item: { type: "user_message", text: "agent-side turn" },
+          };
+          yield {
+            type: "timeline",
+            provider: "codex",
+            item: { type: "assistant_message", text: "tui-side reply" },
+          };
+        }
+      })({
+        provider: "codex",
+        cwd: config?.cwd ?? workdir,
+      });
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new TuiHistoryClient() },
+    registry: storage,
+    logger,
+    idFactory: () => agentId,
+  });
+
+  try {
+    await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    await manager.appendTimelineItem(agentId, {
+      type: "user_message",
+      text: "agent-side turn",
+    });
+    await manager.appendTimelineItem(agentId, {
+      type: "assistant_message",
+      text: "stale agent-side reply",
+    });
+
+    await manager.claimAgentExternalRuntime(agentId, "terminal-1");
+    await manager.releaseAgentExternalRuntime(agentId, "terminal-1");
+    await ensureAgentLoaded(agentId, {
+      agentManager: manager,
+      agentStorage: storage,
+      broadcastTimeline: true,
+      logger,
+    });
+    await manager.hydrateTimelineFromProvider(agentId, {
+      force: true,
+      broadcast: true,
+      retainExistingOnEmptyHistory: true,
+    });
+
+    expect(manager.getTimeline(agentId)).toEqual([
+      { type: "user_message", text: "agent-side turn" },
+      { type: "assistant_message", text: "tui-side reply" },
+    ]);
+  } finally {
+    if (manager.getAgent(agentId)) {
+      await manager.closeAgent(agentId);
+    }
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("syncs a Paseo-managed Cursor TUI store before releasing the Agent lease", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-cursor-terminal-handoff-"));
   const cursorConfigDir = join(workdir, "cursor-config");

@@ -213,6 +213,7 @@ export interface SubscribeOptions {
 interface HydrateTimelineOptions {
   force?: boolean;
   broadcast?: boolean | (() => boolean);
+  retainExistingOnEmptyHistory?: boolean;
 }
 
 export type ImportablePersistedAgentQueryOptions = ListImportableSessionsOptions & {
@@ -3586,6 +3587,7 @@ export class AgentManager {
       await this.forceHydrateTimelineFromLegacyProviderHistory(
         agent,
         typeof broadcast === "function" ? broadcast() : broadcast,
+        options.retainExistingOnEmptyHistory === true,
       );
       return;
     }
@@ -3596,6 +3598,7 @@ export class AgentManager {
   private async forceHydrateTimelineFromLegacyProviderHistory(
     agent: ActiveManagedAgent,
     broadcast: boolean,
+    retainExistingOnEmptyHistory: boolean,
   ): Promise<void> {
     const historyEvents: Extract<AgentStreamEvent, { type: "timeline" }>[] = [];
     const providerSubagentEvents: Extract<AgentStreamEvent, { type: "provider_subagent" }>[] = [];
@@ -3608,6 +3611,16 @@ export class AgentManager {
       } else if (event.type === "provider_subagent") {
         providerSubagentEvents.push(event);
       }
+    }
+
+    const existingTimelineHasRows = this.timelineStore.getRows(agent.id).length > 0;
+    if (retainExistingOnEmptyHistory && historyEvents.length === 0 && existingTimelineHasRows) {
+      // streamHistory is one-shot and TUI resume can replay nothing. Wiping here
+      // would mint an empty epoch and zero the Agent chat the user just left.
+      agent.historyPrimed = true;
+      this.touchUpdatedAt(agent);
+      this.emitState(agent);
+      return;
     }
 
     this.agentStreamCoalescer.flushAndDiscard(agent.id);

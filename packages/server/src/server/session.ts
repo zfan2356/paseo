@@ -1441,6 +1441,7 @@ export class Session {
     await this.agentManager.hydrateTimelineFromProvider(input.agentId, {
       force: true,
       broadcast: true,
+      retainExistingOnEmptyHistory: true,
     });
     await this.agentUpdates.forwardLiveAgent(snapshot);
   }
