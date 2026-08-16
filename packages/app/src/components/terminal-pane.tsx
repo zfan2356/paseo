@@ -529,7 +529,7 @@ export function TerminalPane({
 
   const handleStreamOutput = useStableEvent(
     ({ terminalId: outputTerminalId, data }: { terminalId: string; data: Uint8Array }) => {
-      if (!terminalActiveRef.current || terminalIdRef.current !== outputTerminalId) {
+      if (terminalIdRef.current !== outputTerminalId) {
         return;
       }
       emulatorRef.current?.writeOutput(data);
@@ -539,7 +539,7 @@ export function TerminalPane({
   const handleStreamRestore = useStableEvent(
     ({ terminalId: restoreTerminalId, data }: { terminalId: string; data: Uint8Array }) => {
       workspaceTerminalSession.snapshots.clear({ terminalId: restoreTerminalId });
-      if (!terminalActiveRef.current || terminalIdRef.current !== restoreTerminalId) {
+      if (terminalIdRef.current !== restoreTerminalId) {
         return;
       }
       emulatorRef.current?.restoreOutput(data);
@@ -549,7 +549,7 @@ export function TerminalPane({
   const handleStreamSnapshot = useStableEvent(
     ({ terminalId: snapshotTerminalId, state }: { terminalId: string; state: TerminalState }) => {
       workspaceTerminalSession.snapshots.set({ terminalId: snapshotTerminalId, state });
-      if (!terminalActiveRef.current || terminalIdRef.current !== snapshotTerminalId) {
+      if (terminalIdRef.current !== snapshotTerminalId) {
         return;
       }
       emulatorRef.current?.renderSnapshot(state);
@@ -619,19 +619,11 @@ export function TerminalPane({
       terminalId,
       terminalStreamKey,
       rendererReadyStreamKey,
-      isWorkspaceFocused: isTerminalActive,
     });
     streamControllerRef.current?.setTerminal({
       terminalId: nextTerminalId,
     });
-  }, [
-    client,
-    isConnected,
-    isTerminalActive,
-    rendererReadyStreamKey,
-    terminalId,
-    terminalStreamKey,
-  ]);
+  }, [client, isConnected, rendererReadyStreamKey, terminalId, terminalStreamKey]);
 
   const enqueuePendingTerminalInput = useCallback((entry: PendingTerminalInput) => {
     const queue = pendingTerminalInputRef.current;

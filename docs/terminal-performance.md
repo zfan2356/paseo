@@ -31,6 +31,7 @@ Terminal frames share the daemon main event loop with all agent traffic. The `ev
 - **Client output writes are not serialized per frame.** The emulator runtime drains contiguous plain writes straight into xterm (which buffers internally). Only barrier ops (`clear`, `snapshot`, `suppressInput` writes) wait — behind a zero-length sentinel write — so resets can't interleave with in-flight output.
 - **Terminal size has one daemon-owned claimant.** Focus and direct interaction send a `claim`; later geometry changes from that connection send `update`. A claim transfers ownership even when the dimensions are unchanged, while an update from any other connection is ignored. This lets an owning pane follow splits and keyboard insets without allowing an idle phone or browser to steal the PTY size.
 - **Visible restore is the current viewport.** The client requests `scrollbackLines: 0` so a long TUI session does not encode older rows as ANSI. The attach overlay stays up until that restore frame, and the emulator host stays at `opacity: 0` until the write commits. Replaying scrollback through `xterm.write` is what looks like history scrubbing on reopen.
+- **A mounted terminal pane keeps its stream.** Focus and retained-panel visibility gate size claims and the attach overlay, not subscribe. Switching away from a still-mounted TUI tab must not unsubscribe, or the next click restores again. Apply output and restore to the emulator while the pane is hidden so the buffer stays current.
 
 ## Measuring
 

@@ -51,6 +51,7 @@ describe("terminal restore policy", () => {
   test("promotes live restore to visible restore after output overflow", () => {
     expect(resolveRestoreAfterOutputOverflow({ mode: "live" })).toEqual({
       mode: "visible-snapshot",
+      scrollbackLines: 0,
     });
     expect(resolveRestoreAfterOutputOverflow({ mode: "full-snapshot" })).toEqual({
       mode: "full-snapshot",

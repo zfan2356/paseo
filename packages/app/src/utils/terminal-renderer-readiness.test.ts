@@ -101,18 +101,16 @@ describe("terminal-renderer-readiness", () => {
         terminalId: "terminal-1",
         terminalStreamKey: "scope:terminal-1",
         rendererReadyStreamKey: null,
-        isWorkspaceFocused: true,
       }),
     ).toBeNull();
   });
 
-  it("attaches the stream after the matching renderer is ready", () => {
+  it("keeps the stream attached after the renderer is ready, including retained hidden panes", () => {
     expect(
       resolveTerminalStreamTarget({
         terminalId: "terminal-1",
         terminalStreamKey: "scope:terminal-1",
         rendererReadyStreamKey: "scope:terminal-1",
-        isWorkspaceFocused: true,
       }),
     ).toBe("terminal-1");
   });
@@ -123,7 +121,6 @@ describe("terminal-renderer-readiness", () => {
         terminalId: "terminal-1",
         terminalStreamKey: "scope:terminal-1",
         rendererReadyStreamKey,
-        isWorkspaceFocused: true,
       });
 
     expect([

@@ -33,7 +33,7 @@ export function resolveRestoreAfterOutputOverflow(
   restore: TerminalRestoreOptions | undefined,
 ): TerminalRestoreOptions | undefined {
   if (restore?.mode === "live") {
-    return { mode: "visible-snapshot" };
+    return { mode: "visible-snapshot", scrollbackLines: 0 };
   }
   return restore;
 }

@@ -25,11 +25,8 @@ export function resolveTerminalStreamTarget(input: {
   terminalId: string;
   terminalStreamKey: string;
   rendererReadyStreamKey: string | null;
-  isWorkspaceFocused: boolean;
 }): string | null {
-  return input.isWorkspaceFocused && input.rendererReadyStreamKey === input.terminalStreamKey
-    ? input.terminalId
-    : null;
+  return input.rendererReadyStreamKey === input.terminalStreamKey ? input.terminalId : null;
 }
 
 export function shouldShowTerminalLoadingOverlay(input: {
