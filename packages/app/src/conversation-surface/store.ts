@@ -7,9 +7,10 @@ import type { ConversationSurface } from "./switch";
 
 interface ConversationSurfaceState {
   surfaceByAgentId: Record<string, ConversationSurface>;
+  seenAgentIdsByServerId: Record<string, string[]>;
   hasHydrated: boolean;
   setSurface: (agentId: string, surface: ConversationSurface) => void;
-  pruneToAgentIds: (liveAgentIds: readonly string[]) => void;
+  pruneToAgentIds: (serverId: string, liveAgentIds: readonly string[]) => void;
   markHydrated: () => void;
 }
 
@@ -27,15 +28,18 @@ export function selectConversationSurface(
   return state.surfaceByAgentId[agentId] ?? "agent";
 }
 
-export function pruneSurfaceByAgentId(
+export function removeSurfacesForAgentIds(
   surfaceByAgentId: Record<string, ConversationSurface>,
-  liveAgentIds: readonly string[],
+  deadAgentIds: readonly string[],
 ): Record<string, ConversationSurface> {
-  const liveIds = new Set(liveAgentIds);
+  if (deadAgentIds.length === 0) {
+    return surfaceByAgentId;
+  }
+  const deadIds = new Set(deadAgentIds);
   let changed = false;
   const next: Record<string, ConversationSurface> = {};
   for (const [agentId, surface] of Object.entries(surfaceByAgentId)) {
-    if (!liveIds.has(agentId)) {
+    if (deadIds.has(agentId)) {
       changed = true;
       continue;
     }
@@ -44,10 +48,27 @@ export function pruneSurfaceByAgentId(
   return changed ? next : surfaceByAgentId;
 }
 
+export function pruneDeadSurfacesForServer(input: {
+  surfaceByAgentId: Record<string, ConversationSurface>;
+  seenAgentIds: readonly string[];
+  liveAgentIds: readonly string[];
+}): {
+  surfaceByAgentId: Record<string, ConversationSurface>;
+  seenAgentIds: string[];
+} {
+  const liveIds = new Set(input.liveAgentIds);
+  const deadAgentIds = input.seenAgentIds.filter((agentId) => !liveIds.has(agentId));
+  return {
+    surfaceByAgentId: removeSurfacesForAgentIds(input.surfaceByAgentId, deadAgentIds),
+    seenAgentIds: [...liveIds].sort(),
+  };
+}
+
 export const useConversationSurfaceStore = create<ConversationSurfaceState>()(
   persist(
     (set) => ({
       surfaceByAgentId: {},
+      seenAgentIdsByServerId: {},
       hasHydrated: false,
       markHydrated: () => set((state) => (state.hasHydrated ? state : { hasHydrated: true })),
       setSurface: (agentId, surface) =>
@@ -62,10 +83,26 @@ export const useConversationSurfaceStore = create<ConversationSurfaceState>()(
             },
           };
         }),
-      pruneToAgentIds: (liveAgentIds) =>
+      pruneToAgentIds: (serverId, liveAgentIds) =>
         set((state) => {
-          const surfaceByAgentId = pruneSurfaceByAgentId(state.surfaceByAgentId, liveAgentIds);
-          return surfaceByAgentId === state.surfaceByAgentId ? state : { surfaceByAgentId };
+          const pruned = pruneDeadSurfacesForServer({
+            surfaceByAgentId: state.surfaceByAgentId,
+            seenAgentIds: state.seenAgentIdsByServerId[serverId] ?? [],
+            liveAgentIds,
+          });
+          const seenUnchanged =
+            (state.seenAgentIdsByServerId[serverId] ?? []).join("\0") ===
+            pruned.seenAgentIds.join("\0");
+          if (pruned.surfaceByAgentId === state.surfaceByAgentId && seenUnchanged) {
+            return state;
+          }
+          return {
+            surfaceByAgentId: pruned.surfaceByAgentId,
+            seenAgentIdsByServerId: {
+              ...state.seenAgentIdsByServerId,
+              [serverId]: pruned.seenAgentIds,
+            },
+          };
         }),
     }),
     {

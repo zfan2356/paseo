@@ -112,7 +112,6 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
       resolveConversationViewSwitchChrome({
         agentId,
         surface: conversationSurface,
-        hasLeftoverTerminal: leftoverTerminalId !== null,
         isFocusedOnLinkedTerminal: focusedLinkedTerminalId !== null,
         isPending,
         isConnected,
@@ -124,7 +123,6 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
       focusedLinkedTerminalId,
       isConnected,
       isPending,
-      leftoverTerminalId,
       workspaceDirectory,
     ],
   );
@@ -196,8 +194,8 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
     if (liveAgentIdKey == null || !surfaceHasHydrated) {
       return;
     }
-    pruneToAgentIds(liveAgentIdKey.length > 0 ? liveAgentIdKey.split("\0") : []);
-  }, [liveAgentIdKey, pruneToAgentIds, surfaceHasHydrated]);
+    pruneToAgentIds(serverId, liveAgentIdKey.length > 0 ? liveAgentIdKey.split("\0") : []);
+  }, [liveAgentIdKey, pruneToAgentIds, serverId, surfaceHasHydrated]);
 
   useEffect(() => {
     const shouldRelease = shouldAutoReleaseLeftoverTerminal({
@@ -249,6 +247,7 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
       surface: selectConversationSurface(useConversationSurfaceStore.getState(), agentId),
       leftoverTerminalId,
       focusedLinkedTerminalId,
+      canReleaseLeftover: Boolean(client && isConnected && workspaceDirectory),
     });
     if (plan.action === "toggle-surface") {
       setConversationSurface(plan.session.agentId, plan.nextSurface);
@@ -290,10 +289,13 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
     }
   }, [
     agentId,
+    client,
     focusedLinkedTerminal,
     focusedLinkedTerminalId,
+    isConnected,
     leftoverLinkedAgentId,
     leftoverTerminalId,
+    workspaceDirectory,
     onRetargetToAgent,
     releaseTerminal,
     setConversationSurface,

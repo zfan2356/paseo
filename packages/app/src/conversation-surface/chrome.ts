@@ -13,7 +13,6 @@ export interface ConversationViewSwitchChrome {
 export function resolveConversationViewSwitchChrome(input: {
   agentId: string | null;
   surface: ConversationSurface;
-  hasLeftoverTerminal: boolean;
   isFocusedOnLinkedTerminal: boolean;
   isPending: boolean;
   isConnected: boolean;
@@ -24,8 +23,8 @@ export function resolveConversationViewSwitchChrome(input: {
     input.agentId && input.surface === "agent"
       ? "workspace.header.actions.switchToTuiView"
       : "workspace.header.actions.switchToAgentView";
-  const needsHost = input.hasLeftoverTerminal || input.isFocusedOnLinkedTerminal;
+  const needsHost = input.isFocusedOnLinkedTerminal;
   const disabled =
-    input.isPending || (needsHost && (!input.isConnected || !input.hasWorkspaceDirectory));
+    needsHost && (input.isPending || !input.isConnected || !input.hasWorkspaceDirectory);
   return { show, labelKey, disabled };
 }

@@ -7,7 +7,6 @@ describe("conversation view switch chrome", () => {
       resolveConversationViewSwitchChrome({
         agentId: "agent-1",
         surface: "agent",
-        hasLeftoverTerminal: false,
         isFocusedOnLinkedTerminal: false,
         isPending: false,
         isConnected: false,
@@ -25,7 +24,6 @@ describe("conversation view switch chrome", () => {
       resolveConversationViewSwitchChrome({
         agentId: "agent-1",
         surface: "tui",
-        hasLeftoverTerminal: false,
         isFocusedOnLinkedTerminal: false,
         isPending: false,
         isConnected: true,
@@ -38,20 +36,36 @@ describe("conversation view switch chrome", () => {
     });
   });
 
-  it("disables host work while a leftover PTY still owns the session", () => {
+  it("keeps the Agent-tab display switch enabled while a leftover PTY still exists", () => {
     expect(
       resolveConversationViewSwitchChrome({
         agentId: "agent-1",
         surface: "agent",
-        hasLeftoverTerminal: true,
         isFocusedOnLinkedTerminal: false,
-        isPending: false,
+        isPending: true,
         isConnected: false,
         hasWorkspaceDirectory: true,
       }),
     ).toEqual({
       show: true,
       labelKey: "workspace.header.actions.switchToTuiView",
+      disabled: false,
+    });
+  });
+
+  it("disables leave-linked host work when the leftover terminal tab is focused offline", () => {
+    expect(
+      resolveConversationViewSwitchChrome({
+        agentId: null,
+        surface: "agent",
+        isFocusedOnLinkedTerminal: true,
+        isPending: false,
+        isConnected: false,
+        hasWorkspaceDirectory: true,
+      }),
+    ).toEqual({
+      show: true,
+      labelKey: "workspace.header.actions.switchToAgentView",
       disabled: true,
     });
   });
@@ -61,7 +75,6 @@ describe("conversation view switch chrome", () => {
       resolveConversationViewSwitchChrome({
         agentId: null,
         surface: "agent",
-        hasLeftoverTerminal: false,
         isFocusedOnLinkedTerminal: true,
         isPending: false,
         isConnected: true,

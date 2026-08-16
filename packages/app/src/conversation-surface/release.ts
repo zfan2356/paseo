@@ -19,23 +19,47 @@ export async function releaseConversationTerminalOwner(input: {
   fetchTimeline: (agentId: string) => Promise<void>;
   failedMessage: string;
 }): Promise<string> {
-  let switchToAgent = input.client.switchAgentTerminalToAgent;
-  if (!input.canSwitchToAgent) {
-    switchToAgent = input.canSwitchLegacyCodex
-      ? input.client.switchCodexTerminalToAgent
-      : undefined;
-  }
-
+  const switchToAgent = resolveConversationTerminalSwitch(input);
   if (switchToAgent) {
-    const result = await switchToAgent(input.terminalId);
-    if (!result.success || !result.agentId) {
-      throw new Error(result.error ?? input.failedMessage);
+    try {
+      const result = await switchToAgent(input.terminalId);
+      if (result.success && result.agentId) {
+        await input.fetchTimeline(result.agentId);
+        return result.agentId;
+      }
+    } catch {
+      // A leftover lease must not stay stuck because hydrate failed.
     }
-    await input.fetchTimeline(result.agentId);
-    return result.agentId;
   }
 
-  await input.client.killTerminal(input.terminalId);
+  return killLeftoverConversationTerminal(input);
+}
+
+function resolveConversationTerminalSwitch(input: {
+  client: ConversationTerminalReleaseClient;
+  canSwitchToAgent: boolean;
+  canSwitchLegacyCodex: boolean;
+}): ((terminalId: string) => Promise<ConversationTerminalSwitchResult>) | undefined {
+  if (input.canSwitchToAgent) {
+    return input.client.switchAgentTerminalToAgent;
+  }
+  if (input.canSwitchLegacyCodex) {
+    return input.client.switchCodexTerminalToAgent;
+  }
+  return undefined;
+}
+
+async function killLeftoverConversationTerminal(input: {
+  terminalId: string;
+  agentId: string;
+  client: ConversationTerminalReleaseClient;
+  fetchTimeline: (agentId: string) => Promise<void>;
+  failedMessage: string;
+}): Promise<string> {
+  const killed = await input.client.killTerminal(input.terminalId);
+  if (killed.success === false) {
+    throw new Error(input.failedMessage);
+  }
   await input.fetchTimeline(input.agentId);
   return input.agentId;
 }

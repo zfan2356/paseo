@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  pruneSurfaceByAgentId,
+  pruneDeadSurfacesForServer,
+  removeSurfacesForAgentIds,
   selectConversationSurface,
   useConversationSurfaceStore,
 } from "./store";
@@ -15,7 +16,11 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 
 describe("conversation surface store", () => {
   beforeEach(() => {
-    useConversationSurfaceStore.setState({ surfaceByAgentId: {}, hasHydrated: true });
+    useConversationSurfaceStore.setState({
+      surfaceByAgentId: {},
+      seenAgentIdsByServerId: {},
+      hasHydrated: true,
+    });
   });
 
   it("defaults each session to the Agent display", () => {
@@ -37,15 +42,44 @@ describe("conversation surface store", () => {
     );
   });
 
-  it("drops surfaces for agents that are no longer live", () => {
-    expect(pruneSurfaceByAgentId({ "agent-1": "tui", "agent-gone": "tui" }, ["agent-1"])).toEqual({
-      "agent-1": "tui",
+  it("drops only agents this host previously saw and no longer has", () => {
+    expect(
+      removeSurfacesForAgentIds({ "agent-1": "tui", "agent-gone": "tui" }, ["agent-gone"]),
+    ).toEqual({ "agent-1": "tui" });
+    expect(
+      pruneDeadSurfacesForServer({
+        surfaceByAgentId: { "agent-local": "tui", "agent-relay": "tui" },
+        seenAgentIds: [],
+        liveAgentIds: ["agent-local"],
+      }),
+    ).toEqual({
+      surfaceByAgentId: { "agent-local": "tui", "agent-relay": "tui" },
+      seenAgentIds: ["agent-local"],
     });
+    expect(
+      pruneDeadSurfacesForServer({
+        surfaceByAgentId: { "agent-local": "tui", "agent-relay": "tui" },
+        seenAgentIds: ["agent-local"],
+        liveAgentIds: [],
+      }),
+    ).toEqual({
+      surfaceByAgentId: { "agent-relay": "tui" },
+      seenAgentIds: [],
+    });
+
     useConversationSurfaceStore.setState({
-      surfaceByAgentId: { "agent-1": "tui", "agent-gone": "agent" },
+      surfaceByAgentId: { "agent-local": "tui", "agent-relay": "tui" },
+      seenAgentIdsByServerId: {},
     });
-    useConversationSurfaceStore.getState().pruneToAgentIds(["agent-1"]);
-    expect(useConversationSurfaceStore.getState().surfaceByAgentId).toEqual({ "agent-1": "tui" });
+    useConversationSurfaceStore.getState().pruneToAgentIds("local", ["agent-local"]);
+    expect(useConversationSurfaceStore.getState().surfaceByAgentId).toEqual({
+      "agent-local": "tui",
+      "agent-relay": "tui",
+    });
+    useConversationSurfaceStore.getState().pruneToAgentIds("local", []);
+    expect(useConversationSurfaceStore.getState().surfaceByAgentId).toEqual({
+      "agent-relay": "tui",
+    });
   });
 
   it("marks persist hydration without rewriting surfaces", () => {

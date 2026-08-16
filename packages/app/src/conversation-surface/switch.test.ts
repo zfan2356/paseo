@@ -16,6 +16,7 @@ describe("conversation view switch", () => {
         surface: "agent",
         leftoverTerminalId: null,
         focusedLinkedTerminalId: null,
+        canReleaseLeftover: false,
       }),
     ).toEqual({
       action: "toggle-surface",
@@ -33,11 +34,29 @@ describe("conversation view switch", () => {
         surface: "agent",
         leftoverTerminalId: "term-legacy",
         focusedLinkedTerminalId: null,
+        canReleaseLeftover: true,
       }),
     ).toEqual({
       action: "release-then-toggle",
       session,
       terminalId: "term-legacy",
+      nextSurface: "tui",
+    });
+  });
+
+  it("flips only the display when leftover release is not available", () => {
+    const session = { agentId: "agent-1" };
+    expect(
+      planConversationViewSwitch({
+        session,
+        surface: "agent",
+        leftoverTerminalId: "term-legacy",
+        focusedLinkedTerminalId: null,
+        canReleaseLeftover: false,
+      }),
+    ).toEqual({
+      action: "toggle-surface",
+      session,
       nextSurface: "tui",
     });
   });
@@ -48,6 +67,7 @@ describe("conversation view switch", () => {
       surface: "agent",
       leftoverTerminalId: null,
       focusedLinkedTerminalId: null,
+      canReleaseLeftover: false,
     });
 
     expect(plan).not.toMatchObject({ action: "create-terminal" });
@@ -62,6 +82,7 @@ describe("conversation view switch", () => {
         surface: "agent",
         leftoverTerminalId: null,
         focusedLinkedTerminalId: "term-legacy",
+        canReleaseLeftover: false,
       }),
     ).toEqual({
       action: "leave-linked-terminal",
@@ -73,6 +94,7 @@ describe("conversation view switch", () => {
         surface: "agent",
         leftoverTerminalId: null,
         focusedLinkedTerminalId: null,
+        canReleaseLeftover: false,
       }),
     ).toEqual({ action: "none" });
   });
