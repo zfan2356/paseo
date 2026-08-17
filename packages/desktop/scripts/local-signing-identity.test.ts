@@ -14,6 +14,17 @@ function run(command: string, args: string[], env?: NodeJS.ProcessEnv): string {
   }).trim();
 }
 
+function listUserKeychains(): string[] {
+  return run("/usr/bin/security", ["list-keychains", "-d", "user"])
+    .split("\n")
+    .map((line) => line.replaceAll('"', "").trim())
+    .filter((line) => line.length > 0);
+}
+
+function setUserKeychains(keychains: string[]): void {
+  run("/usr/bin/security", ["list-keychains", "-d", "user", "-s", ...keychains]);
+}
+
 describe.skipIf(process.platform !== "darwin")("local signing identity", () => {
   it(
     "creates a stable certificate identity instead of a one-off ad-hoc cdhash",
@@ -33,12 +44,9 @@ describe.skipIf(process.platform !== "darwin")("local signing identity", () => {
         const keychain = join(home, "paseo-local.keychain-db");
         const password = run("/bin/cat", [join(home, "keychain.password")]);
         run("/usr/bin/security", ["unlock-keychain", "-p", password, keychain]);
-        const previous = run("/usr/bin/security", ["list-keychains", "-d", "user"])
-          .split("\n")
-          .map((line) => line.replaceAll('"', "").trim())
-          .filter((line) => line.length > 0);
+        const previous = listUserKeychains();
         try {
-          run("/usr/bin/security", ["list-keychains", "-d", "user", "-s", keychain, ...previous]);
+          setUserKeychains([keychain, ...previous]);
           run("/usr/bin/codesign", [
             "--force",
             "--sign",
@@ -49,7 +57,7 @@ describe.skipIf(process.platform !== "darwin")("local signing identity", () => {
             dummy,
           ]);
         } finally {
-          run("/usr/bin/security", ["list-keychains", "-d", "user", "-s", ...previous]);
+          setUserKeychains(previous);
         }
 
         const requirement = run("/usr/bin/codesign", ["-d", "-r-", dummy], {
@@ -73,6 +81,7 @@ describe.skipIf(process.platform !== "darwin")("local signing identity", () => {
   it("signs an app through the local signer without a --home flag", { timeout: 20_000 }, () => {
     const home = mkdtempSync(join(tmpdir(), "paseo-local-sign-app-"));
     const dummy = join(home, "dummy");
+    const previous = listUserKeychains();
     writeFileSync(dummy, "#!/bin/sh\n");
     chmodSync(dummy, 0o755);
 
@@ -86,7 +95,9 @@ describe.skipIf(process.platform !== "darwin")("local signing identity", () => {
         requirement.includes("certificate root") || requirement.includes("certificate leaf"),
       ).toBe(true);
       expect(requirement.includes("designated => cdhash")).toBe(false);
+      expect(listUserKeychains()).toEqual(previous);
     } finally {
+      setUserKeychains(previous);
       try {
         run("/usr/bin/security", ["delete-keychain", join(home, "paseo-local.keychain-db")]);
       } catch {

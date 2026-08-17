@@ -56,9 +56,14 @@ PASSWORD="$(/bin/cat "${SIGNING_HOME}/keychain.password")"
 /usr/bin/security unlock-keychain -p "$PASSWORD" "$KEYCHAIN" >/dev/null
 
 original_keychains=()
-while IFS= read -r line; do
-  original_keychains+=("${line//\"/}")
-done < <(/usr/bin/security list-keychains -d user)
+while IFS= read -r keychain; do
+  if [[ -n "$keychain" ]]; then
+    original_keychains+=("$keychain")
+  fi
+done < <(
+  /usr/bin/security list-keychains -d user |
+    /usr/bin/sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//'
+)
 
 restore_keychains() {
   /usr/bin/security list-keychains -d user -s "${original_keychains[@]}" >/dev/null
