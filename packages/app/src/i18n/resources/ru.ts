@@ -1996,6 +1996,7 @@ export const ru: TranslationResources = {
           zinc: "Цинк",
           midnight: "Полночь",
           claude: "Клод",
+          codex: "Codex",
           ghostty: "Призрачный",
           pureBlack: "Чистый чёрный",
           auto: "Система",

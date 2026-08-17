@@ -1960,6 +1960,7 @@ export const ar: TranslationResources = {
           zinc: "الزنك",
           midnight: "منتصف الليل",
           claude: "كلود",
+          codex: "Codex",
           ghostty: "شبحي",
           pureBlack: "أسود خالص",
           auto: "نظام",

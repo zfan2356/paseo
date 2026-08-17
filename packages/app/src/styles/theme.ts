@@ -461,6 +461,28 @@ const midnightDarkColors = buildDarkSemanticColors({
   terminalBrightBlack: "#3c3e4c",
 });
 
+// Codex — charcoal desktop from the Codex app
+const codexDarkColors = buildDarkSemanticColors({
+  surface0: "#212121",
+  surface1: "#262626",
+  surface2: "#2f2f2f",
+  surface3: "#3d3d3d",
+  surface4: "#4a4a4a",
+  surfaceDiffEmpty: "#282828",
+  surfaceSidebar: "#171717",
+  surfaceSidebarHover: "#2f2f2f",
+  foregroundMuted: "#9b9b9b",
+  foregroundExtraMuted: "#6e6e6e",
+  scrollbarHandle: "#6e6e6e",
+  border: "#2a2a2a",
+  borderAccent: "#333333",
+  accent: "#52a06f",
+  accentBright: "#6fba88",
+  destructive: "#d65d5e",
+  terminalBlack: "#171717",
+  terminalBrightBlack: "#3d3d3d",
+});
+
 // Claude — warm neutral with subtle orange undertone
 const claudeDarkColors = buildDarkSemanticColors({
   surface0: "#1f1f1e",
@@ -656,6 +678,7 @@ export const darkTheme = buildDarkTheme(paseoDarkColors);
 export const darkZincTheme = buildDarkTheme(zincDarkColors);
 export const darkMidnightTheme = buildDarkTheme(midnightDarkColors);
 export const darkClaudeTheme = buildDarkTheme(claudeDarkColors);
+export const darkCodexTheme = buildDarkTheme(codexDarkColors);
 export const darkGhosttyTheme = buildDarkTheme(ghosttyDarkColors);
 
 // Pure black — zero-luminance background with high-contrast surfaces.
@@ -752,6 +775,13 @@ export const THEME_OPTIONS = [
     unistylesName: "darkClaude",
     theme: darkClaudeTheme,
     swatch: "#D97757",
+  },
+  {
+    name: "codex",
+    group: "variant",
+    unistylesName: "darkCodex",
+    theme: darkCodexTheme,
+    swatch: "#52a06f",
   },
   {
     name: "ghostty",

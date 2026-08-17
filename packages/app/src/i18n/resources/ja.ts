@@ -1975,6 +1975,7 @@ export const ja: TranslationResources = {
           zinc: "Zinc",
           midnight: "Midnight",
           claude: "Claude",
+          codex: "Codex",
           ghostty: "Ghostty",
           pureBlack: "ピュアブラック",
           auto: "システム",

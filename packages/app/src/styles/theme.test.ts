@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { darkPureBlackTheme, getNextThemePreference, THEME_OPTIONS } from "./theme";
+import { darkCodexTheme, darkPureBlackTheme, getNextThemePreference, THEME_OPTIONS } from "./theme";
 
 describe("Theme catalog", () => {
   it("owns the picker and shortcut order", () => {
@@ -10,10 +10,12 @@ describe("Theme catalog", () => {
       "zinc",
       "midnight",
       "claude",
+      "codex",
       "ghostty",
       "pureBlack",
     ]);
     expect(getNextThemePreference("dark")).toBe("auto");
+    expect(getNextThemePreference("claude")).toBe("codex");
     expect(getNextThemePreference("pureBlack")).toBe("light");
   });
 });
@@ -38,5 +40,26 @@ describe("Pure black theme", () => {
   it("keeps ANSI black output readable on its zero-luminance terminal background", () => {
     expect(darkPureBlackTheme.colors.terminal.black).toBe("#595959");
     expect(darkPureBlackTheme.colors.terminal.brightBlack).toBe("#8a8a8a");
+  });
+});
+
+describe("Codex theme", () => {
+  it("uses the Codex charcoal application and terminal background", () => {
+    expect(darkCodexTheme.colors.surface0).toBe("#212121");
+    expect(darkCodexTheme.colors.background).toBe("#212121");
+    expect(darkCodexTheme.colors.terminal.background).toBe("#212121");
+  });
+
+  it("keeps the sidebar darker than the chat surface", () => {
+    expect(darkCodexTheme.colors.surfaceSidebar).toBe("#171717");
+    expect(darkCodexTheme.colors.surfaceSidebarHover).toBe("#2f2f2f");
+    expect(darkCodexTheme.colors.surface2).toBe("#2f2f2f");
+  });
+
+  it("uses Codex muted chrome and accent colors", () => {
+    expect(darkCodexTheme.colors.foregroundMuted).toBe("#9b9b9b");
+    expect(darkCodexTheme.colors.accent).toBe("#52a06f");
+    expect(darkCodexTheme.colors.accentBright).toBe("#6fba88");
+    expect(darkCodexTheme.colors.destructive).toBe("#d65d5e");
   });
 });

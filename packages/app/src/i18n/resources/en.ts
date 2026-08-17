@@ -2015,6 +2015,7 @@ export const en = {
           zinc: "Zinc",
           midnight: "Midnight",
           claude: "Claude",
+          codex: "Codex",
           ghostty: "Ghostty",
           pureBlack: "Pure black",
           auto: "System",

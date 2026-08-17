@@ -1991,6 +1991,7 @@ export const ptBR: TranslationResources = {
           zinc: "Zinc",
           midnight: "Midnight",
           claude: "Claude",
+          codex: "Codex",
           ghostty: "Ghostty",
           pureBlack: "Preto puro",
           auto: "Sistema",

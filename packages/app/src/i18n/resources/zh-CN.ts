@@ -1938,6 +1938,7 @@ export const zhCN: TranslationResources = {
           zinc: "Zinc",
           midnight: "Midnight",
           claude: "Claude",
+          codex: "Codex",
           ghostty: "Ghostty",
           pureBlack: "纯黑",
           auto: "系统",

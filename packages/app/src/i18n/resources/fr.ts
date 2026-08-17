@@ -2010,6 +2010,7 @@ export const fr: TranslationResources = {
           zinc: "Zinc",
           midnight: "Minuit",
           claude: "Claude",
+          codex: "Codex",
           ghostty: "Fantôme",
           pureBlack: "Noir pur",
           auto: "Système",
