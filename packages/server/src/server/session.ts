@@ -1382,6 +1382,9 @@ export class Session {
           currentModeId: liveAgent.currentModeId,
           config: liveAgent.config,
           features: liveAgent.features,
+          runtimeSettings: this.providerSnapshotManager.getProviderRuntimeSettings(
+            liveAgent.provider,
+          ),
         }
       : {
           provider: storedAgent!.provider,
@@ -1392,6 +1395,9 @@ export class Session {
           currentModeId: storedAgent!.lastModeId,
           config: storedAgent!.config,
           features: storedAgent!.features,
+          runtimeSettings: this.providerSnapshotManager.getProviderRuntimeSettings(
+            storedAgent!.provider,
+          ),
         };
     const launch = buildAgentConversationTerminalLaunch(source);
     await this.agentManager.claimAgentExternalRuntime(input.agentId, input.terminalId);

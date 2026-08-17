@@ -882,7 +882,33 @@ export class TerminalSessionController {
   }
 
   private async handleKillTerminalRequest(msg: KillTerminalRequest): Promise<void> {
-    const result = this.killTerminalForClose(msg.terminalId);
+    const terminal = this.terminalManager?.getTerminal(msg.terminalId);
+    const agentId = terminal
+      ? (terminal.linkedAgentId ??
+        parseAgentConversationTerminalLink(terminal.name)?.agentId ??
+        null)
+      : null;
+    let result: { terminalId: string; success: boolean };
+    if (terminal && agentId && this.resumeAgentFromTerminal && this.terminalManager) {
+      this.switchingAgentTerminalIds.add(msg.terminalId);
+      try {
+        this.detachStream(msg.terminalId, { emitExit: true });
+        await this.terminalManager.killTerminalAndWait(msg.terminalId);
+        await this.resumeAgentFromTerminal({ agentId, terminalId: msg.terminalId });
+        this.linkedAgentByTerminalId.delete(msg.terminalId);
+        result = { terminalId: msg.terminalId, success: true };
+      } catch (error) {
+        this.sessionLogger.warn(
+          { err: error, agentId, terminalId: msg.terminalId },
+          "Failed to restore Agent after killing conversation terminal",
+        );
+        result = { terminalId: msg.terminalId, success: false };
+      } finally {
+        this.switchingAgentTerminalIds.delete(msg.terminalId);
+      }
+    } else {
+      result = this.killTerminalForClose(msg.terminalId);
+    }
     this.emit({
       type: "kill_terminal_response",
       payload: {

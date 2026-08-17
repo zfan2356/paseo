@@ -464,6 +464,57 @@ describe("terminal-session-controller legacy terminal creation", () => {
       },
     });
   });
+
+  test("resumes a linked Agent before acknowledging a legacy terminal kill", async () => {
+    const outboundMessages: SessionOutboundMessage[] = [];
+    const actions: string[] = [];
+    const terminal = listSession({
+      id: "term-conversation",
+      name: "Claude Code Conversation",
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+      linkedAgentId: "agent-1",
+    });
+    const terminalManager = {
+      getTerminal: vi.fn(() => terminal),
+      killTerminal: vi.fn(),
+      killTerminalAndWait: vi.fn(async () => {
+        actions.push("terminal-stopped");
+      }),
+    } as unknown as TerminalManager;
+    const resumeAgentFromTerminal = vi.fn(async () => {
+      actions.push("agent-resumed");
+    });
+    const controller = new TerminalSessionController({
+      terminalManager,
+      emit: (message) => outboundMessages.push(message),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+      resumeAgentFromTerminal,
+    });
+
+    await controller.dispatch({
+      type: "kill_terminal_request",
+      terminalId: terminal.id,
+      requestId: "req-kill",
+    });
+
+    expect(actions).toEqual(["terminal-stopped", "agent-resumed"]);
+    expect(resumeAgentFromTerminal).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      terminalId: "term-conversation",
+    });
+    expect(outboundMessages).toContainEqual({
+      type: "kill_terminal_response",
+      payload: {
+        terminalId: "term-conversation",
+        success: true,
+        requestId: "req-kill",
+      },
+    });
+  });
 });
 
 async function flushMicrotasks(): Promise<void> {

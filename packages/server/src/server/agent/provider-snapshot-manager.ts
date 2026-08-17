@@ -26,6 +26,7 @@ import type { ManagedProcessRegistry } from "../managed-processes/managed-proces
 import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
+  ProviderRuntimeSettings,
 } from "./provider-launch-config.js";
 import {
   buildProviderRegistry,
@@ -294,6 +295,10 @@ export class ProviderSnapshotManager {
 
   hasProvider(provider: AgentProvider): boolean {
     return Object.prototype.hasOwnProperty.call(this.providerRegistry, provider);
+  }
+
+  getProviderRuntimeSettings(provider: AgentProvider): ProviderRuntimeSettings | undefined {
+    return this.runtimeSettings?.[provider];
   }
 
   getProviderLabel(provider: AgentProvider): string {

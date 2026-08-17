@@ -3,6 +3,7 @@ import type {
   AgentPersistenceHandle,
   AgentRuntimeInfo,
 } from "../server/agent/agent-sdk-types.js";
+import type { ProviderRuntimeSettings } from "../server/agent/provider-launch-config.js";
 import { resolveCursorConfigDirectory } from "./cursor-conversation-store.js";
 
 interface AgentConversationTerminalConfig {
@@ -22,6 +23,7 @@ export interface AgentConversationTerminalSource {
   currentModeId?: string | null;
   config?: AgentConversationTerminalConfig | null;
   features?: AgentFeature[] | null;
+  runtimeSettings?: ProviderRuntimeSettings;
 }
 
 export interface AgentConversationTerminalLaunch {
@@ -364,6 +366,27 @@ function buildCursorLaunch(
   };
 }
 
+function applyProviderRuntimeSettings(
+  launch: AgentConversationTerminalLaunch,
+  runtimeSettings: ProviderRuntimeSettings | undefined,
+): AgentConversationTerminalLaunch {
+  const commandConfig = runtimeSettings?.command;
+  const command = commandConfig?.mode === "replace" ? commandConfig.argv[0] : launch.command;
+  let prefixArgs: string[] = [];
+  if (commandConfig?.mode === "replace") {
+    prefixArgs = commandConfig.argv.slice(1);
+  } else if (commandConfig?.mode === "append") {
+    prefixArgs = commandConfig.args ?? [];
+  }
+  const env = { ...launch.env, ...runtimeSettings?.env };
+  return {
+    ...launch,
+    command,
+    args: [...prefixArgs, ...launch.args],
+    ...(Object.keys(env).length > 0 ? { env } : {}),
+  };
+}
+
 export function buildAgentConversationTerminalLaunch(
   source: AgentConversationTerminalSource,
 ): AgentConversationTerminalLaunch {
@@ -376,14 +399,19 @@ export function buildAgentConversationTerminalLaunch(
     throw new Error(`The ${source.provider} conversation does not have a resumable session id yet`);
   }
 
+  let launch: AgentConversationTerminalLaunch;
   switch (source.provider) {
     case "codex":
-      return buildCodexLaunch(source, sessionId);
+      launch = buildCodexLaunch(source, sessionId);
+      break;
     case "claude":
-      return buildClaudeLaunch(source, sessionId);
+      launch = buildClaudeLaunch(source, sessionId);
+      break;
     case "cursor":
-      return buildCursorLaunch(source, sessionId);
+      launch = buildCursorLaunch(source, sessionId);
+      break;
   }
+  return applyProviderRuntimeSettings(launch, source.runtimeSettings);
 }
 
 export function buildCodexConversationTerminalLaunch(
@@ -397,5 +425,5 @@ export function buildCodexConversationTerminalLaunch(
   if (!threadId) {
     throw new Error("The Codex conversation does not have a resumable thread id yet");
   }
-  return buildCodexLaunch(source, threadId);
+  return applyProviderRuntimeSettings(buildCodexLaunch(source, threadId), source.runtimeSettings);
 }

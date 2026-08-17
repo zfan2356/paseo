@@ -201,6 +201,29 @@ describe("buildCodexConversationTerminalLaunch", () => {
     });
   });
 
+  test("inherits the configured Codex command and environment", () => {
+    expect(
+      buildCodexConversationTerminalLaunch({
+        provider: "codex",
+        cwd: "/work/paseo",
+        persistence: { provider: "codex", sessionId: "thread-1" },
+        runtimeSettings: {
+          command: {
+            mode: "replace",
+            argv: ["/opt/codex-wrapper", "--ichat"],
+          },
+          env: { CODEX_HOME: "/work/codex-home" },
+        },
+      }),
+    ).toEqual({
+      provider: "codex",
+      name: "Codex Conversation",
+      command: "/opt/codex-wrapper",
+      args: ["--ichat", "resume", "--include-non-interactive", "--cd", "/work/paseo", "thread-1"],
+      env: { CODEX_HOME: "/work/codex-home" },
+    });
+  });
+
   test("lets validated provider options override the permission preset", () => {
     expect(
       buildCodexConversationTerminalLaunch({
