@@ -6,19 +6,16 @@ import { useSessionStore } from "@/stores/session-store";
 import { resolveConversationViewSwitchChrome } from "./chrome";
 import {
   collectLeaseBlockedAgentIds,
-  collectPaneFocusedTargets,
   findFocusedLinkedConversationTerminal,
   findLinkedConversationTerminal,
   findTerminalTabId,
-  isLeftoverVisibleInAnyPane,
-  shouldAutoReleaseLeftoverTerminal,
 } from "./leftover";
 import {
   releaseConversationTerminalOwner,
   type ConversationTerminalReleaseClient,
 } from "./release";
 import { canOfferConversationSurfaceSwitch, conversationSessionRefFromTabTarget } from "./session";
-import { selectConversationSurface, useConversationSurfaceStore } from "./store";
+import { useConversationSurfaceStore } from "./store";
 import { planConversationViewSwitch } from "./switch";
 
 interface ConversationSurfaceTerminal {
@@ -37,10 +34,15 @@ export interface ReleasedConversationTerminal {
   closeTab: boolean;
 }
 
+export interface OpenConversationTerminalInput {
+  agentId: string;
+  terminalId: string | null;
+  replaceTabId: string;
+}
+
 interface UseWorkspaceConversationSurfaceInput {
   activeTab: WorkspaceTabDescriptor | null;
   tabs: readonly ConversationSurfaceTab[];
-  panes: readonly { focusedTabId: string | null }[];
   serverId: string;
   terminals: readonly ConversationSurfaceTerminal[];
   client: ConversationTerminalReleaseClient | null;
@@ -48,6 +50,8 @@ interface UseWorkspaceConversationSurfaceInput {
   workspaceDirectory: string | null;
   supportsAgentConversationViewSwitch: boolean;
   supportsLegacyCodexConversationViewSwitch: boolean;
+  isCreatePending: boolean;
+  onOpenConversationTerminal: (input: OpenConversationTerminalInput) => void;
   onReleasedTerminal: (input: ReleasedConversationTerminal) => void;
   onRetargetToAgent: (agentId: string) => void;
   toast: { error: (message: string) => void };
@@ -58,7 +62,6 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
   const {
     activeTab,
     tabs,
-    panes,
     serverId,
     terminals,
     client,
@@ -66,6 +69,8 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
     workspaceDirectory,
     supportsAgentConversationViewSwitch,
     supportsLegacyCodexConversationViewSwitch,
+    isCreatePending,
+    onOpenConversationTerminal,
     onReleasedTerminal,
     onRetargetToAgent,
     toast,
@@ -83,7 +88,12 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
       session?.agents?.get(focusedAgentId) ?? session?.agentDetails?.get(focusedAgentId) ?? null
     );
   });
-  const agentId = canOfferConversationSurfaceSwitch(focusedAgent) ? focusedAgentId : null;
+  const agentId = canOfferConversationSurfaceSwitch(focusedAgent, {
+    supported: supportsAgentConversationViewSwitch,
+    supportsLegacyCodex: supportsLegacyCodexConversationViewSwitch,
+  })
+    ? focusedAgentId
+    : null;
   const leftoverTerminal = findLinkedConversationTerminal(terminals, agentId);
   const leftoverTerminalId = leftoverTerminal?.id ?? null;
   const leftoverLinkedAgentId = leftoverTerminal?.linkedAgentId ?? null;
@@ -92,49 +102,20 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
     activeTab?.target ?? null,
   );
   const focusedLinkedTerminalId = focusedLinkedTerminal?.id ?? null;
-  const leftoverVisibleInAnyPane = isLeftoverVisibleInAnyPane(
-    leftoverTerminalId,
-    collectPaneFocusedTargets(panes, tabs),
-  );
-  const conversationSurface = useConversationSurfaceStore((state) =>
-    selectConversationSurface(state, serverId, agentId),
-  );
-  const setConversationSurface = useConversationSurfaceStore((state) => state.setSurface);
   const replaceLeaseBlocked = useConversationSurfaceStore((state) => state.replaceLeaseBlocked);
-  const pruneToAgentIds = useConversationSurfaceStore((state) => state.pruneToAgentIds);
-  const markHydrated = useConversationSurfaceStore((state) => state.markHydrated);
-  const surfaceHasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
-  const liveAgentIdKey = useSessionStore((state) => {
-    const session = state.sessions[serverId];
-    if (!session?.hasHydratedAgents) {
-      return null;
-    }
-    return [...new Set([...session.agents.keys(), ...session.agentDetails.keys()])]
-      .sort()
-      .join("\0");
-  });
   const [isPending, setIsPending] = useState(false);
   const releaseInFlightRef = useRef<Promise<string | null> | null>(null);
-  const autoReleasedTerminalIdRef = useRef<string | null>(null);
 
   const chrome = useMemo(
     () =>
       resolveConversationViewSwitchChrome({
         agentId,
-        surface: conversationSurface,
         isFocusedOnLinkedTerminal: focusedLinkedTerminalId !== null,
-        isPending,
+        isPending: isPending || isCreatePending,
         isConnected,
         hasWorkspaceDirectory: Boolean(workspaceDirectory),
       }),
-    [
-      agentId,
-      conversationSurface,
-      focusedLinkedTerminalId,
-      isConnected,
-      isPending,
-      workspaceDirectory,
-    ],
+    [agentId, focusedLinkedTerminalId, isConnected, isCreatePending, isPending, workspaceDirectory],
   );
 
   const fetchTimeline = useCallback(
@@ -195,112 +176,45 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
   );
 
   useEffect(() => {
-    if (useConversationSurfaceStore.persist.hasHydrated()) {
-      markHydrated();
-    }
-  }, [markHydrated]);
-
-  useEffect(() => {
-    if (liveAgentIdKey == null || !surfaceHasHydrated) {
-      return;
-    }
-    pruneToAgentIds(serverId, liveAgentIdKey.length > 0 ? liveAgentIdKey.split("\0") : []);
-  }, [liveAgentIdKey, pruneToAgentIds, serverId, surfaceHasHydrated]);
-
-  useEffect(() => {
     replaceLeaseBlocked(
       serverId,
       collectLeaseBlockedAgentIds(terminals, isPending ? (leftoverLinkedAgentId ?? agentId) : null),
     );
   }, [agentId, isPending, leftoverLinkedAgentId, replaceLeaseBlocked, serverId, terminals]);
 
-  useEffect(() => {
-    if (
-      autoReleasedTerminalIdRef.current &&
-      autoReleasedTerminalIdRef.current !== leftoverTerminalId
-    ) {
-      autoReleasedTerminalIdRef.current = null;
-    }
-    const shouldRelease = shouldAutoReleaseLeftoverTerminal({
-      focusedAgentId: agentId,
-      leftoverTerminalId,
-      leftoverVisibleInAnyPane,
-    });
-    if (
-      !shouldRelease ||
-      !client ||
-      !isConnected ||
-      !leftoverTerminalId ||
-      !leftoverLinkedAgentId ||
-      autoReleasedTerminalIdRef.current === leftoverTerminalId
-    ) {
-      return;
-    }
-    autoReleasedTerminalIdRef.current = leftoverTerminalId;
-    setIsPending(true);
-    void releaseTerminal(leftoverTerminalId, leftoverLinkedAgentId, true)
-      .catch((error) => {
-        if (autoReleasedTerminalIdRef.current === leftoverTerminalId) {
-          autoReleasedTerminalIdRef.current = null;
-        }
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : t("workspace.header.toasts.conversationViewSwitchFailed"),
-        );
-      })
-      .finally(() => {
-        setIsPending(false);
-      });
-  }, [
-    agentId,
-    client,
-    leftoverVisibleInAnyPane,
-    isConnected,
-    leftoverLinkedAgentId,
-    leftoverTerminalId,
-    releaseTerminal,
-    t,
-    toast,
-  ]);
-
   const onToggle = useCallback(async () => {
     const plan = planConversationViewSwitch({
       session: agentId ? { agentId } : null,
-      surface: selectConversationSurface(useConversationSurfaceStore.getState(), serverId, agentId),
       leftoverTerminalId,
-      leftoverVisibleInAnyPane,
       focusedLinkedTerminalId,
-      canReleaseLeftover: Boolean(client && isConnected && workspaceDirectory),
+      canOpenTerminal: Boolean(client && isConnected && workspaceDirectory),
     });
-    if (plan.action === "toggle-surface") {
-      setConversationSurface(serverId, plan.session.agentId, plan.nextSurface);
+    if (plan.action === "open-terminal") {
+      if (!activeTab?.tabId) {
+        return;
+      }
+      onOpenConversationTerminal({
+        agentId: plan.session.agentId,
+        terminalId: plan.terminalId,
+        replaceTabId: activeTab.tabId,
+      });
       return;
     }
-    if (plan.action === "none") {
+    if (plan.action !== "leave-linked-terminal") {
       return;
     }
 
-    const sessionAgentId =
-      plan.action === "release-then-toggle"
-        ? plan.session.agentId
-        : (focusedLinkedTerminal?.linkedAgentId ?? leftoverLinkedAgentId);
+    const sessionAgentId = focusedLinkedTerminal?.linkedAgentId ?? leftoverLinkedAgentId;
     if (!sessionAgentId) {
       return;
     }
 
     setIsPending(true);
     try {
-      const closeTab = plan.action !== "leave-linked-terminal";
-      const releasedAgentId = await releaseTerminal(plan.terminalId, sessionAgentId, closeTab);
+      const releasedAgentId = await releaseTerminal(plan.terminalId, sessionAgentId, false);
       if (!releasedAgentId) {
         return;
       }
-      if (plan.action === "release-then-toggle") {
-        setConversationSurface(serverId, releasedAgentId, plan.nextSurface);
-        return;
-      }
-      setConversationSurface(serverId, releasedAgentId, "agent");
       onRetargetToAgent(releasedAgentId);
     } catch (error) {
       toast.error(
@@ -312,6 +226,7 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
       setIsPending(false);
     }
   }, [
+    activeTab?.tabId,
     agentId,
     client,
     focusedLinkedTerminal,
@@ -319,19 +234,16 @@ export function useWorkspaceConversationSurface(input: UseWorkspaceConversationS
     isConnected,
     leftoverLinkedAgentId,
     leftoverTerminalId,
-    leftoverVisibleInAnyPane,
+    onOpenConversationTerminal,
     onRetargetToAgent,
-    serverId,
-    workspaceDirectory,
     releaseTerminal,
-    setConversationSurface,
     t,
     toast,
+    workspaceDirectory,
   ]);
 
   return {
     agentId,
-    surface: conversationSurface,
     chrome,
     isPending,
     onToggle,

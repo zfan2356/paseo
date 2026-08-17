@@ -53,36 +53,6 @@ export function findTerminalTabId(
   return null;
 }
 
-export function collectPaneFocusedTargets(
-  panes: readonly { focusedTabId: string | null }[],
-  tabs: readonly { tabId: string; target: { kind: string; terminalId?: string } }[],
-): { kind: string; terminalId?: string }[] {
-  const targetByTabId = new Map(tabs.map((tab) => [tab.tabId, tab.target]));
-  const targets: { kind: string; terminalId?: string }[] = [];
-  for (const pane of panes) {
-    if (!pane.focusedTabId) {
-      continue;
-    }
-    const target = targetByTabId.get(pane.focusedTabId);
-    if (target) {
-      targets.push(target);
-    }
-  }
-  return targets;
-}
-
-export function isLeftoverVisibleInAnyPane(
-  leftoverTerminalId: string | null,
-  paneFocusedTargets: readonly { kind: string; terminalId?: string }[],
-): boolean {
-  if (!leftoverTerminalId) {
-    return false;
-  }
-  return paneFocusedTargets.some(
-    (target) => target.kind === "terminal" && target.terminalId === leftoverTerminalId,
-  );
-}
-
 export function findFocusedLinkedConversationTerminal(
   terminals: readonly { id: string; linkedAgentId?: string | null }[],
   activeTarget: { kind: string; terminalId?: string } | null,
@@ -95,14 +65,4 @@ export function findFocusedLinkedConversationTerminal(
     return null;
   }
   return { id: terminal.id, linkedAgentId: terminal.linkedAgentId };
-}
-
-export function shouldAutoReleaseLeftoverTerminal(input: {
-  focusedAgentId: string | null;
-  leftoverTerminalId: string | null;
-  leftoverVisibleInAnyPane: boolean;
-}): boolean {
-  return Boolean(
-    input.focusedAgentId && input.leftoverTerminalId && !input.leftoverVisibleInAnyPane,
-  );
 }

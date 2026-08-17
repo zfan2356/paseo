@@ -1,7 +1,8 @@
 import { expect, test } from "../support/fixtures";
-import { expectComposerVisible, submitMessage } from "../support/helpers/composer";
+import { expectComposerVisible } from "../support/helpers/composer";
 import { openAgentRoute } from "../support/helpers/mock-agent";
 import { seedWorkspace } from "../support/helpers/seed-client";
+import { expectTerminalSurfaceVisible } from "../support/helpers/terminal-perf";
 
 async function getCodexConversationTerminal(workspace: Awaited<ReturnType<typeof seedWorkspace>>) {
   const result = await workspace.client.listTerminals(workspace.repoPath, undefined, {
@@ -13,7 +14,7 @@ async function getCodexConversationTerminal(workspace: Awaited<ReturnType<typeof
 test.describe("Codex conversation view switch", () => {
   test.setTimeout(300_000);
 
-  test("keeps one Agent session and composer when flipping the TUI display", async ({ page }) => {
+  test("round-trips one Codex thread between Agent and terminal views", async ({ page }) => {
     const workspace = await seedWorkspace({ repoPrefix: "codex-fork-terminal-" });
 
     try {
@@ -35,37 +36,27 @@ test.describe("Codex conversation view switch", () => {
 
       await expectComposerVisible(page, { timeout: 30_000 });
       await expect(page.getByTestId("conversation-surface-agent")).toBeVisible();
-      await expect(page.getByText("AGENT_SIDE_SENTINEL", { exact: true }).last()).toBeVisible({
-        timeout: 30_000,
-      });
 
       const viewToggle = page.getByTestId("workspace-toggle-agent-conversation-view");
       await expect(viewToggle).toBeVisible({ timeout: 30_000 });
       await viewToggle.click();
 
-      await expect(page.getByTestId("conversation-surface-tui")).toBeVisible({ timeout: 10_000 });
-      await expectComposerVisible(page);
-      await expect(page.getByTestId("terminal-surface")).toHaveCount(0);
-      await expect.poll(async () => await getCodexConversationTerminal(workspace)).toBeNull();
-      await expect(page.getByText("AGENT_SIDE_SENTINEL", { exact: true }).last()).toBeVisible();
-
-      const returnStarted = workspace.client.waitForAgentUpsert(
-        agent.id,
-        (snapshot) => snapshot.status === "running",
-        30_000,
-      );
-      await submitMessage(page, "Reply with exactly AGENT_RETURN_SENTINEL.");
-      await returnStarted;
-      const returned = await workspace.client.waitForFinish(agent.id, 90_000);
-      expect(returned.status).toBe("idle");
-      await expect(page.getByText("AGENT_RETURN_SENTINEL", { exact: true }).last()).toBeVisible({
-        timeout: 30_000,
-      });
+      await expectTerminalSurfaceVisible(page);
+      await expect
+        .poll(async () => await getCodexConversationTerminal(workspace), {
+          timeout: 30_000,
+        })
+        .not.toBeNull();
+      const terminal = await getCodexConversationTerminal(workspace);
+      if (!terminal) {
+        throw new Error("Codex conversation terminal disappeared after the view switch");
+      }
+      expect(terminal.linkedAgentId).toBe(agent.id);
+      await expect(page.getByTestId("conversation-surface-agent")).toHaveCount(0);
 
       await viewToggle.click();
+      await expectComposerVisible(page, { timeout: 30_000 });
       await expect(page.getByTestId("conversation-surface-agent")).toBeVisible({ timeout: 10_000 });
-      await expectComposerVisible(page);
-      await expect(page.getByTestId("terminal-surface")).toHaveCount(0);
       await expect.poll(async () => await getCodexConversationTerminal(workspace)).toBeNull();
     } finally {
       await workspace.cleanup();

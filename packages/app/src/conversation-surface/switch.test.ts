@@ -1,162 +1,82 @@
 import { describe, expect, it } from "vitest";
-import {
-  conversationSurfaceSubtitle,
-  conversationSurfaceTestId,
-  resolveConversationSurfaceAppearance,
-} from "./display";
-import { planConversationViewSwitch, toggleConversationSurface } from "./switch";
+import { planConversationViewSwitch } from "./switch";
 
 describe("conversation view switch", () => {
-  it("keeps one session and only flips the display surface", () => {
+  it("opens a conversation PTY for the same Agent session", () => {
     const session = { agentId: "agent-1" };
 
     expect(
       planConversationViewSwitch({
         session,
-        surface: "agent",
         leftoverTerminalId: null,
-        leftoverVisibleInAnyPane: false,
         focusedLinkedTerminalId: null,
-        canReleaseLeftover: false,
+        canOpenTerminal: true,
       }),
     ).toEqual({
-      action: "toggle-surface",
+      action: "open-terminal",
       session,
-      nextSurface: "tui",
+      terminalId: null,
     });
-    expect(toggleConversationSurface("tui")).toBe("agent");
   });
 
-  it("releases a leftover PTY before flipping the Agent-tab display", () => {
+  it("reuses an existing conversation PTY instead of creating a second one", () => {
     const session = { agentId: "agent-1" };
     expect(
       planConversationViewSwitch({
         session,
-        surface: "agent",
-        leftoverTerminalId: "term-legacy",
-        leftoverVisibleInAnyPane: false,
+        leftoverTerminalId: "term-linked",
         focusedLinkedTerminalId: null,
-        canReleaseLeftover: true,
+        canOpenTerminal: false,
       }),
     ).toEqual({
-      action: "release-then-toggle",
+      action: "open-terminal",
       session,
-      terminalId: "term-legacy",
-      nextSurface: "tui",
+      terminalId: "term-linked",
     });
   });
 
-  it("does not release a leftover that is still focused in another pane", () => {
-    const session = { agentId: "agent-1" };
-    expect(
-      planConversationViewSwitch({
-        session,
-        surface: "agent",
-        leftoverTerminalId: "term-legacy",
-        leftoverVisibleInAnyPane: true,
-        focusedLinkedTerminalId: null,
-        canReleaseLeftover: true,
-      }),
-    ).toEqual({
-      action: "toggle-surface",
-      session,
-      nextSurface: "tui",
-    });
-  });
-
-  it("flips only the display when leftover release is not available", () => {
-    const session = { agentId: "agent-1" };
-    expect(
-      planConversationViewSwitch({
-        session,
-        surface: "agent",
-        leftoverTerminalId: "term-legacy",
-        leftoverVisibleInAnyPane: false,
-        focusedLinkedTerminalId: null,
-        canReleaseLeftover: false,
-      }),
-    ).toEqual({
-      action: "toggle-surface",
-      session,
-      nextSurface: "tui",
-    });
-  });
-
-  it("does not plan a terminal create, retarget, or second tab", () => {
+  it("does not plan a display-only TUI overlay", () => {
     const plan = planConversationViewSwitch({
       session: { agentId: "agent-1" },
-      surface: "agent",
       leftoverTerminalId: null,
-      leftoverVisibleInAnyPane: false,
       focusedLinkedTerminalId: null,
-      canReleaseLeftover: false,
+      canOpenTerminal: true,
     });
 
-    expect(plan).not.toMatchObject({ action: "create-terminal" });
-    expect(plan).not.toMatchObject({ action: "retarget-tab" });
-    expect(plan).toMatchObject({ action: "toggle-surface", nextSurface: "tui" });
+    expect(plan).not.toMatchObject({ action: "toggle-surface" });
+    expect(plan).toMatchObject({ action: "open-terminal", terminalId: null });
   });
 
-  it("leaves a leftover linked PTY when that terminal tab is focused", () => {
+  it("does not open a conversation PTY when the host cannot create one", () => {
     expect(
       planConversationViewSwitch({
-        session: null,
-        surface: "agent",
+        session: { agentId: "agent-1" },
         leftoverTerminalId: null,
-        leftoverVisibleInAnyPane: false,
-        focusedLinkedTerminalId: "term-legacy",
-        canReleaseLeftover: false,
-      }),
-    ).toEqual({
-      action: "leave-linked-terminal",
-      terminalId: "term-legacy",
-    });
-    expect(
-      planConversationViewSwitch({
-        session: null,
-        surface: "agent",
-        leftoverTerminalId: null,
-        leftoverVisibleInAnyPane: false,
         focusedLinkedTerminalId: null,
-        canReleaseLeftover: false,
+        canOpenTerminal: false,
       }),
     ).toEqual({ action: "none" });
   });
 
-  it("keeps Agent and TUI as labels over the same provider session", () => {
+  it("leaves a linked conversation PTY when that terminal tab is focused", () => {
     expect(
-      conversationSurfaceSubtitle({ providerLabel: "Codex", surface: "agent", ready: true }),
-    ).toBe("Codex agent");
-    expect(
-      conversationSurfaceSubtitle({ providerLabel: "Codex", surface: "tui", ready: true }),
-    ).toBe("Codex TUI");
-    expect(
-      conversationSurfaceSubtitle({ providerLabel: "Codex", surface: "tui", ready: false }),
-    ).toBe("Codex");
-  });
-
-  it("withholds TUI chrome until the surface store has hydrated", () => {
-    expect(resolveConversationSurfaceAppearance({ surface: "tui", hasHydrated: false })).toEqual({
-      surface: "agent",
-      ready: false,
-      hideSessionChrome: false,
-      compact: false,
-    });
-    expect(resolveConversationSurfaceAppearance({ surface: "tui", hasHydrated: true })).toEqual({
-      surface: "tui",
-      ready: true,
-      hideSessionChrome: true,
-      compact: true,
+      planConversationViewSwitch({
+        session: null,
+        leftoverTerminalId: null,
+        focusedLinkedTerminalId: "term-linked",
+        canOpenTerminal: false,
+      }),
+    ).toEqual({
+      action: "leave-linked-terminal",
+      terminalId: "term-linked",
     });
     expect(
-      conversationSurfaceTestId(
-        resolveConversationSurfaceAppearance({ surface: "tui", hasHydrated: false }),
-      ),
-    ).toBe("conversation-surface-pending");
-    expect(
-      conversationSurfaceTestId(
-        resolveConversationSurfaceAppearance({ surface: "tui", hasHydrated: true }),
-      ),
-    ).toBe("conversation-surface-tui");
+      planConversationViewSwitch({
+        session: null,
+        leftoverTerminalId: null,
+        focusedLinkedTerminalId: null,
+        canOpenTerminal: false,
+      }),
+    ).toEqual({ action: "none" });
   });
 });

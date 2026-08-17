@@ -1,7 +1,7 @@
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { TFunction } from "i18next";
-import { SquarePen, SquareTerminal } from "lucide-react-native";
+import { SquarePen } from "lucide-react-native";
 import React, {
   memo,
   useCallback,
@@ -24,18 +24,7 @@ import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { SidebarCallout } from "@/components/sidebar-callout";
-import {
-  conversationSurfaceSubtitle,
-  conversationSurfaceTestId,
-  resolveConversationSurfaceAppearance,
-} from "@/conversation-surface/display";
-import {
-  selectConversationSurface,
-  selectLeaseBlocked,
-  useConversationSurfaceStore,
-} from "@/conversation-surface/store";
-import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
-import { ensureTuiDocumentStyles } from "@/conversation-surface/tui-document-styles";
+import { selectLeaseBlocked, useConversationSurfaceStore } from "@/conversation-surface/store";
 import { Composer } from "@/composer";
 import { getActiveMessageSubmissions } from "@/composer/submission/model";
 import { RewindComposerRestoreProvider } from "@/components/rewind/composer-restore";
@@ -348,26 +337,15 @@ function useAgentPanelDescriptor(
       };
     }),
   );
-  const surface = useConversationSurfaceStore((state) =>
-    selectConversationSurface(state, context.serverId, target.agentId),
-  );
-  const hasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
-  const appearance = resolveConversationSurfaceAppearance({ surface, hasHydrated });
   const provider = descriptorState.provider;
   const label = resolveWorkspaceAgentTabLabel(descriptorState.title);
   const providerLabel = formatProviderLabel(provider);
-  const surfaceSubtitle = conversationSurfaceSubtitle({
-    providerLabel,
-    surface: appearance.surface,
-    ready: appearance.ready,
-  });
-  const icon =
-    appearance.ready && appearance.surface === "tui" ? SquareTerminal : getProviderIcon(provider);
+  const icon = getProviderIcon(provider);
 
   return {
     label: label ?? "",
-    subtitle: surfaceSubtitle,
-    tooltip: label ?? surfaceSubtitle,
+    subtitle: providerLabel,
+    tooltip: label ?? providerLabel,
     titleState: label ? "ready" : "loading",
     icon,
     statusBucket: descriptorState.status
@@ -385,22 +363,8 @@ function AgentPanel() {
   const { serverId, workspaceId, target, openFileInWorkspace } = usePaneContext();
   const { isInteractive } = usePaneFocus();
   invariant(target.kind === "agent", "AgentPanel requires agent target");
-  const surface = useConversationSurfaceStore((state) =>
-    selectConversationSurface(state, serverId, target.agentId),
-  );
-  const hasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
-  const appearance = resolveConversationSurfaceAppearance({ surface, hasHydrated });
-
-  useEffect(() => {
-    ensureTuiDocumentStyles();
-  }, []);
-
   return (
-    <View
-      testID={conversationSurfaceTestId(appearance)}
-      style={styles.container}
-      dataSet={appearance.compact ? CODE_SURFACE_DATASET : undefined}
-    >
+    <View testID="conversation-surface-agent" style={styles.container}>
       <AgentPanelContent
         serverId={serverId}
         workspaceId={workspaceId}
@@ -1576,15 +1540,6 @@ function ActiveAgentComposer({
     parentAgentId: agentId,
     rows: subagentRows,
   });
-  const surface = useConversationSurfaceStore((state) =>
-    selectConversationSurface(state, serverId, agentId),
-  );
-  const hasHydrated = useConversationSurfaceStore((state) => state.hasHydrated);
-  const appearance = resolveConversationSurfaceAppearance({
-    surface,
-    hasHydrated,
-  });
-  const hideSessionChrome = appearance.hideSessionChrome;
   const leaseBlocked = useConversationSurfaceStore((state) =>
     selectLeaseBlocked(state, serverId, agentId),
   );
@@ -1673,25 +1628,17 @@ function ActiveAgentComposer({
   );
 
   return (
-    <ReanimatedAnimated.View
-      style={inputAreaStyle}
-      onLayout={onInputAreaLayout}
-      dataSet={appearance.compact ? CODE_SURFACE_DATASET : undefined}
-    >
-      {hideSessionChrome ? null : (
-        <>
-          <AgentTaskList serverId={serverId} agentId={agentId} />
-          <SubagentsTrack
-            rows={subagentRows}
-            onOpenSubagent={handleOpenSubagent}
-            onOpenProviderSubagent={handleOpenProviderSubagent}
-            onArchiveSubagent={handleArchiveSubagent}
-            onArchiveFinished={archiveFinishedSubagents.archiveFinished}
-            archiveFinishedStatus={archiveFinishedSubagents.status}
-            onDetachSubagent={canDetachSubagents ? handleDetachSubagent : undefined}
-          />
-        </>
-      )}
+    <ReanimatedAnimated.View style={inputAreaStyle} onLayout={onInputAreaLayout}>
+      <AgentTaskList serverId={serverId} agentId={agentId} />
+      <SubagentsTrack
+        rows={subagentRows}
+        onOpenSubagent={handleOpenSubagent}
+        onOpenProviderSubagent={handleOpenProviderSubagent}
+        onArchiveSubagent={handleArchiveSubagent}
+        onArchiveFinished={archiveFinishedSubagents.archiveFinished}
+        archiveFinishedStatus={archiveFinishedSubagents.status}
+        onDetachSubagent={canDetachSubagents ? handleDetachSubagent : undefined}
+      />
       <Composer
         agentId={agentId}
         serverId={serverId}

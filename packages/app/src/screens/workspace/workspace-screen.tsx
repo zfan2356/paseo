@@ -74,7 +74,6 @@ import { type ExplorerCheckoutContext } from "@/stores/explorer-checkout-context
 import { traceInstant } from "@/performance/native-trace";
 import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
 import {
-  collectAllPanes,
   collectAllTabs,
   getFocusedBrowserId,
   type WorkspaceLayout,
@@ -211,16 +210,31 @@ import { useWorkspaceCheckoutStatus } from "@/screens/workspace/use-workspace-ch
 const WORKSPACE_SETUP_AUTO_OPEN_WINDOW_MS = 30_000;
 const WORKSPACE_FLOATING_PANEL_PORTAL_HOST_PREFIX = "workspace-floating-panels";
 const EMPTY_UI_TABS: WorkspaceTab[] = [];
-const EMPTY_SPLIT_PANES: { focusedTabId: string | null }[] = [];
 
-function collectWorkspaceConversationPanes(
-  layout: WorkspaceLayout | null,
-): { focusedTabId: string | null }[] {
-  if (!layout) {
-    return EMPTY_SPLIT_PANES;
+function openConversationTerminalTab(input: {
+  persistenceKey: string | null;
+  agentId: string;
+  terminalId: string | null;
+  replaceTabId: string;
+  retargetWorkspaceTab: (workspaceKey: string, tabId: string, target: WorkspaceTabTarget) => void;
+  createTerminal: (createInput: { agentId: string; replaceTabId: string }) => void;
+}): void {
+  if (!input.terminalId) {
+    input.createTerminal({
+      agentId: input.agentId,
+      replaceTabId: input.replaceTabId,
+    });
+    return;
   }
-  return collectAllPanes(layout.root);
+  if (!input.persistenceKey) {
+    return;
+  }
+  input.retargetWorkspaceTab(input.persistenceKey, input.replaceTabId, {
+    kind: "terminal",
+    terminalId: input.terminalId,
+  });
 }
+
 const EMPTY_WORKSPACE_SCRIPTS: WorkspaceDescriptor["scripts"] = [];
 const EMPTY_PINNED_AGENT_IDS = new Set<string>();
 const EMPTY_SET = new Set<string>();
@@ -3343,10 +3357,26 @@ function WorkspaceScreenContent({
     },
     [activeTabDescriptor, persistenceKey, retargetWorkspaceTab],
   );
+  const handleOpenConversationTerminal = useCallback(
+    (input: { agentId: string; terminalId: string | null; replaceTabId: string }) => {
+      openConversationTerminalTab({
+        persistenceKey,
+        agentId: input.agentId,
+        terminalId: input.terminalId,
+        replaceTabId: input.replaceTabId,
+        retargetWorkspaceTab,
+        createTerminal,
+      });
+    },
+    [createTerminal, persistenceKey, retargetWorkspaceTab],
+  );
+  const createTerminalDisabled = useMemo(
+    () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,
+    [createTerminalMutation.isPending, pendingTerminalCreateInput],
+  );
   const conversationView = useWorkspaceConversationSurface({
     activeTab: activeTabDescriptor,
     tabs: uiTabs,
-    panes: collectWorkspaceConversationPanes(workspaceLayout),
     serverId: normalizedServerId,
     terminals,
     client,
@@ -3354,6 +3384,8 @@ function WorkspaceScreenContent({
     workspaceDirectory,
     supportsAgentConversationViewSwitch,
     supportsLegacyCodexConversationViewSwitch,
+    isCreatePending: createTerminalDisabled,
+    onOpenConversationTerminal: handleOpenConversationTerminal,
     onReleasedTerminal: handleReleasedConversationTerminal,
     onRetargetToAgent: handleRetargetConversationToAgent,
     toast,
@@ -3602,10 +3634,6 @@ function WorkspaceScreenContent({
     workspaceKey: persistenceKey,
   });
 
-  const createTerminalDisabled = useMemo(
-    () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,
-    [createTerminalMutation.isPending, pendingTerminalCreateInput],
-  );
   const conversationViewSwitch = conversationView.chrome;
 
   const headerRight = useMemo(

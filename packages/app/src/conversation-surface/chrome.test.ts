@@ -2,15 +2,14 @@ import { describe, expect, it } from "vitest";
 import { resolveConversationViewSwitchChrome } from "./chrome";
 
 describe("conversation view switch chrome", () => {
-  it("shows the TUI label on the Agent display without requiring a live host", () => {
+  it("shows the TUI label on an eligible Agent tab", () => {
     expect(
       resolveConversationViewSwitchChrome({
         agentId: "agent-1",
-        surface: "agent",
         isFocusedOnLinkedTerminal: false,
         isPending: false,
-        isConnected: false,
-        hasWorkspaceDirectory: false,
+        isConnected: true,
+        hasWorkspaceDirectory: true,
       }),
     ).toEqual({
       show: true,
@@ -19,12 +18,27 @@ describe("conversation view switch chrome", () => {
     });
   });
 
-  it("shows the Agent label on the TUI display", () => {
+  it("disables opening a conversation PTY without a live host", () => {
     expect(
       resolveConversationViewSwitchChrome({
         agentId: "agent-1",
-        surface: "tui",
         isFocusedOnLinkedTerminal: false,
+        isPending: false,
+        isConnected: false,
+        hasWorkspaceDirectory: false,
+      }),
+    ).toEqual({
+      show: true,
+      labelKey: "workspace.header.actions.switchToTuiView",
+      disabled: true,
+    });
+  });
+
+  it("shows the Agent label on a linked conversation terminal tab", () => {
+    expect(
+      resolveConversationViewSwitchChrome({
+        agentId: null,
+        isFocusedOnLinkedTerminal: true,
         isPending: false,
         isConnected: true,
         hasWorkspaceDirectory: true,
@@ -36,28 +50,10 @@ describe("conversation view switch chrome", () => {
     });
   });
 
-  it("keeps the Agent-tab display switch enabled while a leftover PTY still exists", () => {
-    expect(
-      resolveConversationViewSwitchChrome({
-        agentId: "agent-1",
-        surface: "agent",
-        isFocusedOnLinkedTerminal: false,
-        isPending: true,
-        isConnected: false,
-        hasWorkspaceDirectory: true,
-      }),
-    ).toEqual({
-      show: true,
-      labelKey: "workspace.header.actions.switchToTuiView",
-      disabled: false,
-    });
-  });
-
-  it("disables leave-linked host work when the leftover terminal tab is focused offline", () => {
+  it("disables leaving a linked terminal while offline", () => {
     expect(
       resolveConversationViewSwitchChrome({
         agentId: null,
-        surface: "agent",
         isFocusedOnLinkedTerminal: true,
         isPending: false,
         isConnected: false,
@@ -67,23 +63,6 @@ describe("conversation view switch chrome", () => {
       show: true,
       labelKey: "workspace.header.actions.switchToAgentView",
       disabled: true,
-    });
-  });
-
-  it("shows the Agent label when a leftover terminal tab is focused", () => {
-    expect(
-      resolveConversationViewSwitchChrome({
-        agentId: null,
-        surface: "agent",
-        isFocusedOnLinkedTerminal: true,
-        isPending: false,
-        isConnected: true,
-        hasWorkspaceDirectory: true,
-      }),
-    ).toEqual({
-      show: true,
-      labelKey: "workspace.header.actions.switchToAgentView",
-      disabled: false,
     });
   });
 });
