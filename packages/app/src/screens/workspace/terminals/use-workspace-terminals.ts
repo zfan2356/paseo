@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import type { TerminalProfile } from "@getpaseo/protocol/messages";
+import { resolveTerminalProfileLaunch } from "@getpaseo/protocol/terminal-profiles";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
 import { useTranslation } from "react-i18next";
 import { useReplicaQuery } from "@/data/query";
@@ -17,20 +19,12 @@ import {
   upsertCreatedTerminalPayload,
 } from "@/screens/workspace/terminals/state";
 
-interface TerminalProfileInput {
-  name: string;
-  command: string;
-  args?: string[];
-}
-
 interface PendingTerminalCreateInput {
   paneId?: string;
   replaceTabId?: string;
-  profile?: TerminalProfileInput;
+  profile?: TerminalProfile;
   agentId?: string;
 }
-
-export type { TerminalProfileInput };
 
 interface UseWorkspaceTerminalsInput {
   client: DaemonClient | null;
@@ -147,16 +141,19 @@ export function useWorkspaceTerminals(input: UseWorkspaceTerminalsInput) {
           agentId: _input.agentId,
           workspaceId: normalizedWorkspaceId || undefined,
         });
-      } else if (_input?.profile) {
-        payload = await client.createTerminal(workspaceDirectory, _input.profile.name, undefined, {
-          command: _input.profile.command,
-          args: _input.profile.args,
-          workspaceId: normalizedWorkspaceId || undefined,
-        });
       } else {
-        payload = await client.createTerminal(workspaceDirectory, undefined, undefined, {
-          workspaceId: normalizedWorkspaceId || undefined,
-        });
+        const profile = _input?.profile
+          ? resolveTerminalProfileLaunch(_input.profile, "")
+          : undefined;
+        payload = profile
+          ? await client.createTerminal(workspaceDirectory, profile.name, undefined, {
+              command: profile.command,
+              args: profile.args,
+              workspaceId: normalizedWorkspaceId || undefined,
+            })
+          : await client.createTerminal(workspaceDirectory, undefined, undefined, {
+              workspaceId: normalizedWorkspaceId || undefined,
+            });
       }
       // The daemon reports a failed spawn (e.g. a profile command that isn't
       // installed) via payload.error with a null terminal. Surface it instead

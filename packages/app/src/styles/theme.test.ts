@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { darkCodexTheme, darkPureBlackTheme, getNextThemePreference, THEME_OPTIONS } from "./theme";
+import {
+  darkCodexTheme,
+  darkPureBlackTheme,
+  darkTheme,
+  FONT_SIZE,
+  getNextThemePreference,
+  lightTheme,
+  THEME_OPTIONS,
+} from "./theme";
+
+describe("Typography scale", () => {
+  it("names 14px as the default interface tier", () => {
+    expect(FONT_SIZE).toEqual({
+      code: 12,
+      sm: 12,
+      base: 14,
+      lg: 16,
+      xl: 18,
+      "2xl": 20,
+      "3xl": 22,
+      "4xl": 26,
+    });
+  });
+});
 
 describe("Theme catalog", () => {
   it("owns the picker and shortcut order", () => {
@@ -32,9 +55,12 @@ describe("Pure black theme", () => {
     expect(darkPureBlackTheme.colors.accentBright).toBe("#7ccba0");
   });
 
-  it("keeps selected sidebar rows distinct from the black sidebar", () => {
+  it("derives sidebar interaction surfaces from the surface scale", () => {
     expect(darkPureBlackTheme.colors.surfaceSidebar).toBe("#000000");
-    expect(darkPureBlackTheme.colors.surfaceSidebarHover).toBe("#161616");
+    expect(darkPureBlackTheme.colors.surfaceSidebarHover).toBe(darkPureBlackTheme.colors.surface1);
+    expect(darkPureBlackTheme.colors.surfaceSidebarSelected).toBe(
+      darkPureBlackTheme.colors.surface2,
+    );
   });
 
   it("keeps ANSI black output readable on its zero-luminance terminal background", () => {
@@ -52,7 +78,8 @@ describe("Codex theme", () => {
 
   it("keeps the sidebar darker than the chat surface", () => {
     expect(darkCodexTheme.colors.surfaceSidebar).toBe("#171717");
-    expect(darkCodexTheme.colors.surfaceSidebarHover).toBe("#2f2f2f");
+    expect(darkCodexTheme.colors.surfaceSidebarHover).toBe(darkCodexTheme.colors.surface1);
+    expect(darkCodexTheme.colors.surfaceSidebarSelected).toBe("#2f2f2f");
     expect(darkCodexTheme.colors.surface2).toBe("#2f2f2f");
   });
 
@@ -62,4 +89,14 @@ describe("Codex theme", () => {
     expect(darkCodexTheme.colors.accentBright).toBe("#6fba88");
     expect(darkCodexTheme.colors.destructive).toBe("#d65d5e");
   });
+});
+
+describe("Sidebar interaction surfaces", () => {
+  it.each([lightTheme, darkTheme])(
+    "derives hover and selection from the surface scale",
+    (theme) => {
+      expect(theme.colors.surfaceSidebarHover).toBe(theme.colors.surface1);
+      expect(theme.colors.surfaceSidebarSelected).toBe(theme.colors.surface2);
+    },
+  );
 });

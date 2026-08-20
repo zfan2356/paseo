@@ -106,16 +106,14 @@ function TerminalPanel() {
   const supportsCodexTerminalImagePaste = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.codexTerminalImagePaste === true,
   );
-  const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
+  const openCompactFileExplorer = usePanelStore((state) => state.openCompactFileExplorer);
   const handleOpenFileExplorer = useCallback(() => {
     if (!workspaceDirectory) {
       return;
     }
-    openFileExplorerForCheckout({
-      isCompact: true,
-      checkout: { serverId, cwd: workspaceDirectory, isGit: isGitCheckout },
-    });
-  }, [isGitCheckout, openFileExplorerForCheckout, serverId, workspaceDirectory]);
+    openCompactFileExplorer({ serverId, cwd: workspaceDirectory, isGit: isGitCheckout });
+  }, [isGitCheckout, openCompactFileExplorer, serverId, workspaceDirectory]);
+
   if (!workspaceDirectory) {
     return (
       <View style={CENTERED_PADDED_STYLE}>
