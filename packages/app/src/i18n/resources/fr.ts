@@ -213,6 +213,14 @@ export const fr: TranslationResources = {
     },
   },
   agentPanel: {
+    sideChat: {
+      title: "Discussion parallèle",
+      inputPlaceholder: "Posez une question rapide…",
+      send: "Envoyer",
+      empty: "Posez une question rapide sans interrompre le travail de l'agent.",
+      noResponse: "Aucune réponse reçue",
+      fallbackNotice: "Réponse fournie par un modèle de secours",
+    },
     states: {
       notFound: "Agentintrouvable",
       failedToLoad: "Échec du chargement de l'agent",
@@ -679,6 +687,8 @@ export const fr: TranslationResources = {
         forkToCodexTerminal: "Dupliquer la conversation dans le terminal Codex",
         switchToTuiView: "Basculer vers la vue TUI",
         switchToAgentView: "Basculer vers la vue Agent",
+        openSideChat: "Ouvrir la discussion parallèle",
+        closeSideChat: "Fermer la discussion parallèle",
         newBrowser: "Nouvel onglet du navigateur",
         importSession: "Session d'importation",
         copyPath: "Copier le chemin de l'espace de travail",

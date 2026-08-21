@@ -211,6 +211,14 @@ export const ru: TranslationResources = {
     },
   },
   agentPanel: {
+    sideChat: {
+      title: "Боковой чат",
+      inputPlaceholder: "Задайте быстрый вопрос…",
+      send: "Отправить",
+      empty: "Задайте быстрый вопрос, не прерывая работу агента.",
+      noResponse: "Ответ не получен",
+      fallbackNotice: "Ответ дан резервной моделью",
+    },
     states: {
       notFound: "Agent не найден",
       failedToLoad: "Не удалось загрузить агент",
@@ -679,6 +687,8 @@ export const ru: TranslationResources = {
         forkToCodexTerminal: "Ответвить разговор в терминал Codex",
         switchToTuiView: "Переключиться в режим TUI",
         switchToAgentView: "Переключиться в режим Agent",
+        openSideChat: "Открыть боковой чат",
+        closeSideChat: "Закрыть боковой чат",
         newBrowser: "Новая вкладка браузера",
         importSession: "Импортировать сеанс",
         copyPath: "Копировать путь к рабочей области",

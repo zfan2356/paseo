@@ -211,6 +211,14 @@ export const ptBR: TranslationResources = {
     },
   },
   agentPanel: {
+    sideChat: {
+      title: "Chat lateral",
+      inputPlaceholder: "Faça uma pergunta rápida…",
+      send: "Enviar",
+      empty: "Faça uma pergunta rápida sem interromper o trabalho do agente.",
+      noResponse: "Nenhuma resposta recebida",
+      fallbackNotice: "Respondido por um modelo alternativo",
+    },
     states: {
       notFound: "Agente não encontrado",
       failedToLoad: "Falha ao carregar agente",
@@ -677,6 +685,8 @@ export const ptBR: TranslationResources = {
         forkToCodexTerminal: "Bifurcar conversa para o terminal Codex",
         switchToTuiView: "Alternar para a visão TUI",
         switchToAgentView: "Alternar para a visão do Agent",
+        openSideChat: "Abrir chat lateral",
+        closeSideChat: "Fechar chat lateral",
         newBrowser: "Nova aba de navegador",
         importSession: "Importar sessão",
         copyPath: "Copiar caminho do workspace",

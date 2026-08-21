@@ -17,6 +17,7 @@ import { StyleSheet as RNStyleSheet, Text, View } from "react-native";
 import ReanimatedAnimated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { SideChatOverlay } from "@/side-chat/panel";
 import invariant from "tiny-invariant";
 import { shallow, useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
@@ -1386,6 +1387,8 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
           ) : null}
 
           {composerSection}
+
+          <SideChatOverlay serverId={serverId} agentId={agentId} />
 
           {showHistorySyncOverlay ? (
             <View style={styles.historySyncOverlay} testID="agent-history-overlay">

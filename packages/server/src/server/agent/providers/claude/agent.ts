@@ -75,7 +75,12 @@ import {
   type ClaudeProviderOptions,
 } from "./options.js";
 import { renderPromptAttachmentAsText } from "../../prompt-attachments.js";
-import { claudeQuery, type ClaudeOptions, type ClaudeQueryFactory } from "./query.js";
+import {
+  askClaudeSideQuestion,
+  claudeQuery,
+  type ClaudeOptions,
+  type ClaudeQueryFactory,
+} from "./query.js";
 import { realClaudeRewindSdk, revertClaudeConversation, revertClaudeFiles } from "./rewind.js";
 import { normalizeProviderReplayTimestamp } from "../../provider-history-timestamps.js";
 import { claudeProjectDirSync } from "./project-dir.js";
@@ -109,6 +114,7 @@ import {
   type AgentRunResult,
   type AgentSession,
   type AgentSessionConfig,
+  type AgentSideQuestionResult,
   type AgentSlashCommand,
   type SteerActiveTurnOptions,
   type SteerResult,
@@ -312,6 +318,7 @@ const CLAUDE_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindConversation: true,
   supportsRewindFiles: true,
   supportsRewindBoth: true,
+  supportsSideQuestion: true,
 };
 
 const DEFAULT_MODES: AgentMode[] = [
@@ -2682,6 +2689,11 @@ class ClaudeAgentSession implements AgentSession {
   async revertBoth(input: { messageId: string }): Promise<void> {
     await this.revertFiles(input);
     await this.revertConversation(input);
+  }
+
+  async askSideQuestion(input: { question: string }): Promise<AgentSideQuestionResult | null> {
+    const query = await this.ensureQuery();
+    return askClaudeSideQuestion(query, input.question);
   }
 
   private resolveSlashCommandInvocation(prompt: AgentPromptInput): SlashCommandInvocation | null {

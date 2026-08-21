@@ -211,6 +211,14 @@ export const ja: TranslationResources = {
     },
   },
   agentPanel: {
+    sideChat: {
+      title: "サイドチャット",
+      inputPlaceholder: "気軽に質問…",
+      send: "送信",
+      empty: "エージェントの作業を中断せずに、ちょっとした質問ができます。",
+      noResponse: "応答がありませんでした",
+      fallbackNotice: "フォールバックモデルによる回答",
+    },
     states: {
       notFound: "エージェントが見つかりません",
       failedToLoad: "エージェントの読み込みに失敗しました",
@@ -676,6 +684,8 @@ export const ja: TranslationResources = {
         forkToCodexTerminal: "会話を Codex ターミナルにフォーク",
         switchToTuiView: "TUIビューに切り替え",
         switchToAgentView: "Agent ビューに切り替え",
+        openSideChat: "サイドチャットを開く",
+        closeSideChat: "サイドチャットを閉じる",
         newBrowser: "新しいブラウザタブ",
         importSession: "セッションをインポート",
         copyPath: "ワークスペースパスをコピー",

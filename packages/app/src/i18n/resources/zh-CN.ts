@@ -211,6 +211,14 @@ export const zhCN: TranslationResources = {
     },
   },
   agentPanel: {
+    sideChat: {
+      title: "侧边提问",
+      inputPlaceholder: "问个小问题…",
+      send: "发送",
+      empty: "在不打断 Agent 当前工作的情况下,快速问一个小问题。",
+      noResponse: "未收到回复",
+      fallbackNotice: "由备用模型回答",
+    },
     states: {
       notFound: "未找到 Agent",
       failedToLoad: "加载 Agent 失败",
@@ -670,6 +678,8 @@ export const zhCN: TranslationResources = {
         forkToCodexTerminal: "转为 Codex Terminal 会话",
         switchToTuiView: "切换到 TUI 终端",
         switchToAgentView: "切换回 Agent 对话",
+        openSideChat: "打开侧边提问",
+        closeSideChat: "关闭侧边提问",
         newBrowser: "新建浏览器标签",
         importSession: "导入会话",
         copyPath: "复制 workspace 路径",

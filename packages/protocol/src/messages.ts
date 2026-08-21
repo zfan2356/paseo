@@ -1878,6 +1878,24 @@ export const AgentRewindResponseMessageSchema = z.object({
   }),
 });
 
+export const AgentSideQuestionAskRequestMessageSchema = z.object({
+  type: z.literal("agent.side_question.ask.request"),
+  agentId: z.string(),
+  question: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentSideQuestionAskResponseMessageSchema = z.object({
+  type: z.literal("agent.side_question.ask.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    response: z.string().nullable(),
+    synthetic: z.boolean().optional(),
+    error: z.string().nullable(),
+  }),
+});
+
 export const UpdateAgentResponseMessageSchema = z.object({
   type: z.literal("update_agent_response"),
   payload: AgentActionResponsePayloadSchema,
@@ -3041,6 +3059,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentConfigApplyRequestMessageSchema,
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
+  AgentSideQuestionAskRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
   CheckoutStatusRequestSchema,
   SubscribeCheckoutDiffRequestSchema,
@@ -3388,6 +3407,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentConversationViewSwitch: z.boolean().optional(),
         // COMPAT(codexTerminalImagePaste): added in the custom fork on 2026-08-13.
         codexTerminalImagePaste: z.boolean().optional(),
+        // COMPAT(agentSideQuestion): added in the custom fork on 2026-08-21.
+        agentSideQuestion: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.
@@ -6300,6 +6321,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentConfigApplyResponseMessageSchema,
   AgentDetachResponseMessageSchema,
   AgentRewindResponseMessageSchema,
+  AgentSideQuestionAskResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
   ProjectIconSetResponseSchema,
@@ -6497,6 +6519,12 @@ export type SetAgentFeatureResponseMessage = z.infer<typeof SetAgentFeatureRespo
 export type AgentConfigApplyResponseMessage = z.infer<typeof AgentConfigApplyResponseMessageSchema>;
 export type AgentDetachResponseMessage = z.infer<typeof AgentDetachResponseMessageSchema>;
 export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessageSchema>;
+export type AgentSideQuestionAskRequestMessage = z.infer<
+  typeof AgentSideQuestionAskRequestMessageSchema
+>;
+export type AgentSideQuestionAskResponseMessage = z.infer<
+  typeof AgentSideQuestionAskResponseMessageSchema
+>;
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
 export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
 export type ProjectIconSetResponse = z.infer<typeof ProjectIconSetResponseSchema>;

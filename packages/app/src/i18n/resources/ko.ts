@@ -211,6 +211,14 @@ export const ko: TranslationResources = {
     },
   },
   agentPanel: {
+    sideChat: {
+      title: "사이드 채팅",
+      inputPlaceholder: "간단한 질문하기…",
+      send: "보내기",
+      empty: "에이전트의 작업을 중단하지 않고 간단한 질문을 할 수 있습니다.",
+      noResponse: "응답을 받지 못했습니다",
+      fallbackNotice: "대체 모델이 답변했습니다",
+    },
     states: {
       notFound: "에이전트를 찾을 수 없습니다",
       failedToLoad: "에이전트를 불러오지 못했습니다",
@@ -674,6 +682,8 @@ export const ko: TranslationResources = {
         forkToCodexTerminal: "대화를 Codex 터미널로 포크",
         switchToTuiView: "TUI 보기로 전환",
         switchToAgentView: "Agent 보기로 전환",
+        openSideChat: "사이드 채팅 열기",
+        closeSideChat: "사이드 채팅 닫기",
         newBrowser: "새 브라우저 탭",
         importSession: "세션 가져오기",
         copyPath: "워크스페이스 경로 복사",

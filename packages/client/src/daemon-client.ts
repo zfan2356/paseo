@@ -88,6 +88,7 @@ import type {
   DaemonConfigReloadResponse,
   DiagnosticsResponse,
   AgentRewindResponseMessage,
+  AgentSideQuestionAskResponseMessage,
   ListTerminalsResponse,
   CreateTerminalResponse,
   SubscribeTerminalResponse,
@@ -506,6 +507,7 @@ type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
 type KillTerminalPayload = KillTerminalResponse["payload"];
 type SwitchAgentTerminalToAgentPayload = SwitchAgentTerminalToAgentResponse["payload"];
+type AgentSideQuestionAskPayload = AgentSideQuestionAskResponseMessage["payload"];
 type SwitchCodexTerminalToAgentPayload = SwitchCodexTerminalToAgentResponse["payload"];
 type CaptureTerminalPayload = CaptureTerminalResponse["payload"];
 type ScheduleCreatePayload = Extract<
@@ -916,6 +918,8 @@ function toTimeoutError(error: unknown, label: string, timeoutMs: number): Error
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 1500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30000;
 const DEFAULT_SESSION_RPC_TIMEOUT_MS = 60_000;
+/** Side questions run a full model turn (with API retries) on the daemon. */
+const SIDE_QUESTION_TIMEOUT_MS = 180_000;
 const PUSH_TOKEN_REVOCATION_TIMEOUT_MS = 2_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_LIVENESS_TIMEOUT_MS = 5000;
@@ -5350,6 +5354,32 @@ export class DaemonClient {
       requestId: resolvedRequestId,
       message,
       responseType: "agent_terminal.switch_to_agent.response",
+      options: { skipQueue: true },
+    });
+  }
+
+  /**
+   * Ask a quick side question grounded in the agent's live conversation
+   * context. The daemon answers without interrupting the agent's current
+   * work; nothing is written to the agent timeline.
+   */
+  async askAgentSideQuestion(
+    agentId: string,
+    question: string,
+    requestId?: string,
+  ): Promise<AgentSideQuestionAskPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.side_question.ask.request",
+      agentId,
+      question,
+      requestId: resolvedRequestId,
+    });
+    return this.sendCorrelatedRequest({
+      requestId: resolvedRequestId,
+      message,
+      responseType: "agent.side_question.ask.response",
+      timeout: SIDE_QUESTION_TIMEOUT_MS,
       options: { skipQueue: true },
     });
   }

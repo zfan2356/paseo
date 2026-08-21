@@ -18,7 +18,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, type Href } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { useTranslation } from "react-i18next";
-import { ArrowLeftRight, ChevronDown, PanelRight } from "lucide-react-native";
+import {
+  ArrowLeftRight,
+  ChevronDown,
+  MessageCircleQuestionMark,
+  PanelRight,
+} from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
@@ -79,6 +84,7 @@ import {
   workspaceTabTargetsEqual,
 } from "@/workspace-tabs/identity";
 import { useWorkspaceConversationSurface } from "@/conversation-surface/use-workspace-conversation-surface";
+import { useSideChatHeader } from "@/side-chat/use-side-chat-header";
 import { selectVisibleAgentIds } from "./visible-agent-ids";
 import {
   getHostRuntimeStore,
@@ -246,6 +252,7 @@ function buildWorkspaceFileLocation(
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedArrowLeftRight = withUnistyles(ArrowLeftRight);
+const ThemedMessageCircleQuestionMark = withUnistyles(MessageCircleQuestionMark);
 const ThemedPanelRight = withUnistyles(PanelRight);
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
@@ -3347,6 +3354,12 @@ function WorkspaceScreenContent({
 
   const conversationViewSwitch = conversationView.chrome;
 
+  const sideChatHeader = useSideChatHeader({
+    serverId: normalizedServerId,
+    activeTab: activeTabDescriptor,
+    isConnected,
+  });
+
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
@@ -3367,6 +3380,39 @@ function WorkspaceScreenContent({
               const active = hovered || pressed;
               const colorMapping = active ? foregroundColorMapping : extraMutedColorMapping;
               return <ThemedArrowLeftRight size={isMobile ? 20 : 16} uniProps={colorMapping} />;
+            }}
+          </HeaderToggleButton>
+        ) : null}
+        {sideChatHeader.show ? (
+          <HeaderToggleButton
+            testID="workspace-toggle-side-chat"
+            onPress={sideChatHeader.toggle}
+            tooltipLabel={t(
+              sideChatHeader.isOpen
+                ? "workspace.header.actions.closeSideChat"
+                : "workspace.header.actions.openSideChat",
+            )}
+            tooltipKeys={[]}
+            tooltipSide="bottom"
+            style={isMobile ? styles.headerActionButton : styles.compactHeaderActionButton}
+            disabled={sideChatHeader.disabled}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={t(
+              sideChatHeader.isOpen
+                ? "workspace.header.actions.closeSideChat"
+                : "workspace.header.actions.openSideChat",
+            )}
+          >
+            {({ hovered, pressed }) => {
+              const active = hovered || pressed || sideChatHeader.isOpen;
+              const colorMapping = active ? foregroundColorMapping : extraMutedColorMapping;
+              return (
+                <ThemedMessageCircleQuestionMark
+                  size={isMobile ? 20 : 16}
+                  uniProps={colorMapping}
+                />
+              );
             }}
           </HeaderToggleButton>
         ) : null}
@@ -3438,6 +3484,10 @@ function WorkspaceScreenContent({
       isMobile,
       conversationViewSwitch,
       conversationView.onToggle,
+      sideChatHeader.show,
+      sideChatHeader.disabled,
+      sideChatHeader.isOpen,
+      sideChatHeader.toggle,
       workspaceDescriptor,
       normalizedServerId,
       normalizedWorkspaceId,

@@ -2276,6 +2276,8 @@ export class Session {
     switch (msg.type) {
       case "agent.rewind.request":
         return this.handleAgentRewindRequest(msg);
+      case "agent.side_question.ask.request":
+        return this.handleAgentSideQuestionAskRequest(msg);
       default:
         return undefined;
     }
@@ -4008,6 +4010,34 @@ export class Session {
           agentId: msg.agentId,
           ok: false,
           error: error instanceof Error ? error.message : "Failed to rewind agent",
+        },
+      });
+    }
+  }
+
+  private async handleAgentSideQuestionAskRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.side_question.ask.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.agentManager.askSideQuestion(msg.agentId, msg.question);
+      this.emit({
+        type: "agent.side_question.ask.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          response: result?.response ?? null,
+          ...(result ? { synthetic: result.synthetic } : {}),
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.side_question.ask.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          response: null,
+          error: error instanceof Error ? error.message : "Failed to ask side question",
         },
       });
     }

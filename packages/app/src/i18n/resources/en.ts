@@ -208,6 +208,14 @@ export const en = {
     },
   },
   agentPanel: {
+    sideChat: {
+      title: "Side chat",
+      inputPlaceholder: "Ask a quick question…",
+      send: "Send",
+      empty: "Ask a quick side question without interrupting the agent's work.",
+      noResponse: "No response received",
+      fallbackNotice: "Answered by a fallback model",
+    },
     states: {
       notFound: "Agent not found",
       failedToLoad: "Failed to load agent",
@@ -670,6 +678,8 @@ export const en = {
         forkToCodexTerminal: "Fork conversation to Codex terminal",
         switchToTuiView: "Switch to TUI terminal",
         switchToAgentView: "Switch to Agent view",
+        openSideChat: "Open side chat",
+        closeSideChat: "Close side chat",
         newBrowser: "New browser tab",
         importSession: "Import session",
         copyPath: "Copy workspace path",

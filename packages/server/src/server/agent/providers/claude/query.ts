@@ -117,3 +117,30 @@ export function claudeQuery(input: ClaudeQueryInput, context: ClaudeQueryContext
     options: applyRuntimeSettingsToClaudeOptions(input.options, context),
   });
 }
+
+export interface ClaudeSideQuestionResult {
+  response: string;
+  synthetic: boolean;
+}
+
+// The SDK runtime implements askSideQuestion (the /btw "side_question" control
+// request) but does not declare it in the published Query typings yet, so the
+// access stays behind a runtime check instead of a bare cast.
+type SideQuestionCapableQuery = Query & {
+  askSideQuestion?: (question: string) => Promise<{ response: string; synthetic?: boolean } | null>;
+};
+
+export async function askClaudeSideQuestion(
+  activeQuery: Query,
+  question: string,
+): Promise<ClaudeSideQuestionResult | null> {
+  const candidate = activeQuery as SideQuestionCapableQuery;
+  if (typeof candidate.askSideQuestion !== "function") {
+    throw new Error("The installed Claude Code version does not support side questions");
+  }
+  const result = await candidate.askSideQuestion(question);
+  if (!result || typeof result.response !== "string") {
+    return null;
+  }
+  return { response: result.response, synthetic: result.synthetic === true };
+}

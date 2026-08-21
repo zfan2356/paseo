@@ -49,6 +49,7 @@ import {
   type AgentRunResult,
   type AgentSession,
   type AgentSessionConfig,
+  type AgentSideQuestionResult,
   type SteerResult,
   type AgentStreamEvent,
   type AgentTimelineItem,
@@ -3036,6 +3037,23 @@ export class AgentManager {
     } finally {
       this.runs.settleForegroundRun(agentId, lock.token);
     }
+  }
+
+  /**
+   * Ask the provider a quick side question grounded in the agent's live
+   * conversation context. Runs alongside any foreground turn: no run lock,
+   * no timeline writes, no persistence.
+   */
+  async askSideQuestion(
+    agentId: string,
+    question: string,
+  ): Promise<AgentSideQuestionResult | null> {
+    const agent = this.requireSessionAgent(agentId);
+    const session = agent.session;
+    if (!session.capabilities.supportsSideQuestion || !session.askSideQuestion) {
+      throw new Error("Provider does not support side questions");
+    }
+    return await session.askSideQuestion({ question });
   }
 
   async deleteCommittedTimeline(agentId: string): Promise<void> {

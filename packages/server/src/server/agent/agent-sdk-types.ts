@@ -190,6 +190,14 @@ export interface AgentCapabilityFlags {
   supportsRewindConversation?: boolean;
   supportsRewindFiles?: boolean;
   supportsRewindBoth?: boolean;
+  supportsSideQuestion?: boolean;
+}
+
+/** Result of a provider side question (Claude Code `/btw`-style quick answer). */
+export interface AgentSideQuestionResult {
+  response: string;
+  /** True when the provider substituted a synthetic response (e.g. refusal fallback). */
+  synthetic: boolean;
 }
 
 export interface AgentPersistenceHandle {
@@ -658,6 +666,12 @@ export interface AgentSession {
   revertConversation?(input: { messageId: string }): Promise<void>;
   revertFiles?(input: { messageId: string }): Promise<void>;
   revertBoth?(input: { messageId: string }): Promise<void>;
+  /**
+   * Ask a quick side question answered from the live conversation context
+   * without allocating a turn, touching the timeline, or running tools.
+   * Resolves null when the provider produced no response.
+   */
+  askSideQuestion?(input: { question: string }): Promise<AgentSideQuestionResult | null>;
   /**
    * Out-of-band prompt handler. When non-null, the manager runs the returned
    * handler instead of allocating a turn. The handler emits stream events

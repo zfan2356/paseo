@@ -211,6 +211,14 @@ export const ar: TranslationResources = {
     },
   },
   agentPanel: {
+    sideChat: {
+      title: "الدردشة الجانبية",
+      inputPlaceholder: "اطرح سؤالًا سريعًا…",
+      send: "إرسال",
+      empty: "اطرح سؤالًا سريعًا دون مقاطعة عمل الوكيل.",
+      noResponse: "لم يتم تلقي رد",
+      fallbackNotice: "تمت الإجابة بواسطة نموذج احتياطي",
+    },
     states: {
       notFound: "لم يتم العثور على Agent",
       failedToLoad: "فشل تحميل الوكيل",
@@ -674,6 +682,8 @@ export const ar: TranslationResources = {
         forkToCodexTerminal: "تشعيب المحادثة إلى محطة Codex",
         switchToTuiView: "التبديل إلى عرض TUI",
         switchToAgentView: "التبديل إلى عرض Agent",
+        openSideChat: "فتح الدردشة الجانبية",
+        closeSideChat: "إغلاق الدردشة الجانبية",
         newBrowser: "علامة تبويب متصفح جديدة",
         importSession: "جلسة الاستيراد",
         copyPath: "نسخ مسار مساحة العمل",
