@@ -29,6 +29,7 @@ import {
   type AgentTimelineItem,
   type ToolCallTimelineItem,
   type AgentUsage,
+  type AgentSideQuestionResult,
   type FetchCatalogOptions,
   type ImportableProviderSession,
   type ImportProviderSessionContext,
@@ -85,6 +86,13 @@ import {
   type CodexAppServerTraceContext,
 } from "./codex/app-server-transport.js";
 import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
+import {
+  buildCodexSideQuestionForkParams,
+  buildCodexSideQuestionPrompt,
+  buildCodexSideQuestionTurnParams,
+  CODEX_SIDE_QUESTION_TIMEOUT_MS,
+  CodexSideQuestionRun,
+} from "./codex/side-question.js";
 import {
   materializeProviderImage,
   renderProviderImageOutputAsAssistantMarkdown,
@@ -220,6 +228,7 @@ const CODEX_APP_SERVER_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindConversation: true,
   supportsRewindFiles: false,
   supportsRewindBoth: false,
+  supportsSideQuestion: true,
 };
 
 const CODEX_MODES: AgentMode[] = [
@@ -3263,6 +3272,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private subAgentCallsByCallId = new Map<string, CodexSubAgentCallState>();
   private subAgentCallIdByChildThreadId = new Map<string, string>();
   private pendingSubAgentNotificationsByThreadId = new Map<string, ParsedCodexNotification[]>();
+  private readonly sideQuestionRunsByThreadId = new Map<string, CodexSideQuestionRun>();
   private warnedUnknownNotificationMethods = new Set<string>();
   private warnedInvalidNotificationPayloads = new Set<string>();
   private warnedIncompleteEditToolCallIds = new Set<string>();
@@ -4566,6 +4576,63 @@ export class CodexAppServerAgentSession implements AgentSession {
     });
   }
 
+  async askSideQuestion(input: { question: string }): Promise<AgentSideQuestionResult | null> {
+    await this.connect();
+    const client = this.client;
+    if (!client) {
+      throw new Error("Codex client is not initialized");
+    }
+    if (this.currentThreadId) {
+      await this.ensureThreadLoaded();
+    } else {
+      await this.ensureThread();
+    }
+    const threadId = this.currentThreadId;
+    if (!threadId) {
+      throw new Error("Codex thread is not ready for side questions");
+    }
+
+    // The fork shares the main thread's history without touching it; the
+    // answer turn runs on the forked thread and its notifications are
+    // intercepted before timeline and sub-agent routing.
+    const forked = await forkCodexThread(
+      client,
+      buildCodexSideQuestionForkParams({
+        threadId,
+        cwd: this.config.cwd ?? null,
+        model: this.config.model ?? null,
+        serviceTier: this.serviceTier,
+      }),
+    );
+    const sideThreadId = forked.thread.id;
+    const run = new CodexSideQuestionRun();
+    this.sideQuestionRunsByThreadId.set(sideThreadId, run);
+    this.pendingSubAgentNotificationsByThreadId.delete(sideThreadId);
+    try {
+      await client.request(
+        "turn/start",
+        buildCodexSideQuestionTurnParams({
+          threadId: sideThreadId,
+          input: await this.buildUserInput(buildCodexSideQuestionPrompt(input.question)),
+          model: this.config.model ?? null,
+          serviceTier: this.serviceTier,
+        }),
+        TURN_START_TIMEOUT_MS,
+      );
+      const outcome = await run.waitForCompletion(CODEX_SIDE_QUESTION_TIMEOUT_MS);
+      if (outcome.status === "failed") {
+        throw new Error(outcome.errorMessage ?? "Codex side question turn failed");
+      }
+      const response = run.answerText();
+      return response === null ? null : { response, synthetic: false };
+    } finally {
+      this.sideQuestionRunsByThreadId.delete(sideThreadId);
+      // The ephemeral fork flag already prevents persistence on newer
+      // app-servers; archiving covers the ones that ignored it.
+      void client.request("thread/archive", { threadId: sideThreadId }).catch(() => undefined);
+    }
+  }
+
   async interrupt(): Promise<void> {
     if (!this.client || !this.currentThreadId) {
       throw new Error("Cannot interrupt Codex before the active thread is initialized");
@@ -4983,7 +5050,15 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
     const parsed = CodexNotificationSchema.parse({ method, params });
     this.traceParsedNotification(method, params, parsed);
-    const route = this.resolveCodexThreadRoute(getCodexNotificationThreadId(parsed));
+    const notificationThreadId = getCodexNotificationThreadId(parsed);
+    const sideQuestionRun = notificationThreadId
+      ? this.sideQuestionRunsByThreadId.get(notificationThreadId)
+      : undefined;
+    if (sideQuestionRun) {
+      sideQuestionRun.handleNotification(parsed);
+      return;
+    }
+    const route = this.resolveCodexThreadRoute(notificationThreadId);
     if (route.kind === "pending_sub_agent") {
       this.bufferPendingSubAgentNotification(route.threadId, parsed);
       return;

@@ -3,9 +3,9 @@ export interface SideChatAgent {
   provider?: string | null;
 }
 
-// Side questions ride the Claude Code SDK "side_question" control request, so
-// the entry point only appears for live Claude agents on hosts that advertise
-// the capability.
+// Side questions ride the Claude Code SDK "side_question" control request or
+// a forked ephemeral Codex thread, so the entry point only appears for live
+// agents of those providers on hosts that advertise the capability.
 export function canOfferSideChat(
   agent: SideChatAgent | null,
   options: { featureEnabled: boolean },
@@ -16,7 +16,7 @@ export function canOfferSideChat(
   if (!agent || agent.archivedAt) {
     return false;
   }
-  return agent.provider === "claude";
+  return agent.provider === "claude" || agent.provider === "codex";
 }
 
 export interface SideChatHeaderChrome {

@@ -87,12 +87,18 @@ describe("side chat chrome", () => {
     expect(canOfferSideChat(claudeAgent, { featureEnabled: true })).toBe(true);
   });
 
+  it("offers side chat for a live Codex agent when the host supports it", () => {
+    expect(
+      canOfferSideChat({ provider: "codex", archivedAt: null }, { featureEnabled: true }),
+    ).toBe(true);
+  });
+
   it("does not offer side chat without the host feature", () => {
     expect(canOfferSideChat(claudeAgent, { featureEnabled: false })).toBe(false);
   });
 
   it("does not offer side chat for other providers or archived agents", () => {
-    expect(canOfferSideChat({ provider: "codex" }, { featureEnabled: true })).toBe(false);
+    expect(canOfferSideChat({ provider: "cursor" }, { featureEnabled: true })).toBe(false);
     expect(
       canOfferSideChat({ provider: "claude", archivedAt: "2026-08-20" }, { featureEnabled: true }),
     ).toBe(false);
