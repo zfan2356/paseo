@@ -5,6 +5,8 @@ import { promises } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  deleteSession,
+  forkSession,
   type AgentDefinition,
   type CanUseTool,
   type McpServerConfig as ClaudeSdkMcpServerConfig,
@@ -2773,6 +2775,26 @@ class ClaudeAgentSession implements AgentSession {
   async revertBoth(input: { messageId: string }): Promise<void> {
     await this.revertFiles(input);
     await this.revertConversation(input);
+  }
+
+  async forkForSideChat(): Promise<AgentPersistenceHandle> {
+    await this.ensureQuery();
+    const sessionId = this.claudeSessionId;
+    if (!sessionId) {
+      throw new Error("Claude session is not ready for side chat");
+    }
+    const forked = await forkSession(sessionId, { dir: this.config.cwd });
+    const current = this.describePersistence();
+    return {
+      provider: "claude",
+      sessionId: forked.sessionId,
+      nativeHandle: forked.sessionId,
+      metadata: { ...(current?.metadata ?? this.config) },
+    };
+  }
+
+  async disposeSideChatFork(handle: AgentPersistenceHandle): Promise<void> {
+    await deleteSession(handle.sessionId, { dir: this.config.cwd });
   }
 
   async askSideQuestion(input: { question: string }): Promise<AgentSideQuestionResult | null> {

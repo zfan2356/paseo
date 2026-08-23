@@ -4626,6 +4626,49 @@ export class CodexAppServerAgentSession implements AgentSession {
     });
   }
 
+  async forkForSideChat(): Promise<AgentPersistenceHandle> {
+    await this.connect();
+    const client = this.client;
+    if (!client) {
+      throw new Error("Codex client is not initialized");
+    }
+    if (this.currentThreadId) {
+      await this.ensureThreadLoaded();
+    } else {
+      await this.ensureThread();
+    }
+    const threadId = this.currentThreadId;
+    if (!threadId) {
+      throw new Error("Codex thread is not ready for side chat");
+    }
+    const forked = await forkCodexThread(client, {
+      threadId,
+      cwd: this.config.cwd ?? null,
+      model: this.config.model ?? null,
+      serviceTier: this.serviceTier,
+      excludeTurns: false,
+    });
+    const sideThreadId = forked.thread.id;
+    const current = this.describePersistence();
+    return {
+      provider: CODEX_PROVIDER,
+      sessionId: sideThreadId,
+      nativeHandle: sideThreadId,
+      metadata: {
+        ...current?.metadata,
+        threadId: sideThreadId,
+      },
+    };
+  }
+
+  async disposeSideChatFork(handle: AgentPersistenceHandle): Promise<void> {
+    await this.connect();
+    if (!this.client) {
+      throw new Error("Codex client is not initialized");
+    }
+    await this.client.request("thread/archive", { threadId: handle.sessionId });
+  }
+
   async askSideQuestion(input: { question: string }): Promise<AgentSideQuestionResult | null> {
     await this.connect();
     const client = this.client;

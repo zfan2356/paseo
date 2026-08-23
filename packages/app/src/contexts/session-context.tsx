@@ -60,7 +60,8 @@ import {
   rejectInitDeferred,
 } from "@/utils/agent-initialization";
 import { encodeImages } from "@/utils/encode-images";
-import { derivePendingPermissionKey } from "@/utils/agent-snapshots";
+import { derivePendingPermissionKey, normalizeAgentSnapshot } from "@/utils/agent-snapshots";
+import { replaceAgentPendingPermissions } from "@/utils/agent-directory-sync";
 import { getSendingClientMessageIds } from "@/composer/submission/model";
 import type { AttachmentMetadata } from "@/attachments/types";
 import { patchWorkspaceScripts } from "@/contexts/session-workspace-scripts";
@@ -70,6 +71,7 @@ import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache";
 import { useProviderSubagentStore } from "@/subagents/provider-store";
 import { revalidateSessionAfterResume } from "@/contexts/session-resume-revalidation";
+import { clearSideChatForParent, clearSideChatsForServer } from "@/side-chat/lifecycle";
 
 type TimelineResponsePayload = Extract<
   SessionOutboundMessage,
@@ -351,6 +353,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     (state) => state.applyAgentTimelineResponseState,
   );
   const setAgents = useSessionStore((state) => state.setAgents);
+  const setAgentDetails = useSessionStore((state) => state.setAgentDetails);
   const setWorkspaces = useSessionStore((state) => state.setWorkspaces);
   const flushAgentLastActivity = useSessionStore((state) => state.flushAgentLastActivity);
   const setPendingPermissions = useSessionStore((state) => state.setPendingPermissions);
@@ -541,6 +544,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       client.subscribeConnectionStatus((connection) => {
         if (connection.status === "connected") return;
         clearAgentTurnLiveness(serverId);
+        clearSideChatsForServer(serverId);
       }),
     [clearAgentTurnLiveness, client, serverId],
   );
@@ -782,6 +786,49 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       // on status changes, which is sufficient for sorting and display purposes.
     });
 
+    const unsubSideChatAgentState = client.on("agent.side_chat.agent_state", (message) => {
+      if (message.type !== "agent.side_chat.agent_state") return;
+      const normalized = normalizeAgentSnapshot(message.payload.agent, serverId);
+      const session = useSessionStore.getState().sessions[serverId];
+      const parent =
+        session?.agents.get(message.payload.parentAgentId) ??
+        session?.agentDetails.get(message.payload.parentAgentId);
+      const agent = {
+        ...normalized,
+        projectPlacement: parent?.projectPlacement,
+      };
+      setAgentDetails(serverId, (current) => {
+        const next = new Map(current);
+        next.set(agent.id, agent);
+        return next;
+      });
+      replaceAgentPendingPermissions(serverId, agent);
+      applyAgentTurnLiveness(serverId, agent.id, {
+        type: "snapshot",
+        activeTurn: agent.activeTurn,
+      });
+    });
+
+    const unsubSideChatParentAgentUpdate = client.on("agent_update", (message) => {
+      if (
+        message.type === "agent_update" &&
+        message.payload.kind === "upsert" &&
+        message.payload.agent.status === "closed"
+      ) {
+        clearSideChatForParent(serverId, message.payload.agent.id);
+      }
+    });
+    const unsubSideChatParentDeleted = client.on("agent_deleted", (message) => {
+      if (message.type === "agent_deleted") {
+        clearSideChatForParent(serverId, message.payload.agentId);
+      }
+    });
+    const unsubSideChatParentArchived = client.on("agent_archived", (message) => {
+      if (message.type === "agent_archived") {
+        clearSideChatForParent(serverId, message.payload.agentId);
+      }
+    });
+
     const unsubAgentAttention = client.onAgentAttentionRequired((notification) => {
       if (notification.shouldNotify) {
         notifyAgentAttention(notification);
@@ -990,6 +1037,10 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
 
     return () => {
       unsubAgentStream();
+      unsubSideChatAgentState();
+      unsubSideChatParentAgentUpdate();
+      unsubSideChatParentDeleted();
+      unsubSideChatParentArchived();
       unsubAgentTimeline();
       unsubProviderSubagentUpdate();
       unsubAgentAttention();
@@ -1020,6 +1071,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     setAgentTimelineCursor,
     setInitializingAgents,
     setAgents,
+    setAgentDetails,
     setWorkspaces,
     setPendingPermissions,
     notifyAgentAttention,

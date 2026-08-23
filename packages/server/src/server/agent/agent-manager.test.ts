@@ -526,6 +526,235 @@ class TestAgentSession implements AgentSession {
   async close(): Promise<void> {}
 }
 
+class SideChatParentSession extends TestAgentSession {
+  readonly forkStarted = deferred<void>();
+  forkGate: Promise<void> = Promise.resolve();
+  disposeCalls = 0;
+  disposeFailuresRemaining = 0;
+
+  async forkForSideChat(): Promise<AgentPersistenceHandle> {
+    this.forkStarted.resolve();
+    await this.forkGate;
+    return {
+      provider: "codex",
+      sessionId: `side-fork-${randomUUID()}`,
+    };
+  }
+
+  async disposeSideChatFork(): Promise<void> {
+    this.disposeCalls += 1;
+    if (this.disposeFailuresRemaining > 0) {
+      this.disposeFailuresRemaining -= 1;
+      throw new Error("side fork disposal failed");
+    }
+  }
+}
+
+class SideChatForkSession extends TestAgentSession {
+  closeCalls = 0;
+  readonly runtimeInfoStarted = deferred<void>();
+  runtimeInfoGate: Promise<void> = Promise.resolve();
+
+  override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+    yield {
+      type: "timeline",
+      provider: "codex",
+      item: { type: "user_message", text: "main context at fork" },
+    };
+    yield {
+      type: "timeline",
+      provider: "codex",
+      item: { type: "assistant_message", text: "main answer at fork" },
+    };
+  }
+
+  override async getRuntimeInfo() {
+    this.runtimeInfoStarted.resolve();
+    await this.runtimeInfoGate;
+    return super.getRuntimeInfo();
+  }
+
+  override async close(): Promise<void> {
+    this.closeCalls += 1;
+  }
+}
+
+class SideChatTestClient extends TestAgentClient {
+  readonly parentSession: SideChatParentSession;
+  readonly forkSession: SideChatForkSession;
+  readonly resumeStarted = deferred<void>();
+  resumeGate: Promise<void> = Promise.resolve();
+
+  constructor(workdir: string) {
+    super();
+    const config = { provider: "codex" as const, cwd: workdir };
+    this.parentSession = new SideChatParentSession(config);
+    this.forkSession = new SideChatForkSession(config);
+  }
+
+  override async createSession(): Promise<AgentSession> {
+    return this.parentSession;
+  }
+
+  override async resumeSession(): Promise<AgentSession> {
+    this.resumeStarted.resolve();
+    await this.resumeGate;
+    return this.forkSession;
+  }
+}
+
+test("forked side chat hydrates provider history and is removed on close", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new SideChatTestClient(workdir);
+  const parentAgentId = "00000000-0000-4000-8000-000000000601";
+  const sideAgentId = "00000000-0000-4000-8000-000000000602";
+  const ids = [parentAgentId, sideAgentId];
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    idFactory: () => ids.shift() ?? randomUUID(),
+  });
+
+  await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const sideAgent = await manager.openSideChat(parentAgentId);
+
+  expect(sideAgent.id).toBe(sideAgentId);
+  expect(sideAgent.internal).toBe(true);
+  expect(manager.listAgents().map((agent) => agent.id)).toEqual([parentAgentId]);
+  expect(manager.getTimeline(sideAgentId)).toEqual([
+    { type: "user_message", text: "main context at fork" },
+    { type: "assistant_message", text: "main answer at fork" },
+  ]);
+
+  await Promise.all([
+    manager.closeSideChat(parentAgentId, sideAgentId),
+    manager.closeSideChat(parentAgentId, sideAgentId),
+  ]);
+
+  expect(manager.getAgent(sideAgentId)).toBeNull();
+  expect(client.forkSession.closeCalls).toBe(1);
+  expect(client.parentSession.disposeCalls).toBe(1);
+  await expect(storage.get(sideAgentId)).resolves.toBeNull();
+  await manager.closeAgent(parentAgentId);
+  rmSync(workdir, { recursive: true, force: true });
+});
+
+test("failed side chat registration cleans the internal agent and provider fork", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-failure-"));
+  const client = new SideChatTestClient(workdir);
+  const runtimeInfoGate = deferred<void>();
+  client.forkSession.runtimeInfoGate = runtimeInfoGate.promise;
+  const ids = ["00000000-0000-4000-8000-000000000603", "00000000-0000-4000-8000-000000000604"];
+  const manager = new AgentManager({
+    clients: { codex: client },
+    logger,
+    idFactory: () => ids.shift() ?? randomUUID(),
+  });
+
+  const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const opening = manager.openSideChat(parent.id);
+  await client.forkSession.runtimeInfoStarted.promise;
+  manager.prepareForShutdown();
+  runtimeInfoGate.resolve();
+  await expect(opening).rejects.toBeInstanceOf(AgentManagerShuttingDownError);
+
+  expect(manager.getAgent("00000000-0000-4000-8000-000000000604")).toBeNull();
+  expect(client.forkSession.closeCalls).toBe(1);
+  expect(client.parentSession.disposeCalls).toBe(1);
+  await manager.closeAgent(parent.id);
+  rmSync(workdir, { recursive: true, force: true });
+});
+
+test("closing a parent waits for an in-flight side chat open and disposes it", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-parent-close-"));
+  const client = new SideChatTestClient(workdir);
+  const resumeGate = deferred<void>();
+  client.resumeGate = resumeGate.promise;
+  const parentAgentId = "00000000-0000-4000-8000-000000000605";
+  const sideAgentId = "00000000-0000-4000-8000-000000000606";
+  const ids = [parentAgentId, sideAgentId];
+  const manager = new AgentManager({
+    clients: { codex: client },
+    logger,
+    idFactory: () => ids.shift() ?? randomUUID(),
+  });
+
+  await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const opening = manager.openSideChat(parentAgentId);
+  await client.resumeStarted.promise;
+  const closingParent = manager.closeAgent(parentAgentId);
+  resumeGate.resolve();
+  await expect(opening).rejects.toThrow("closing");
+  await closingParent;
+
+  expect(manager.getAgent(parentAgentId)).toBeNull();
+  expect(manager.getAgent(sideAgentId)).toBeNull();
+  expect(client.parentSession.disposeCalls).toBe(1);
+  rmSync(workdir, { recursive: true, force: true });
+});
+
+test("side chat provider disposal can be retried after failure", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-retry-"));
+  const client = new SideChatTestClient(workdir);
+  client.parentSession.disposeFailuresRemaining = 1;
+  const ids = ["00000000-0000-4000-8000-000000000607", "00000000-0000-4000-8000-000000000608"];
+  const manager = new AgentManager({
+    clients: { codex: client },
+    logger,
+    idFactory: () => ids.shift() ?? randomUUID(),
+  });
+
+  const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const side = await manager.openSideChat(parent.id);
+
+  await expect(manager.closeSideChat(parent.id, side.id)).rejects.toThrow(
+    "side fork disposal failed",
+  );
+  expect(manager.getAgent(side.id)).toBeNull();
+  await expect(manager.closeSideChat(parent.id, side.id)).resolves.toBeUndefined();
+  expect(client.parentSession.disposeCalls).toBe(2);
+
+  await manager.closeAgent(parent.id);
+  rmSync(workdir, { recursive: true, force: true });
+});
+
+test("parent close can be retried when side chat provider disposal fails", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-parent-retry-"));
+  const client = new SideChatTestClient(workdir);
+  client.parentSession.disposeFailuresRemaining = 1;
+  const ids = ["00000000-0000-4000-8000-000000000609", "00000000-0000-4000-8000-000000000610"];
+  const manager = new AgentManager({
+    clients: { codex: client },
+    logger,
+    idFactory: () => ids.shift() ?? randomUUID(),
+  });
+
+  const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const side = await manager.openSideChat(parent.id);
+
+  await expect(manager.closeAgent(parent.id)).rejects.toThrow("side fork disposal failed");
+  expect(manager.getAgent(parent.id)).not.toBeNull();
+  expect(manager.getAgent(side.id)).toBeNull();
+
+  await expect(manager.closeAgent(parent.id)).resolves.toBeUndefined();
+  expect(manager.getAgent(parent.id)).toBeNull();
+  expect(manager.getAgent(side.id)).toBeNull();
+  expect(client.parentSession.disposeCalls).toBe(2);
+  rmSync(workdir, { recursive: true, force: true });
+});
+
 test("hands an Agent session to an external terminal and resumes it after release", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-codex-terminal-handoff-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);

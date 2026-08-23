@@ -53,6 +53,7 @@ import type { CheckDetails, ForgeService } from "../services/forge-service.js";
 import type { GitHubPullRequestStatusFacts } from "../services/github-facts.js";
 
 interface SessionHandlerInternals {
+  clearSideChatSubscriptionsForParent(parentAgentId: string): void;
   interruptAgentIfRunning(agentId: string): Promise<void>;
   handleSendAgentMessage(
     agentId: string,
@@ -430,6 +431,95 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   };
   return new Session(sessionOptions);
 }
+
+test("side chat open does not publish an agent id that became stale during subscription", async () => {
+  const messages: SessionOutboundMessage[] = [];
+  const unsubscribe = vi.fn();
+  const isSideChatOpen = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(false);
+  const session = createSessionForTest({
+    messages,
+    agentManager: {
+      openSideChat: vi.fn().mockResolvedValue({ id: "side-agent" }),
+      isSideChatOpen,
+      subscribe: vi.fn(
+        (listener: (event: AgentManagerEvent) => void, options?: { agentId?: string }) => {
+          if (options?.agentId) {
+            listener({ type: "agent_state", agent: { id: "side-agent" } as never });
+          }
+          return unsubscribe;
+        },
+      ),
+    },
+  });
+
+  await session.handleMessage({
+    type: "agent.side_question.ask.request",
+    agentId: "parent-agent",
+    operation: "open",
+    question: "",
+    requestId: "open-side-chat",
+  });
+
+  expect(unsubscribe).toHaveBeenCalledOnce();
+  expect(messages).toEqual([
+    {
+      type: "agent.side_question.ask.response",
+      payload: {
+        requestId: "open-side-chat",
+        agentId: "parent-agent",
+        response: null,
+        error: "Agent 'parent-agent' is closing",
+      },
+    },
+  ]);
+});
+
+test("parent closure releases its side chat subscriptions", async () => {
+  const messages: SessionOutboundMessage[] = [];
+  const unsubscribe = vi.fn();
+  const closeSideChat = vi.fn();
+  const session = createSessionForTest({
+    messages,
+    agentManager: {
+      openSideChat: vi.fn().mockResolvedValue({ id: "side-agent" }),
+      closeSideChat,
+      isSideChatOpen: vi.fn().mockReturnValue(true),
+      subscribe: vi.fn(
+        (_listener: (event: AgentManagerEvent) => void, options?: { agentId?: string }) =>
+          options?.agentId ? unsubscribe : () => {},
+      ),
+    },
+  });
+
+  await session.handleMessage({
+    type: "agent.side_question.ask.request",
+    agentId: "parent-agent",
+    operation: "open",
+    question: "",
+    requestId: "open-side-chat",
+  });
+  asSessionInternals(session).clearSideChatSubscriptionsForParent("parent-agent");
+  await session.handleMessage({
+    type: "agent.side_question.ask.request",
+    agentId: "parent-agent",
+    sideAgentId: "side-agent",
+    operation: "close",
+    question: "",
+    requestId: "close-side-chat",
+  });
+
+  expect(unsubscribe).toHaveBeenCalledOnce();
+  expect(closeSideChat).not.toHaveBeenCalled();
+  expect(messages.at(-1)).toEqual({
+    type: "agent.side_question.ask.response",
+    payload: {
+      requestId: "close-side-chat",
+      agentId: "parent-agent",
+      response: null,
+      error: "Unknown side chat",
+    },
+  });
+});
 
 test("routes host-scoped agent skills requests through the daemon owner", async () => {
   const messages: SessionOutboundMessage[] = [];

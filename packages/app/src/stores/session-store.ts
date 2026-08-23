@@ -607,6 +607,7 @@ interface SessionStoreActions {
   setAgentLastActivityBatch: (
     updates: Map<string, Date> | ((prev: Map<string, Date>) => Map<string, Date>),
   ) => void;
+  clearAgentLastActivity: (agentId: string) => void;
   flushAgentLastActivity: () => void;
 
   // Permissions
@@ -1864,6 +1865,18 @@ export const useSessionStore = create<SessionStore>()(
             ...prev,
             agentLastActivity: new Map(nextActivity),
           };
+        });
+      },
+
+      clearAgentLastActivity: (agentId) => {
+        agentLastActivityCoalescer.deletePending(agentId);
+        set((prev) => {
+          if (!prev.agentLastActivity.has(agentId)) {
+            return prev;
+          }
+          const agentLastActivity = new Map(prev.agentLastActivity);
+          agentLastActivity.delete(agentId);
+          return { ...prev, agentLastActivity };
         });
       },
 

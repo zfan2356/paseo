@@ -3,9 +3,8 @@ export interface SideChatAgent {
   provider?: string | null;
 }
 
-// Side questions ride the Claude Code SDK "side_question" control request or
-// a forked ephemeral Codex thread, so the entry point only appears for live
-// agents of those providers on hosts that advertise the capability.
+// Side chats are ephemeral forks of the provider conversation, so the entry
+// point only appears for live agents whose providers support native forking.
 export function canOfferSideChat(
   agent: SideChatAgent | null,
   options: { featureEnabled: boolean },

@@ -18,6 +18,8 @@ import ReanimatedAnimated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { SideChatOverlay } from "@/side-chat/panel";
+import { sideChatKey } from "@/side-chat/model";
+import { selectSideChatPanel, useSideChatStore } from "@/side-chat/store";
 import invariant from "tiny-invariant";
 import { shallow, useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
@@ -516,18 +518,20 @@ type AgentLookupState =
   | { tag: "not_found"; message: string }
   | { tag: "error"; message: string };
 
-function AgentPanelContent({
+export function AgentPanelContent({
   serverId,
   workspaceId,
   agentId,
   isPaneFocused,
   onOpenWorkspaceFile,
+  showSideChat = true,
 }: {
   serverId: string;
   workspaceId: string;
   agentId: string;
   isPaneFocused: boolean;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
+  showSideChat?: boolean;
 }) {
   const { t } = useTranslation();
   const resolvedAgentId = agentId.trim() || undefined;
@@ -581,6 +585,7 @@ function AgentPanelContent({
       isConnected={runtimeIsConnected}
       connectionStatus={connectionStatus}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
+      showSideChat={showSideChat}
     />
   );
 }
@@ -594,6 +599,7 @@ function AgentPanelBody({
   isConnected,
   connectionStatus,
   onOpenWorkspaceFile,
+  showSideChat,
 }: {
   serverId: string;
   workspaceId: string;
@@ -603,6 +609,7 @@ function AgentPanelBody({
   isConnected: boolean;
   connectionStatus: HostRuntimeConnectionStatus;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
+  showSideChat: boolean;
 }) {
   const { t } = useTranslation();
   const { isArchivingAgent: _isArchivingAgent } = useArchiveAgent();
@@ -763,6 +770,7 @@ function AgentPanelBody({
       isConnected={isConnected}
       connectionStatus={connectionStatus}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
+      showSideChat={showSideChat}
     />
   );
 }
@@ -776,6 +784,7 @@ function ChatAgentContent({
   isConnected,
   connectionStatus,
   onOpenWorkspaceFile,
+  showSideChat,
 }: {
   serverId: string;
   workspaceId: string;
@@ -785,14 +794,21 @@ function ChatAgentContent({
   isConnected: boolean;
   connectionStatus: HostRuntimeConnectionStatus;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
+  showSideChat: boolean;
 }) {
   const { t } = useTranslation();
   const isPaneVisible = useRetainedPanelActive();
+  const isSideChatOpen = useSideChatStore((state) =>
+    showSideChat && agentId
+      ? selectSideChatPanel(state, sideChatKey(serverId, agentId)) !== null
+      : false,
+  );
+  const isConversationFocused = isPaneFocused && !isSideChatOpen;
   const { api: toastApi, toast: toastState, dismiss: dismissToast } = useToastHost();
   const { isArchivingAgent } = useArchiveAgent();
   const streamViewRef = useRef<AgentStreamViewHandle>(null);
   const clearOnAgentBlurRef = useRef<() => void>(() => {});
-  const wasPaneFocusedRef = useRef(isPaneFocused);
+  const wasPaneFocusedRef = useRef(isConversationFocused);
   const reconnectToastPresentedRef = useRef(false);
   const initAttemptTokenRef = useRef(0);
   const routeBottomAnchorRequestRef = useRef<{
@@ -873,7 +889,7 @@ function ChatAgentContent({
     isConnected,
     requiresAttention: agentState.requiresAttention,
     attentionReason: agentState.attentionReason,
-    isScreenFocused: isPaneFocused,
+    isScreenFocused: isConversationFocused,
   });
   useEffect(() => {
     clearOnAgentBlurRef.current = attentionController.clearOnAgentBlur;
@@ -952,11 +968,11 @@ function ChatAgentContent({
   const isArchivingCurrentAgent = Boolean(agentId && isArchivingAgent({ serverId, agentId }));
 
   useEffect(() => {
-    if (wasPaneFocusedRef.current && !isPaneFocused) {
+    if (wasPaneFocusedRef.current && !isConversationFocused) {
       clearOnAgentBlurRef.current();
     }
-    wasPaneFocusedRef.current = isPaneFocused;
-  }, [isPaneFocused]);
+    wasPaneFocusedRef.current = isConversationFocused;
+  }, [isConversationFocused]);
 
   useEffect(() => {
     return () => {
@@ -1177,7 +1193,7 @@ function ChatAgentContent({
       serverId={serverId}
       workspaceId={workspaceId}
       agentId={agentId}
-      isPaneFocused={isPaneFocused}
+      isPaneFocused={isConversationFocused}
       isArchivingCurrentAgent={isArchivingCurrentAgent}
       agentState={agentState}
       effectiveAgent={effectiveAgent}
@@ -1198,6 +1214,7 @@ function ChatAgentContent({
       onAttentionInputFocus={attentionController.clearOnInputFocus}
       onAttentionPromptSend={attentionController.clearOnPromptSend}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
+      showSideChat={showSideChat}
     />
   );
 }
@@ -1227,6 +1244,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   onAttentionInputFocus,
   onAttentionPromptSend,
   onOpenWorkspaceFile,
+  showSideChat,
 }: {
   serverId: string;
   workspaceId: string;
@@ -1252,6 +1270,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   onAttentionInputFocus: () => void;
   onAttentionPromptSend: () => void;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
+  showSideChat: boolean;
 }) {
   const { t } = useTranslation();
   const subagentRows = useSubagentsForParent({ serverId, parentAgentId: agentId });
@@ -1314,6 +1333,19 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
       attachmentFocusRequestId,
       composerState,
     ],
+  );
+  const renderSideChatAgent = useCallback(
+    (sideAgentId: string) => (
+      <AgentPanelContent
+        serverId={serverId}
+        workspaceId={workspaceId}
+        agentId={sideAgentId}
+        isPaneFocused={isPaneFocused}
+        onOpenWorkspaceFile={onOpenWorkspaceFile}
+        showSideChat={false}
+      />
+    ),
+    [isPaneFocused, onOpenWorkspaceFile, serverId, workspaceId],
   );
   const composerSection = (
     <RenderProfile id={`AgentComposerSection:${agentId}`}>
@@ -1399,7 +1431,13 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
 
           {composerSection}
 
-          <SideChatOverlay serverId={serverId} agentId={agentId} />
+          {showSideChat ? (
+            <SideChatOverlay
+              serverId={serverId}
+              agentId={agentId}
+              renderAgent={renderSideChatAgent}
+            />
+          ) : null}
 
           {showHistorySyncOverlay ? (
             <View style={styles.historySyncOverlay} testID="agent-history-overlay">

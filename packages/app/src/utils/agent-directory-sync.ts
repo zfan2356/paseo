@@ -99,35 +99,48 @@ export function replaceAgentPendingPermissions(serverId: string, agent: Agent): 
 }
 
 export function removeAgentDirectoryReplica(serverId: string, agentId: string): void {
-  const store = useSessionStore.getState();
   clearArchiveAgentPending({ queryClient, serverId, agentId });
+  useSessionStore.getState().clearAgentLastActivity(agentId);
   const removeKey = <T>(current: Map<string, T>): Map<string, T> => {
     if (!current.has(agentId)) return current;
     const next = new Map(current);
     next.delete(agentId);
     return next;
   };
-  store.setAgents(serverId, removeKey);
-  store.setAgentDetails(serverId, removeKey);
-  store.setQueuedMessages(serverId, removeKey);
-  store.setAgentTimelineCursor(serverId, removeKey);
-  store.setInitializingAgents(serverId, removeKey);
-  store.setPendingPermissions(serverId, (current) => {
-    const next = new Map(current);
-    for (const [key, pending] of next) {
-      if (pending.agentId === agentId) next.delete(key);
-    }
-    return next.size === current.size ? current : next;
-  });
-  store.setAgentAuthoritativeHistoryApplied(serverId, agentId, false);
-  store.setAgentStreamTail(serverId, removeKey);
-  store.clearAgentStreamHead(serverId, agentId);
-  store.applyAgentTurnLiveness(serverId, agentId, { type: "destructive_close" });
   useSessionStore.setState((state) => {
-    if (!state.agentLastActivity.has(agentId)) return state;
-    const agentLastActivity = new Map(state.agentLastActivity);
-    agentLastActivity.delete(agentId);
-    return { ...state, agentLastActivity };
+    const session = state.sessions[serverId];
+    if (!session) return state;
+    const pendingPermissions = new Map(session.pendingPermissions);
+    for (const [key, pending] of pendingPermissions) {
+      if (pending.agentId === agentId) pendingPermissions.delete(key);
+    }
+    return {
+      ...state,
+      sessions: {
+        ...state.sessions,
+        [serverId]: {
+          ...session,
+          focusedAgentId: session.focusedAgentId === agentId ? null : session.focusedAgentId,
+          agentStreamTail: removeKey(session.agentStreamTail),
+          agentStreamHead: removeKey(session.agentStreamHead),
+          agentTasks: removeKey(session.agentTasks),
+          agentTurnLiveness: removeKey(session.agentTurnLiveness),
+          messageSubmissions: removeKey(session.messageSubmissions),
+          agentTimelineCursor: removeKey(session.agentTimelineCursor),
+          agentTimelineHasOlder: removeKey(session.agentTimelineHasOlder),
+          agentTimelineHasNewer: removeKey(session.agentTimelineHasNewer),
+          agentTimelineOlderFetchInFlight: removeKey(session.agentTimelineOlderFetchInFlight),
+          agentHistorySyncGeneration: removeKey(session.agentHistorySyncGeneration),
+          agentAuthoritativeHistoryApplied: removeKey(session.agentAuthoritativeHistoryApplied),
+          initializingAgents: removeKey(session.initializingAgents),
+          agents: removeKey(session.agents),
+          agentDetails: removeKey(session.agentDetails),
+          pendingPermissions,
+          fileExplorer: removeKey(session.fileExplorer),
+          queuedMessages: removeKey(session.queuedMessages),
+        },
+      },
+    };
   });
   useDraftStore.getState().clearDraftInput({
     draftKey: buildDraftStoreKey({ serverId, agentId }),

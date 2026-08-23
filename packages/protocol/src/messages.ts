@@ -1881,6 +1881,8 @@ export const AgentRewindResponseMessageSchema = z.object({
 export const AgentSideQuestionAskRequestMessageSchema = z.object({
   type: z.literal("agent.side_question.ask.request"),
   agentId: z.string(),
+  operation: z.enum(["open", "ask", "close"]).optional(),
+  sideAgentId: z.string().optional(),
   question: z.string(),
   requestId: z.string(),
 });
@@ -1890,9 +1892,18 @@ export const AgentSideQuestionAskResponseMessageSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     agentId: z.string(),
+    sideAgentId: z.string().optional(),
     response: z.string().nullable(),
     synthetic: z.boolean().optional(),
     error: z.string().nullable(),
+  }),
+});
+
+export const AgentSideChatAgentStateMessageSchema = z.object({
+  type: z.literal("agent.side_chat.agent_state"),
+  payload: z.object({
+    parentAgentId: z.string(),
+    agent: AgentSnapshotPayloadSchema,
   }),
 });
 
@@ -3414,6 +3425,8 @@ export const ServerInfoStatusPayloadSchema = z
         codexTerminalImagePaste: z.boolean().optional(),
         // COMPAT(agentSideQuestion): added in the custom fork on 2026-08-21.
         agentSideQuestion: z.boolean().optional(),
+        // COMPAT(agentSideChatFork): added in the custom fork on 2026-08-23.
+        agentSideChatFork: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.
@@ -6327,6 +6340,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentDetachResponseMessageSchema,
   AgentRewindResponseMessageSchema,
   AgentSideQuestionAskResponseMessageSchema,
+  AgentSideChatAgentStateMessageSchema,
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
   ProjectIconSetResponseSchema,
@@ -6530,6 +6544,7 @@ export type AgentSideQuestionAskRequestMessage = z.infer<
 export type AgentSideQuestionAskResponseMessage = z.infer<
   typeof AgentSideQuestionAskResponseMessageSchema
 >;
+export type AgentSideChatAgentStateMessage = z.infer<typeof AgentSideChatAgentStateMessageSchema>;
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
 export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
 export type ProjectIconSetResponse = z.infer<typeof ProjectIconSetResponseSchema>;

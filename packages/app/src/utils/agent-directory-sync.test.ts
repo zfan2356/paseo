@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { DaemonClient, FetchAgentsEntry } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
@@ -8,7 +8,11 @@ import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 import { isAgentArchiving, setAgentArchiving } from "@/hooks/use-archive-agent";
 import { queryClient } from "@/data/query-client";
 import { createUserMessage } from "@/types/stream";
-import { applyAgentDirectoryDelta, replaceFetchedAgentDirectory } from "./agent-directory-sync";
+import {
+  applyAgentDirectoryDelta,
+  removeAgentDirectoryReplica,
+  replaceFetchedAgentDirectory,
+} from "./agent-directory-sync";
 
 function createAgentPayload(
   input: Partial<Omit<AgentSnapshotPayload, "labels">> & {
@@ -308,6 +312,22 @@ describe("replaceFetchedAgentDirectory", () => {
     });
 
     store.clearSession(serverId);
+  });
+
+  it("discards a pending activity update when removing an agent", () => {
+    vi.useFakeTimers();
+    const serverId = "server-removal-activity";
+    const agentId = "removed-agent";
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, null as unknown as DaemonClient);
+    store.setAgentLastActivity(agentId, new Date("2026-07-27T10:00:00.000Z"));
+
+    removeAgentDirectoryReplica(serverId, agentId);
+    vi.runAllTimers();
+
+    expect(useSessionStore.getState().agentLastActivity.has(agentId)).toBe(false);
+    store.clearSession(serverId);
+    vi.useRealTimers();
   });
 
   it("keeps newer metadata while accepting usage-only updates and legacy workspace ownership", () => {

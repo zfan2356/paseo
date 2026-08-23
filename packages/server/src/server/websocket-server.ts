@@ -1746,6 +1746,8 @@ export class VoiceAssistantWebSocketServer {
         codexTerminalImagePaste: true,
         // COMPAT(agentSideQuestion): added in the custom fork on 2026-08-21.
         agentSideQuestion: true,
+        // COMPAT(agentSideChatFork): added in the custom fork on 2026-08-23.
+        agentSideChatFork: true,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: true,
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.

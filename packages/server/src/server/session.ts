@@ -5,6 +5,7 @@ import { basename, resolve, sep } from "path";
 import { homedir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import {
+  serializeAgentSnapshot,
   serializeAgentStreamEvent,
   type AgentSnapshotPayload,
   type AgentAttachment,
@@ -688,6 +689,10 @@ export class Session {
   private readonly pluginRuntime: SessionOptions["pluginRuntime"];
   private readonly orchestrationSkills: SessionOptions["orchestrationSkills"];
   private unsubscribeAgentEvents: (() => void) | null = null;
+  private readonly sideChatSubscriptions = new Map<
+    string,
+    { parentAgentId: string; unsubscribe: () => void }
+  >();
   private unsubscribeProjectMutations: (() => void) | null = null;
   private unsubscribePluginChanges: (() => void) | null = null;
   private unsubscribeWorkspaceMutations: (() => void) | null = null;
@@ -1750,6 +1755,9 @@ export class Session {
             },
             "agent.session.forward_update",
           );
+          if (event.agent.lifecycle === "closed") {
+            this.clearSideChatSubscriptionsForParent(event.agent.id);
+          }
           void this.agentUpdates.forwardLiveAgent(event.agent);
           return;
         }
@@ -1855,6 +1863,88 @@ export class Session {
       },
       { replayState: false },
     );
+  }
+
+  private forwardSideChatAgentEvent(parentAgentId: string, event: AgentManagerEvent): void {
+    if (event.type === "agent_state") {
+      this.emit({
+        type: "agent.side_chat.agent_state",
+        payload: {
+          parentAgentId,
+          agent: serializeAgentSnapshot(event.agent),
+        },
+      });
+      return;
+    }
+
+    if (event.type === "provider_subagent") {
+      if (!this.supports(CLIENT_CAPS.providerSubagents)) {
+        return;
+      }
+      const update = event.event;
+      if (update.type === "upsert") {
+        this.emit({
+          type: "agent.provider_subagents.update",
+          payload: { kind: "upsert", subagent: update.subagent },
+        });
+      } else if (update.type === "timeline") {
+        this.emit({
+          type: "agent.provider_subagents.update",
+          payload: {
+            kind: "timeline",
+            parentAgentId: update.parentAgentId,
+            subagentId: update.subagentId,
+            provider: update.provider,
+            item: update.row.item,
+            timestamp: update.row.timestamp,
+            seq: update.row.seq,
+            epoch: update.epoch,
+          },
+        });
+      } else {
+        this.emit({
+          type: "agent.provider_subagents.update",
+          payload: {
+            kind: "remove",
+            parentAgentId: update.parentAgentId,
+            subagentId: update.subagentId,
+          },
+        });
+      }
+      return;
+    }
+
+    const serializedEvent = serializeAgentStreamEvent(event.event);
+    if (!serializedEvent) {
+      return;
+    }
+    this.emit({
+      type: "agent_stream",
+      payload: this.buildAgentStreamPayload(event, serializedEvent),
+    });
+    if (event.event.type === "permission_requested") {
+      this.emit({
+        type: "agent_permission_request",
+        payload: { agentId: event.agentId, request: event.event.request },
+      });
+    } else if (event.event.type === "permission_resolved") {
+      this.emit({
+        type: "agent_permission_resolved",
+        payload: {
+          agentId: event.agentId,
+          requestId: event.event.requestId,
+          resolution: event.event.resolution,
+        },
+      });
+    }
+  }
+
+  private clearSideChatSubscriptionsForParent(parentAgentId: string): void {
+    for (const [sideAgentId, subscription] of this.sideChatSubscriptions) {
+      if (subscription.parentAgentId !== parentAgentId) continue;
+      subscription.unsubscribe();
+      this.sideChatSubscriptions.delete(sideAgentId);
+    }
   }
 
   private emitProviderSubagentWorkspaceUpdate(event: ProviderSubagentManagerEvent): void {
@@ -4022,6 +4112,81 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "agent.side_question.ask.request" }>,
   ): Promise<void> {
     try {
+      if (msg.operation === "open") {
+        const sideAgent = await this.agentManager.openSideChat(msg.agentId);
+        if (this.isCleanedUp) {
+          if (this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
+            await this.agentManager.closeSideChat(msg.agentId, sideAgent.id);
+          }
+          return;
+        }
+        if (!this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
+          throw new Error(`Agent '${msg.agentId}' is closing`);
+        }
+        const pendingEvents: AgentManagerEvent[] = [];
+        let publishEvents = false;
+        const unsubscribe = this.agentManager.subscribe(
+          (event) => {
+            if (publishEvents) {
+              this.forwardSideChatAgentEvent(msg.agentId, event);
+            } else {
+              pendingEvents.push(event);
+            }
+          },
+          { agentId: sideAgent.id, replayState: true },
+        );
+        if (this.isCleanedUp) {
+          unsubscribe();
+          if (this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
+            await this.agentManager.closeSideChat(msg.agentId, sideAgent.id);
+          }
+          return;
+        }
+        if (!this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
+          unsubscribe();
+          throw new Error(`Agent '${msg.agentId}' is closing`);
+        }
+        this.sideChatSubscriptions.set(sideAgent.id, {
+          parentAgentId: msg.agentId,
+          unsubscribe,
+        });
+        publishEvents = true;
+        for (const event of pendingEvents) {
+          this.forwardSideChatAgentEvent(msg.agentId, event);
+        }
+        this.emit({
+          type: "agent.side_question.ask.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            sideAgentId: sideAgent.id,
+            response: null,
+            error: null,
+          },
+        });
+        return;
+      }
+      if (msg.operation === "close") {
+        const sideAgentId = msg.sideAgentId;
+        const subscription = sideAgentId ? this.sideChatSubscriptions.get(sideAgentId) : undefined;
+        if (!sideAgentId || !subscription || subscription.parentAgentId !== msg.agentId) {
+          throw new Error("Unknown side chat");
+        }
+        await this.agentManager.closeSideChat(msg.agentId, sideAgentId);
+        subscription.unsubscribe();
+        this.sideChatSubscriptions.delete(sideAgentId);
+        this.emit({
+          type: "agent.side_question.ask.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            sideAgentId,
+            response: null,
+            error: null,
+          },
+        });
+        return;
+      }
       const result = await this.agentManager.askSideQuestion(msg.agentId, msg.question);
       this.emit({
         type: "agent.side_question.ask.response",
@@ -4488,6 +4653,14 @@ export class Session {
     const trimmed = identifier.trim();
     if (!trimmed) {
       return { ok: false, error: "Agent identifier cannot be empty" };
+    }
+
+    // Side chats are internal agents, so they must stay out of the normal
+    // directory and fuzzy identifier lookup. The owning client session still
+    // needs exact-id access so the regular agent RPCs (run, cancel, config,
+    // permissions, timeline) can drive the fork just like a main chat.
+    if (this.sideChatSubscriptions.has(trimmed) && this.agentManager.getAgent(trimmed)) {
+      return { ok: true, agentId: trimmed };
     }
 
     const stored = await this.agentStorage.list();
@@ -7594,6 +7767,14 @@ export class Session {
       this.unsubscribeAgentEvents();
       this.unsubscribeAgentEvents = null;
     }
+    const sideChats = Array.from(this.sideChatSubscriptions.entries());
+    await Promise.allSettled(
+      sideChats.map(async ([sideAgentId, subscription]) => {
+        subscription.unsubscribe();
+        await this.agentManager.closeSideChat(subscription.parentAgentId, sideAgentId);
+        this.sideChatSubscriptions.delete(sideAgentId);
+      }),
+    );
     this.unsubscribeProjectMutations?.();
     this.unsubscribeProjectMutations = null;
     this.unsubscribePluginChanges?.();

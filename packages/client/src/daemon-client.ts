@@ -284,6 +284,11 @@ export type DaemonEvent =
       seq?: number;
       epoch?: string;
     }
+  | {
+      type: "agent.side_chat.agent_state";
+      parentAgentId: string;
+      agent: AgentSnapshotPayload;
+    }
   | { type: "status"; payload: { status: string } & Record<string, unknown> }
   | { type: "agent_deleted"; agentId: string }
   | {
@@ -5399,6 +5404,50 @@ export class DaemonClient {
     });
   }
 
+  async openAgentSideChat(
+    agentId: string,
+    requestId?: string,
+  ): Promise<AgentSideQuestionAskPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.side_question.ask.request",
+      operation: "open",
+      agentId,
+      question: "",
+      requestId: resolvedRequestId,
+    });
+    return this.sendCorrelatedRequest({
+      requestId: resolvedRequestId,
+      message,
+      responseType: "agent.side_question.ask.response",
+      timeout: SIDE_QUESTION_TIMEOUT_MS,
+      options: { skipQueue: true },
+    });
+  }
+
+  async closeAgentSideChat(
+    agentId: string,
+    sideAgentId: string,
+    requestId?: string,
+  ): Promise<AgentSideQuestionAskPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.side_question.ask.request",
+      operation: "close",
+      agentId,
+      sideAgentId,
+      question: "",
+      requestId: resolvedRequestId,
+    });
+    return this.sendCorrelatedRequest({
+      requestId: resolvedRequestId,
+      message,
+      responseType: "agent.side_question.ask.response",
+      timeout: SIDE_QUESTION_TIMEOUT_MS,
+      options: { skipQueue: true },
+    });
+  }
+
   async closeItems(
     input: { agentIds?: string[]; terminalIds?: string[] },
     requestId?: string,
@@ -6176,6 +6225,12 @@ export class DaemonClient {
           timestamp: msg.payload.timestamp,
           ...(typeof msg.payload.seq === "number" ? { seq: msg.payload.seq } : {}),
           ...(typeof msg.payload.epoch === "string" ? { epoch: msg.payload.epoch } : {}),
+        };
+      case "agent.side_chat.agent_state":
+        return {
+          type: "agent.side_chat.agent_state",
+          parentAgentId: msg.payload.parentAgentId,
+          agent: msg.payload.agent,
         };
       case "status":
         return { type: "status", payload: msg.payload };

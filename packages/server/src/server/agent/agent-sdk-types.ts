@@ -671,6 +671,10 @@ export interface AgentSession {
   revertConversation?(input: { messageId: string }): Promise<void>;
   revertFiles?(input: { messageId: string }): Promise<void>;
   revertBoth?(input: { messageId: string }): Promise<void>;
+  /** Fork the provider's current conversation for a full, independent side chat. */
+  forkForSideChat?(): Promise<AgentPersistenceHandle>;
+  /** Permanently dispose a provider conversation created by forkForSideChat. */
+  disposeSideChatFork?(handle: AgentPersistenceHandle): Promise<void>;
   /**
    * Ask a quick side question answered from the live conversation context
    * without allocating a turn, touching the timeline, or running tools.

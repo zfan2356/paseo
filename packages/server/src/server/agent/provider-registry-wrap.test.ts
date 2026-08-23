@@ -25,6 +25,8 @@ const OPTIONAL_AGENT_SESSION_METHOD_NAMES = [
   "revertConversation",
   "revertFiles",
   "revertBoth",
+  "forkForSideChat",
+  "disposeSideChatFork",
   "askSideQuestion",
   "tryHandleOutOfBand",
 ] as const satisfies readonly OptionalAgentSessionMethodName[];
@@ -152,6 +154,19 @@ class FakeSession implements AgentSession {
     this.recordedCalls.push("revertBoth");
   }
 
+  async forkForSideChat() {
+    this.recordedCalls.push("forkForSideChat");
+    return {
+      provider: "claude" as const,
+      sessionId: "side-session-1",
+      nativeHandle: "side-session-1",
+    };
+  }
+
+  async disposeSideChatFork() {
+    this.recordedCalls.push("disposeSideChatFork");
+  }
+
   async askSideQuestion() {
     this.recordedCalls.push("askSideQuestion");
     return { response: "side answer", synthetic: false };
@@ -185,6 +200,10 @@ describe("wrapSessionProvider", () => {
     await wrapped.revertConversation?.({ messageId: "message-1" });
     await wrapped.revertFiles?.({ messageId: "message-1" });
     await wrapped.revertBoth?.({ messageId: "message-1" });
+    const sideHandle = await wrapped.forkForSideChat?.();
+    if (sideHandle) {
+      await wrapped.disposeSideChatFork?.(sideHandle);
+    }
     const sideAnswer = await wrapped.askSideQuestion?.({ question: "What happened?" });
     const handler = wrapped.tryHandleOutOfBand?.("/compact");
     await handler?.run({ emit: () => {} });
@@ -198,6 +217,8 @@ describe("wrapSessionProvider", () => {
       "revertConversation",
       "revertFiles",
       "revertBoth",
+      "forkForSideChat",
+      "disposeSideChatFork",
       "askSideQuestion",
       "tryHandleOutOfBand",
       "tryHandleOutOfBand.run",
