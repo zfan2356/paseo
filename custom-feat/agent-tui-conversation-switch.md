@@ -8,7 +8,7 @@
 
 Paseo's Agent view and the provider's own TUI (Codex / Claude Code / Cursor
 in a terminal) each do things the other cannot. The requirement: a header
-button on a live agent tab that flips the *same conversation* between the
+button on a live agent tab that flips the _same conversation_ between the
 Agent chat view and the provider's **real TUI**, resuming the same native
 session — and flips back — without losing history on either side.
 
@@ -46,4 +46,4 @@ TUI view must be a real linked PTY running the provider CLI.
 
 Depends on [persistent-terminal-sessions.md](persistent-terminal-sessions.md)
 for the PTY substrate. Do not auto-kill a linked conversation PTY just
-because an Agent tab gains focus — that PTY *is* the TUI view.
+because an Agent tab gains focus — that PTY _is_ the TUI view.

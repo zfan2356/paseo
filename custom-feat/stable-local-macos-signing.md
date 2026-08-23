@@ -16,7 +16,7 @@ rebuilds should keep their TCC grants.
 
 - A reusable self-created certificate, **`Paseo Local`**, generated once and
   stored under `~/Library/Application Support/Paseo/signing/` (outside the
-  git checkout; trusted for code signing only — explicitly *not* a Developer
+  git checkout; trusted for code signing only — explicitly _not_ a Developer
   ID or notarization identity).
 - `npm run sign:desktop:local` deep-signs an install candidate with that
   identity. Because the designated requirement stays certificate-based, TCC

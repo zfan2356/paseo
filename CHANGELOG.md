@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.5.0-beta.5 - 2026-08-22
+
+### Added
+
+- Added browser-style New tabs to every workspace pane
+- Added live workspace change counts above active agent composers
+- Added workspace panel and pane actions to the Command Center
+- Added guided Hub setup that connects a daemon and deploys a starter workflow
+
+### Improved
+
+- Reduced pauses while navigating and streaming by deferring replica-cache writes until idle
+- Kept large read-only source previews responsive with bounded rendering
+- Kept long-running agent timelines in memory instead of rewriting their complete transcript to disk
+
+### Fixed
+
+- Fixed the iOS composer staying one line tall as text wraps
+- Fixed compact model options becoming unreachable when profiles fill the sheet
+- Fixed OpenCode agents timing out during slow startup ([#3621](https://github.com/getpaseo/paseo/pull/3621) by [@BrianAguilarWasco](https://github.com/BrianAguilarWasco))
+- Fixed chat timeline spacing and reading-position jumps when visible tool calls expand
+
+## 0.5.0-beta.4 - 2026-08-21
+
+### Added
+
+- Added plugin-contributed application themes to Settings → Appearance ([#3602](https://github.com/getpaseo/paseo/pull/3602) by [@ragokan](https://github.com/ragokan))
+- Added MiniMax Code to the one-click ACP provider catalog ([#3457](https://github.com/getpaseo/paseo/pull/3457) by [@hetaoBackend](https://github.com/hetaoBackend))
+- Added project filtering to the sidebar display menu ([#3563](https://github.com/getpaseo/paseo/pull/3563) by [@cleiter](https://github.com/cleiter))
+- Added active-turn steering for OpenCode ([#3580](https://github.com/getpaseo/paseo/pull/3580) by [@mcowger](https://github.com/mcowger))
+- Added separate Content text sizing for chat, the composer, Markdown, and review prose ([#3637](https://github.com/getpaseo/paseo/pull/3637))
+- Added live sheets for summarized tool-call groups on compact layouts ([#3619](https://github.com/getpaseo/paseo/pull/3619))
+
+### Improved
+
+- Changed the Side panel into a user-directed surface with independent tabs and configurable supporting-tab routing ([#3605](https://github.com/getpaseo/paseo/pull/3605))
+- Changed Default send in Settings to a dropdown menu ([#3644](https://github.com/getpaseo/paseo/pull/3644))
+- Reduced Android workspace-switch stalls after using several long chats ([#3610](https://github.com/getpaseo/paseo/pull/3610))
+- Changed automatic Setup tabs to appear only after workspace setup fails ([#3634](https://github.com/getpaseo/paseo/pull/3634))
+- Corrected Russian UI translations and terminology ([#3586](https://github.com/getpaseo/paseo/pull/3586) by [@timz](https://github.com/timz))
+
+### Fixed
+
+- Fixed modified tab indicators overlapping truncated tab titles
+- Fixed composer steers remaining unread while Claude or Codex waited on a permission ([#3585](https://github.com/getpaseo/paseo/pull/3585) by [@cleiter](https://github.com/cleiter))
+- Fixed Changes opening an empty comparison after checkout state changes ([#3636](https://github.com/getpaseo/paseo/pull/3636))
+- Fixed Pi chats ending in an error state during a successful automatic retry ([#3639](https://github.com/getpaseo/paseo/pull/3639))
+- Fixed Claude usage appearing unavailable when macOS Keychain contains multiple credential items ([#3597](https://github.com/getpaseo/paseo/pull/3597) by [@t-benoit](https://github.com/t-benoit))
+- Fixed active Codex agents failing to open when their native thread was archived outside Paseo ([#3334](https://github.com/getpaseo/paseo/pull/3334))
+- Fixed OpenCode turns failing when plugin-heavy startup takes more than ten seconds ([#3578](https://github.com/getpaseo/paseo/pull/3578) by [@BrianAguilarWasco](https://github.com/BrianAguilarWasco))
+- Fixed worktree creation rejecting Git-valid branch names containing uppercase letters, underscores, or dots ([#3591](https://github.com/getpaseo/paseo/pull/3591))
+- Fixed Android Studio showing a generic terminal icon in the desktop open-target menu ([#3614](https://github.com/getpaseo/paseo/pull/3614) by [@caikovsky](https://github.com/caikovsky))
+
+## 0.5.0-beta.3 - 2026-08-20
+
+### Fixed
+
+- Fixed the composer retaining sent text on iOS and Android ([#3564](https://github.com/getpaseo/paseo/pull/3564))
+- Fixed pull request checkout in fork workflows where the target repository is configured as `upstream` ([#2997](https://github.com/getpaseo/paseo/pull/2997) by [@mcowger](https://github.com/mcowger))
+
 ## 0.5.0-beta.2 - 2026-08-19
 
 ### Added

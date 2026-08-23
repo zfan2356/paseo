@@ -22,28 +22,28 @@ carries on top of `getpaseo/paseo`. One document per feature, each recording:
 ## Relationship to the maintenance ledger
 
 The `paseo-local-maintenance` skill keeps a customization ledger
-(`references/customizations.md`) focused on *surviving upstream merges*:
+(`references/customizations.md`) focused on _surviving upstream merges_:
 owning files, regression tests, conflict hotspots, focused validation
-commands. These docs are the complementary *why and how* narrative. Keep both
+commands. These docs are the complementary _why and how_ narrative. Keep both
 updated; the ledger stays authoritative for merge mechanics, this directory
 stays authoritative for intent and design.
 
 ## Index
 
-| Doc | Feature |
-| --- | --- |
-| [terminal-color-isolation.md](terminal-color-isolation.md) | Daemon terminals advertise truecolor and ignore daemon-level color suppression |
-| [latex-markdown-rendering.md](latex-markdown-rendering.md) | KaTeX MathML rendering for LaTeX in chat Markdown |
-| [safe-local-macos-app-replacement.md](safe-local-macos-app-replacement.md) | Installer that replaces the running Mac app safely with rollback |
-| [stable-local-macos-signing.md](stable-local-macos-signing.md) | Reusable `Paseo Local` signing identity so TCC grants survive rebuilds |
-| [intermediate-process-folding.md](intermediate-process-folding.md) | Fold reasoning/tool calls/todos into one collapsible group per turn |
-| [compact-codex-assistant-boundaries.md](compact-codex-assistant-boundaries.md) | Compact visible divider between Codex assistant messages |
-| [persistent-terminal-sessions.md](persistent-terminal-sessions.md) | PTYs owned by a detached worker survive daemon restarts |
-| [viewport-only-terminal-restore.md](viewport-only-terminal-restore.md) | Reopening a terminal paints the viewport, not replayed scrollback |
-| [agent-tui-conversation-switch.md](agent-tui-conversation-switch.md) | Switch an agent conversation between Agent view and its real TUI |
-| [agent-side-chat.md](agent-side-chat.md) | Side-question overlay on live Claude and Codex agents |
-| [codex-terminal-image-paste.md](codex-terminal-image-paste.md) | Paste clipboard images into Codex conversation terminals |
-| [ink-tui-caret-visibility.md](ink-tui-caret-visibility.md) | Visible caret for Ink TUIs on the WebGL renderer |
-| [kitty-graphics-ack.md](kitty-graphics-ack.md) | Kitty graphics ACKs answered on stdin, never typed at the prompt |
-| [chrome-link-opener.md](chrome-link-opener.md) | Host-window links open in Google Chrome |
-| [codex-appearance-theme.md](codex-appearance-theme.md) | Codex charcoal appearance theme |
+| Doc                                                                            | Feature                                                                        |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| [terminal-color-isolation.md](terminal-color-isolation.md)                     | Daemon terminals advertise truecolor and ignore daemon-level color suppression |
+| [latex-markdown-rendering.md](latex-markdown-rendering.md)                     | KaTeX MathML rendering for LaTeX in chat Markdown                              |
+| [safe-local-macos-app-replacement.md](safe-local-macos-app-replacement.md)     | Installer that replaces the running Mac app safely with rollback               |
+| [stable-local-macos-signing.md](stable-local-macos-signing.md)                 | Reusable `Paseo Local` signing identity so TCC grants survive rebuilds         |
+| [intermediate-process-folding.md](intermediate-process-folding.md)             | Fold reasoning/tool calls/todos into one collapsible group per turn            |
+| [compact-codex-assistant-boundaries.md](compact-codex-assistant-boundaries.md) | Compact visible divider between Codex assistant messages                       |
+| [persistent-terminal-sessions.md](persistent-terminal-sessions.md)             | PTYs owned by a detached worker survive daemon restarts                        |
+| [viewport-only-terminal-restore.md](viewport-only-terminal-restore.md)         | Reopening a terminal paints the viewport, not replayed scrollback              |
+| [agent-tui-conversation-switch.md](agent-tui-conversation-switch.md)           | Switch an agent conversation between Agent view and its real TUI               |
+| [agent-side-chat.md](agent-side-chat.md)                                       | Side-question overlay on live Claude and Codex agents                          |
+| [codex-terminal-image-paste.md](codex-terminal-image-paste.md)                 | Paste clipboard images into Codex conversation terminals                       |
+| [ink-tui-caret-visibility.md](ink-tui-caret-visibility.md)                     | Visible caret for Ink TUIs on the WebGL renderer                               |
+| [kitty-graphics-ack.md](kitty-graphics-ack.md)                                 | Kitty graphics ACKs answered on stdin, never typed at the prompt               |
+| [chrome-link-opener.md](chrome-link-opener.md)                                 | Host-window links open in Google Chrome                                        |
+| [codex-appearance-theme.md](codex-appearance-theme.md)                         | Codex charcoal appearance theme                                                |

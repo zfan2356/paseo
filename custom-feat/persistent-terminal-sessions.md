@@ -19,7 +19,7 @@ Ownership of PTYs moves out of the daemon into a **detached terminal worker
 process**, connected over an authenticated local socket with an NDJSON,
 versioned protocol (`terminal-worker-*.ts`, `worker-terminal-manager.ts`):
 
-- Graceful daemon shutdown *detaches* from the worker instead of killing it.
+- Graceful daemon shutdown _detaches_ from the worker instead of killing it.
   PTYs, foreground commands, and TUIs keep running; the next daemon
   rediscovers and re-attaches.
 - During a restart, old and replacement daemons may both be attached, so a

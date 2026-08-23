@@ -37,6 +37,6 @@ all themes, without breaking colored inverse text.
 
 Native grid rendering already swaps inverse fg/bg and does not need this.
 The bundled native webview receives the same runtime but was not exercised
-on a physical device. An Ink TUI that hides the hardware cursor *and* draws
+on a physical device. An Ink TUI that hides the hardware cursor _and_ draws
 only a default-color inverse space can still look caret-less on WebGL after
 a hide sequence.

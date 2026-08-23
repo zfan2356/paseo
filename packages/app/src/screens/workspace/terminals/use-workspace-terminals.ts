@@ -19,9 +19,12 @@ import {
   upsertCreatedTerminalPayload,
 } from "@/screens/workspace/terminals/state";
 
+export type TerminalTabDestination =
+  | { kind: "open"; paneId?: string }
+  | { kind: "replace"; tabId: string };
+
 interface PendingTerminalCreateInput {
-  paneId?: string;
-  replaceTabId?: string;
+  destination: TerminalTabDestination;
   profile?: TerminalProfile;
   agentId?: string;
 }
@@ -36,11 +39,7 @@ interface UseWorkspaceTerminalsInput {
   workspaceScripts: WorkspaceDescriptor["scripts"];
   hasHydratedWorkspaces: boolean;
   isMissingWorkspaceDirectory: boolean;
-  onTerminalCreated: (input: {
-    terminalId: string;
-    paneId?: string;
-    replaceTabId?: string;
-  }) => void;
+  onTerminalCreated: (input: { terminalId: string; destination: TerminalTabDestination }) => void;
   onScriptTerminalSelected: (terminalId: string) => void;
   onWorkspacePathUnavailable: () => void;
   onTerminalCreateQueued: () => void;
@@ -131,18 +130,18 @@ export function useWorkspaceTerminals(input: UseWorkspaceTerminalsInput) {
   );
 
   const createMutation = useMutation({
-    mutationFn: async (_input?: PendingTerminalCreateInput) => {
+    mutationFn: async (_input: PendingTerminalCreateInput) => {
       if (!client || !workspaceDirectory) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
       }
       let payload;
-      if (_input?.agentId) {
+      if (_input.agentId) {
         payload = await client.createTerminal(workspaceDirectory, undefined, undefined, {
           agentId: _input.agentId,
           workspaceId: normalizedWorkspaceId || undefined,
         });
       } else {
-        const profile = _input?.profile
+        const profile = _input.profile
           ? resolveTerminalProfileLaunch(_input.profile, "")
           : undefined;
         payload = profile
@@ -179,8 +178,7 @@ export function useWorkspaceTerminals(input: UseWorkspaceTerminalsInput) {
       if (createdTerminal) {
         onTerminalCreated({
           terminalId: createdTerminal.id,
-          paneId: createInput?.paneId,
-          replaceTabId: createInput?.replaceTabId,
+          destination: createInput.destination,
         });
       }
     },
@@ -227,7 +225,7 @@ export function useWorkspaceTerminals(input: UseWorkspaceTerminalsInput) {
   ]);
 
   const createTerminal = useCallback(
-    (createInput?: PendingTerminalCreateInput) => {
+    (createInput: PendingTerminalCreateInput) => {
       if (createMutation.isPending || pendingCreateInput) {
         return;
       }
@@ -242,7 +240,7 @@ export function useWorkspaceTerminals(input: UseWorkspaceTerminalsInput) {
         return;
       }
 
-      setPendingCreateInput(createInput ?? {});
+      setPendingCreateInput(createInput);
       onTerminalCreateQueued();
     },
     [
