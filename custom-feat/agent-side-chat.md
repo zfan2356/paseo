@@ -30,6 +30,8 @@ thread-fork primitive supports the same user experience.
 - Answers never touch the Paseo timeline or persisted state, run without
   tools, and exchange history is client-side and in-memory only (clears on
   app reload).
+- Provider profiles and built-in providers with configured model overrides
+  retain `askSideQuestion` when the registry wraps their sessions.
 
 ### Claude transport
 
