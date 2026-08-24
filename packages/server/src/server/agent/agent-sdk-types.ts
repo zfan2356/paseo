@@ -206,6 +206,13 @@ export interface AgentPersistenceHandle {
   /** Provider specific handle (Codex thread id, Claude resume token, etc). */
   nativeHandle?: string;
   metadata?: AgentMetadata;
+  /**
+   * Side chat only: the provider fork has not been created yet and sessionId
+   * is the fork SOURCE conversation. The realized handle must be re-read from
+   * the resumed session once it connects; disposing a pending handle is a
+   * no-op.
+   */
+  sideChatForkPending?: boolean;
 }
 
 export type AgentPromptContentBlock =
@@ -631,6 +638,13 @@ export interface AgentCreateSessionOptions {
 export interface AgentResumeSessionOptions {
   /** Defaults to interactive. History loading may be read-only for archived native sessions. */
   purpose?: "interactive" | "history";
+  /**
+   * Side chat: fork this provider conversation inside the resumed session's
+   * own process instead of resuming handle.sessionId. Codex holds a
+   * cross-process writer lock per loaded thread, so the fork must be created
+   * by the process that will drive it.
+   */
+  sideChatForkFromThreadId?: string;
 }
 
 /**

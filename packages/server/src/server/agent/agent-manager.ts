@@ -3131,11 +3131,12 @@ export class AgentManager {
     const sideAgentId = validateAgentId(this.idFactory(), "openSideChat");
     const handle = await session.forkForSideChat();
     const dispose = session.disposeSideChatFork.bind(session);
-    this.sideChatOwnership.set(sideAgentId, {
+    const ownership = {
       parentAgentId,
       handle,
       dispose,
-    });
+    };
+    this.sideChatOwnership.set(sideAgentId, ownership);
     const sideAgentIds = this.sideChatAgentIdsByParent.get(parentAgentId) ?? new Set<string>();
     sideAgentIds.add(sideAgentId);
     this.sideChatAgentIdsByParent.set(parentAgentId, sideAgentIds);
@@ -3148,7 +3149,18 @@ export class AgentManager {
           workspaceId: parent.workspaceId,
           historyPrimed: false,
         },
+        // A pending handle points at the fork SOURCE; the provider forks it
+        // inside the side agent's own process during connect.
+        handle.sideChatForkPending ? { sideChatForkFromThreadId: handle.sessionId } : undefined,
       );
+      if (handle.sideChatForkPending) {
+        const realized = sideAgent.session?.describePersistence() ?? null;
+        if (!realized) {
+          throw new Error("Side chat fork did not produce a resumable conversation");
+        }
+        ownership.handle = realized;
+        sideAgent.persistence = attachPersistenceCwd(realized, sideAgent.cwd);
+      }
       await this.hydrateTimelineFromProvider(sideAgent.id, {
         broadcast: false,
       });

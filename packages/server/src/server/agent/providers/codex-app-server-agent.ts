@@ -3249,6 +3249,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     resolve: () => void;
     cancelRequested: boolean;
   } | null = null;
+  private pendingSideChatForkSourceId: string | null = null;
   private client: CodexAppServerClient | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private nextTurnOrdinal = 0;
@@ -3320,7 +3321,11 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   constructor(
     config: AgentSessionConfig,
-    private readonly resumeHandle: { sessionId: string; metadata?: Record<string, unknown> } | null,
+    private readonly resumeHandle: {
+      sessionId: string;
+      metadata?: Record<string, unknown>;
+      sideChatForkFromThreadId?: string;
+    } | null,
     logger: Logger,
     private readonly spawnAppServer: () => Promise<ChildProcessWithoutNullStreams>,
     private readonly deps: CodexAppServerAgentDeps = {},
@@ -3350,7 +3355,9 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.planModeEnabled = true;
     }
 
-    if (this.resumeHandle?.sessionId) {
+    if (this.resumeHandle?.sideChatForkFromThreadId) {
+      this.pendingSideChatForkSourceId = this.resumeHandle.sideChatForkFromThreadId;
+    } else if (this.resumeHandle?.sessionId) {
       this.currentThreadId = this.resumeHandle.sessionId;
       this.historyPending = true;
     }
@@ -3417,6 +3424,27 @@ export class CodexAppServerAgentSession implements AgentSession {
       await this.loadResolvedWorkspaceWrite();
       await this.loadCollaborationModes();
       await this.loadSkills();
+
+      if (this.pendingSideChatForkSourceId) {
+        // The fork must be created by this process: codex takes a
+        // cross-process writer lock on every loaded thread, so a fork created
+        // by the parent agent's app-server could never be resumed here.
+        const sourceThreadId = this.pendingSideChatForkSourceId;
+        const forked = await forkCodexThread(client, {
+          threadId: sourceThreadId,
+          cwd: this.config.cwd ?? null,
+          model: this.config.model ?? null,
+          serviceTier: this.serviceTier,
+          excludeTurns: false,
+        });
+        this.pendingSideChatForkSourceId = null;
+        this.currentThreadId = forked.thread.id;
+        this.historyPending = true;
+        this.logger.info(
+          { sourceThreadId, threadId: forked.thread.id },
+          "Forked Codex side chat thread inside the side agent process",
+        );
+      }
 
       if (this.currentThreadId) {
         await this.ensureThreadLoaded({
@@ -4659,10 +4687,6 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async forkForSideChat(): Promise<AgentPersistenceHandle> {
     await this.connect();
-    const client = this.client;
-    if (!client) {
-      throw new Error("Codex client is not initialized");
-    }
     if (this.currentThreadId) {
       await this.ensureThreadLoaded();
     } else {
@@ -4672,27 +4696,29 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (!threadId) {
       throw new Error("Codex thread is not ready for side chat");
     }
-    const forked = await forkCodexThread(client, {
-      threadId,
-      cwd: this.config.cwd ?? null,
-      model: this.config.model ?? null,
-      serviceTier: this.serviceTier,
-      excludeTurns: false,
-    });
-    const sideThreadId = forked.thread.id;
+    // Return a pending handle instead of forking here: the fork has to be
+    // created inside the side agent's own app-server process (see
+    // establishConnection), because codex holds a cross-process writer lock
+    // for every loaded thread and a fork created here would stay locked to
+    // this process.
     const current = this.describePersistence();
     return {
       provider: CODEX_PROVIDER,
-      sessionId: sideThreadId,
-      nativeHandle: sideThreadId,
+      sessionId: threadId,
+      nativeHandle: threadId,
       metadata: {
         ...current?.metadata,
-        threadId: sideThreadId,
+        threadId,
       },
+      sideChatForkPending: true,
     };
   }
 
   async disposeSideChatFork(handle: AgentPersistenceHandle): Promise<void> {
+    if (handle.sideChatForkPending) {
+      // The fork was never realized; there is no side thread to archive.
+      return;
+    }
     await this.connect();
     if (!this.client) {
       throw new Error("Codex client is not initialized");
@@ -7031,7 +7057,9 @@ export class CodexAppServerAgentClient implements AgentClient {
     const autoReviewEnabled = await this.resolveAutoReviewEnabled();
     const session = new CodexAppServerAgentSession(
       merged,
-      handle,
+      options?.sideChatForkFromThreadId
+        ? { ...handle, sideChatForkFromThreadId: options.sideChatForkFromThreadId }
+        : handle,
       this.logger,
       () =>
         this.spawnAppServer(launchContext?.env, { goalsEnabled, agentId: launchContext?.agentId }),

@@ -1466,6 +1466,84 @@ describe("Codex app-server provider", () => {
     appServer.assertNoErrors();
   });
 
+  test("side chat resume forks the thread inside the side agent's own process", async () => {
+    const threadRequests: string[] = [];
+    const appServer = createFakeCodexAppServer({
+      "thread/fork": () => {
+        threadRequests.push("thread/fork");
+        return {
+          thread: { id: "side-thread-1", forkedFromId: "parent-thread-id", turns: [] },
+          model: "gpt-5.4",
+          modelProvider: "openai",
+          serviceTier: null,
+          cwd: "/workspace/project",
+          approvalPolicy: "on-request",
+          approvalsReviewer: null,
+          sandbox: { type: "workspaceWrite", networkAccess: false },
+        };
+      },
+      // The fork loads the new thread into this process, so the resume guard
+      // must see it as already loaded and never issue thread/resume.
+      "thread/loaded/list": () => {
+        threadRequests.push("thread/loaded/list");
+        return { data: ["side-thread-1"] };
+      },
+      "thread/resume": () => {
+        threadRequests.push("thread/resume");
+        return {};
+      },
+    });
+    const provider = createProviderWithFakeAppServer(appServer);
+
+    const session = await provider.resumeSession(
+      {
+        sessionId: "parent-thread-id",
+        metadata: { cwd: "/workspace/project", model: "gpt-5.4" },
+      },
+      undefined,
+      undefined,
+      { sideChatForkFromThreadId: "parent-thread-id" },
+    );
+
+    expect(threadRequests).toEqual(["thread/fork", "thread/loaded/list"]);
+    expect(session.describePersistence()?.sessionId).toBe("side-thread-1");
+    await session.close();
+    appServer.assertNoErrors();
+  });
+
+  test("forkForSideChat returns a pending handle and disposing it never archives", async () => {
+    const threadRequests: string[] = [];
+    const appServer = createFakeCodexAppServer({
+      "thread/fork": () => {
+        threadRequests.push("thread/fork");
+        return { thread: { id: "unexpected-fork" } };
+      },
+      "thread/archive": () => {
+        threadRequests.push("thread/archive");
+        return {};
+      },
+    });
+    const provider = createProviderWithFakeAppServer(appServer);
+
+    const session = await provider.resumeSession({
+      sessionId: "parent-thread-id",
+      metadata: { cwd: "/workspace/project", model: "gpt-5.4" },
+    });
+    const handle = await session.forkForSideChat?.();
+    if (!handle) {
+      throw new Error("forkForSideChat did not return a handle");
+    }
+
+    expect(handle.sideChatForkPending).toBe(true);
+    expect(handle.sessionId).toBe("parent-thread-id");
+    expect(threadRequests).not.toContain("thread/fork");
+
+    await session.disposeSideChatFork?.(handle);
+    expect(threadRequests).not.toContain("thread/archive");
+    await session.close();
+    appServer.assertNoErrors();
+  });
+
   test("unarchives a persisted Codex thread through app-server", async () => {
     const threadRequests: Array<{ method: string; params: unknown }> = [];
     const appServer = createFakeCodexAppServer({
