@@ -9,9 +9,10 @@
 
 While an agent is deep in a long turn, the user often wants to branch from the
 current conversation without interrupting or changing the main conversation.
-The Side Chat should feel like Main Chat: it shows the inherited timeline and
-supports normal messages, reasoning, tool calls, permissions, Composer, and
-provider subagents.
+The Side Chat should feel like Main Chat: the fork carries the full parent
+conversation as model context, but the visible transcript starts blank and
+only shows turns created inside the Side Chat. It supports normal messages,
+reasoning, tool calls, permissions, Composer, and provider subagents.
 
 The branch semantics are deliberate:
 
@@ -28,6 +29,17 @@ Instead of implementing a second chat renderer, the panel renders the normal
 `AgentPanelContent` for an internal agent. This reuses the same timeline,
 reasoning, tools, permission prompts, Composer, and subagent UI as Main Chat.
 Nested Side Chats are disabled.
+
+The open flow marks the internal agent's history as primed instead of
+hydrating provider history, so the inherited turns stay out of the timeline
+and the transcript starts blank; the provider fork still holds the full
+conversation as context. For Codex the fork itself is created inside the side
+agent's own app-server process (`sideChatForkFromThreadId` on resume): codex
+keeps a cross-process writer lock per loaded thread, so a fork created by the
+parent's process could never be resumed by the side agent. `forkForSideChat`
+returns a pending handle (`sideChatForkPending`) whose realized thread id is
+read back from the side session after connect; disposing a pending handle is
+a no-op so a failed open can never archive the parent thread.
 
 The internal side agent is excluded from the normal agent directory. The
 client session that opened it may address it by exact ID through the regular
