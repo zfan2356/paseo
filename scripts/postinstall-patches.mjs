@@ -2,6 +2,11 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:f
 import { spawnSync } from "node:child_process";
 import { join, relative } from "node:path";
 
+// Remove @expo/cli's bundled React canary runtime. We don't enable
+// `experiments.reactCanary`, and the bundled react/react-dom canary versions fall in the
+// CVE-2025-55182 affected range, tripping security scanners on every fresh install.
+rmSync("node_modules/@expo/cli/static/canary-full", { recursive: true, force: true });
+
 // In CI we often install a single workspace (e.g. server/relay/website). Only apply patches
 // when the patched dependency is actually present.
 // `cwd` is where patch-package must run from. Packages that npm does not hoist to the

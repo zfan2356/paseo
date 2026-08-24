@@ -42,14 +42,14 @@
     "@getpaseo/client": "0.5.1",
     "@types/node": "^20.9.0",
     "@types/react": "~19.2.0",
-    "react": "19.1.0",
+    "react": "19.1.4",
     "typescript": "^5.9.3",
     "vitest": "^4.1.6",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@getpaseo/client": "0.5.1",
-    "react": "19.1.0",
+    "react": "19.1.4",
     "zod": "^4.4.3"
   }
 }
