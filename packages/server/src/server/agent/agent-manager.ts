@@ -3147,7 +3147,10 @@ export class AgentManager {
         sideAgentId,
         {
           workspaceId: parent.workspaceId,
-          historyPrimed: false,
+          // The fork carries the parent conversation as model context, but
+          // the side chat transcript intentionally starts blank: marking
+          // history as primed keeps the inherited turns out of the timeline.
+          historyPrimed: true,
         },
         // A pending handle points at the fork SOURCE; the provider forks it
         // inside the side agent's own process during connect.
@@ -3161,9 +3164,6 @@ export class AgentManager {
         ownership.handle = realized;
         sideAgent.persistence = attachPersistenceCwd(realized, sideAgent.cwd);
       }
-      await this.hydrateTimelineFromProvider(sideAgent.id, {
-        broadcast: false,
-      });
       if (this.inFlightAgentCloses.has(parentAgentId)) {
         throw new Error(`Agent '${parentAgentId}' is closing`);
       }

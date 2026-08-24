@@ -603,7 +603,7 @@ class SideChatTestClient extends TestAgentClient {
   }
 }
 
-test("forked side chat hydrates provider history and is removed on close", async () => {
+test("forked side chat starts with a blank transcript and is removed on close", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
   const client = new SideChatTestClient(workdir);
@@ -625,10 +625,9 @@ test("forked side chat hydrates provider history and is removed on close", async
   expect(sideAgent.id).toBe(sideAgentId);
   expect(sideAgent.internal).toBe(true);
   expect(manager.listAgents().map((agent) => agent.id)).toEqual([parentAgentId]);
-  expect(manager.getTimeline(sideAgentId)).toEqual([
-    { type: "user_message", text: "main context at fork" },
-    { type: "assistant_message", text: "main answer at fork" },
-  ]);
+  // The fork carries the parent conversation as model context only; the
+  // side chat transcript intentionally starts blank.
+  expect(manager.getTimeline(sideAgentId)).toEqual([]);
 
   await Promise.all([
     manager.closeSideChat(parentAgentId, sideAgentId),
