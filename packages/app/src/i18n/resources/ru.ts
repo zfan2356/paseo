@@ -215,6 +215,9 @@ export const ru: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
+      closedNotice:
+        "Боковой чат закрыт. Повторное открытие создаст ответвление основного разговора в его текущем состоянии.",
+      reopen: "Открыть снова",
       title: "Боковой чат",
       inputPlaceholder: "Задайте быстрый вопрос…",
       send: "Отправить",

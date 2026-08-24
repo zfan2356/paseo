@@ -91,6 +91,8 @@ import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { normalizeWorkspaceTabTarget, workspaceTabTargetsEqual } from "@/workspace-tabs/identity";
 import { useWorkspaceConversationSurface } from "@/conversation-surface/use-workspace-conversation-surface";
 import { useSideChatHeader } from "@/side-chat/use-side-chat-header";
+import { closeSideChatPanel } from "@/side-chat/lifecycle";
+import { sideChatKey } from "@/side-chat/model";
 import { useVisibleAgentIds } from "./visible-agent-ids";
 import {
   getHostRuntimeStore,
@@ -414,6 +416,9 @@ function getFallbackTabOptionDescription(
     return labels.browser;
   }
   if (tab.target.kind === "provider_subagent") {
+    return labels.agent;
+  }
+  if (tab.target.kind === "side_chat") {
     return labels.agent;
   }
   if (tab.target.kind === "commit_diff") {
@@ -2606,14 +2611,32 @@ function WorkspaceScreenContent({
         await handleCloseAgentTab({ tabId, agentId: tab.target.agentId });
         return;
       }
+      if (tab.target.kind === "side_chat") {
+        // Closing the tab is the destructive action: it disposes the
+        // provider fork. The header toggle merely hides the Side panel.
+        await closeSideChatPanel({
+          key: sideChatKey(normalizedServerId, tab.target.parentAgentId),
+          serverId: normalizedServerId,
+          parentAgentId: tab.target.parentAgentId,
+          client,
+        }).catch((error) => {
+          toast.error(error instanceof Error ? error.message : t("common.errors.error"));
+        });
+        handleClosePassiveTab({ tabId, target: tab.target });
+        return;
+      }
       handleClosePassiveTab({ tabId, target: tab.target });
     },
     [
       allTabDescriptorsById,
+      client,
       confirmDiscardModifiedTab,
       handleCloseAgentTab,
       handleClosePassiveTab,
       handleCloseTerminalTab,
+      normalizedServerId,
+      t,
+      toast,
     ],
   );
 
@@ -3701,6 +3724,7 @@ function WorkspaceScreenContent({
 
   const sideChatHeader = useSideChatHeader({
     serverId: normalizedServerId,
+    workspaceKey: persistenceKey,
     activeTab: activeTabDescriptor,
     isConnected,
   });

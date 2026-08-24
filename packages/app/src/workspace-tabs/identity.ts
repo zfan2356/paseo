@@ -58,6 +58,10 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
     case "files":
     case "pull_request":
       return { kind: value.kind };
+    case "side_chat": {
+      const parentAgentId = trimNonEmpty(value.parentAgentId);
+      return parentAgentId ? { kind: "side_chat", parentAgentId } : null;
+    }
     case "setup": {
       const workspaceId = trimNonEmpty(value.workspaceId);
       return workspaceId ? { kind: "setup", workspaceId } : null;
@@ -133,6 +137,9 @@ function secondaryWorkspaceTabTargetsEqual(
   if (left.kind === "browser" && right.kind === "browser") {
     return left.browserId === right.browserId;
   }
+  if (left.kind === "side_chat" && right.kind === "side_chat") {
+    return left.parentAgentId === right.parentAgentId;
+  }
   if (left.kind === "file" && right.kind === "file") {
     return workspaceFileLocationsEqual(left, right);
   }
@@ -199,6 +206,9 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
   }
   if (target.kind === "provider_subagent") {
     return `provider_subagent_${target.parentAgentId.length}_${target.parentAgentId}_${target.subagentId.length}_${target.subagentId}`;
+  }
+  if (target.kind === "side_chat") {
+    return `side_chat_${target.parentAgentId}`;
   }
   if (target.kind === "terminal") {
     return `terminal_${target.terminalId}`;

@@ -215,6 +215,8 @@ export const ko: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
+      closedNotice: "사이드 채팅이 닫혔습니다. 다시 열면 현재 메인 대화 상태에서 새로 분기됩니다.",
+      reopen: "다시 열기",
       title: "사이드 채팅",
       inputPlaceholder: "간단한 질문하기…",
       send: "보내기",

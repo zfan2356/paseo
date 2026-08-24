@@ -21,6 +21,15 @@ const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
+/**
+ * Desktop docks the side chat into the Side panel as a tab; only compact form
+ * factors keep this in-panel overlay.
+ */
+export function useSideChatOverlayEnabled(showSideChat: boolean): boolean {
+  const isCompact = useIsCompactFormFactor();
+  return showSideChat && isCompact;
+}
+
 export function SideChatOverlay({
   serverId,
   agentId,

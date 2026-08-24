@@ -215,6 +215,9 @@ export const ja: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
+      closedNotice:
+        "サイドチャットは閉じられました。再度開くと、メイン会話の現在の状態から新しく分岐します。",
+      reopen: "再度開く",
       title: "サイドチャット",
       inputPlaceholder: "気軽に質問…",
       send: "送信",

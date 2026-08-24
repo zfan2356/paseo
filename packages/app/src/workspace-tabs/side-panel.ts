@@ -207,6 +207,27 @@ export function openTabInSidePanel(
 }
 
 /**
+ * Toggle an explicitly placed Side panel tab: when it is the visible Side panel
+ * tab, hide the panel (the tab keeps waiting for the next reveal); otherwise
+ * reveal it in the Side panel. Compact form factors are the caller's problem —
+ * this only operates on the non-compact side panel pane.
+ */
+export function toggleTabInSidePanel(input: SidePanelInput & { target: WorkspaceTabTarget }): void {
+  if (!input.workspaceKey) {
+    return;
+  }
+  const store = useWorkspaceLayoutStore.getState();
+  if (
+    canUseSidePanelPane(input) &&
+    isTargetVisibleInSidePanel(store, input.workspaceKey, input.target)
+  ) {
+    store.hideSidePanel(input.workspaceKey);
+    return;
+  }
+  openTabInSidePanel(input);
+}
+
+/**
  * Undefined means "no opinion, use the focused pane". Revealing is part of resolving
  * the side panel: a focused tab in a hidden pane is nothing the user can see, so a
  * visible open brings the panel on screen. A background open never does.

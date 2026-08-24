@@ -215,6 +215,9 @@ export const ptBR: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
+      closedNotice:
+        "O chat lateral está fechado. Reabri-lo bifurca a conversa principal no estado atual.",
+      reopen: "Reabrir",
       title: "Chat lateral",
       inputPlaceholder: "Faça uma pergunta rápida…",
       send: "Enviar",

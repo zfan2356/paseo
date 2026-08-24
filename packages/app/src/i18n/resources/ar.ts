@@ -215,6 +215,9 @@ export const ar: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
+      closedNotice:
+        "تم إغلاق الدردشة الجانبية. إعادة فتحها تنشئ تفرعًا من المحادثة الرئيسية بحالتها الحالية.",
+      reopen: "إعادة الفتح",
       title: "الدردشة الجانبية",
       inputPlaceholder: "اطرح سؤالًا سريعًا…",
       send: "إرسال",

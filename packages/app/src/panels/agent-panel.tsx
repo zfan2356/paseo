@@ -18,6 +18,7 @@ import ReanimatedAnimated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { SideChatOverlay } from "@/side-chat/panel";
+import { useSideChatOverlayEnabled } from "@/side-chat/panel";
 import { sideChatKey } from "@/side-chat/model";
 import { selectSideChatPanel, useSideChatStore } from "@/side-chat/store";
 import invariant from "tiny-invariant";
@@ -798,8 +799,9 @@ function ChatAgentContent({
 }) {
   const { t } = useTranslation();
   const isPaneVisible = useRetainedPanelActive();
+  const sideChatOverlayEnabled = useSideChatOverlayEnabled(showSideChat);
   const isSideChatOpen = useSideChatStore((state) =>
-    showSideChat && agentId
+    sideChatOverlayEnabled && agentId
       ? selectSideChatPanel(state, sideChatKey(serverId, agentId)) !== null
       : false,
   );
@@ -1273,6 +1275,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   showSideChat: boolean;
 }) {
   const { t } = useTranslation();
+  const sideChatOverlayEnabled = useSideChatOverlayEnabled(showSideChat);
   const subagentRows = useSubagentsForParent({ serverId, parentAgentId: agentId });
   const tasks = useSessionStore((state): TodoEntry[] | undefined =>
     state.sessions[serverId]?.agentTasks.get(agentId),
@@ -1431,7 +1434,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
 
           {composerSection}
 
-          {showSideChat ? (
+          {sideChatOverlayEnabled ? (
             <SideChatOverlay
               serverId={serverId}
               agentId={agentId}

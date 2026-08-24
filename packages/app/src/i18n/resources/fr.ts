@@ -217,6 +217,9 @@ export const fr: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
+      closedNotice:
+        "La discussion latérale est fermée. La rouvrir crée une bifurcation de la conversation principale dans son état actuel.",
+      reopen: "Rouvrir",
       title: "Discussion parallèle",
       inputPlaceholder: "Posez une question rapide…",
       send: "Envoyer",

@@ -215,6 +215,8 @@ export const zhCN: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
+      closedNotice: "侧边提问已关闭。重新打开会从主对话当前状态重新分叉。",
+      reopen: "重新打开",
       title: "侧边提问",
       inputPlaceholder: "问个小问题…",
       send: "发送",
