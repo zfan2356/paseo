@@ -22,7 +22,6 @@ import {
   type AgentRuntimeInfo,
   type AgentSession,
   type AgentSessionConfig,
-  type AgentSideChatForkBoundary,
   type SteerActiveTurnOptions,
   type SteerResult,
   type AgentSlashCommand,
@@ -449,7 +448,6 @@ interface PersistedSubAgentRoute {
 interface CodexThreadHistoryProjection {
   timeline: PersistedTimelineEntry[];
   subAgentRoutes: PersistedSubAgentRoute[];
-  lastCompletedTurnId: string | null;
 }
 
 function mergeCodexConfiguredDefaults(
@@ -1930,8 +1928,6 @@ const CodexThreadReadResponseSchema = z
           .array(
             z
               .object({
-                id: z.string().optional(),
-                status: z.string().optional(),
                 items: z.array(z.unknown()).default([]),
               })
               .passthrough(),
@@ -1962,11 +1958,7 @@ async function loadCodexThreadHistoryTimeline(params: {
   const response = await requestCodexThreadHistory(params.requestThread, params.threadId);
   const timeline: PersistedTimelineEntry[] = [];
   const subAgentTimelineIndexByThreadId = new Map<string, number>();
-  let lastCompletedTurnId: string | null = null;
   for (const turn of response.thread.turns) {
-    if (turn.status === "completed" && turn.id) {
-      lastCompletedTurnId = turn.id;
-    }
     for (const item of turn.items) {
       const historicalSubAgentActivity = readCodexSubAgentActivity(item);
       if (historicalSubAgentActivity) {
@@ -2012,7 +2004,7 @@ async function loadCodexThreadHistoryTimeline(params: {
         : [];
     },
   );
-  return { timeline, subAgentRoutes, lastCompletedTurnId };
+  return { timeline, subAgentRoutes };
 }
 
 function readCodexThread(client: CodexAppServerClientLike, threadId: string): Promise<unknown> {
@@ -2392,7 +2384,6 @@ type ParsedCodexNotification =
   | { kind: "turn_started"; turnId: string; threadId: string | null }
   | {
       kind: "turn_completed";
-      turnId: string | null;
       status: string;
       errorMessage: string | null;
       threadId: string | null;
@@ -2543,7 +2534,6 @@ const CodexNotificationSchema = z.union([
     .transform(
       ({ params }): ParsedCodexNotification => ({
         kind: "turn_completed",
-        turnId: params.turn.id ?? null,
         status: params.turn.status,
         errorMessage: params.turn.error?.message ?? null,
         threadId: params.threadId ?? null,
@@ -2964,7 +2954,6 @@ const CodexNotificationSchema = z.union([
     .transform(
       ({ params }): ParsedCodexNotification => ({
         kind: "turn_completed",
-        turnId: null,
         status: "interrupted",
         errorMessage: null,
         threadId: getCodexEventThreadId(params),
@@ -2985,7 +2974,6 @@ const CodexNotificationSchema = z.union([
     .transform(
       ({ params }): ParsedCodexNotification => ({
         kind: "turn_completed",
-        turnId: null,
         status: "completed",
         errorMessage: null,
         threadId: getCodexEventThreadId(params),
@@ -3251,7 +3239,6 @@ export class CodexAppServerAgentSession implements AgentSession {
   private resolvedSandboxPolicy: Record<string, unknown> | null = null;
   private currentThreadId: string | null = null;
   private currentTurnId: string | null = null;
-  private lastCompletedTurnId: string | null = null;
   private pendingForegroundTurnIdentification: {
     foregroundTurnId: string;
     promise: Promise<string | null>;
@@ -3263,7 +3250,6 @@ export class CodexAppServerAgentSession implements AgentSession {
     cancelRequested: boolean;
   } | null = null;
   private pendingSideChatForkSourceId: string | null = null;
-  private pendingSideChatForkBoundary: AgentSideChatForkBoundary | null = null;
   private client: CodexAppServerClient | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private nextTurnOrdinal = 0;
@@ -3339,7 +3325,6 @@ export class CodexAppServerAgentSession implements AgentSession {
       sessionId: string;
       metadata?: Record<string, unknown>;
       sideChatForkFromThreadId?: string;
-      sideChatForkBoundary?: AgentSideChatForkBoundary;
     } | null,
     logger: Logger,
     private readonly spawnAppServer: () => Promise<ChildProcessWithoutNullStreams>,
@@ -3372,7 +3357,6 @@ export class CodexAppServerAgentSession implements AgentSession {
 
     if (this.resumeHandle?.sideChatForkFromThreadId) {
       this.pendingSideChatForkSourceId = this.resumeHandle.sideChatForkFromThreadId;
-      this.pendingSideChatForkBoundary = this.resumeHandle.sideChatForkBoundary ?? null;
     } else if (this.resumeHandle?.sessionId) {
       this.currentThreadId = this.resumeHandle.sessionId;
       this.historyPending = true;
@@ -3446,21 +3430,14 @@ export class CodexAppServerAgentSession implements AgentSession {
         // cross-process writer lock on every loaded thread, so a fork created
         // by the parent agent's app-server could never be resumed here.
         const sourceThreadId = this.pendingSideChatForkSourceId;
-        const forkParams: CodexThreadForkParams = {
+        const forked = await forkCodexThread(client, {
           threadId: sourceThreadId,
           cwd: this.config.cwd ?? null,
           model: this.config.model ?? null,
           serviceTier: this.serviceTier,
           excludeTurns: false,
-        };
-        if (this.pendingSideChatForkBoundary?.lastTurnId) {
-          forkParams.lastTurnId = this.pendingSideChatForkBoundary.lastTurnId;
-        } else if (this.pendingSideChatForkBoundary?.beforeTurnId) {
-          forkParams.beforeTurnId = this.pendingSideChatForkBoundary.beforeTurnId;
-        }
-        const forked = await forkCodexThread(client, forkParams);
+        });
         this.pendingSideChatForkSourceId = null;
-        this.pendingSideChatForkBoundary = null;
         this.currentThreadId = forked.thread.id;
         this.historyPending = true;
         this.logger.info(
@@ -3789,8 +3766,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         return readCodexThread(client, threadIdToRead);
       },
     });
-    const { timeline, subAgentRoutes, lastCompletedTurnId } = history;
-    this.lastCompletedTurnId = lastCompletedTurnId;
+    const { timeline, subAgentRoutes } = history;
     this.subAgentCallsByCallId.clear();
     this.subAgentCallIdByChildThreadId.clear();
     this.pendingSubAgentNotificationsByThreadId.clear();
@@ -4710,42 +4686,15 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   async forkForSideChat(): Promise<AgentPersistenceHandle> {
-    const threadIdAtOpen = this.currentThreadId;
-    const completedTurnIdAtOpen = this.lastCompletedTurnId;
-    const activeTurnIdAtOpen = this.currentTurnId;
-    const foregroundTurnIdAtOpen = this.activeForegroundTurnId;
-    const pendingIdentificationAtOpen = this.pendingForegroundTurnIdentification;
     await this.connect();
     if (this.currentThreadId) {
       await this.ensureThreadLoaded();
     } else {
       await this.ensureThread();
     }
-    const threadId = threadIdAtOpen ?? this.currentThreadId;
+    const threadId = this.currentThreadId;
     if (!threadId) {
       throw new Error("Codex thread is not ready for side chat");
-    }
-    const completedTurnId = threadIdAtOpen ? completedTurnIdAtOpen : this.lastCompletedTurnId;
-    let activeTurnId = threadIdAtOpen ? activeTurnIdAtOpen : this.currentTurnId;
-    const foregroundTurnId = threadIdAtOpen ? foregroundTurnIdAtOpen : this.activeForegroundTurnId;
-    const pendingIdentification = threadIdAtOpen
-      ? pendingIdentificationAtOpen
-      : this.pendingForegroundTurnIdentification;
-    if (
-      !completedTurnId &&
-      !activeTurnId &&
-      foregroundTurnId &&
-      pendingIdentification?.foregroundTurnId === foregroundTurnId
-    ) {
-      activeTurnId = await pendingIdentification.promise;
-    }
-    let sideChatForkBoundary: AgentSideChatForkBoundary | undefined;
-    if (completedTurnId) {
-      sideChatForkBoundary = { lastTurnId: completedTurnId };
-    } else if (activeTurnId) {
-      sideChatForkBoundary = { beforeTurnId: activeTurnId };
-    } else if (foregroundTurnId) {
-      throw new Error("Codex active turn has no native fork boundary");
     }
     // Return a pending handle instead of forking here: the fork has to be
     // created inside the side agent's own app-server process (see
@@ -4762,7 +4711,6 @@ export class CodexAppServerAgentSession implements AgentSession {
         threadId,
       },
       sideChatForkPending: true,
-      ...(sideChatForkBoundary ? { sideChatForkBoundary } : {}),
     };
   }
 
@@ -5164,7 +5112,6 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.cachedRuntimeInfo = null;
     }
     this.currentThreadId = threadId;
-    this.lastCompletedTurnId = null;
   }
 
   private buildThreadStartRequest(model: string): {
@@ -5955,9 +5902,6 @@ export class CodexAppServerAgentSession implements AgentSession {
   private handleThreadStartedNotification(
     parsed: Extract<ParsedCodexNotification, { kind: "thread_started" }>,
   ): void {
-    if (this.currentThreadId !== parsed.threadId) {
-      this.lastCompletedTurnId = null;
-    }
     this.currentThreadId = parsed.threadId;
     this.emitEvent({
       type: "thread_started",
@@ -6011,10 +5955,6 @@ export class CodexAppServerAgentSession implements AgentSession {
     } else if (parsed.status === "interrupted") {
       this.emitEvent({ type: "turn_canceled", provider: CODEX_PROVIDER, reason: "interrupted" });
     } else {
-      const completedTurnId = parsed.turnId ?? this.currentTurnId;
-      if (completedTurnId) {
-        this.lastCompletedTurnId = completedTurnId;
-      }
       if (this.planModeEnabled && this.latestPlanResult?.text) {
         this.emitSyntheticPlanApprovalRequest(this.latestPlanResult.text);
       }
@@ -7118,11 +7058,7 @@ export class CodexAppServerAgentClient implements AgentClient {
     const session = new CodexAppServerAgentSession(
       merged,
       options?.sideChatForkFromThreadId
-        ? {
-            ...handle,
-            sideChatForkFromThreadId: options.sideChatForkFromThreadId,
-            sideChatForkBoundary: options.sideChatForkBoundary,
-          }
+        ? { ...handle, sideChatForkFromThreadId: options.sideChatForkFromThreadId }
         : handle,
       this.logger,
       () =>

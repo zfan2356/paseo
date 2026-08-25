@@ -409,15 +409,7 @@ interface ClaudeAgentClientOptions {
   resolveBinary?: () => Promise<string>;
   resolveVersion?: (signal?: AbortSignal) => Promise<string>;
   configDir?: string;
-  sideChatSdk?: ClaudeSideChatSdk;
 }
-
-interface ClaudeSideChatSdk {
-  forkSession: typeof forkSession;
-  deleteSession: typeof deleteSession;
-}
-
-const REAL_CLAUDE_SIDE_CHAT_SDK: ClaudeSideChatSdk = { forkSession, deleteSession };
 
 interface ClaudeAgentSessionOptions {
   defaults?: { agents?: Record<string, AgentDefinition> };
@@ -429,7 +421,6 @@ interface ClaudeAgentSessionOptions {
   logger: Logger;
   queryFactory?: ClaudeQueryFactory;
   resolveBinary: () => Promise<string>;
-  sideChatSdk: ClaudeSideChatSdk;
 }
 
 type ClaudeThinkingEffort = "low" | "medium" | "high" | "xhigh" | "max";
@@ -1502,7 +1493,6 @@ export class ClaudeAgentClient implements AgentClient {
   private readonly resolveBinary: () => Promise<string>;
   private readonly resolveVersion: (signal?: AbortSignal) => Promise<string>;
   private readonly configDir?: string;
-  private readonly sideChatSdk: ClaudeSideChatSdk;
 
   constructor(options: ClaudeAgentClientOptions) {
     this.defaults = options.defaults;
@@ -1514,7 +1504,6 @@ export class ClaudeAgentClient implements AgentClient {
       options.resolveVersion ??
       ((signal) => resolveClaudeCodeVersion(this.runtimeSettings, signal));
     this.configDir = options.configDir;
-    this.sideChatSdk = options.sideChatSdk ?? REAL_CLAUDE_SIDE_CHAT_SDK;
   }
 
   resolveConfiguredModel(model: AgentModelDefinition): AgentModelDefinition {
@@ -1536,7 +1525,6 @@ export class ClaudeAgentClient implements AgentClient {
       logger: this.logger,
       queryFactory: this.queryFactory,
       resolveBinary: this.resolveBinary,
-      sideChatSdk: this.sideChatSdk,
     });
   }
 
@@ -1565,7 +1553,6 @@ export class ClaudeAgentClient implements AgentClient {
       logger: this.logger,
       queryFactory: this.queryFactory,
       resolveBinary: this.resolveBinary,
-      sideChatSdk: this.sideChatSdk,
     });
   }
 
@@ -2044,7 +2031,6 @@ class ClaudeAgentSession implements AgentSession {
   private readonly logger: Logger;
   private readonly queryFactory?: ClaudeQueryFactory;
   private readonly resolveBinary: () => Promise<string>;
-  private readonly sideChatSdk: ClaudeSideChatSdk;
   private query: Query | null = null;
   private childProcess: ChildProcess | null = null;
   private input: AsyncMessageInput<SDKUserMessage> | null = null;
@@ -2108,7 +2094,6 @@ class ClaudeAgentSession implements AgentSession {
   private userMessageIds: string[] = [];
   private readonly emittedUserMessageIds = new Set<string>();
   private readonly rewindTurnAnchors: ClaudeRewindTurnAnchor[] = [];
-  private lastCompletedMessageId: string | null = null;
   private pendingFreshSessionId: string | null = null;
   private recentStderr = "";
   private closed = false;
@@ -2124,7 +2109,6 @@ class ClaudeAgentSession implements AgentSession {
     this.logger = options.logger.child({ agentId: this.agentId });
     this.queryFactory = options.queryFactory;
     this.resolveBinary = options.resolveBinary;
-    this.sideChatSdk = options.sideChatSdk;
     this.contextUsage = new ClaudeContextUsageState(
       findClaudeModel(this.config.model)?.contextWindowMaxTokens,
     );
@@ -2794,20 +2778,12 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   async forkForSideChat(): Promise<AgentPersistenceHandle> {
-    const upToMessageId = this.lastCompletedMessageId;
-    const hasActiveTurn = this.activeForegroundTurnId !== null || this.autonomousTurn !== null;
     await this.ensureQuery();
     const sessionId = this.claudeSessionId;
     if (!sessionId) {
       throw new Error("Claude session is not ready for side chat");
     }
-    if (hasActiveTurn && !upToMessageId) {
-      throw new Error("Claude side chat requires a completed turn before the active turn");
-    }
-    const forked = await this.sideChatSdk.forkSession(sessionId, {
-      dir: this.config.cwd,
-      ...(upToMessageId ? { upToMessageId } : {}),
-    });
+    const forked = await forkSession(sessionId, { dir: this.config.cwd });
     const current = this.describePersistence();
     return {
       provider: "claude",
@@ -2818,7 +2794,7 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   async disposeSideChatFork(handle: AgentPersistenceHandle): Promise<void> {
-    await this.sideChatSdk.deleteSession(handle.sessionId, { dir: this.config.cwd });
+    await deleteSession(handle.sessionId, { dir: this.config.cwd });
   }
 
   async askSideQuestion(input: { question: string }): Promise<AgentSideQuestionResult | null> {
@@ -3001,7 +2977,6 @@ class ClaudeAgentSession implements AgentSession {
     this.userMessageIds = [];
     this.emittedUserMessageIds.clear();
     this.rewindTurnAnchors.length = 0;
-    this.lastCompletedMessageId = null;
     this.taskState.reset();
     this.loadPersistedHistory(sessionId);
     if (oldSessionId && oldSessionId !== sessionId) {
@@ -3033,7 +3008,6 @@ class ClaudeAgentSession implements AgentSession {
     this.userMessageIds = [];
     this.emittedUserMessageIds.clear();
     this.rewindTurnAnchors.length = 0;
-    this.lastCompletedMessageId = null;
     this.taskState.reset();
   }
 
@@ -3079,14 +3053,6 @@ class ClaudeAgentSession implements AgentSession {
       }
       anchor.assistantMessageId = assistantMessageId;
       return;
-    }
-  }
-
-  private rememberCompletedSideChatBoundary(resultMessageId: unknown): void {
-    const messageId =
-      readTrimmedString(resultMessageId) ?? this.rewindTurnAnchors.at(-1)?.assistantMessageId;
-    if (messageId) {
-      this.lastCompletedMessageId = messageId;
     }
   }
 
@@ -4463,7 +4429,6 @@ class ClaudeAgentSession implements AgentSession {
   ): void {
     const usage = this.convertUsage(message, message.modelUsage);
     if (message.subtype === "success") {
-      this.rememberCompletedSideChatBoundary(message.uuid);
       events.push(...this.sidechainTracker.finishAll("completed"));
       // Built-in slash commands (e.g. /voice, /usage, "Unknown command: …")
       // run client-side in the Claude CLI with no model turn — output_tokens
@@ -4987,9 +4952,6 @@ class ClaudeAgentSession implements AgentSession {
     }
     if (entry.type === "assistant" && typeof entry.uuid === "string") {
       this.rememberRewindAssistantAnchor(entry.uuid);
-    }
-    if (entry.type === "result" && entry.subtype === "success") {
-      this.rememberCompletedSideChatBoundary(entry.uuid);
     }
 
     if (items.length > 0) {

@@ -3154,12 +3154,7 @@ export class AgentManager {
         },
         // A pending handle points at the fork SOURCE; the provider forks it
         // inside the side agent's own process during connect.
-        handle.sideChatForkPending
-          ? {
-              sideChatForkFromThreadId: handle.sessionId,
-              sideChatForkBoundary: handle.sideChatForkBoundary,
-            }
-          : undefined,
+        handle.sideChatForkPending ? { sideChatForkFromThreadId: handle.sessionId } : undefined,
       );
       if (handle.sideChatForkPending) {
         const realized = sideAgent.session?.describePersistence() ?? null;
