@@ -16,7 +16,9 @@ reasoning, tool calls, permissions, Composer, and provider subagents.
 
 The branch semantics are deliberate:
 
-- Opening Side Chat forks the provider conversation at that moment.
+- Opening Side Chat forks the provider's current conversation state, including
+  a Main Chat turn that is still running. This lets the user ask about current
+  progress without interrupting the Main Chat.
 - Main Chat and Side Chat advance independently after the fork. Side Chat does
   not follow later Main Chat messages while it remains open.
 - Closing Side Chat destroys that provider fork and its local replica.
