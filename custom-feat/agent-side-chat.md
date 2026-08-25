@@ -3,6 +3,7 @@
 - Status: active
 - Original commit: `85ccc4615` (one-shot Claude side questions)
 - Full-conversation fork: 2026-08-24
+- Stable completed-turn boundary: 2026-08-25
 - Ledger entry: "Agent side chat (side questions)"
 
 ## Original requirement
@@ -16,7 +17,9 @@ reasoning, tool calls, permissions, Composer, and provider subagents.
 
 The branch semantics are deliberate:
 
-- Opening Side Chat forks the provider conversation at that moment.
+- Opening Side Chat captures the latest fully completed parent turn at click
+  time. A Main Chat turn that is still running, including its user prompt and
+  partial assistant work, is excluded from the fork.
 - Main Chat and Side Chat advance independently after the fork. Side Chat does
   not follow later Main Chat messages while it remains open.
 - Closing Side Chat destroys that provider fork and its local replica.
@@ -38,8 +41,10 @@ agent's own app-server process (`sideChatForkFromThreadId` on resume): codex
 keeps a cross-process writer lock per loaded thread, so a fork created by the
 parent's process could never be resumed by the side agent. `forkForSideChat`
 returns a pending handle (`sideChatForkPending`) whose realized thread id is
-read back from the side session after connect; disposing a pending handle is
-a no-op so a failed open can never archive the parent thread.
+read back from the side session after connect. The pending handle also carries
+the boundary captured by the parent, so later Main Chat progress during side
+agent startup cannot move the fork point. Disposing a pending handle is a no-op
+so a failed open can never archive the parent thread.
 
 The internal side agent is excluded from the normal agent directory. The
 client session that opened it may address it by exact ID through the regular
@@ -55,11 +60,13 @@ versions fail closed through the separate `agentSideChatFork` feature flag.
 
 ### Provider forks
 
-- Codex calls `thread/fork` with full history (`excludeTurns: false`), resumes
-  the returned thread as an internal agent, and archives it when Side Chat
-  closes.
-- Claude calls the Agent SDK `forkSession`, resumes the returned session as an
-  internal agent, and deletes it with `deleteSession` on close.
+- Codex calls `thread/fork` with the captured `lastTurnId`. During the first
+  active turn, when there is no completed turn yet, it uses `beforeTurnId` to
+  create an empty-history fork. It resumes the returned thread as an internal
+  agent and archives it when Side Chat closes.
+- Claude calls the Agent SDK `forkSession` with the completed turn's terminal
+  message as `upToMessageId`, resumes the returned session as an internal
+  agent, and deletes it with `deleteSession` on close.
 
 Both provider forks keep their normal tools and permission handling. The old
 one-shot transports remain only for protocol compatibility.
@@ -81,6 +88,8 @@ the server session disposes its corresponding forks.
 ## Limitations
 
 - Only Claude and Codex expose provider-native conversation forks.
+- Claude cannot create an empty-history fork while its first turn is still
+  running, so that open fails instead of leaking the active prompt.
 - An open Side Chat is a branch, not a live mirror. Later Main Chat messages
   are visible only after closing it and opening a new Side Chat.
 - Side Chat state is ephemeral and is discarded on close, disconnect, or app
@@ -91,5 +100,6 @@ the server session disposes its corresponding forks.
 
 ```bash
 npx vitest run packages/app/src/side-chat/model.test.ts packages/app/src/side-chat/lifecycle.test.ts packages/app/src/utils/agent-directory-sync.test.ts packages/server/src/server/agent/agent-manager.test.ts packages/server/src/server/agent/provider-registry-wrap.test.ts --bail=1
+npx vitest run packages/server/src/server/agent/providers/codex-app-server-agent.test.ts packages/server/src/server/agent/providers/claude/agent-side-chat.test.ts --bail=1
 npx vitest run packages/server/src/server/session.test.ts -t "side chat open does not publish" --bail=1
 ```

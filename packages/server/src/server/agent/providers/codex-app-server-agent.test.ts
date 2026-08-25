@@ -1468,9 +1468,11 @@ describe("Codex app-server provider", () => {
 
   test("side chat resume forks the thread inside the side agent's own process", async () => {
     const threadRequests: string[] = [];
+    let forkParams: unknown;
     const appServer = createFakeCodexAppServer({
-      "thread/fork": () => {
+      "thread/fork": (params) => {
         threadRequests.push("thread/fork");
+        forkParams = params;
         return {
           thread: { id: "side-thread-1", forkedFromId: "parent-thread-id", turns: [] },
           model: "gpt-5.4",
@@ -1502,10 +1504,17 @@ describe("Codex app-server provider", () => {
       },
       undefined,
       undefined,
-      { sideChatForkFromThreadId: "parent-thread-id" },
+      {
+        sideChatForkFromThreadId: "parent-thread-id",
+        sideChatForkBoundary: { lastTurnId: "completed-turn-id" },
+      },
     );
 
     expect(threadRequests).toEqual(["thread/fork", "thread/loaded/list"]);
+    expect(forkParams).toMatchObject({
+      threadId: "parent-thread-id",
+      lastTurnId: "completed-turn-id",
+    });
     expect(session.describePersistence()?.sessionId).toBe("side-thread-1");
     await session.close();
     appServer.assertNoErrors();
@@ -1529,6 +1538,18 @@ describe("Codex app-server provider", () => {
       sessionId: "parent-thread-id",
       metadata: { cwd: "/workspace/project", model: "gpt-5.4" },
     });
+    asInternals(session as CodexTestSession).handleNotification("turn/started", {
+      threadId: "parent-thread-id",
+      turn: { id: "completed-turn-id" },
+    });
+    asInternals(session as CodexTestSession).handleNotification("turn/completed", {
+      threadId: "parent-thread-id",
+      turn: { id: "completed-turn-id", status: "completed", error: null },
+    });
+    asInternals(session as CodexTestSession).handleNotification("turn/started", {
+      threadId: "parent-thread-id",
+      turn: { id: "active-turn-id" },
+    });
     const handle = await session.forkForSideChat?.();
     if (!handle) {
       throw new Error("forkForSideChat did not return a handle");
@@ -1536,12 +1557,74 @@ describe("Codex app-server provider", () => {
 
     expect(handle.sideChatForkPending).toBe(true);
     expect(handle.sessionId).toBe("parent-thread-id");
+    expect(handle.sideChatForkBoundary).toEqual({ lastTurnId: "completed-turn-id" });
     expect(threadRequests).not.toContain("thread/fork");
 
     await session.disposeSideChatFork?.(handle);
     expect(threadRequests).not.toContain("thread/archive");
     await session.close();
     appServer.assertNoErrors();
+  });
+
+  test("forkForSideChat excludes the first active turn when no turn has completed", async () => {
+    const appServer = createFakeCodexAppServer();
+    const provider = createProviderWithFakeAppServer(appServer);
+    const session = await provider.resumeSession({
+      sessionId: "parent-thread-id",
+      metadata: { cwd: "/workspace/project", model: "gpt-5.4" },
+    });
+    asInternals(session as CodexTestSession).handleNotification("turn/started", {
+      threadId: "parent-thread-id",
+      turn: { id: "first-active-turn-id" },
+    });
+
+    const handle = await session.forkForSideChat?.();
+
+    expect(handle?.sideChatForkBoundary).toEqual({ beforeTurnId: "first-active-turn-id" });
+    await session.close();
+    appServer.assertNoErrors();
+  });
+
+  test("forkForSideChat keeps the boundary captured before the active turn finishes", async () => {
+    const session = createSession();
+    const loadedListStarted = deferred<void>();
+    const releaseLoadedList = deferred<void>();
+    session.client = {
+      request: vi.fn(async (method: string) => {
+        if (method === "thread/loaded/list") {
+          loadedListStarted.resolve();
+          await releaseLoadedList.promise;
+          return { data: ["test-thread"] };
+        }
+        return {};
+      }),
+    };
+    asInternals(session).handleNotification("turn/started", {
+      threadId: "test-thread",
+      turn: { id: "completed-turn-id" },
+    });
+    asInternals(session).handleNotification("turn/completed", {
+      threadId: "test-thread",
+      turn: { id: "completed-turn-id", status: "completed", error: null },
+    });
+    asInternals(session).handleNotification("turn/started", {
+      threadId: "test-thread",
+      turn: { id: "active-turn-id" },
+    });
+
+    const opening = session.forkForSideChat?.();
+    await loadedListStarted.promise;
+    asInternals(session).handleNotification("turn/completed", {
+      threadId: "test-thread",
+      turn: { id: "active-turn-id", status: "completed", error: null },
+    });
+    releaseLoadedList.resolve();
+
+    await expect(opening).resolves.toMatchObject({
+      sideChatForkBoundary: { lastTurnId: "completed-turn-id" },
+    });
+    session.client = null;
+    await session.close();
   });
 
   test("unarchives a persisted Codex thread through app-server", async () => {

@@ -200,6 +200,10 @@ export interface AgentSideQuestionResult {
   synthetic: boolean;
 }
 
+export type AgentSideChatForkBoundary =
+  | { lastTurnId: string; beforeTurnId?: never }
+  | { beforeTurnId: string; lastTurnId?: never };
+
 export interface AgentPersistenceHandle {
   provider: AgentProvider;
   sessionId: string;
@@ -213,6 +217,8 @@ export interface AgentPersistenceHandle {
    * no-op.
    */
   sideChatForkPending?: boolean;
+  /** Stable provider-native boundary captured when the Side Chat was opened. */
+  sideChatForkBoundary?: AgentSideChatForkBoundary;
 }
 
 export type AgentPromptContentBlock =
@@ -645,6 +651,8 @@ export interface AgentResumeSessionOptions {
    * by the process that will drive it.
    */
   sideChatForkFromThreadId?: string;
+  /** Apply this boundary when realizing a pending Side Chat fork. */
+  sideChatForkBoundary?: AgentSideChatForkBoundary;
 }
 
 /**

@@ -40,6 +40,7 @@ import type {
   AgentPersistenceHandle,
   AgentRunOptions,
   AgentRunResult,
+  AgentResumeSessionOptions,
   AgentSession,
   AgentSessionConfig,
   AgentSlashCommand,
@@ -531,14 +532,20 @@ class SideChatParentSession extends TestAgentSession {
   forkGate: Promise<void> = Promise.resolve();
   disposeCalls = 0;
   disposeFailuresRemaining = 0;
+  forkBoundary: AgentPersistenceHandle["sideChatForkBoundary"];
 
   async forkForSideChat(): Promise<AgentPersistenceHandle> {
     this.forkStarted.resolve();
     await this.forkGate;
-    return {
+    const handle: AgentPersistenceHandle = {
       provider: "codex",
       sessionId: `side-fork-${randomUUID()}`,
     };
+    if (this.forkBoundary) {
+      handle.sideChatForkPending = true;
+      handle.sideChatForkBoundary = this.forkBoundary;
+    }
+    return handle;
   }
 
   async disposeSideChatFork(): Promise<void> {
@@ -584,6 +591,7 @@ class SideChatTestClient extends TestAgentClient {
   readonly forkSession: SideChatForkSession;
   readonly resumeStarted = deferred<void>();
   resumeGate: Promise<void> = Promise.resolve();
+  resumeOptions: AgentResumeSessionOptions | undefined;
 
   constructor(workdir: string) {
     super();
@@ -596,7 +604,13 @@ class SideChatTestClient extends TestAgentClient {
     return this.parentSession;
   }
 
-  override async resumeSession(): Promise<AgentSession> {
+  override async resumeSession(
+    _handle: AgentPersistenceHandle,
+    _config?: Partial<AgentSessionConfig>,
+    _launchContext?: AgentLaunchContext,
+    options?: AgentResumeSessionOptions,
+  ): Promise<AgentSession> {
+    this.resumeOptions = options;
     this.resumeStarted.resolve();
     await this.resumeGate;
     return this.forkSession;
@@ -616,6 +630,7 @@ test("forked side chat starts with a blank transcript and is removed on close", 
     logger,
     idFactory: () => ids.shift() ?? randomUUID(),
   });
+  client.parentSession.forkBoundary = { lastTurnId: "completed-turn-id" };
 
   await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
     workspaceId: undefined,
@@ -628,6 +643,10 @@ test("forked side chat starts with a blank transcript and is removed on close", 
   // The fork carries the parent conversation as model context only; the
   // side chat transcript intentionally starts blank.
   expect(manager.getTimeline(sideAgentId)).toEqual([]);
+  expect(client.resumeOptions).toEqual({
+    sideChatForkFromThreadId: expect.stringMatching(/^side-fork-/),
+    sideChatForkBoundary: { lastTurnId: "completed-turn-id" },
+  });
 
   await Promise.all([
     manager.closeSideChat(parentAgentId, sideAgentId),
