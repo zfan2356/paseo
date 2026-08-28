@@ -2614,6 +2614,13 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       if (!Object.prototype.hasOwnProperty.call(configuredFeatureValues, featureOption.id)) {
         continue;
       }
+      if (!findSelectConfigFeatureOption(this.configOptions, featureOption)) {
+        this.logger.warn(
+          { featureId: featureOption.id, value: configuredFeatureValues[featureOption.id] },
+          `${this.provider} does not expose configured ACP feature '${featureOption.id}'; using provider default`,
+        );
+        continue;
+      }
       await this.setFeature(featureOption.id, configuredFeatureValues[featureOption.id]);
     }
   }

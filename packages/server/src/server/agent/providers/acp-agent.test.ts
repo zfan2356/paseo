@@ -18,6 +18,7 @@ import {
 import {
   ACPAgentClient,
   ACPAgentSession,
+  type ACPConfigFeatureOption,
   type SpawnedACPProcess,
   type SessionStateResponse,
   buildACPClientCapabilities,
@@ -181,6 +182,7 @@ function createSessionWithConfig(
     featureValues?: Record<string, unknown>;
   } = {},
   logger: ReturnType<typeof createTestLogger> = createTestLogger(),
+  options: { configFeatureOptions?: ACPConfigFeatureOption[] } = {},
 ): ACPAgentSession {
   return new ACPAgentSession(
     {
@@ -195,6 +197,7 @@ function createSessionWithConfig(
       logger,
       defaultCommand: ["claude", "--acp"],
       defaultModes: [],
+      configFeatureOptions: options.configFeatureOptions,
       capabilities: {
         supportsStreaming: true,
         supportsSessionPersistence: true,
@@ -943,6 +946,35 @@ describe("ACPAgentSession Zed parity", () => {
     expect(childLogger.warn).toHaveBeenCalledWith(
       { value: "deepseek/v4" },
       "deepseek-tui does not expose ACP model selection; using provider default model",
+    );
+  });
+
+  test("uses the provider default when a configured feature is no longer exposed", async () => {
+    const logger = createTestLogger();
+    const childLogger = { trace: vi.fn(), warn: vi.fn() };
+    vi.spyOn(logger, "child").mockReturnValue(asInternals<typeof logger>(childLogger));
+    const session = createSessionWithConfig(
+      { provider: "cursor", featureValues: { fast: "true" } },
+      logger,
+      {
+        configFeatureOptions: [
+          {
+            id: "fast",
+            configId: "fast",
+            label: "Fast",
+          },
+        ],
+      },
+    );
+    const { internals, setSessionConfigOption } = prepareConfiguredOverrideSession(session, {
+      configOptions: [],
+    });
+
+    await expect(internals.applyConfiguredOverrides()).resolves.toBeUndefined();
+    expect(setSessionConfigOption).not.toHaveBeenCalled();
+    expect(childLogger.warn).toHaveBeenCalledWith(
+      { featureId: "fast", value: "true" },
+      "cursor does not expose configured ACP feature 'fast'; using provider default",
     );
   });
 
