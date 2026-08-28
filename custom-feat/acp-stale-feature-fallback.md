@@ -1,6 +1,7 @@
 # ACP stale feature fallback
 
 - Status: active
+- Commits: `08889940e`
 - Ledger entry: "ACP sessions tolerate retired feature preferences"
 
 ## Original requirement
