@@ -62,7 +62,7 @@ export const en = {
       agents: "Agents",
       newAgent: "New agent",
       open: "Open {{name}}",
-      openInSidePanel: "Open {{name}} in Side panel",
+      openInSidePane: "Open {{name}} in side pane",
       openInFocusedPane: "Open {{name}} in focused pane",
       addProject: "Add project",
       home: "Home",
@@ -425,6 +425,8 @@ export const en = {
     },
     fileActions: {
       openFile: "Open file",
+      openIn: "Open in {{target}}",
+      openToSide: "Open to the side",
       copyPath: "Copy path",
       copyRelativePath: "Copy relative path",
       revealIn: "Reveal in {{target}}",
@@ -599,6 +601,7 @@ export const en = {
         closeLeft: "Close to the left",
         closeRight: "Close to the right",
         closeOthers: "Close other tabs",
+        moveToMain: "Move to main panel",
         reloadAgent: "Reload agent",
         reloadAgentTooltip: "Reload agent to update skills, MCPs or login status.",
         close: "Close",
@@ -624,10 +627,10 @@ export const en = {
         terminalProfilesMenu: "Terminal profiles",
         editTerminalProfiles: "Edit profiles",
       },
-      sidePanel: {
-        open: "Open side panel",
-        close: "Close side panel",
-        toggle: "Toggle side panel",
+      explorerSidebar: {
+        open: "Open Explorer sidebar",
+        close: "Close Explorer sidebar",
+        toggle: "Toggle Explorer sidebar",
         changes: "Changes",
         files: "Files",
       },
@@ -887,6 +890,7 @@ export const en = {
       },
       diff: {
         openChangesTab: "Open Changes tab",
+        openDiffTab: "Open Diff tab",
         closeChangesTab: "Close Changes tab",
         binaryFile: "Binary file",
         tooLarge: "Diff too large to display",
@@ -897,6 +901,7 @@ export const en = {
         switchToUnified: "Switch to unified diff",
         switchToSplit: "Switch to side-by-side diff",
         options: "Diff options",
+        inlineDiff: "Inline diff",
         hideWhitespace: "Hide whitespace",
         showWhitespace: "Show whitespace",
         scrollLongLines: "Scroll long lines",
@@ -970,6 +975,16 @@ export const en = {
         accessibility: {
           pullRequest: "Pull request #{{number}}",
           pullRequest_mr: "Merge request !{{number}}",
+          checkStatus: {
+            passed: "Passed",
+            failed: "Failed",
+            warning: "Warning",
+            actionRequired: "Action required",
+            manual: "Manual",
+            pending: "Pending",
+            skipped: "Skipped",
+            cancelled: "Cancelled",
+          },
         },
         states: {
           draft: "Draft",
@@ -1160,6 +1175,14 @@ export const en = {
         serviceUnhealthy: "Service {{name}} unhealthy",
         creating: "Creating...",
       },
+      checks: {
+        passed: "Passed: {{count}}",
+        failed: "Failed: {{count}}",
+        warning: "Warnings: {{count}}",
+        actionRequired: "Action required: {{count}}",
+        manual: "Manual: {{count}}",
+        pending: "Pending: {{count}}",
+      },
       actions: {
         menu: "Workspace actions",
         newWorkspace: "New workspace",
@@ -1245,6 +1268,12 @@ export const en = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "Minimize window",
+      maximize: "Maximize window",
+      restore: "Restore window",
+      close: "Close window",
+    },
     quitting: {
       title: "Quitting Paseo...",
       detail: "Stopping the local daemon.",
@@ -1564,6 +1593,10 @@ export const en = {
         title: "Direct connection",
         description: "Local network or VPN.",
       },
+      remoteSsh: {
+        title: "Remote SSH",
+        description: "Connect through the desktop SSH client.",
+      },
       scanQr: {
         title: "Scan QR code",
         description: "Encrypted relay connection.",
@@ -1613,6 +1646,23 @@ export const en = {
           "TLS error. Direct connections use SSL only when a TLS terminator is in front of the daemon.",
         unableToConnect: "Unable to connect. Check the host/port and that the daemon is reachable.",
         details: "Details: {{detail}}",
+      },
+    },
+    remoteSsh: {
+      title: "Remote SSH",
+      helper: "Connect to a Paseo daemon running on the remote host.",
+      fields: {
+        target: "SSH host",
+      },
+      actions: {
+        cancel: "Cancel",
+        connect: "Connect",
+        connecting: "Connecting...",
+      },
+      errors: {
+        targetRequired: "SSH host is required",
+        invalidTarget: "Enter a valid ssh:// host",
+        failedToConnect: "Unable to connect over SSH. {{detail}}",
       },
     },
     link: {
@@ -1779,6 +1829,7 @@ export const en = {
     },
     diff: {
       changesLabel: "Changes",
+      diffLabel: "Diff",
       changesSubtitle: "Working tree diff",
       commitSubtitle: "Commit diff",
       uncommittedSubtitle: "Uncommitted changes",
@@ -1878,6 +1929,7 @@ export const en = {
     sections: {
       general: "General",
       appearance: "Appearance",
+      layout: "Layout",
       editor: "Editor",
       shortcuts: "Shortcuts",
       integrations: "Integrations",
@@ -1885,6 +1937,42 @@ export const en = {
       permissions: "Permissions",
       diagnostics: "Diagnostics",
       about: "About",
+    },
+    layout: {
+      openInSidePane: {
+        title: "Open location",
+        destinations: {
+          main: "Main panel",
+          side: "On the side",
+          explorer: "Explorer sidebar",
+        },
+        sources: {
+          explorerFiles: {
+            label: "Selecting a file in Explorer",
+            description: "Open files selected in the Explorer sidebar beside your work",
+          },
+          diffs: {
+            label: "Opening a diff",
+            description: "Open diffs from Explorer and agent conversations beside your work",
+          },
+          chatFiles: {
+            label: "Opening a file from an agent chat",
+            description: "Open file links and tool-call files beside the conversation",
+          },
+          diffFiles: {
+            label: "Opening a file from Changes",
+            description: "Open source files selected from a diff beside it",
+          },
+          subagents: {
+            label: "Opening a subagent",
+            description: "Open subagents beside their parent agent",
+          },
+          pullRequests: {
+            label: "Opening a pull request from Changes",
+            description: "Open pull request details beside Changes",
+          },
+        },
+      },
     },
     editor: {
       title: "Editor",
@@ -2028,11 +2116,6 @@ export const en = {
         label: "Terminal scrollback",
         description: "Lines kept in the built-in terminal buffer",
         accessibilityLabel: "Terminal scrollback lines",
-      },
-      sidePanelRouting: {
-        label: "Open supporting tabs in the Side panel",
-        description:
-          "File links, pull requests, and setup progress open beside your work instead of in the focused pane",
       },
       autoExpandReasoning: {
         label: "Always expand reasoning",
@@ -2224,11 +2307,10 @@ export const en = {
         toggleCommandCenter: "Toggle command center",
         showKeyboardShortcuts: "Show keyboard shortcuts",
         toggleLeftSidebar: "Toggle left sidebar",
-        toggleRightSidebar: "Toggle side panel",
+        toggleRightSidebar: "Toggle Explorer sidebar",
         toggleBothSidebars: "Toggle both sidebars",
         toggleSettings: "Toggle settings",
         toggleFocusMode: "Toggle focus mode",
-        toggleExplorerPaneMaximization: "Toggle Side panel maximization",
         cycleTheme: "Cycle theme",
         focusMessageInput: "Focus message input",
         cycleAgentMode: "Cycle agent mode",
@@ -2312,6 +2394,7 @@ export const en = {
       badges: {
         relay: "Relay",
         local: "Local",
+        remoteSsh: "Remote SSH",
       },
       connections: {
         title: "Connections",

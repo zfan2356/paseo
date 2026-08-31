@@ -7,8 +7,8 @@ import { useToast } from "@/contexts/toast-context";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
-import { toggleTabInSidePanel, openTabInSidePanel } from "@/workspace-tabs/side-panel";
 import { canOfferSideChat, resolveSideChatHeaderChrome } from "./chrome";
+import { revealSideChatTab, toggleSideChatTab } from "./dock";
 import { closeSideChatPanel, openSideChatPanel } from "./lifecycle";
 import { sideChatKey } from "./model";
 import { selectSideChatPanel, useSideChatStore } from "./store";
@@ -77,10 +77,10 @@ export function useSideChatHeader(input: {
     if (!currentPanel) {
       if (!client) return;
       void openSideChatPanel({ key, serverId, parentAgentId: agentId, client });
-      openTabInSidePanel({ isCompact, workspaceKey, checkout: null, target });
+      revealSideChatTab({ workspaceKey, target });
       return;
     }
-    toggleTabInSidePanel({ isCompact, workspaceKey, checkout: null, target });
+    toggleSideChatTab({ workspaceKey, target });
   }, [agentId, client, isCompact, key, serverId, t, toast, workspaceKey]);
   return { show: chrome.show, disabled: chrome.disabled, isOpen, toggle };
 }

@@ -8,7 +8,7 @@ export const es: TranslationResources = {
     actions: {
       back: "Atrás",
       cancel: "Cancelar",
-      close: "Cerca",
+      close: "Cerrar",
       copy: "Copiar",
       dismiss: "Despedir",
       retry: "Rever",
@@ -65,7 +65,7 @@ export const es: TranslationResources = {
       agents: "Agentes",
       newAgent: "Nuevo agente",
       open: "Abrir {{name}}",
-      openInSidePanel: "Abrir {{name}} en el panel lateral",
+      openInSidePane: "Abrir {{name}} en el panel lateral",
       openInFocusedPane: "Abrir {{name}} en el panel enfocado",
       addProject: "Agregar proyecto",
       home: "Hogar",
@@ -431,6 +431,8 @@ export const es: TranslationResources = {
     },
     fileActions: {
       openFile: "Abrir archivo",
+      openIn: "Abrir en {{target}}",
+      openToSide: "Abrir al lado",
       copyPath: "Copiar ruta",
       copyRelativePath: "Copiar ruta relativa",
       revealIn: "Mostrar en {{target}}",
@@ -602,13 +604,14 @@ export const es: TranslationResources = {
         rename: "Rebautizar",
         closeAbove: "Cerrar pestañas arriba",
         closeBelow: "Cerrar pestañas a continuación",
-        closeLeft: "Cerca de la izquierda",
-        closeRight: "Cerca de la derecha",
+        closeLeft: "Cerrar pestañas a la izquierda",
+        closeRight: "Cerrar pestañas a la derecha",
         closeOthers: "Cerrar otras pestañas",
+        moveToMain: "Mover al panel principal",
         reloadAgent: "Recargar agente",
         reloadAgentTooltip:
           "Vuelva a cargar el agente para actualizar habilidades, MCP o estado de inicio de sesión.",
-        close: "Cerca",
+        close: "Cerrar",
         renameTerminal: "Cambiar nombre de terminal",
         renameAgent: "Cambiar nombre del agente",
       },
@@ -631,7 +634,7 @@ export const es: TranslationResources = {
         terminalProfilesMenu: "Terminal profiles",
         editTerminalProfiles: "Edit profiles",
       },
-      sidePanel: {
+      explorerSidebar: {
         open: "Abrir panel lateral",
         close: "Cerrar panel lateral",
         toggle: "Alternar panel lateral",
@@ -659,7 +662,7 @@ export const es: TranslationResources = {
         closePaneTitle: "¿Cerrar panel?",
         bulkUnsaved:
           "{{count}} pestaña(s) tienen cambios sin guardar. Al cerrar se descartarán esos borradores.",
-        close: "Cerca",
+        close: "Cerrar",
         cancel: "Cancelar",
         archive: "Archivo",
         closeTerminalTitle: "¿Cerrar terminal?",
@@ -909,6 +912,7 @@ export const es: TranslationResources = {
       },
       diff: {
         openChangesTab: "Abrir la pestaña Cambios",
+        openDiffTab: "Abrir la pestaña Diferencia",
         closeChangesTab: "Cerrar la pestaña Cambios",
         binaryFile: "archivo binario",
         tooLarge: "La diferencia es demasiado grande para mostrarse",
@@ -919,6 +923,7 @@ export const es: TranslationResources = {
         switchToUnified: "Cambiar a diferencia unificada",
         switchToSplit: "Cambiar a diferencia lado a lado",
         options: "Opciones de diferencia",
+        inlineDiff: "Diferencia integrada",
         hideWhitespace: "Ocultar espacios en blanco",
         showWhitespace: "Mostrar espacios en blanco",
         scrollLongLines: "Desplazarse por largas filas",
@@ -992,6 +997,16 @@ export const es: TranslationResources = {
         accessibility: {
           pullRequest: "Solicitud de extracción n.°{{number}}",
           pullRequest_mr: "Solicitud de fusión !{{number}}",
+          checkStatus: {
+            passed: "Superado",
+            failed: "Fallido",
+            warning: "Advertencia",
+            actionRequired: "Acción requerida",
+            manual: "Manual",
+            pending: "Pendiente",
+            skipped: "Omitido",
+            cancelled: "Cancelado",
+          },
         },
         states: {
           draft: "Borrador",
@@ -1185,6 +1200,14 @@ export const es: TranslationResources = {
         serviceUnhealthy: "Servicio {{name}} con fallos",
         creating: "Creando...",
       },
+      checks: {
+        passed: "Superados: {{count}}",
+        failed: "Fallidos: {{count}}",
+        warning: "Advertencias: {{count}}",
+        actionRequired: "Acción requerida: {{count}}",
+        manual: "Manuales: {{count}}",
+        pending: "Pendientes: {{count}}",
+      },
       actions: {
         menu: "AccionesWorkspace",
         newWorkspace: "Nuevo espacio de trabajo",
@@ -1270,6 +1293,12 @@ export const es: TranslationResources = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "Minimizar ventana",
+      maximize: "Maximizar ventana",
+      restore: "Restaurar ventana",
+      close: "Cerrar ventana",
+    },
     quitting: {
       title: "Saliendo dePaseo...",
       detail: "Deteniendo el demonio local.",
@@ -1598,6 +1627,10 @@ export const es: TranslationResources = {
         title: "Conexión directa",
         description: "Red local o VPN.",
       },
+      remoteSsh: {
+        title: "SSH remoto",
+        description: "Conéctate mediante el cliente SSH de escritorio.",
+      },
       scanQr: {
         title: "Escanea el códigoQR",
         description: "Conexión de retransmisión cifrada.",
@@ -1648,6 +1681,23 @@ export const es: TranslationResources = {
         unableToConnect:
           "No se puede conectar. Verifique el host/porty que se pueda acceder al demonio.",
         details: "Detalles:{{detail}}",
+      },
+    },
+    remoteSsh: {
+      title: "SSH remoto",
+      helper: "Conéctate a un daemon de Paseo en el host remoto.",
+      fields: {
+        target: "Host SSH",
+      },
+      actions: {
+        cancel: "Cancelar",
+        connect: "Conectar",
+        connecting: "Conectando...",
+      },
+      errors: {
+        targetRequired: "El host SSH es obligatorio",
+        invalidTarget: "Introduce un host ssh:// válido",
+        failedToConnect: "No se pudo conectar por SSH. {{detail}}",
       },
     },
     link: {
@@ -1815,6 +1865,7 @@ export const es: TranslationResources = {
     },
     diff: {
       changesLabel: "Cambios",
+      diffLabel: "Diferencia",
       changesSubtitle: "Diferencias del árbol de trabajo",
       commitSubtitle: "Diferencias del commit",
       uncommittedSubtitle: "Cambios sin confirmar",
@@ -1914,6 +1965,7 @@ export const es: TranslationResources = {
     sections: {
       general: "General",
       appearance: "Apariencia",
+      layout: en.settings.sections.layout,
       editor: "Editor",
       shortcuts: "Atajos",
       integrations: "Integraciones",
@@ -1922,6 +1974,7 @@ export const es: TranslationResources = {
       diagnostics: "Diagnóstico",
       about: "Acerca de",
     },
+    layout: en.settings.layout,
     editor: {
       title: "Editor",
       vimKeybindings: "Atajos de Vim",
@@ -2013,11 +2066,6 @@ export const es: TranslationResources = {
         label: "Historial de terminal",
         description: "Líneas mantenidas en el búfer de terminal incorporado",
         accessibilityLabel: "Líneas del historial de terminal",
-      },
-      sidePanelRouting: {
-        label: "Abrir pestañas de apoyo en el panel lateral",
-        description:
-          "Los enlaces a archivos, las solicitudes de incorporación y el progreso de configuración se abren junto a tu trabajo en lugar del panel enfocado",
       },
       autoExpandReasoning: {
         label: "Siempre expandir razonamiento",
@@ -2216,7 +2264,6 @@ export const es: TranslationResources = {
         toggleBothSidebars: "Alternar ambas barras laterales",
         toggleSettings: "Alternar configuración",
         toggleFocusMode: "Alternar modo de enfoque",
-        toggleExplorerPaneMaximization: "Alternar maximización del panel lateral",
         cycleTheme: "Tema del ciclo",
         focusMessageInput: "Entrada de mensaje de enfoque",
         cycleAgentMode: "Alternar modo del agente",
@@ -2300,6 +2347,7 @@ export const es: TranslationResources = {
       badges: {
         relay: "Relé",
         local: "Local",
+        remoteSsh: "SSH remoto",
       },
       connections: {
         title: "Conexiones",

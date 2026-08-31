@@ -32,6 +32,11 @@ Instead of implementing a second chat renderer, the panel renders the normal
 reasoning, tools, permission prompts, Composer, and subagent UI as Main Chat.
 Nested Side Chats are disabled.
 
+On desktop, the header toggle docks that panel as a `side_chat` tab in the
+ordinary right-side workspace pane (`openWorkspaceTargetBeside`). Hiding the
+tab uses `hideSidePane` so the fork stays alive; the tab ✕ still destroys it.
+Compact layouts keep the in-panel overlay and do not create a side pane.
+
 The open flow marks the internal agent's history as primed instead of
 hydrating provider history, so the inherited turns stay out of the timeline
 and the transcript starts blank; the provider fork still holds the full

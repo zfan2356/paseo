@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { AgentPanelContent } from "@/panels/agent-panel";
 import { usePaneContext, usePaneFocus } from "@/panels/pane-context";
-import type { PanelDescriptor, PanelRegistration } from "@/panels/panel-registry";
+import { definePanel, type PanelDescriptor } from "@/panels/panel-registry";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import type { Theme } from "@/styles/theme";
@@ -138,9 +138,7 @@ const styles = StyleSheet.create((theme) => ({
   },
 }));
 
-export const sideChatPanelRegistration: PanelRegistration<"side_chat"> = {
-  kind: "side_chat",
-  resourceKey: (target) => target.parentAgentId,
+export const sideChatPanelRegistration = definePanel("side_chat", {
   component: SideChatPanel,
   useDescriptor: useSideChatPanelDescriptor,
-};
+});

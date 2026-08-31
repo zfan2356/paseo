@@ -1,11 +1,14 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
-import { ipcMain, shell, type BrowserWindow } from "electron";
+import { shell, type BrowserWindow } from "electron";
 
 const execFile = promisify(execFileCallback);
-
-const ALLOWED_EXTERNAL_URL_PROTOCOLS = new Set(["http:", "https:"]);
 const GOOGLE_CHROME_BUNDLE_ID = "com.google.chrome";
+const EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
+
+interface ExternalUrlOwner {
+  open(url: string): Promise<void>;
+}
 
 export type MainWindowLinkKind = "navigate" | "window-open";
 
@@ -14,17 +17,46 @@ export type MainWindowLinkAction =
   | { kind: "deny" }
   | { kind: "open-external"; url: string };
 
-export function isAllowedExternalUrl(value: unknown): value is string {
-  if (typeof value !== "string") {
-    return false;
-  }
+const asExternalUrl = (input: unknown): URL | undefined => {
+  if (typeof input !== "string" || !URL.canParse(input)) return undefined;
+  const candidate = new URL(input);
+  return EXTERNAL_PROTOCOLS.has(candidate.protocol) ? candidate : undefined;
+};
 
-  try {
-    const url = new URL(value);
-    return ALLOWED_EXTERNAL_URL_PROTOCOLS.has(url.protocol);
-  } catch {
-    return false;
-  }
+export function isAllowedExternalUrl(value: unknown): value is string {
+  return asExternalUrl(value) !== undefined;
+}
+
+export function createChromeAwareExternalUrlOwner(
+  owner: ExternalUrlOwner = { open: (url) => shell.openExternal(url) },
+): ExternalUrlOwner {
+  return {
+    async open(url: string) {
+      if (process.platform === "darwin") {
+        try {
+          await execFile("open", ["-b", GOOGLE_CHROME_BUNDLE_ID, "--", url]);
+          return;
+        } catch {
+          // Chrome is missing or Launch Services cannot resolve the bundle id.
+        }
+      }
+      await owner.open(url);
+    },
+  };
+}
+
+export function createExternalUrlOpener(owner: ExternalUrlOwner) {
+  return async (candidate: unknown): Promise<void> => {
+    const url = asExternalUrl(candidate);
+    if (url === undefined) {
+      throw new Error("Only HTTP(S) URLs can open externally.");
+    }
+    return owner.open(url.href);
+  };
+}
+
+export async function openAllowedExternalUrl(url: unknown): Promise<void> {
+  return createExternalUrlOpener(createChromeAwareExternalUrlOwner())(url);
 }
 
 export function decideMainWindowLinkAction(input: {
@@ -50,27 +82,6 @@ export function decideMainWindowLinkAction(input: {
     return { kind: "open-external", url: input.url };
   }
   return { kind: "deny" };
-}
-
-export async function openAllowedExternalUrl(url: unknown): Promise<void> {
-  if (!isAllowedExternalUrl(url)) {
-    throw new Error("Unsupported external URL");
-  }
-  if (process.platform === "darwin") {
-    try {
-      await execFile("open", ["-b", GOOGLE_CHROME_BUNDLE_ID, "--", url]);
-      return;
-    } catch {
-      // Chrome is missing or Launch Services cannot resolve the bundle id.
-    }
-  }
-  await shell.openExternal(url);
-}
-
-export function registerOpenerHandlers(): void {
-  ipcMain.handle("paseo:opener:openUrl", async (_event, url: unknown) => {
-    await openAllowedExternalUrl(url);
-  });
 }
 
 export function installMainWindowExternalLinkHandling(input: {
