@@ -366,22 +366,44 @@ function buildCursorLaunch(
   };
 }
 
+const CURSOR_ACP_TRANSPORT_ARG = "acp";
+
+function inheritedConversationPrefixArgs(
+  launch: AgentConversationTerminalLaunch,
+  commandConfig: ProviderRuntimeSettings["command"],
+): { command: string; prefixArgs: string[] } {
+  if (commandConfig?.mode === "replace") {
+    return {
+      command: commandConfig.argv[0],
+      prefixArgs: commandConfig.argv.slice(1),
+    };
+  }
+  if (commandConfig?.mode === "append") {
+    return { command: launch.command, prefixArgs: commandConfig.args ?? [] };
+  }
+  return { command: launch.command, prefixArgs: [] };
+}
+
+function conversationTerminalPrefixArgs(
+  provider: AgentConversationTerminalProvider,
+  prefixArgs: string[],
+): string[] {
+  if (provider !== "cursor") {
+    return prefixArgs;
+  }
+  return prefixArgs.filter((arg) => arg !== CURSOR_ACP_TRANSPORT_ARG);
+}
+
 function applyProviderRuntimeSettings(
   launch: AgentConversationTerminalLaunch,
   runtimeSettings: ProviderRuntimeSettings | undefined,
 ): AgentConversationTerminalLaunch {
-  const commandConfig = runtimeSettings?.command;
-  const command = commandConfig?.mode === "replace" ? commandConfig.argv[0] : launch.command;
-  let prefixArgs: string[] = [];
-  if (commandConfig?.mode === "replace") {
-    prefixArgs = commandConfig.argv.slice(1);
-  } else if (commandConfig?.mode === "append") {
-    prefixArgs = commandConfig.args ?? [];
-  }
+  const inherited = inheritedConversationPrefixArgs(launch, runtimeSettings?.command);
+  const prefixArgs = conversationTerminalPrefixArgs(launch.provider, inherited.prefixArgs);
   const env = { ...launch.env, ...runtimeSettings?.env };
   return {
     ...launch,
-    command,
+    command: inherited.command,
     args: [...prefixArgs, ...launch.args],
     ...(Object.keys(env).length > 0 ? { env } : {}),
   };

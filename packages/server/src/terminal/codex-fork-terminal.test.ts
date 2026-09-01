@@ -117,6 +117,35 @@ describe("buildAgentConversationTerminalLaunch", () => {
     });
   });
 
+  test("does not launch Cursor TUI through the Agent ACP transport", () => {
+    expect(
+      buildAgentConversationTerminalLaunch({
+        provider: "cursor",
+        cwd: "/work/paseo",
+        persistence: {
+          provider: "cursor",
+          sessionId: "chat-1",
+        },
+        runtimeSettings: {
+          command: {
+            mode: "replace",
+            argv: ["/opt/cursor-agent", "--use-system-ca", "acp"],
+          },
+          env: { CURSOR_API_KEY: "test-key" },
+        },
+      }),
+    ).toEqual({
+      provider: "cursor",
+      name: "Cursor Conversation",
+      command: "/opt/cursor-agent",
+      env: {
+        CURSOR_CONFIG_DIR: join(homedir(), ".cursor"),
+        CURSOR_API_KEY: "test-key",
+      },
+      args: ["--use-system-ca", "--resume", "chat-1", "--workspace", "/work/paseo", "--trust"],
+    });
+  });
+
   test("rejects unsupported providers and missing persistence handles", () => {
     expect(() =>
       buildAgentConversationTerminalLaunch({
