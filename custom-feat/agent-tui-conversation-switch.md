@@ -23,7 +23,10 @@ TUI view must be a real linked PTY running the provider CLI.
   the provider CLI resuming `persistence.sessionId`, inheriting the
   provider's configured command prefix and env (custom wrappers,
   `CODEX_HOME`, …) so it resolves the same native session as the Agent
-  runtime — independent of the detached worker's older environment.
+  runtime — independent of the detached worker's older environment. Cursor
+  Agent's configured command is `cursor-agent acp`; the TUI launch keeps
+  the binary and wrapper flags but drops the `acp` transport token so the
+  PTY runs the interactive CLI instead of ACP JSON-RPC.
 - **Back to Agent**: `switchAgentTerminalToAgent` (legacy Codex RPC still
   supported) stops the PTY, resumes the Agent runtime with provider history
   rehydrated (`reconcileProviderHistory`; an empty TUI resume history must
