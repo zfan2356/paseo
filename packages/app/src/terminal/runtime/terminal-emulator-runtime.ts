@@ -227,6 +227,7 @@ export class TerminalEmulatorRuntime {
   mount(input: TerminalEmulatorRuntimeMountInput): void {
     this.unmount();
 
+    input.host.setAttribute("data-pmono", "");
     input.host.innerHTML = "";
     this.lastSize = null;
     this.needsRefreshAfterHiddenFit = false;
