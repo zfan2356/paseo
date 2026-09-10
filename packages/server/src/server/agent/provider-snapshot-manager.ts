@@ -293,7 +293,7 @@ export class ProviderSnapshotManager {
   }
 
   getProviderRuntimeSettings(provider: AgentProvider): ProviderRuntimeSettings | undefined {
-    return this.runtimeSettings?.[provider];
+    return this.providerRegistry[provider]?.runtimeSettings;
   }
 
   getProviderLabel(provider: AgentProvider): string {

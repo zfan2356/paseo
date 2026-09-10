@@ -27,6 +27,10 @@ TUI view must be a real linked PTY running the provider CLI.
   Agent's configured command is `cursor-agent acp`; the TUI launch keeps
   the binary and wrapper flags but drops the `acp` transport token so the
   PTY runs the interactive CLI instead of ACP JSON-RPC.
+- **Launch configuration**: read the current registry's resolved runtime settings,
+  which are also used to create the Agent client. Startup settings alone omit
+  provider command/env overrides and become stale after a live config replacement.
+  Config rollback and removal must also apply to subsequent TUI launches.
 - **Back to Agent**: `switchAgentTerminalToAgent` (legacy Codex RPC still
   supported) stops the PTY, resumes the Agent runtime with provider history
   rehydrated (`reconcileProviderHistory`; an empty TUI resume history must
