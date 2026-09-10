@@ -219,9 +219,11 @@ export const ptBR: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
-      closedNotice:
-        "O chat lateral está fechado. Reabri-lo bifurca a conversa principal no estado atual.",
-      reopen: "Reabrir",
+      history: "Histórico de conversas",
+      newConversation: "Nova conversa",
+      emptyHistory: "Nenhuma conversa lateral. Crie uma para começar.",
+      backToHistory: "Voltar ao histórico",
+      upgradeRequired: "Atualize o daemon para usar o histórico de conversas laterais.",
       title: "Chat lateral",
       inputPlaceholder: "Faça uma pergunta rápida…",
       send: "Enviar",

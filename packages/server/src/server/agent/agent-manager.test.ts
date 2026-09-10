@@ -21,6 +21,7 @@ import {
   CODEX_TERMINAL_OWNER_LABEL,
   getOpenAgentTabLabel,
   PARENT_AGENT_ID_LABEL,
+  SIDE_CHAT_PARENT_LABEL,
 } from "@getpaseo/protocol/agent-labels";
 import { formatSystemNotificationPrompt, startAgentRun } from "./agent-prompt.js";
 import { StaleProviderSessionError } from "./stale-provider-session-error.js";
@@ -535,12 +536,14 @@ class TestAgentSession implements AgentSession {
 }
 
 class SideChatParentSession extends TestAgentSession {
+  forkCalls = 0;
   readonly forkStarted = deferred<void>();
   forkGate: Promise<void> = Promise.resolve();
   disposeCalls = 0;
   disposeFailuresRemaining = 0;
 
   async forkForSideChat(): Promise<AgentPersistenceHandle> {
+    this.forkCalls += 1;
     this.forkStarted.resolve();
     await this.forkGate;
     return {
@@ -604,23 +607,29 @@ class SideChatTestClient extends TestAgentClient {
     return this.parentSession;
   }
 
-  override async resumeSession(): Promise<AgentSession> {
+  override async resumeSession(handle: AgentPersistenceHandle): Promise<AgentSession> {
     this.resumeStarted.resolve();
     await this.resumeGate;
+    this.forkSession.describePersistence = () => ({
+      provider: "codex",
+      sessionId: handle.sessionId,
+    });
     return this.forkSession;
   }
 }
 
-test("forked side chat starts with a blank transcript and is removed on close", async () => {
+test("forked side chat starts blank and preserves its identity and history across close and restart", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
   const client = new SideChatTestClient(workdir);
   const parentAgentId = "00000000-0000-4000-8000-000000000601";
   const sideAgentId = "00000000-0000-4000-8000-000000000602";
   const ids = [parentAgentId, sideAgentId];
+  const timeline = new RecordingTimelineStore();
   const manager = new AgentManager({
     clients: { codex: client },
     registry: storage,
+    durableTimelineStore: timeline,
     logger,
     idFactory: () => ids.shift() ?? randomUUID(),
   });
@@ -636,6 +645,20 @@ test("forked side chat starts with a blank transcript and is removed on close", 
   // The fork carries the parent conversation as model context only; the
   // side chat transcript intentionally starts blank.
   expect(manager.getTimeline(sideAgentId)).toEqual([]);
+  await drainAsyncGenerator(
+    manager.streamAgent(sideAgentId, "Explain the current progress", {
+      clientMessageId: "side-question",
+    }),
+  );
+  await manager.appendTimelineItem(sideAgentId, { type: "assistant_message", text: "Side answer" });
+  await manager.flush();
+  const persistence = (await storage.get(sideAgentId))?.persistence;
+  expect(persistence?.sessionId).toMatch(/^side-fork-/);
+  expect(await manager.listSideChats(parentAgentId)).toEqual([
+    expect.objectContaining({ sideAgentId, title: "Explain the current progress", status: "idle" }),
+  ]);
+  await manager.setTitle(sideAgentId, "Progress notes");
+  await manager.flush();
 
   await Promise.all([
     manager.closeSideChat(parentAgentId, sideAgentId),
@@ -644,10 +667,74 @@ test("forked side chat starts with a blank transcript and is removed on close", 
 
   expect(manager.getAgent(sideAgentId)).toBeNull();
   expect(client.forkSession.closeCalls).toBe(1);
-  expect(client.parentSession.disposeCalls).toBe(1);
-  await expect(storage.get(sideAgentId)).resolves.toBeNull();
+  expect(client.parentSession.disposeCalls).toBe(0);
+  expect(await storage.get(sideAgentId)).toMatchObject({
+    internal: true,
+    labels: { [SIDE_CHAT_PARENT_LABEL]: parentAgentId },
+    persistence,
+  });
   await manager.closeAgent(parentAgentId);
+  await manager.flush();
+  const restartedClient = new SideChatTestClient(workdir);
+  const resumedHandles = vi.spyOn(restartedClient, "resumeSession");
+  const restarted = new AgentManager({
+    clients: { codex: restartedClient },
+    registry: new AgentStorage(join(workdir, "agents"), logger),
+    durableTimelineStore: timeline,
+    logger,
+  });
+  expect(await restarted.listSideChats(parentAgentId)).toEqual([
+    expect.objectContaining({ sideAgentId, title: "Progress notes" }),
+  ]);
+  const [resumed, concurrent] = await Promise.all([
+    restarted.openSideChat(parentAgentId, sideAgentId),
+    restarted.openSideChat(parentAgentId, sideAgentId),
+  ]);
+  expect(resumed.id).toBe(sideAgentId);
+  expect(concurrent.id).toBe(sideAgentId);
+  expect(resumedHandles).toHaveBeenCalledOnce();
+  expect(resumedHandles.mock.calls[0]?.[0]).toMatchObject(persistence!);
+  expect(restartedClient.parentSession.forkCalls).toBe(0);
+  const transcript = (await restarted.getTimelineRows(sideAgentId)).map((row) => row.item);
+  expect(transcript).toContainEqual(
+    expect.objectContaining({ type: "user_message", text: "Explain the current progress" }),
+  );
+  expect(transcript).toContainEqual(
+    expect.objectContaining({ type: "assistant_message", text: "Side answer" }),
+  );
+  expect(transcript).not.toContainEqual(expect.objectContaining({ text: "main context at fork" }));
+  expect(restarted.listAgents()).toEqual([]);
+  await restarted.closeSideChat(parentAgentId, sideAgentId);
+  await restarted.flush();
   rmSync(workdir, { recursive: true, force: true });
+});
+
+test("pending side chat forks persist only their realized native session even before the first prompt", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-pending-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new SideChatTestClient(workdir);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    vi.spyOn(client.parentSession, "forkForSideChat").mockResolvedValue({
+      provider: "codex",
+      sessionId: "parent-native",
+      sideChatForkPending: true,
+    });
+    vi.spyOn(client, "resumeSession").mockResolvedValue(client.forkSession);
+    const nativeSideId = client.forkSession.describePersistence().sessionId;
+    const side = await manager.openSideChat(parent.id);
+    expect(manager.getAgent(side.id)?.persistence?.sessionId).toBe(nativeSideId);
+    await manager.closeSideChat(parent.id, side.id);
+    await manager.flush();
+    expect((await storage.get(side.id))?.persistence).toMatchObject({ sessionId: nativeSideId });
+    expect((await storage.get(side.id))?.persistence?.sideChatForkPending).toBeUndefined();
+    await manager.closeAgent(parent.id);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
 });
 
 test("failed side chat registration cleans the internal agent and provider fork", async () => {
@@ -708,58 +795,34 @@ test("closing a parent waits for an in-flight side chat open and disposes it", a
   rmSync(workdir, { recursive: true, force: true });
 });
 
-test("side chat provider disposal can be retried after failure", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-retry-"));
+test("side chat history rejects another parent and survives its own parent's closure", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-parent-close-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
   const client = new SideChatTestClient(workdir);
-  client.parentSession.disposeFailuresRemaining = 1;
-  const ids = ["00000000-0000-4000-8000-000000000607", "00000000-0000-4000-8000-000000000608"];
-  const manager = new AgentManager({
-    clients: { codex: client },
-    logger,
-    idFactory: () => ids.shift() ?? randomUUID(),
-  });
-
-  const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
-    workspaceId: undefined,
-  });
-  const side = await manager.openSideChat(parent.id);
-
-  await expect(manager.closeSideChat(parent.id, side.id)).rejects.toThrow(
-    "side fork disposal failed",
-  );
-  expect(manager.getAgent(side.id)).toBeNull();
-  await expect(manager.closeSideChat(parent.id, side.id)).resolves.toBeUndefined();
-  expect(client.parentSession.disposeCalls).toBe(2);
-
-  await manager.closeAgent(parent.id);
-  rmSync(workdir, { recursive: true, force: true });
-});
-
-test("parent close can be retried when side chat provider disposal fails", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-parent-retry-"));
-  const client = new SideChatTestClient(workdir);
-  client.parentSession.disposeFailuresRemaining = 1;
-  const ids = ["00000000-0000-4000-8000-000000000609", "00000000-0000-4000-8000-000000000610"];
-  const manager = new AgentManager({
-    clients: { codex: client },
-    logger,
-    idFactory: () => ids.shift() ?? randomUUID(),
-  });
-
-  const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
-    workspaceId: undefined,
-  });
-  const side = await manager.openSideChat(parent.id);
-
-  await expect(manager.closeAgent(parent.id)).rejects.toThrow("side fork disposal failed");
-  expect(manager.getAgent(parent.id)).not.toBeNull();
-  expect(manager.getAgent(side.id)).toBeNull();
-
-  await expect(manager.closeAgent(parent.id)).resolves.toBeUndefined();
-  expect(manager.getAgent(parent.id)).toBeNull();
-  expect(manager.getAgent(side.id)).toBeNull();
-  expect(client.parentSession.disposeCalls).toBe(2);
-  rmSync(workdir, { recursive: true, force: true });
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    const side = await manager.openSideChat(parent.id);
+    await expect(manager.openSideChat("other-parent", side.id)).rejects.toThrow(
+      "Unknown side chat",
+    );
+    await expect(manager.closeSideChat("other-parent", side.id)).rejects.toThrow(
+      "Unknown side chat",
+    );
+    await expect(manager.listSideChats(side.id)).rejects.toThrow("Unknown agent");
+    await manager.closeAgent(parent.id);
+    expect(manager.getAgent(side.id)).not.toBeNull();
+    expect(client.parentSession.disposeCalls).toBe(0);
+    expect(await manager.listSideChats(parent.id)).toEqual([
+      expect.objectContaining({ sideAgentId: side.id }),
+    ]);
+    await manager.closeSideChat(parent.id, side.id);
+    await manager.flush();
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
 });
 
 test("hands an Agent session to an external terminal and resumes it after release", async () => {

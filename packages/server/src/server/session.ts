@@ -1851,9 +1851,6 @@ export class Session {
             },
             "agent.session.forward_update",
           );
-          if (event.agent.lifecycle === "closed") {
-            this.clearSideChatSubscriptionsForParent(event.agent.id);
-          }
           void this.agentUpdates.forwardLiveAgent(event.agent);
           return;
         }
@@ -2009,14 +2006,6 @@ export class Session {
           resolution: event.event.resolution,
         },
       });
-    }
-  }
-
-  private clearSideChatSubscriptionsForParent(parentAgentId: string): void {
-    for (const [sideAgentId, subscription] of this.sideChatSubscriptions) {
-      if (subscription.parentAgentId !== parentAgentId) continue;
-      subscription.unsubscribe();
-      this.sideChatSubscriptions.delete(sideAgentId);
     }
   }
 
@@ -4397,12 +4386,23 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "agent.side_question.ask.request" }>,
   ): Promise<void> {
     try {
+      if (msg.operation === "list") {
+        const sideChats = await this.agentManager.listSideChats(msg.agentId);
+        this.emit({
+          type: "agent.side_question.ask.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            sideChats,
+            response: null,
+            error: null,
+          },
+        });
+        return;
+      }
       if (msg.operation === "open") {
-        const sideAgent = await this.agentManager.openSideChat(msg.agentId);
+        const sideAgent = await this.agentManager.openSideChat(msg.agentId, msg.sideAgentId);
         if (this.isCleanedUp) {
-          if (this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
-            await this.agentManager.closeSideChat(msg.agentId, sideAgent.id);
-          }
           return;
         }
         if (!this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
@@ -4422,15 +4422,13 @@ export class Session {
         );
         if (this.isCleanedUp) {
           unsubscribe();
-          if (this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
-            await this.agentManager.closeSideChat(msg.agentId, sideAgent.id);
-          }
           return;
         }
         if (!this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
           unsubscribe();
           throw new Error(`Agent '${msg.agentId}' is closing`);
         }
+        this.sideChatSubscriptions.get(sideAgent.id)?.unsubscribe();
         this.sideChatSubscriptions.set(sideAgent.id, {
           parentAgentId: msg.agentId,
           unsubscribe,
@@ -4457,7 +4455,6 @@ export class Session {
         if (!sideAgentId || !subscription || subscription.parentAgentId !== msg.agentId) {
           throw new Error("Unknown side chat");
         }
-        await this.agentManager.closeSideChat(msg.agentId, sideAgentId);
         subscription.unsubscribe();
         this.sideChatSubscriptions.delete(sideAgentId);
         this.emit({
@@ -8233,14 +8230,8 @@ export class Session {
       this.unsubscribeAgentEvents();
       this.unsubscribeAgentEvents = null;
     }
-    const sideChats = Array.from(this.sideChatSubscriptions.entries());
-    await Promise.allSettled(
-      sideChats.map(async ([sideAgentId, subscription]) => {
-        subscription.unsubscribe();
-        await this.agentManager.closeSideChat(subscription.parentAgentId, sideAgentId);
-        this.sideChatSubscriptions.delete(sideAgentId);
-      }),
-    );
+    for (const subscription of this.sideChatSubscriptions.values()) subscription.unsubscribe();
+    this.sideChatSubscriptions.clear();
     this.unsubscribeProjectMutations?.();
     this.unsubscribeProjectMutations = null;
     this.unsubscribePluginChanges?.();

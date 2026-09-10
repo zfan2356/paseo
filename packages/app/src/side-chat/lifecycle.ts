@@ -44,7 +44,7 @@ function cleanupLocalSideChat(
   effects.clearProviderSubagents(serverId, sideAgentId);
 }
 
-async function destroyRemoteSideChat(input: {
+async function detachRemoteSideChat(input: {
   client: SideChatLifecycleClient;
   parentAgentId: string;
   sideAgentId: string;
@@ -59,15 +59,22 @@ export async function openSideChatPanel(input: {
   key: string;
   serverId: string;
   parentAgentId: string;
+  sideAgentId?: string;
   client: SideChatLifecycleClient;
-  effects?: SideChatLifecycleEffects;
 }): Promise<void> {
   const generation = allocateGeneration();
-  const effects = input.effects ?? DEFAULT_EFFECTS;
-  useSideChatStore.getState().setPanel(input.key, { status: "opening", generation });
+  useSideChatStore.getState().setPanel(input.key, {
+    status: "opening",
+    generation,
+    sideAgentId: input.sideAgentId,
+  });
 
   try {
-    const result = await input.client.openAgentSideChat(input.parentAgentId);
+    const result = input.sideAgentId
+      ? await input.client.openAgentSideChat(input.parentAgentId, undefined, {
+          sideAgentId: input.sideAgentId,
+        })
+      : await input.client.openAgentSideChat(input.parentAgentId);
     if (result.error) {
       throw new Error(result.error);
     }
@@ -77,8 +84,8 @@ export async function openSideChatPanel(input: {
 
     const current = selectSideChatPanel(useSideChatStore.getState(), input.key);
     if (current?.generation !== generation) {
-      cleanupLocalSideChat(effects, input.serverId, result.sideAgentId);
-      await destroyRemoteSideChat({
+      if (current && "sideAgentId" in current && current.sideAgentId === result.sideAgentId) return;
+      await detachRemoteSideChat({
         client: input.client,
         parentAgentId: input.parentAgentId,
         sideAgentId: result.sideAgentId,
@@ -100,6 +107,7 @@ export async function openSideChatPanel(input: {
       status: "error",
       generation,
       error: errorMessage(error),
+      sideAgentId: input.sideAgentId,
     });
   }
 }
@@ -109,36 +117,50 @@ export async function closeSideChatPanel(input: {
   serverId: string;
   parentAgentId: string;
   client: SideChatLifecycleClient | null;
-  effects?: SideChatLifecycleEffects;
 }): Promise<void> {
   const current = selectSideChatPanel(useSideChatStore.getState(), input.key);
   if (!current) return;
 
-  // Remove first. This invalidates an in-flight open immediately and ensures
-  // a subsequent open gets a strictly newer generation.
   useSideChatStore.getState().removePanel(input.key);
   if (current.status !== "ready") return;
 
-  const effects = input.effects ?? DEFAULT_EFFECTS;
-  if (!input.client) {
-    cleanupLocalSideChat(effects, input.serverId, current.sideAgentId);
-    return;
-  }
-  try {
-    await destroyRemoteSideChat({
-      client: input.client,
-      parentAgentId: input.parentAgentId,
-      sideAgentId: current.sideAgentId,
-    });
-    cleanupLocalSideChat(effects, input.serverId, current.sideAgentId);
-  } catch (error) {
-    // Restore only if the user has not already opened a newer fork. Keeping
-    // the old replica makes the close action retryable with the same id.
-    if (!selectSideChatPanel(useSideChatStore.getState(), input.key)) {
-      useSideChatStore.getState().setPanel(input.key, current);
-    }
-    throw error;
-  }
+  if (!input.client) return;
+  await detachRemoteSideChat({
+    client: input.client,
+    parentAgentId: input.parentAgentId,
+    sideAgentId: current.sideAgentId,
+  });
+}
+
+export function showSideChatHistory(key: string): void {
+  useSideChatStore
+    .getState()
+    .setPanel(key, { status: "history", generation: allocateGeneration() });
+}
+
+export async function restoreSideChatsForServer(
+  serverId: string,
+  client: SideChatLifecycleClient,
+): Promise<void> {
+  const entries = Object.entries(useSideChatStore.getState().panels);
+  await Promise.all(
+    entries.map(async ([key, panel]) => {
+      if (
+        !isSideChatKeyForServer(key, serverId) ||
+        !panel ||
+        !("sideAgentId" in panel) ||
+        !panel.sideAgentId
+      )
+        return;
+      await openSideChatPanel({
+        key,
+        serverId,
+        parentAgentId: key.slice(serverId.length + 1),
+        sideAgentId: panel.sideAgentId,
+        client,
+      });
+    }),
+  );
 }
 
 export function clearSideChatsForServer(

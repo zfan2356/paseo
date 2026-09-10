@@ -2718,8 +2718,6 @@ function WorkspaceScreenContent({
         return;
       }
       if (tab.target.kind === "side_chat") {
-        // Closing the tab is the destructive action: it disposes the
-        // provider fork. The header toggle merely hides the Side panel.
         await closeSideChatPanel({
           key: sideChatKey(normalizedServerId, tab.target.parentAgentId),
           serverId: normalizedServerId,
@@ -3921,22 +3919,14 @@ function WorkspaceScreenContent({
           <HeaderToggleButton
             testID="workspace-toggle-side-chat"
             onPress={sideChatHeader.toggle}
-            tooltipLabel={t(
-              sideChatHeader.isOpen
-                ? "workspace.header.actions.closeSideChat"
-                : "workspace.header.actions.openSideChat",
-            )}
+            tooltipLabel={t("agentPanel.sideChat.history")}
             tooltipKeys={[]}
             tooltipSide="bottom"
             style={isMobile ? styles.headerActionButton : styles.compactHeaderActionButton}
             disabled={sideChatHeader.disabled}
             accessible
             accessibilityRole="button"
-            accessibilityLabel={t(
-              sideChatHeader.isOpen
-                ? "workspace.header.actions.closeSideChat"
-                : "workspace.header.actions.openSideChat",
-            )}
+            accessibilityLabel={t("agentPanel.sideChat.history")}
           >
             {({ hovered, pressed }) => {
               const active = hovered || pressed || sideChatHeader.isOpen;

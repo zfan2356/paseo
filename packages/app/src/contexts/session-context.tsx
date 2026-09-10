@@ -60,7 +60,7 @@ import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache";
 import { useProviderSubagentStore } from "@/subagents/provider-store";
 import { revalidateSessionAfterResume } from "@/contexts/session-resume-revalidation";
-import { clearSideChatForParent, clearSideChatsForServer } from "@/side-chat/lifecycle";
+import { clearSideChatForParent, restoreSideChatsForServer } from "@/side-chat/lifecycle";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -416,8 +416,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   useEffect(
     () =>
       client.subscribeConnectionStatus((connection) => {
-        if (connection.status === "connected") return;
-        clearSideChatsForServer(serverId);
+        if (connection.status === "connected") void restoreSideChatsForServer(serverId, client);
       }),
     [client, serverId],
   );
@@ -578,15 +577,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       new AgentStoreProjection(serverId).replacePendingPermissions(agent);
     });
 
-    const unsubSideChatParentAgentUpdate = client.on("agent_update", (message) => {
-      if (
-        message.type === "agent_update" &&
-        message.payload.kind === "upsert" &&
-        message.payload.agent.status === "closed"
-      ) {
-        clearSideChatForParent(serverId, message.payload.agent.id);
-      }
-    });
     const unsubSideChatParentDeleted = client.on("agent_deleted", (message) => {
       if (message.type === "agent_deleted") {
         clearSideChatForParent(serverId, message.payload.agentId);
@@ -816,7 +806,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       unsubTimelineReplacement();
       unsubAgentStream();
       unsubSideChatAgentState();
-      unsubSideChatParentAgentUpdate();
       unsubSideChatParentDeleted();
       unsubSideChatParentArchived();
       unsubAgentTimeline();

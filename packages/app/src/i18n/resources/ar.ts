@@ -219,9 +219,11 @@ export const ar: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
-      closedNotice:
-        "تم إغلاق الدردشة الجانبية. إعادة فتحها تنشئ تفرعًا من المحادثة الرئيسية بحالتها الحالية.",
-      reopen: "إعادة الفتح",
+      history: "سجل المحادثات",
+      newConversation: "محادثة جديدة",
+      emptyHistory: "لا توجد محادثات جانبية بعد. أنشئ واحدة للبدء.",
+      backToHistory: "العودة إلى السجل",
+      upgradeRequired: "حدّث الخدمة لاستخدام سجل المحادثات الجانبية.",
       title: "الدردشة الجانبية",
       inputPlaceholder: "اطرح سؤالًا سريعًا…",
       send: "إرسال",

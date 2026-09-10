@@ -1971,7 +1971,7 @@ export const AgentRewindResponseMessageSchema = z.object({
 export const AgentSideQuestionAskRequestMessageSchema = z.object({
   type: z.literal("agent.side_question.ask.request"),
   agentId: z.string(),
-  operation: z.enum(["open", "ask", "close"]).optional(),
+  operation: z.enum(["open", "ask", "close", "list"]).optional(),
   sideAgentId: z.string().optional(),
   question: z.string(),
   requestId: z.string(),
@@ -1983,6 +1983,17 @@ export const AgentSideQuestionAskResponseMessageSchema = z.object({
     requestId: z.string(),
     agentId: z.string(),
     sideAgentId: z.string().optional(),
+    sideChats: z
+      .array(
+        z.object({
+          sideAgentId: z.string(),
+          title: z.string(),
+          createdAt: z.string(),
+          updatedAt: z.string(),
+          status: AgentStatusSchema,
+        }),
+      )
+      .optional(),
     response: z.string().nullable(),
     synthetic: z.boolean().optional(),
     error: z.string().nullable(),
@@ -3586,6 +3597,7 @@ export const ServerInfoStatusPayloadSchema = z
         agentSideQuestion: z.boolean().optional(),
         // COMPAT(agentSideChatFork): added in the custom fork on 2026-08-23.
         agentSideChatFork: z.boolean().optional(),
+        agentSideChatHistory: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(providerSubagentNesting): added in v0.7, remove gate after 2027-03-04.

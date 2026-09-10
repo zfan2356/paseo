@@ -16,6 +16,7 @@ import {
   isDelegatedAgent,
   isOpenAgentTabLabel,
   PARENT_AGENT_ID_LABEL,
+  SIDE_CHAT_PARENT_LABEL,
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ProviderOptions, ToolPolicy } from "@getpaseo/protocol/agent-types";
@@ -66,6 +67,8 @@ import {
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
+import { getSideChatParentId } from "./side-chat-history.js";
+import { buildConfigOverrides, extractTimestamps } from "../persistence-hooks.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
   InMemoryAgentTimelineStore,
@@ -726,16 +729,6 @@ export class AgentManager {
   private readonly reloadedSessionCloses = new WeakMap<AgentSession, Promise<void>>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
   private readonly inFlightSideChatOpensByParent = new Map<string, Set<Promise<ManagedAgent>>>();
-  private readonly sideChatAgentIdsByParent = new Map<string, Set<string>>();
-  private readonly sideChatOwnership = new Map<
-    string,
-    {
-      parentAgentId: string;
-      handle: AgentPersistenceHandle;
-      dispose: (handle: AgentPersistenceHandle) => Promise<void>;
-    }
-  >();
-  private readonly inFlightSideChatCloses = new Map<string, Promise<void>>();
   private readonly externalRuntimeOwners = new Map<string, string>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
@@ -1829,16 +1822,6 @@ export class AgentManager {
     const sideChatOpens = Array.from(this.inFlightSideChatOpensByParent.get(agentId) ?? []);
     if (sideChatOpens.length > 0) {
       await Promise.allSettled(sideChatOpens);
-    }
-    const sideAgentIds = Array.from(this.sideChatAgentIdsByParent.get(agentId) ?? []);
-    if (sideAgentIds.length > 0) {
-      const results = await Promise.allSettled(
-        sideAgentIds.map((sideAgentId) => this.closeSideChat(agentId, sideAgentId)),
-      );
-      const failed = results.find((result) => result.status === "rejected");
-      if (failed?.status === "rejected") {
-        throw failed.reason;
-      }
     }
     this.logger.trace(
       {
@@ -3344,7 +3327,12 @@ export class AgentManager {
     return await session.askSideQuestion({ question });
   }
 
-  openSideChat(parentAgentId: string): Promise<ManagedAgent> {
+  openSideChat(parentAgentId: string, sideAgentId?: string): Promise<ManagedAgent> {
+    if (sideAgentId) {
+      return this.runLifecycleMutation(sideAgentId, () =>
+        this.resumeStoredSideChat(parentAgentId, sideAgentId),
+      );
+    }
     if (this.inFlightAgentCloses.has(parentAgentId)) {
       throw new Error(`Agent '${parentAgentId}' is closing`);
     }
@@ -3373,21 +3361,12 @@ export class AgentManager {
     }
 
     const sideAgentId = validateAgentId(this.idFactory(), "openSideChat");
-    const handle = await session.forkForSideChat();
+    let handle = await session.forkForSideChat();
     const dispose = session.disposeSideChatFork.bind(session);
-    const ownership = {
-      parentAgentId,
-      handle,
-      dispose,
-    };
-    this.sideChatOwnership.set(sideAgentId, ownership);
-    const sideAgentIds = this.sideChatAgentIdsByParent.get(parentAgentId) ?? new Set<string>();
-    sideAgentIds.add(sideAgentId);
-    this.sideChatAgentIdsByParent.set(parentAgentId, sideAgentIds);
     try {
-      const sideAgent = await this.resumeAgentFromPersistence(
+      await this.resumeAgentFromPersistence(
         handle,
-        { ...parent.config, internal: true },
+        { ...parent.config, title: "Side chat", internal: true },
         sideAgentId,
         {
           workspaceId: parent.workspaceId,
@@ -3400,92 +3379,100 @@ export class AgentManager {
         // inside the side agent's own process during connect.
         handle.sideChatForkPending ? { sideChatForkFromThreadId: handle.sessionId } : undefined,
       );
+      const sideAgent = this.requireSessionAgent(sideAgentId);
       if (handle.sideChatForkPending) {
         const realized = sideAgent.session?.describePersistence() ?? null;
-        if (!realized) {
+        if (!realized || realized.sideChatForkPending || realized.sessionId === handle.sessionId) {
           throw new Error("Side chat fork did not produce a resumable conversation");
         }
-        ownership.handle = realized;
+        handle = realized;
         sideAgent.persistence = attachPersistenceCwd(realized, sideAgent.cwd);
       }
       if (this.inFlightAgentCloses.has(parentAgentId)) {
         throw new Error(`Agent '${parentAgentId}' is closing`);
       }
+      sideAgent.labels[SIDE_CHAT_PARENT_LABEL] = parentAgentId;
+      await this.persistSnapshot(sideAgent, { title: "Side chat" });
       return sideAgent;
     } catch (error) {
-      await this.closeSideChat(parentAgentId, sideAgentId).catch((cleanupError) => {
-        this.logger.warn(
-          { err: cleanupError, parentAgentId, sideAgentId },
-          "Failed to close side chat after open failure",
-        );
-      });
+      for (const cleanup of [
+        () => this.closeAgent(sideAgentId),
+        () => this.deleteAgentState(sideAgentId),
+        () => this.registry?.remove(sideAgentId),
+        () => dispose(handle),
+      ]) {
+        try {
+          await cleanup();
+        } catch (cleanupError) {
+          this.logger.warn(
+            { err: cleanupError, parentAgentId, sideAgentId },
+            "Failed to discard incomplete side chat",
+          );
+        }
+      }
       throw error;
     }
   }
 
   isSideChatOpen(parentAgentId: string, sideAgentId: string): boolean {
-    const ownership = this.sideChatOwnership.get(sideAgentId);
+    const agent = this.agents.get(sideAgentId);
     return (
-      ownership?.parentAgentId === parentAgentId &&
-      this.agents.has(sideAgentId) &&
-      !this.inFlightAgentCloses.has(parentAgentId) &&
-      !this.inFlightSideChatCloses.has(sideAgentId)
+      !!agent &&
+      !this.inFlightAgentCloses.has(sideAgentId) &&
+      getSideChatParentId(agent) === parentAgentId
     );
   }
 
   async closeSideChat(parentAgentId: string, sideAgentId: string): Promise<void> {
-    const existing = this.inFlightSideChatCloses.get(sideAgentId);
-    if (existing) {
-      return existing;
-    }
-
-    const close = this.closeSideChatRuntime(parentAgentId, sideAgentId);
-    this.inFlightSideChatCloses.set(sideAgentId, close);
-    const clearClose = () => {
-      if (this.inFlightSideChatCloses.get(sideAgentId) === close) {
-        this.inFlightSideChatCloses.delete(sideAgentId);
-      }
-    };
-    void close.then(clearClose, clearClose);
-    return close;
+    await this.getStoredSideChat(parentAgentId, sideAgentId);
+    await this.closeAgent(sideAgentId);
   }
 
-  private async closeSideChatRuntime(parentAgentId: string, sideAgentId: string): Promise<void> {
-    const ownership = this.sideChatOwnership.get(sideAgentId);
-    if (!ownership || ownership.parentAgentId !== parentAgentId) {
+  private async getStoredSideChat(
+    parentAgentId: string,
+    sideAgentId: string,
+  ): Promise<StoredAgentRecord> {
+    const record = await this.requireRegistry().get(sideAgentId);
+    if (!record || getSideChatParentId(record) !== parentAgentId) {
       throw new Error(`Unknown side chat '${sideAgentId}' for agent '${parentAgentId}'`);
     }
+    return record;
+  }
 
-    let localCleanupError: unknown;
-    if (this.agents.has(sideAgentId)) {
-      try {
-        await this.closeAgent(sideAgentId);
-      } catch (error) {
-        localCleanupError = error;
-      }
-    }
-    try {
-      await this.deleteAgentState(sideAgentId);
-    } catch (error) {
-      localCleanupError ??= error;
-    }
+  private async resumeStoredSideChat(
+    parentAgentId: string,
+    sideAgentId: string,
+  ): Promise<ManagedAgent> {
+    const record = await this.getStoredSideChat(parentAgentId, sideAgentId);
+    const live = this.agents.get(sideAgentId);
+    if (live) return live;
+    if (!record.persistence) throw new Error("Side chat has no resumable provider session");
+    return this.resumeAgentFromPersistence(
+      record.persistence,
+      { ...buildConfigOverrides(record), title: record.title ?? "Side chat", internal: true },
+      sideAgentId,
+      { ...extractTimestamps(record), historyPrimed: true },
+    );
+  }
 
-    // Keep ownership until provider disposal succeeds so a failed close can
-    // be retried with the same side-agent id.
-    await ownership.dispose(ownership.handle);
-    this.sideChatOwnership.delete(sideAgentId);
-    const sideAgentIds = this.sideChatAgentIdsByParent.get(parentAgentId);
-    sideAgentIds?.delete(sideAgentId);
-    if (sideAgentIds?.size === 0) {
-      this.sideChatAgentIdsByParent.delete(parentAgentId);
-    }
-
-    if (localCleanupError !== undefined) {
-      this.logger.warn(
-        { err: localCleanupError, parentAgentId, sideAgentId },
-        "Side chat provider fork was disposed after local cleanup failed",
-      );
-    }
+  async listSideChats(parentAgentId: string) {
+    const registry = this.requireRegistry();
+    const parent = this.agents.get(parentAgentId) ?? (await registry.get(parentAgentId));
+    if (!parent || parent.internal) throw new Error(`Unknown agent '${parentAgentId}'`);
+    const records = await registry.list();
+    return records
+      .filter((record) => getSideChatParentId(record) === parentAgentId)
+      .sort(
+        (left, right) =>
+          right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id),
+      )
+      .map((record) => ({
+        sideAgentId: record.id,
+        title: record.title ?? "Side chat",
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        status: this.agents.get(record.id)?.lifecycle ?? ("closed" as const),
+      }));
   }
 
   async deleteAgentState(agentId: string): Promise<void> {
@@ -4159,8 +4146,7 @@ export class AgentManager {
     if (!this.registry) {
       return;
     }
-    // Don't persist internal agents - they're ephemeral system tasks
-    if (agent.internal) {
+    if (agent.internal && !getSideChatParentId(agent)) {
       return;
     }
     await this.registry.applySnapshot(agent, options);
@@ -4938,6 +4924,11 @@ export class AgentManager {
       return;
     }
     this.touchUpdatedAt(agent);
+    if (!agent.lastUserMessageAt && getSideChatParentId(agent)) {
+      this.enqueueBackgroundPersist(agent, {
+        title: submittedPromptText(prompt).trim().replace(/\s+/g, " ").slice(0, 120) || "Side chat",
+      });
+    }
     agent.lastUserMessageAt = new Date();
     const item: AgentTimelineItem = {
       type: "user_message",
@@ -5120,8 +5111,8 @@ export class AgentManager {
     }
   }
 
-  private enqueueBackgroundPersist(agent: ManagedAgent): void {
-    const task = this.persistSnapshot(agent).catch((err) => {
+  private enqueueBackgroundPersist(agent: ManagedAgent, options?: { title: string }): void {
+    const task = this.persistSnapshot(agent, options).catch((err) => {
       this.logger.error({ err, agentId: agent.id }, "Failed to persist agent snapshot");
     });
     this.trackBackgroundTask(task);

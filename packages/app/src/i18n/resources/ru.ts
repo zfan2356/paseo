@@ -219,9 +219,11 @@ export const ru: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
-      closedNotice:
-        "Боковой чат закрыт. Повторное открытие создаст ответвление основного разговора в его текущем состоянии.",
-      reopen: "Открыть снова",
+      history: "История разговоров",
+      newConversation: "Новый разговор",
+      emptyHistory: "Боковых разговоров пока нет. Создайте новый.",
+      backToHistory: "Назад к истории",
+      upgradeRequired: "Обновите демон для использования истории боковых разговоров.",
       title: "Боковой чат",
       inputPlaceholder: "Задайте быстрый вопрос…",
       send: "Отправить",

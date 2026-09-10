@@ -480,7 +480,7 @@ test("side chat open does not publish an agent id that became stale during subsc
   ]);
 });
 
-test("parent closure releases its side chat subscriptions", async () => {
+test("side chat close only detaches its subscription without destroying history", async () => {
   const messages: SessionOutboundMessage[] = [];
   const unsubscribe = vi.fn();
   const closeSideChat = vi.fn();
@@ -504,7 +504,6 @@ test("parent closure releases its side chat subscriptions", async () => {
     question: "",
     requestId: "open-side-chat",
   });
-  asSessionInternals(session).clearSideChatSubscriptionsForParent("parent-agent");
   await session.handleMessage({
     type: "agent.side_question.ask.request",
     agentId: "parent-agent",
@@ -521,9 +520,75 @@ test("parent closure releases its side chat subscriptions", async () => {
     payload: {
       requestId: "close-side-chat",
       agentId: "parent-agent",
+      sideAgentId: "side-agent",
       response: null,
-      error: "Unknown side chat",
+      error: null,
     },
+  });
+});
+
+test("side chat reconnect replaces subscriptions without closing the conversation", async () => {
+  const unsubscribe = vi.fn();
+  const closeSideChat = vi.fn();
+  const openSideChat = vi.fn().mockResolvedValue({ id: "side-agent" });
+  const agentManager = {
+    openSideChat,
+    closeSideChat,
+    isSideChatOpen: vi.fn().mockReturnValue(true),
+    subscribe: vi.fn((_listener: unknown, options?: { agentId?: string }) =>
+      options?.agentId ? unsubscribe : () => {},
+    ),
+  };
+  const session = createSessionForTest({ agentManager });
+  const request = {
+    type: "agent.side_question.ask.request" as const,
+    agentId: "parent-agent",
+    sideAgentId: "side-agent",
+    operation: "open" as const,
+    question: "",
+    requestId: "resume-side-chat",
+  };
+  await session.handleMessage(request);
+  await session.handleMessage(request);
+  expect(unsubscribe).toHaveBeenCalledTimes(1);
+  await session.cleanup();
+  expect(unsubscribe).toHaveBeenCalledTimes(2);
+  expect(closeSideChat).not.toHaveBeenCalled();
+  const reconnected = createSessionForTest({ agentManager });
+  await reconnected.handleMessage(request);
+  expect(openSideChat).toHaveBeenLastCalledWith("parent-agent", "side-agent");
+  await reconnected.cleanup();
+  expect(unsubscribe).toHaveBeenCalledTimes(3);
+  expect(closeSideChat).not.toHaveBeenCalled();
+});
+
+test("side chat history listing does not create or resume an agent", async () => {
+  const messages: SessionOutboundMessage[] = [];
+  const sideChats = [
+    {
+      sideAgentId: "side-agent",
+      title: "Earlier question",
+      status: "closed",
+      createdAt: "2026-09-10T00:00:00Z",
+      updatedAt: "2026-09-10T00:00:00Z",
+    },
+  ];
+  const openSideChat = vi.fn();
+  const session = createSessionForTest({
+    messages,
+    agentManager: { listSideChats: vi.fn().mockResolvedValue(sideChats), openSideChat },
+  });
+  await session.handleMessage({
+    type: "agent.side_question.ask.request",
+    agentId: "parent-agent",
+    question: "",
+    operation: "list",
+    requestId: "list-side-chats",
+  });
+  expect(openSideChat).not.toHaveBeenCalled();
+  expect(messages.at(-1)).toMatchObject({
+    type: "agent.side_question.ask.response",
+    payload: { sideChats, error: null },
   });
 });
 

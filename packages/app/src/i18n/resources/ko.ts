@@ -219,8 +219,11 @@ export const ko: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
-      closedNotice: "사이드 채팅이 닫혔습니다. 다시 열면 현재 메인 대화 상태에서 새로 분기됩니다.",
-      reopen: "다시 열기",
+      history: "대화 기록",
+      newConversation: "새 대화",
+      emptyHistory: "아직 사이드 대화가 없습니다. 새 대화를 시작하세요.",
+      backToHistory: "기록으로 돌아가기",
+      upgradeRequired: "사이드 대화 기록을 사용하려면 데몬을 업데이트하세요.",
       title: "사이드 채팅",
       inputPlaceholder: "간단한 질문하기…",
       send: "보내기",

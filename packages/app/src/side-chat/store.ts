@@ -15,9 +15,6 @@ export function selectSideChatPanel(
   return state.panels[key] ?? null;
 }
 
-// Session-scoped and in-memory on purpose. A panel owns one ephemeral
-// provider fork; removing the panel makes a later open fork the then-current
-// main conversation instead of reviving an old branch.
 export const useSideChatStore = create<SideChatState>()((set) => ({
   panels: {},
   setPanel: (key, panel) =>

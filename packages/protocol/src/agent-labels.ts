@@ -1,4 +1,5 @@
 export const PARENT_AGENT_ID_LABEL = "paseo.parent-agent-id";
+export const SIDE_CHAT_PARENT_LABEL = "paseo.sideChat.parentAgentId";
 // Keep the legacy key so active Codex terminal leases survive fork upgrades.
 export const AGENT_TERMINAL_OWNER_LABEL = "paseo.codex-terminal-owner";
 export const CODEX_TERMINAL_OWNER_LABEL = AGENT_TERMINAL_OWNER_LABEL;

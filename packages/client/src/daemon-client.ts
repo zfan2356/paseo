@@ -5637,18 +5637,37 @@ export class DaemonClient {
   async openAgentSideChat(
     agentId: string,
     requestId?: string,
+    options?: { sideAgentId?: string },
   ): Promise<AgentSideQuestionAskPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
     const message = SessionInboundMessageSchema.parse({
       type: "agent.side_question.ask.request",
       operation: "open",
       agentId,
+      sideAgentId: options?.sideAgentId,
       question: "",
       requestId: resolvedRequestId,
     });
     return this.sendCorrelatedRequest({
       requestId: resolvedRequestId,
       message,
+      responseType: "agent.side_question.ask.response",
+      timeout: SIDE_QUESTION_TIMEOUT_MS,
+      options: { skipQueue: true },
+    });
+  }
+
+  async listAgentSideChats(agentId: string): Promise<AgentSideQuestionAskPayload> {
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({
+        type: "agent.side_question.ask.request",
+        operation: "list",
+        agentId,
+        question: "",
+        requestId,
+      }),
       responseType: "agent.side_question.ask.response",
       timeout: SIDE_QUESTION_TIMEOUT_MS,
       options: { skipQueue: true },

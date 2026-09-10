@@ -216,9 +216,11 @@ export const en = {
   },
   agentPanel: {
     sideChat: {
-      closedNotice:
-        "The side chat is closed. Reopening forks the main conversation at its current state.",
-      reopen: "Reopen",
+      history: "Conversation history",
+      newConversation: "New conversation",
+      emptyHistory: "No side conversations yet. Create one to get started.",
+      backToHistory: "Back to history",
+      upgradeRequired: "Update the daemon to use side chat history.",
       title: "Side chat",
       inputPlaceholder: "Ask a quick question…",
       send: "Send",

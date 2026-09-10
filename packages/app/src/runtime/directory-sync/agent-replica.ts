@@ -1,8 +1,9 @@
 import type { FetchAgentsEntry } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import { SIDE_CHAT_PARENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import { clearArchiveAgentPending } from "@/hooks/use-archive-agent";
 import { queryClient } from "@/data/query-client";
-import type { Agent } from "@/stores/session-store";
+import { useSessionStore, type Agent } from "@/stores/session-store";
 import { normalizeAgentSnapshot, projectAgentSnapshot } from "@/utils/agent-snapshots";
 import { type AgentDirectoryDelta } from "@/utils/agent-directory-sync";
 import { reconcileAgentDirectory } from "@/utils/agent-directory-reconciliation";
@@ -80,6 +81,15 @@ export class AgentDirectoryReplica {
       ...timelineAgent,
       projectPlacement: timelineAgent.projectPlacement ?? existing?.projectPlacement,
     };
+    if (normalized.labels[SIDE_CHAT_PARENT_LABEL]) {
+      useSessionStore.getState().setAgentDetails(this.serverId, (current) => {
+        const next = new Map(current);
+        next.set(normalized.id, normalized);
+        return next;
+      });
+      this.storeProjection.replacePendingPermissions(normalized);
+      return true;
+    }
     const accepted = this.storeProjection.accept(normalized);
     this.members.add(accepted.id);
     this.storeProjection.replacePendingPermissions(accepted);

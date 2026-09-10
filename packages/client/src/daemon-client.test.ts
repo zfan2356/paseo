@@ -184,6 +184,67 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+test("side chat list and resume preserve the requested conversation identity", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "side-chat-test",
+    transportFactory: () => mock.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  mock.triggerOpen();
+  await connecting;
+  const listing = client.listAgentSideChats("parent");
+  const listRequest = JSON.parse(assertStr(mock.sent.at(-1))).message;
+  expect(listRequest).toMatchObject({ operation: "list", agentId: "parent" });
+  expect(listRequest.sideAgentId).toBeUndefined();
+  const sideChats = [
+    {
+      sideAgentId: "saved-side",
+      title: "Earlier question",
+      createdAt: "2026-09-10T00:00:00Z",
+      updatedAt: "2026-09-10T00:00:00Z",
+      status: "closed",
+    },
+  ];
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.side_question.ask.response",
+      payload: {
+        requestId: listRequest.requestId,
+        agentId: "parent",
+        sideChats,
+        response: null,
+        error: null,
+      },
+    }),
+  );
+  expect((await listing).sideChats).toEqual(sideChats);
+  const opening = client.openAgentSideChat("parent", "resume-request", {
+    sideAgentId: "saved-side",
+  });
+  expect(JSON.parse(assertStr(mock.sent.at(-1))).message).toMatchObject({
+    operation: "open",
+    agentId: "parent",
+    sideAgentId: "saved-side",
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.side_question.ask.response",
+      payload: {
+        requestId: "resume-request",
+        agentId: "parent",
+        sideAgentId: "saved-side",
+        response: null,
+        error: null,
+      },
+    }),
+  );
+  expect((await opening).sideAgentId).toBe("saved-side");
+});
+
 test("traces WebSocket frames, message types, and JSON parse duration", async () => {
   const mock = createMockTransport();
   const recorder = createTraceRecorder();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DaemonClient, FetchAgentsEntry } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import { SIDE_CHAT_PARENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-store";
 import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 import type { DirectoryReplicaMutation } from "@/runtime/replica-cache";
@@ -53,6 +54,28 @@ function entry(agent: AgentSnapshotPayload): FetchAgentsEntry {
 }
 
 describe("AgentDirectoryReplica", () => {
+  it("keeps side chat timeline snapshots out of the public directory and its tab cache", () => {
+    const serverId = "side-chat-timeline";
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, null as unknown as DaemonClient);
+    const commits: DirectoryReplicaMutation[][] = [];
+    const replica = new AgentDirectoryReplica(
+      serverId,
+      () => undefined,
+      (mutations) => commits.push([...mutations]),
+    );
+    const side = {
+      ...payload("side conversation"),
+      labels: { [SIDE_CHAT_PARENT_LABEL]: "parent" },
+    };
+    expect(replica.submitTimelineAgent(replica.captureTimeline(side.id), side)).toBe(true);
+    const session = useSessionStore.getState().sessions[serverId];
+    expect(session?.agents.has(side.id)).toBe(false);
+    expect(session?.agentDetails.get(side.id)?.title).toBe("side conversation");
+    expect(commits).toEqual([]);
+    store.clearSession(serverId);
+  });
+
   it("does not let a late cache read replace newer live turn state", () => {
     const serverId = "agent-replica-late-cache";
     const store = useSessionStore.getState();

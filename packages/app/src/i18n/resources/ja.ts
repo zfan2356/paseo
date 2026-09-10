@@ -219,9 +219,11 @@ export const ja: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
-      closedNotice:
-        "サイドチャットは閉じられました。再度開くと、メイン会話の現在の状態から新しく分岐します。",
-      reopen: "再度開く",
+      history: "会話履歴",
+      newConversation: "新しい会話",
+      emptyHistory: "サイドチャットはまだありません。新しい会話を作成してください。",
+      backToHistory: "履歴に戻る",
+      upgradeRequired: "サイドチャット履歴を使うにはデーモンを更新してください。",
       title: "サイドチャット",
       inputPlaceholder: "気軽に質問…",
       send: "送信",

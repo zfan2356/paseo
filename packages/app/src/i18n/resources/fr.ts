@@ -221,9 +221,12 @@ export const fr: TranslationResources = {
   },
   agentPanel: {
     sideChat: {
-      closedNotice:
-        "La discussion latérale est fermée. La rouvrir crée une bifurcation de la conversation principale dans son état actuel.",
-      reopen: "Rouvrir",
+      history: "Historique des conversations",
+      newConversation: "Nouvelle conversation",
+      emptyHistory: "Aucune conversation latérale. Créez-en une pour commencer.",
+      backToHistory: "Retour à l’historique",
+      upgradeRequired:
+        "Mettez à jour le daemon pour utiliser l’historique des conversations latérales.",
       title: "Discussion parallèle",
       inputPlaceholder: "Posez une question rapide…",
       send: "Envoyer",

@@ -1,9 +1,10 @@
 const SIDE_CHAT_KEY_SEPARATOR = "\0";
 
 export type SideChatPanelState =
-  | { status: "opening"; generation: number }
+  | { status: "history"; generation: number }
+  | { status: "opening"; generation: number; sideAgentId?: string }
   | { status: "ready"; generation: number; sideAgentId: string }
-  | { status: "error"; generation: number; error: string };
+  | { status: "error"; generation: number; error: string; sideAgentId?: string };
 
 export function sideChatKey(serverId: string, agentId: string): string {
   return `${serverId}${SIDE_CHAT_KEY_SEPARATOR}${agentId}`;

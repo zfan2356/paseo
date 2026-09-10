@@ -1,23 +1,20 @@
-import { useCallback, useEffect, type ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { MessageCircleQuestionMark, X } from "lucide-react-native";
 
-import { Button } from "@/components/ui/button";
-import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
-import { useSessionStore } from "@/stores/session-store";
 import type { Theme } from "@/styles/theme";
 import { useToast } from "@/contexts/toast-context";
-import { closeSideChatPanel, openSideChatPanel } from "./lifecycle";
+import { closeSideChatPanel } from "./lifecycle";
+import { SideChatContent } from "./content";
 import { sideChatKey } from "./model";
 import { selectSideChatPanel, useSideChatStore } from "./store";
 
 const ThemedMessageCircleQuestionMark = withUnistyles(MessageCircleQuestionMark);
 const ThemedX = withUnistyles(X);
-const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
@@ -45,17 +42,6 @@ export function SideChatOverlay({
   const client = useHostRuntimeClient(serverId);
   const key = sideChatKey(serverId, agentId);
   const panel = useSideChatStore((state) => selectSideChatPanel(state, key));
-  const visibleSideAgentId = panel?.status === "ready" ? panel.sideAgentId : null;
-  const viewedTimelineSync = useSessionStore(
-    (state) => state.sessions[serverId]?.viewedTimelineSync ?? null,
-  );
-
-  useEffect(() => {
-    if (!viewedTimelineSync || !visibleSideAgentId) return;
-    const sourceId = `side-chat:${key}`;
-    viewedTimelineSync.replaceVisibleAgentIds(sourceId, [visibleSideAgentId]);
-    return () => viewedTimelineSync.replaceVisibleAgentIds(sourceId, []);
-  }, [key, viewedTimelineSync, visibleSideAgentId]);
 
   const handleClose = useCallback(() => {
     void closeSideChatPanel({
@@ -68,39 +54,7 @@ export function SideChatOverlay({
     });
   }, [agentId, client, key, serverId, t, toast]);
 
-  const handleRetry = useCallback(() => {
-    if (!client) return;
-    void openSideChatPanel({
-      key,
-      serverId,
-      parentAgentId: agentId,
-      client,
-    });
-  }, [agentId, client, key, serverId]);
-
   if (!panel) return null;
-
-  let content: ReactNode;
-  if (panel.status === "ready") {
-    content = <View style={styles.agentContent}>{renderAgent(panel.sideAgentId)}</View>;
-  } else if (panel.status === "error") {
-    content = (
-      <View style={styles.stateContent} testID="agent-side-chat-error">
-        <Text style={styles.errorText} selectable>
-          {panel.error}
-        </Text>
-        <Button size="sm" variant="secondary" onPress={handleRetry} disabled={!client}>
-          {t("common.actions.retry")}
-        </Button>
-      </View>
-    );
-  } else {
-    content = (
-      <View style={styles.stateContent} testID="agent-side-chat-opening">
-        <ThemedLoadingSpinner size="large" uniProps={mutedColorMapping} />
-      </View>
-    );
-  }
 
   return (
     <View
@@ -121,7 +75,7 @@ export function SideChatOverlay({
           <ThemedX size={14} uniProps={mutedColorMapping} />
         </Pressable>
       </View>
-      {content}
+      <SideChatContent serverId={serverId} parentAgentId={agentId} renderAgent={renderAgent} />
     </View>
   );
 }
@@ -163,21 +117,5 @@ const styles = StyleSheet.create((theme) => ({
   },
   closeButton: {
     padding: theme.spacing[1],
-  },
-  agentContent: {
-    flex: 1,
-    minHeight: 0,
-  },
-  stateContent: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.spacing[3],
-    padding: theme.spacing[6],
-  },
-  errorText: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.statusDanger,
-    textAlign: "center",
   },
 }));
