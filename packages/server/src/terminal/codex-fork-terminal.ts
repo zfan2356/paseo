@@ -280,11 +280,11 @@ function buildCodexLaunch(
   source: AgentConversationTerminalSource,
   threadId: string,
 ): AgentConversationTerminalLaunch {
-  const args = ["resume", "--include-non-interactive"];
+  const args: string[] = [];
   appendModelAndPerformanceArgs(args, source);
   appendPermissionArgs(args, source);
 
-  args.push("--cd", source.cwd, threadId);
+  args.push("resume", "--include-non-interactive", "--cd", source.cwd, threadId);
   return {
     provider: "codex",
     name: CODEX_CONVERSATION_TERMINAL_NAME,

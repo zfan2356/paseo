@@ -54,11 +54,18 @@ agent RPCs. Its state is delivered through
 `agent.side_chat.agent_state`; ordinary stream, timeline, permission, and
 provider-subagent events keep their existing shapes.
 
+Local cleanup uses upstream's `AgentStoreProjection.remove`, including pending
+activity updates, focused agent state, timeline metadata, tasks, and drafts.
+Side-agent snapshots already carry turn liveness on the normalized agent; they
+do not recreate the removed session-wide turn-liveness map.
+
 The existing `agent.side_question.ask.request` /
 `agent.side_question.ask.response` RPC pair remains backward compatible. New
 clients set `operation: "open" | "close"` and use `sideAgentId`; an omitted
 operation still invokes the old one-shot `askSideQuestion` behavior. Mixed
 versions fail closed through the separate `agentSideChatFork` feature flag.
+Opening, closing, and one-shot questions require `workspace.write`; side-agent
+state events require `workspace.read` under the semantic permission map.
 
 ### Provider forks
 

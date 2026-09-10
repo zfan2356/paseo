@@ -1,7 +1,7 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 
 import { useProviderSubagentStore } from "@/subagents/provider-store";
-import { removeAgentDirectoryReplica } from "@/utils/agent-directory-sync";
+import { AgentStoreProjection } from "@/runtime/directory-sync/internal/agent-store";
 import { isSideChatKeyForServer, sideChatKey } from "./model";
 import { selectSideChatPanel, useSideChatStore } from "./store";
 
@@ -16,7 +16,9 @@ export interface SideChatLifecycleEffects {
 }
 
 const DEFAULT_EFFECTS: SideChatLifecycleEffects = {
-  removeLocalAgent: removeAgentDirectoryReplica,
+  removeLocalAgent: (serverId, sideAgentId) => {
+    new AgentStoreProjection(serverId).remove(sideAgentId);
+  },
   clearProviderSubagents: (serverId, sideAgentId) => {
     useProviderSubagentStore.getState().clearParent(serverId, sideAgentId);
   },

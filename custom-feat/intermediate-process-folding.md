@@ -34,6 +34,10 @@ fork context, pagination, and tool-call detail data are untouched:
 - The final assistant answer always stays outside the group and visible.
 - Shared by the desktop web and native/mobile stream renderers.
 
+Upstream plugin timeline transforms run before intermediate-process folding;
+the folded result feeds the history window and render layout. Plugin-owned
+timeline items therefore keep their transforms instead of bypassing them.
+
 The projection sits on top of stream virtualization, so item identity and
 tail/live-head boundary handling in `agent-stream/view.tsx` are the sensitive
 merge seams (see the ledger for hotspots and focused tests).

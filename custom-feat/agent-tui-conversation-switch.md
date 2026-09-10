@@ -1,7 +1,7 @@
 # Switch Agent conversations between Agent and TUI
 
 - Status: active
-- Commits: `98d675b8e`, `027286591`, `a15b67502`, `b417f2e09`, `caedcd366`, `5d9cfec7a`
+- Commits: `98d675b8e`, `027286591`, `a15b67502`, `b417f2e09`, `caedcd366`, `5d9cfec7a`, `88426c959`, `6ef89aec5`
 - Ledger entry: "Switch Agent conversations between Agent and TUI"
 
 ## Original requirement
@@ -30,7 +30,12 @@ TUI view must be a real linked PTY running the provider CLI.
 - **Launch configuration**: read the current registry's resolved runtime settings,
   which are also used to create the Agent client. Startup settings alone omit
   provider command/env overrides and become stale after a live config replacement.
-  Config rollback and removal must also apply to subsequent TUI launches.
+  Prepared config replacements stay invisible until committed; committed changes
+  and removal also apply to subsequent TUI launches.
+- **Codex CLI scope**: generated model, reasoning, service-tier, and permission
+  options precede `resume`. Splitting `-c` / `--config` options between the root
+  command and subcommand can discard a wrapper's root-level provider configuration
+  in Codex, sending the resumed conversation through the default account instead.
 - **Back to Agent**: `switchAgentTerminalToAgent` (legacy Codex RPC still
   supported) stops the PTY, resumes the Agent runtime with provider history
   rehydrated (`reconcileProviderHistory`; an empty TUI resume history must
@@ -41,6 +46,11 @@ TUI view must be a real linked PTY running the provider CLI.
 - **Write exclusivity**: while a conversation PTY exists, the Agent composer
   is blocked (`isSubmitLoading` from the surface store) for that agent and
   for an agent whose release is in flight — one writer at a time.
+- **Lifecycle serialization**: the terminal claim already owns the agent's
+  lifecycle queue. It closes the runtime directly, rather than re-entering
+  the queued public close operation and waiting on itself.
+- **Authorization**: conversation handoff requires `workspace.write`, including
+  the legacy Codex switch RPC. Read-only clients cannot transfer the writer.
 - **Gating**: the button appears only for unarchived agents of providers
   `codex` / `claude` / `cursor` with a `persistence.sessionId`, behind the
   `agentConversationViewSwitch` feature (legacy `codexConversationViewSwitch`

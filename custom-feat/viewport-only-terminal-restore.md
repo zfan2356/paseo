@@ -36,3 +36,7 @@ visible replay.
 
 Trade-off accepted: no scrollback history after a reopen — the viewport is
 the restore surface; history stays in the TUI/shell itself.
+
+The browser regression remounts the page and terminal before checking the
+restore. Switching between retained tabs does not remount the emulator and
+must not be used to assert that a new restore occurred.

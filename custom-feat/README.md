@@ -33,6 +33,7 @@ stays authoritative for intent and design.
 | Doc                                                                            | Feature                                                                        |
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | [terminal-color-isolation.md](terminal-color-isolation.md)                     | Daemon terminals advertise truecolor and ignore daemon-level color suppression |
+| [terminal-font-isolation.md](terminal-font-isolation.md)                       | Interface fonts do not override terminal cell metrics                          |
 | [latex-markdown-rendering.md](latex-markdown-rendering.md)                     | KaTeX MathML rendering for LaTeX in chat Markdown                              |
 | [safe-local-macos-app-replacement.md](safe-local-macos-app-replacement.md)     | Installer that replaces the running Mac app safely with rollback               |
 | [stable-local-macos-signing.md](stable-local-macos-signing.md)                 | Reusable `Paseo Local` signing identity so TCC grants survive rebuilds         |

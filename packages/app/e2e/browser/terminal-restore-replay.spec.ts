@@ -25,7 +25,7 @@ async function installRestoreWriteSpy(page: Page, oldMarker: string): Promise<vo
       __paseoRestoreSpy?: RestoreSpyState;
     };
     const spy: RestoreSpyState = {
-      armed: false,
+      armed: sessionStorage.getItem("paseo-restore-spy-armed") === "true",
       oldHits: 0,
       resetHits: 0,
     };
@@ -75,6 +75,7 @@ async function armRestoreWriteSpy(page: Page): Promise<void> {
     spy.armed = true;
     spy.oldHits = 0;
     spy.resetHits = 0;
+    sessionStorage.setItem("paseo-restore-spy-armed", "true");
   });
 }
 
@@ -105,7 +106,7 @@ test.describe("Terminal restore replay", () => {
     await harness?.cleanup();
   });
 
-  test("reopening a long session does not write old scrollback into the emulator", async ({
+  test("remounting a long session does not write old scrollback into the emulator", async ({
     page,
   }) => {
     test.setTimeout(60_000);
@@ -117,7 +118,6 @@ test.describe("Terminal restore replay", () => {
     await installRestoreWriteSpy(page, oldMarker);
 
     const primary = await harness.createTerminal({ name: "restore-primary" });
-    const secondary = await harness.createTerminal({ name: "restore-secondary" });
 
     try {
       await harness.openTerminal(page, { terminalId: primary.id });
@@ -134,13 +134,8 @@ test.describe("Terminal restore replay", () => {
         15_000,
       );
 
-      await page.getByTestId(`workspace-tab-terminal_${secondary.id}`).first().click();
-      await expect(
-        page.getByTestId("terminal-surface").filter({ visible: true }).first(),
-      ).toBeVisible();
-
       await armRestoreWriteSpy(page);
-      await page.getByTestId(`workspace-tab-terminal_${primary.id}`).first().click();
+      await harness.openTerminal(page, { terminalId: primary.id });
       await expect
         .poll(() => getTerminalBufferText(page), { timeout: 15_000 })
         .toContain(newMarker);
@@ -159,7 +154,6 @@ test.describe("Terminal restore replay", () => {
       expect(restoredText).toContain(newMarker);
     } finally {
       await harness.killTerminal(primary.id);
-      await harness.killTerminal(secondary.id);
     }
   });
 });

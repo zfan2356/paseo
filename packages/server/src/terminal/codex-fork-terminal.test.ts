@@ -166,6 +166,38 @@ describe("buildAgentConversationTerminalLaunch", () => {
 });
 
 describe("buildCodexConversationTerminalLaunch", () => {
+  test("keeps wrapper and generated config overrides in the root CLI scope", () => {
+    const launch = buildCodexConversationTerminalLaunch({
+      provider: "codex",
+      cwd: "/work/paseo",
+      persistence: { provider: "codex", sessionId: "thread-1" },
+      runtimeSettings: {
+        command: {
+          mode: "replace",
+          argv: ["codex", "-c", 'model_provider="custom"'],
+        },
+      },
+      config: {
+        thinkingOptionId: "high",
+        featureValues: { fast_mode: true },
+        providerOptions: { features: { multi_agent: true } },
+      },
+    });
+    const resumeIndex = launch.args.indexOf("resume");
+    expect(resumeIndex).toBeGreaterThan(0);
+    expect(launch.args.slice(0, resumeIndex)).toEqual([
+      "-c",
+      'model_provider="custom"',
+      "--config",
+      'model_reasoning_effort="high"',
+      "--config",
+      'service_tier="fast"',
+      "--config",
+      "features.multi_agent=true",
+    ]);
+    expect(launch.args.slice(resumeIndex)).not.toContain("--config");
+  });
+
   test("round-trips the linked Agent id through the persistent terminal name", () => {
     const name = buildCodexConversationTerminalName("agent-1");
     expect(parseCodexConversationTerminalAgentId(name)).toBe("agent-1");
@@ -211,8 +243,6 @@ describe("buildCodexConversationTerminalLaunch", () => {
       name: "Codex Conversation",
       command: "codex",
       args: [
-        "resume",
-        "--include-non-interactive",
         "--model",
         "gpt-5.6-sol",
         "--config",
@@ -223,6 +253,8 @@ describe("buildCodexConversationTerminalLaunch", () => {
         "never",
         "--sandbox",
         "danger-full-access",
+        "resume",
+        "--include-non-interactive",
         "--cd",
         "/work/paseo",
         "thread-native",
@@ -272,8 +304,6 @@ describe("buildCodexConversationTerminalLaunch", () => {
         },
       }).args,
     ).toEqual([
-      "resume",
-      "--include-non-interactive",
       "--ask-for-approval",
       "on-request",
       "--sandbox",
@@ -282,6 +312,8 @@ describe("buildCodexConversationTerminalLaunch", () => {
       'sandbox_workspace_write.writable_roots=["/tmp/shared"]',
       "--config",
       "sandbox_workspace_write.network_access=true",
+      "resume",
+      "--include-non-interactive",
       "--cd",
       "/work/paseo",
       "thread-2",
