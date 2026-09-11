@@ -49,3 +49,4 @@ stays authoritative for intent and design.
 | [chrome-link-opener.md](chrome-link-opener.md)                                 | Host-window links open in Google Chrome                                        |
 | [codex-appearance-theme.md](codex-appearance-theme.md)                         | Codex charcoal appearance theme                                                |
 | [acp-stale-feature-fallback.md](acp-stale-feature-fallback.md)                 | Start ACP sessions when a saved feature has been retired                       |
+| [shared-codex-app-server.md](shared-codex-app-server.md)                       | Share Codex native conversations, live output, and interruption across clients |

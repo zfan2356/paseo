@@ -17,6 +17,11 @@ Provider definitions live under `agents.providers` in config.json:
 
 Provider IDs must be lowercase alphanumeric with hyphens (`/^[a-z][a-z0-9-]*$/`).
 
+The fork's opt-in [shared Codex app server](../custom-feat/shared-codex-app-server.md)
+connects Paseo to the Codex desktop app's existing local service. It shares native
+thread IDs and live control without launching a second writer. Its socket-only
+provider configuration intentionally cannot include process launch overrides.
+
 Each provider catalog refresh waits up to 2 minutes. If a provider loads many plugins or a large
 agent catalog during startup, raise the limit in milliseconds:
 

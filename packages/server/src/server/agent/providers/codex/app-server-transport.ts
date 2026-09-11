@@ -4,6 +4,9 @@ import type { Logger } from "pino";
 import { z } from "zod";
 
 import { terminateWithTreeKill } from "../../../../utils/tree-kill.js";
+import { CodexAppServerSocket } from "./shared-app-server.js";
+
+export type CodexAppServerEndpoint = ChildProcessWithoutNullStreams | CodexAppServerSocket;
 
 const DEFAULT_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000;
 const APP_SERVER_GRACEFUL_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -178,7 +181,7 @@ export class CodexAppServerClient {
   private stderrBuffer = "";
 
   constructor(
-    private readonly child: ChildProcessWithoutNullStreams,
+    private readonly child: CodexAppServerEndpoint,
     private readonly logger: Logger,
     private readonly getTraceContext: () => CodexAppServerTraceContext = () => ({}),
   ) {
@@ -188,6 +191,11 @@ export class CodexAppServerClient {
         this.logger.warn({ error, line }, "Failed to handle Codex app-server stdout line");
       });
     });
+
+    if (child instanceof CodexAppServerSocket) {
+      child.onClose((error) => this.handleUnexpectedTermination(error));
+      return;
+    }
 
     child.stderr.on("data", (chunk) => {
       this.stderrBuffer += chunk.toString();
@@ -215,6 +223,10 @@ export class CodexAppServerClient {
     this.unexpectedTerminationHandler = handler;
   }
 
+  get isShared(): boolean {
+    return this.child instanceof CodexAppServerSocket;
+  }
+
   setNotificationHandler(handler: NotificationHandler): void {
     this.notificationHandler = handler;
   }
@@ -230,13 +242,13 @@ export class CodexAppServerClient {
     const id = this.nextId++;
     const payload: JsonRpcRequest = { id, method, params };
     const serialized = JSON.stringify(payload);
-    this.child.stdin.write(`${serialized}\n`);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Codex app-server request timed out for ${method}`));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
+      this.child.stdin.write(`${serialized}\n`);
     });
   }
 
@@ -261,6 +273,10 @@ export class CodexAppServerClient {
     this.unexpectedTerminationHandler = null;
     this.rl.close();
     this.rejectPending(new Error("Codex app-server client is closed"));
+    if (this.child instanceof CodexAppServerSocket) {
+      await this.child.close();
+      return;
+    }
     try {
       this.child.stdin.end();
     } catch {

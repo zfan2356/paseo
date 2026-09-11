@@ -120,6 +120,7 @@ interface CodexSessionTestAccess {
 }
 
 interface CodexClientLike {
+  isShared?: boolean;
   request: (method: string, ...rest: unknown[]) => Promise<unknown>;
 }
 
@@ -806,7 +807,7 @@ describe("Codex app-server provider", () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("needs approval");
 
@@ -827,7 +828,7 @@ describe("Codex app-server provider", () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("inherit config");
 
@@ -855,7 +856,7 @@ describe("Codex app-server provider", () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("use writable roots");
 
@@ -933,7 +934,7 @@ describe("Codex app-server provider", () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("finish");
 
@@ -2135,7 +2136,7 @@ describe("Codex app-server provider", () => {
     });
 
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("Return JSON", {
       outputSchema: {
@@ -2191,7 +2192,7 @@ describe("Codex app-server provider", () => {
     });
 
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("/paseo-implement in a worktree, remember to use Claude for the UI");
 
@@ -5242,6 +5243,7 @@ describe("Codex app-server provider", () => {
 
     session.activeForegroundTurnId = null;
     session.client = createStub<CodexClientLike>({
+      isShared: false,
       request: async (method) => {
         if (method === "thread/loaded/list") return { data: ["test-thread"] };
         if (method === "turn/start") return {};
@@ -5287,6 +5289,7 @@ describe("Codex app-server provider", () => {
     });
     session.activeForegroundTurnId = null;
     session.client = createStub<CodexClientLike>({
+      isShared: false,
       request: async (method) => {
         if (method === "thread/loaded/list") {
           markPromptSetupStarted?.();
@@ -5339,6 +5342,7 @@ describe("Codex app-server provider", () => {
     });
     session.activeForegroundTurnId = null;
     session.client = createStub<CodexClientLike>({
+      isShared: false,
       request: async (method) => {
         if (method === "thread/loaded/list") return { data: ["test-thread"] };
         if (method === "turn/start") {
@@ -5386,6 +5390,7 @@ describe("Codex app-server provider", () => {
 
     session.activeForegroundTurnId = null;
     session.client = createStub<CodexClientLike>({
+      isShared: false,
       request: async (method) => {
         if (method === "thread/loaded/list") return { data: ["test-thread"] };
         if (method === "turn/start") throw new Error("Prompt rejected");
@@ -6015,7 +6020,7 @@ describe("Codex app-server provider", () => {
     });
 
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));

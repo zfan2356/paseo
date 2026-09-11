@@ -85,7 +85,13 @@ import {
   type CodexThreadRollbackParams,
   type CodexThreadRollbackResponse,
   type CodexAppServerTraceContext,
+  type CodexAppServerEndpoint,
 } from "./codex/app-server-transport.js";
+import {
+  CodexAppServerSocket,
+  resolveSharedCodexSocket,
+  type SharedCodexFeatures,
+} from "./codex/shared-app-server.js";
 import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
 import {
   buildCodexSideQuestionForkParams,
@@ -3383,6 +3389,8 @@ export class CodexAppServerAgentSession implements AgentSession {
   private unpairedCompactionNotificationCompletions = 0;
   private unpairedCompactionItemCompletions = 0;
   private connected = false;
+  private sharedThreadSubscribed = false;
+  private sharedResumeTurnPending = false;
   private connectionPromise: Promise<void> | null = null;
   private closed = false;
   private collaborationModes: Array<{
@@ -3407,7 +3415,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       sideChatForkFromThreadId?: string;
     } | null,
     logger: Logger,
-    private readonly spawnAppServer: () => Promise<ChildProcessWithoutNullStreams>,
+    private readonly spawnAppServer: () => Promise<CodexAppServerEndpoint>,
     private readonly deps: CodexAppServerAgentDeps = {},
     private readonly ephemeral: boolean = false,
     private readonly goalsEnabled: boolean = false,
@@ -3589,6 +3597,8 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   private handleUnexpectedTermination(error: Error): void {
     this.connected = false;
+    this.sharedThreadSubscribed = false;
+    this.sharedResumeTurnPending = false;
     const hasActiveRootTurn = this.activeForegroundTurnId !== null || this.currentTurnId !== null;
     this.clearPendingPermissions({ preservePlanApprovals: !hasActiveRootTurn });
     if (hasActiveRootTurn) {
@@ -3907,6 +3917,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     options: { allowArchivedHistory?: boolean } = {},
   ): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
+    if (this.sharedThreadSubscribed) return;
     const params: Record<string, unknown> = { threadId: this.currentThreadId };
     const developerInstructions = composeSystemPromptParts(
       this.config.systemPrompt,
@@ -3922,11 +3933,17 @@ export class CodexAppServerAgentSession implements AgentSession {
     try {
       const loaded = toObjectRecord(await this.client.request("thread/loaded/list", {}));
       const ids = Array.isArray(loaded?.data) ? loaded.data : [];
-      if (ids.includes(this.currentThreadId)) {
+      if (ids.includes(this.currentThreadId) && !this.client.isShared) {
         return;
+      }
+      // Joining a loaded shared thread must not replace its owner's configuration.
+      if (this.client.isShared && ids.includes(this.currentThreadId)) {
+        delete params.config;
+        delete params.developerInstructions;
       }
       const response = await this.client.request("thread/resume", params);
       this.rememberResolvedSandboxPolicy(response);
+      this.rememberSharedResume(response);
     } catch (error) {
       const threadId = this.currentThreadId;
       const message = error instanceof Error ? error.message : String(error);
@@ -3950,11 +3967,25 @@ export class CodexAppServerAgentSession implements AgentSession {
         }
         const response = await this.client.request("thread/resume", params);
         this.rememberResolvedSandboxPolicy(response);
+        this.rememberSharedResume(response);
         this.logger.info({ threadId }, "Unarchived Codex thread to restore active Paseo agent");
         return;
       }
       this.logger.warn({ error, threadId }, "Failed to resume persisted Codex thread");
       throw new Error(`Failed to resume Codex thread ${threadId}: ${message}`, { cause: error });
+    }
+  }
+
+  private rememberSharedResume(response: unknown): void {
+    if (!this.client?.isShared) return;
+    this.sharedThreadSubscribed = true;
+    const thread = toObjectRecord(toObjectRecord(response)?.thread);
+    const turns = Array.isArray(thread?.turns) ? thread.turns : [];
+    const activeTurn = turns.map(toObjectRecord).find((turn) => turn?.status === "inProgress");
+    if (typeof activeTurn?.id === "string" && !this.currentTurnId) {
+      this.currentTurnId = activeTurn.id;
+      this.activeForegroundTurnId = this.createTurnId();
+      this.sharedResumeTurnPending = true;
     }
   }
 
@@ -4223,6 +4254,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       cancelRequested: false,
     };
     this.pendingForegroundStart = pendingStart;
+    let admittedTurnId: string | null = null;
 
     this.dismissPendingPlanApprovals("Dismissed by a new prompt");
 
@@ -4244,7 +4276,11 @@ export class CodexAppServerAgentSession implements AgentSession {
       }
 
       const turnStart = await this.buildTurnStartParams(effectivePrompt, options);
+      if (this.client.isShared && this.currentTurnId) {
+        throw new Error("A foreground turn is already active in another Codex client");
+      }
       const turnId = this.createTurnId();
+      admittedTurnId = turnId;
       this.activeForegroundTurnId = turnId;
       this.activeClientMessageId = options?.clientMessageId ?? null;
       this.currentTurnId = null;
@@ -4274,10 +4310,12 @@ export class CodexAppServerAgentSession implements AgentSession {
       await this.client.request("turn/start", turnStart.params, TURN_START_TIMEOUT_MS);
       return { turnId };
     } catch (error) {
-      this.pendingForegroundTurnIdentification?.resolve(null);
-      this.pendingForegroundTurnIdentification = null;
-      this.activeForegroundTurnId = null;
-      this.activeClientMessageId = null;
+      if (!this.client?.isShared || this.activeForegroundTurnId === admittedTurnId) {
+        this.pendingForegroundTurnIdentification?.resolve(null);
+        this.pendingForegroundTurnIdentification = null;
+        this.activeForegroundTurnId = null;
+        this.activeClientMessageId = null;
+      }
       throw error;
     } finally {
       if (this.pendingForegroundStart === pendingStart) {
@@ -4411,7 +4449,8 @@ export class CodexAppServerAgentSession implements AgentSession {
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
     if (
       (!this.historyPending || this.persistedHistory.length === 0) &&
-      this.persistedProviderSubagentEvents.length === 0
+      this.persistedProviderSubagentEvents.length === 0 &&
+      !this.sharedResumeTurnPending
     ) {
       return;
     }
@@ -4430,6 +4469,10 @@ export class CodexAppServerAgentSession implements AgentSession {
         item: entry.item,
         timestamp: entry.timestamp,
       };
+    }
+    if (this.sharedResumeTurnPending && this.activeForegroundTurnId) {
+      this.sharedResumeTurnPending = false;
+      yield { type: "turn_started", provider: CODEX_PROVIDER, turnId: this.activeForegroundTurnId };
     }
   }
 
@@ -4969,6 +5012,8 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async close(): Promise<void> {
     this.closed = true;
+    // A shared approval belongs to the server; detaching must not answer it with cancel.
+    if (this.client?.isShared) await this.disposeClient();
     this.clearPendingPermissions();
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.subscribers.clear();
@@ -4996,6 +5041,8 @@ export class CodexAppServerAgentSession implements AgentSession {
   private async disposeClient(): Promise<void> {
     const client = this.client;
     this.connected = false;
+    this.sharedThreadSubscribed = false;
+    this.sharedResumeTurnPending = false;
     this.currentTurnId = null;
     if (client) {
       await client.dispose();
@@ -5241,6 +5288,10 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.cachedRuntimeInfo = null;
     }
     this.currentThreadId = threadId;
+    if (this.client.isShared) {
+      this.sharedThreadSubscribed = true;
+      this.emitEvent({ type: "thread_started", provider: CODEX_PROVIDER, sessionId: threadId });
+    }
   }
 
   private buildThreadStartRequest(model: string): {
@@ -5332,6 +5383,11 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private handleNotification(method: string, params: unknown): void {
+    if (this.client?.isShared) {
+      // Shared servers broadcast thread creation, including unrelated clients' threads.
+      // The request response establishes our root; subscribed turn events follow it.
+      if (method === "thread/started" || !this.currentThreadId) return;
+    }
     const notificationParams = toObjectRecord(params);
     if (method === "serverRequest/resolved" && typeof notificationParams?.requestId === "number") {
       const requestId = this.mcpElicitationPermissionIds.get(notificationParams.requestId);
@@ -6056,6 +6112,9 @@ export class CodexAppServerAgentSession implements AgentSession {
       return;
     }
     this.currentTurnId = parsed.turnId;
+    if (this.client?.isShared && !this.activeForegroundTurnId) {
+      this.activeForegroundTurnId = this.createTurnId();
+    }
     const pendingIdentification = this.pendingForegroundTurnIdentification;
     if (
       pendingIdentification &&
@@ -6108,6 +6167,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.pendingForegroundTurnIdentification?.resolve(null);
     this.pendingForegroundTurnIdentification = null;
     this.pendingSubAgentNotificationsByThreadId.clear();
+    this.sharedResumeTurnPending = false;
     this.resetTurnTrackingState();
   }
 
@@ -7088,12 +7148,44 @@ export class CodexAppServerAgentClient implements AgentClient {
   readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
   private goalsEnabledPromise: Promise<boolean> | null = null;
   private autoReviewEnabledPromise: Promise<boolean> | null = null;
+  private readonly sharedSocketPath: string | null;
+  private sharedFeaturesPromise: Promise<SharedCodexFeatures> | null = null;
 
   constructor(
     private readonly logger: Logger,
     private readonly runtimeSettings?: ProviderRuntimeSettings,
     private readonly deps: CodexAppServerAgentDeps = {},
-  ) {}
+  ) {
+    this.sharedSocketPath = resolveSharedCodexSocket(runtimeSettings);
+  }
+
+  private sharedFeatures(): Promise<SharedCodexFeatures> {
+    this.sharedFeaturesPromise ??= (async () => {
+      const endpoint = await this.spawnAppServer();
+      const client = new CodexAppServerClient(endpoint, this.logger);
+      try {
+        const initialized = toObjectRecord(
+          await client.request("initialize", buildCodexAppServerInitializeParams()),
+        );
+        client.notify("initialized", {});
+        const config = toObjectRecord(
+          toObjectRecord(await client.request("config/read", {}))?.config,
+        );
+        const features = toObjectRecord(config?.features);
+        const userAgent = typeof initialized?.userAgent === "string" ? initialized.userAgent : "";
+        return {
+          goals: features?.goals === true,
+          autoReview: codexVersionAtLeast(userAgent, CODEX_AUTO_REVIEW_MIN_VERSION),
+        };
+      } finally {
+        await client.dispose();
+      }
+    })().catch((error) => {
+      this.sharedFeaturesPromise = null;
+      throw error;
+    });
+    return this.sharedFeaturesPromise;
+  }
 
   private sessionDeps(): CodexAppServerAgentDeps {
     return {
@@ -7106,6 +7198,7 @@ export class CodexAppServerAgentClient implements AgentClient {
   }
 
   private resolveGoalsEnabled(): Promise<boolean> {
+    if (this.sharedSocketPath) return this.sharedFeatures().then((features) => features.goals);
     if (!this.goalsEnabledPromise) {
       this.goalsEnabledPromise = (async () => {
         try {
@@ -7131,6 +7224,7 @@ export class CodexAppServerAgentClient implements AgentClient {
   }
 
   private resolveAutoReviewEnabled(signal?: AbortSignal): Promise<boolean> {
+    if (this.sharedSocketPath) return this.sharedFeatures().then((features) => features.autoReview);
     if (signal) return this.probeAutoReviewEnabled(signal);
     if (!this.autoReviewEnabledPromise) {
       this.autoReviewEnabledPromise = this.probeAutoReviewEnabled();
@@ -7160,7 +7254,8 @@ export class CodexAppServerAgentClient implements AgentClient {
   private async spawnAppServer(
     launchEnv?: Record<string, string>,
     options?: { goalsEnabled?: boolean; agentId?: string },
-  ): Promise<ChildProcessWithoutNullStreams> {
+  ): Promise<CodexAppServerEndpoint> {
+    if (this.sharedSocketPath) return CodexAppServerSocket.connect(this.sharedSocketPath);
     const launchPrefix = await resolveCodexLaunchPrefix(this.runtimeSettings);
     const args = [...launchPrefix.args, "app-server"];
     if (options?.goalsEnabled) {
@@ -7257,7 +7352,8 @@ export class CodexAppServerAgentClient implements AgentClient {
   ): Promise<ImportableProviderSession[]> {
     const child = await this.spawnAppServer();
     const client =
-      this.deps._createCodexClient?.(child, this.logger, () => ({})) ??
+      (!(child instanceof CodexAppServerSocket) &&
+        this.deps._createCodexClient?.(child, this.logger, () => ({}))) ||
       new CodexAppServerClient(child, this.logger);
 
     try {
@@ -7435,12 +7531,20 @@ export class CodexAppServerAgentClient implements AgentClient {
   }
 
   async isAvailable(): Promise<boolean> {
+    if (this.sharedSocketPath) {
+      const connection = await CodexAppServerSocket.connect(this.sharedSocketPath);
+      await connection.close();
+      return true;
+    }
     const launch = await resolveCodexLaunch(this.runtimeSettings);
     const availability = await checkCodexLaunchAvailable(launch);
     return availability.available;
   }
 
   async getDiagnostic(): Promise<{ diagnostic: string }> {
+    if (this.sharedSocketPath) {
+      return { diagnostic: `Shared Codex app-server socket: ${this.sharedSocketPath}` };
+    }
     try {
       const launch = await resolveCodexLaunch(this.runtimeSettings);
       const availability = await checkCodexLaunchAvailable(launch);

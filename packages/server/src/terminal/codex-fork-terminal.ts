@@ -5,6 +5,7 @@ import type {
 } from "../server/agent/agent-sdk-types.js";
 import type { ProviderRuntimeSettings } from "../server/agent/provider-launch-config.js";
 import { resolveCursorConfigDirectory } from "./cursor-conversation-store.js";
+import { resolveSharedCodexSocket } from "../server/agent/providers/codex/shared-app-server.js";
 
 interface AgentConversationTerminalConfig {
   model?: string | null;
@@ -281,6 +282,8 @@ function buildCodexLaunch(
   threadId: string,
 ): AgentConversationTerminalLaunch {
   const args: string[] = [];
+  const sharedSocket = resolveSharedCodexSocket(source.runtimeSettings);
+  if (sharedSocket) args.push("--remote", `unix://${sharedSocket}`);
   appendModelAndPerformanceArgs(args, source);
   appendPermissionArgs(args, source);
 

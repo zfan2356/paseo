@@ -33,6 +33,24 @@ describe("agent conversation terminal metadata", () => {
 });
 
 describe("buildAgentConversationTerminalLaunch", () => {
+  test("reattaches shared Codex terminals to the same service", () => {
+    const launch = buildAgentConversationTerminalLaunch({
+      provider: "codex",
+      cwd: "/work/paseo",
+      persistence: { provider: "codex", sessionId: "shared-thread" },
+      runtimeSettings: { env: { PASEO_CODEX_APP_SERVER_SOCKET: "/tmp/codex.sock" } },
+    });
+    expect(launch.args).toEqual([
+      "--remote",
+      "unix:///tmp/codex.sock",
+      "resume",
+      "--include-non-interactive",
+      "--cd",
+      "/work/paseo",
+      "shared-thread",
+    ]);
+  });
+
   test("resumes a Claude Code session with its active model, effort, and permission mode", () => {
     expect(
       buildAgentConversationTerminalLaunch({
