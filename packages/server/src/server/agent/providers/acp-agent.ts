@@ -1690,6 +1690,14 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private bootstrapThreadEventPending = false;
   private readonly terminateProcess: ProcessTerminator;
 
+  /**
+   * Side chat: installed only when the agent advertised ACP `session/fork`, so
+   * the shared unsupported-provider guard keeps deciding for the other ACP
+   * agents instead of every one of them failing at fork time.
+   */
+  forkForSideChat?: () => Promise<AgentPersistenceHandle>;
+  disposeSideChatFork?: (handle: AgentPersistenceHandle) => Promise<void>;
+
   constructor(config: AgentSessionConfig, options: ACPAgentSessionOptions) {
     this.provider = options.provider;
     this.terminateProcess = options.terminateProcess ?? terminateWithTreeKill;
@@ -1733,6 +1741,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.child = spawned.child;
       this.connection = spawned.connection;
       this.agentCapabilities = spawned.initialize.agentCapabilities ?? null;
+      this.installSideChatFork();
 
       const response = await this.runACPRequest(() =>
         this.connection!.newSession({
@@ -1767,6 +1776,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.child = spawned.child;
       this.connection = spawned.connection;
       this.agentCapabilities = spawned.initialize.agentCapabilities ?? null;
+      this.installSideChatFork();
       this.sessionId = handle.sessionId;
       this.bootstrapThreadEventPending = true;
 
@@ -2770,6 +2780,53 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     } catch (error) {
       throw toACPRequestError(error);
     }
+  }
+
+  /**
+   * Side chat: ACP `session/fork` creates the fork inside the live agent, and
+   * the returned session id is resumable through `session/load` or
+   * `session/resume`, which is what the resumed side-chat agent uses.
+   */
+  private installSideChatFork(): void {
+    if (this.agentCapabilities?.sessionCapabilities?.fork == null) {
+      this.forkForSideChat = undefined;
+      this.disposeSideChatFork = undefined;
+      return;
+    }
+    this.forkForSideChat = () => this.createSideChatFork();
+    this.disposeSideChatFork = (handle) => this.disposeSideChatForkHandle(handle);
+  }
+
+  private async createSideChatFork(): Promise<AgentPersistenceHandle> {
+    const connection = this.connection;
+    const sessionId = this.sessionId;
+    if (!connection || !sessionId) {
+      throw new Error("ACP session is not ready for side chat");
+    }
+    const forked = await this.runACPRequest(() =>
+      connection.unstable_forkSession({
+        sessionId,
+        cwd: this.config.cwd,
+        mcpServers: this.acpMcpServers(),
+      }),
+    );
+    return {
+      provider: this.provider,
+      sessionId: forked.sessionId,
+      nativeHandle: forked.sessionId,
+      metadata: { ...this.config, title: this.currentTitle },
+    };
+  }
+
+  /** Only an agent that also advertises `session/close` can drop a fork. */
+  private async disposeSideChatForkHandle(handle: AgentPersistenceHandle): Promise<void> {
+    const connection = this.connection;
+    if (!connection || this.agentCapabilities?.sessionCapabilities?.close == null) {
+      return;
+    }
+    await this.runACPRequest(() =>
+      connection.unstable_closeSession({ sessionId: handle.sessionId }),
+    );
   }
 
   private acpMcpServers(): McpServer[] {

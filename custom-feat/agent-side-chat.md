@@ -78,6 +78,14 @@ happens inside the side agent's own app-server process using
 realized native ID replaces it in the live agent and persisted record.
 
 Claude uses the Agent SDK `forkSession` and resumes the returned session.
+ACP agents use the experimental `session/fork` call: the fork is created inside
+the live agent and the returned session id is resumed through `session/load` or
+`session/resume`. `ACPAgentSession` installs `forkForSideChat` and
+`disposeSideChatFork` only when the initialize response advertises
+`sessionCapabilities.fork`, so agents without the capability still hit the shared
+guard. Disposal needs `sessionCapabilities.close` and is a no-op without it.
+An ACP agent must therefore also support resume for the forked id, which is what
+the resumed side-chat agent uses in its own process.
 Both providers retain their native session across view closure. Native archival
 or deletion is used only to clean up an incomplete creation, not a saved chat.
 The old one-shot transports remain for protocol compatibility.
@@ -100,7 +108,9 @@ an internal runtime preserves the storage record and committed timeline.
 
 ## Limitations
 
-- Only Claude and Codex expose provider-native conversation forks.
+- Claude and Codex expose provider-native conversation forks, and so does any ACP
+  agent that advertises `session/fork`. ACP agents without the capability keep the
+  shared "Provider does not support forked side chats" error.
 - Side Chat does not follow later Main Chat turns; choose New conversation for
   updated Main Chat context.
 - Conversations already destroyed by older versions cannot be recovered by this fix.

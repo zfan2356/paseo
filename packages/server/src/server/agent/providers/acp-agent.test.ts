@@ -3512,6 +3512,83 @@ describe("ACPAgentSession initialization cleanup", () => {
   });
 });
 
+describe("ACPAgentSession side chat fork", () => {
+  function sideChatOptions(provider: string, terminator: FakeTerminator) {
+    return {
+      provider,
+      logger: createTestLogger(),
+      defaultCommand: ["dsh", "--acp"] as [string, ...string[]],
+      defaultModes: [],
+      capabilities: {
+        supportsStreaming: true,
+        supportsSessionPersistence: true,
+      },
+      terminateProcess: terminator.terminate,
+    };
+  }
+
+  test("forks through ACP session/fork when the agent advertises the capability", async () => {
+    const terminator = new FakeTerminator();
+    const child = createProbeChildStub();
+    const forkSession = vi.fn().mockResolvedValue({ sessionId: "fork-1" });
+
+    class ForkableSession extends ACPAgentSession {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        return {
+          child,
+          connection: {
+            newSession: vi.fn().mockResolvedValue({ sessionId: "parent-1" }),
+            unstable_forkSession: forkSession,
+          } as unknown as ClientSideConnection,
+          initialize: { agentCapabilities: { sessionCapabilities: { fork: {} } } },
+        };
+      }
+    }
+
+    const session = new ForkableSession(
+      { provider: "dsh", cwd: "/tmp/paseo-acp-test" },
+      sideChatOptions("dsh", terminator),
+    );
+    await session.initializeNewSession();
+
+    expect(session.forkForSideChat).toBeTypeOf("function");
+    const handle = await session.forkForSideChat?.();
+
+    expect(forkSession).toHaveBeenCalledWith({
+      sessionId: "parent-1",
+      cwd: "/tmp/paseo-acp-test",
+      mcpServers: [],
+    });
+    expect(handle).toMatchObject({ provider: "dsh", sessionId: "fork-1", nativeHandle: "fork-1" });
+  });
+
+  test("leaves the hooks unset when the agent has no session/fork capability", async () => {
+    const terminator = new FakeTerminator();
+    const child = createProbeChildStub();
+
+    class PlainSession extends ACPAgentSession {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        return {
+          child,
+          connection: {
+            newSession: vi.fn().mockResolvedValue({ sessionId: "parent-1" }),
+          } as unknown as ClientSideConnection,
+          initialize: { agentCapabilities: {} },
+        };
+      }
+    }
+
+    const session = new PlainSession(
+      { provider: "copilot", cwd: "/tmp/paseo-acp-test" },
+      sideChatOptions("copilot", terminator),
+    );
+    await session.initializeNewSession();
+
+    expect(session.forkForSideChat).toBeUndefined();
+    expect(session.disposeSideChatFork).toBeUndefined();
+  });
+});
+
 describe("ACPAgentClient probe cleanup", () => {
   afterEach(() => {
     vi.restoreAllMocks();
