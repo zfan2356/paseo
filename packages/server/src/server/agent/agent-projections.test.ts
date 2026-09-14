@@ -263,7 +263,8 @@ describe("toAgentPayload", () => {
     expect(payload.availableModes).not.toBe(agent.availableModes);
     expect(payload.availableModes).toEqual(agent.availableModes);
     expect(payload.capabilities).not.toBe(agent.capabilities);
-    expect(payload.capabilities).toEqual(agent.capabilities);
+    // The projection adds the per-session side chat fork flag the UI gates its entry point on.
+    expect(payload.capabilities).toEqual({ ...agent.capabilities, sideChatFork: false });
     expect(payload.lastUsage).toEqual(agent.lastUsage);
     expect(payload.lastUsage).not.toBe(agent.lastUsage);
     expect(payload.lastError).toBe("boom");

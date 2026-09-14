@@ -38,6 +38,15 @@ Desktop docks a `side_chat` tab in the right-side workspace pane through
 `openWorkspaceTargetBeside`. The header always reveals history; the tab close
 button only closes the view. Compact layouts retain their overlay.
 
+### Entry point gating
+
+The header entry point follows the capability, not the provider name. `toAgentPayload`
+projects `capabilities.sideChatFork` from the live session's `forkForSideChat` hook, and
+`canOfferSideChat` shows the entry only when that flag is true. The capability object
+already carries `.catchall(z.boolean())` on the wire, so the extra flag needs no protocol
+change and older clients ignore it. Sessions without a native fork therefore show no entry
+point, and a provider that gains `session/fork` later needs no client change.
+
 ### Persistence and transport
 
 Side conversations reuse AgentStorage and the durable timeline store. Internal
@@ -119,7 +128,11 @@ Only entity deletion destroys a transcript.
 
 - Claude and Codex expose provider-native conversation forks, and so does any ACP
   agent that advertises `session/fork`. ACP agents without the capability keep the
-  shared "Provider does not support forked side chats" error.
+  shared "Provider does not support forked side chats" error and show no entry point.
+  Reaching one requires both `session/fork` and a resume path for the returned id
+  (`loadSession` or `session/resume`). `cursor-agent` 2026.08.31-4057e58 advertises
+  `loadSession` and `sessionCapabilities.list` only, so Cursor conversations stay
+  unsupported until the binary advertises fork.
 - Side Chat does not follow later Main Chat turns; choose New conversation for
   updated Main Chat context.
 - Conversations already destroyed by older versions cannot be recovered by this fix.

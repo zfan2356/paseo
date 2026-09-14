@@ -738,6 +738,27 @@ test("pending side chat forks persist only their realized native session even be
   }
 });
 
+test("agent snapshots report the session's side chat fork capability", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-capability-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new SideChatTestClient(workdir);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    expect(toAgentPayload(manager.getAgent(parent.id)!).capabilities.sideChatFork).toBe(true);
+
+    // The UI hangs its Side Chat entry point on this flag, so it must flip with the session.
+    const session = client.parentSession as { forkForSideChat?: unknown };
+    session.forkForSideChat = undefined;
+    expect(toAgentPayload(manager.getAgent(parent.id)!).capabilities.sideChatFork).toBe(false);
+    await manager.closeAgent(parent.id);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("failed side chat registration cleans the internal agent and provider fork", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-failure-"));
   const client = new SideChatTestClient(workdir);
