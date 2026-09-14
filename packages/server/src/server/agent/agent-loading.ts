@@ -63,13 +63,6 @@ export async function ensureAgentLoaded(
   agentId: string,
   deps: EnsureAgentLoadedDeps,
 ): Promise<ManagedAgent> {
-  const existingInflight = pendingAgentInitializations.get(agentId);
-  if (existingInflight) {
-    existingInflight.options.broadcastTimeline ||= deps.broadcastTimeline === true;
-    return existingInflight.promise;
-  }
-
-  await deps.agentManager.assertAgentRuntimeAvailable?.(agentId);
   await deps.agentManager.waitForAgentClose?.(agentId);
 
   const inflight = pendingAgentInitializations.get(agentId);
@@ -78,6 +71,8 @@ export async function ensureAgentLoaded(
     return inflight.promise;
   }
 
+  // Guard the resume path only: a joiner adopts a load that already passed this
+  // check, and an extra await here would delay the broadcast upgrade.
   await deps.agentManager.assertAgentRuntimeAvailable?.(agentId);
 
   const existing = deps.agentManager.getAgent(agentId);

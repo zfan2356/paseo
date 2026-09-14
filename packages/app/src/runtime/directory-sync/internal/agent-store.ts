@@ -12,6 +12,15 @@ import { useDraftStore } from "@/stores/draft-store";
 import { getInitDeferred, getInitKey, rejectInitDeferred } from "@/utils/agent-initialization";
 import { reduceTurnLiveness, type TurnLivenessTransition } from "@/timeline/turn-liveness";
 
+function withoutAgent(agentId: string) {
+  return <T>(current: Map<string, T>): Map<string, T> => {
+    if (!current.has(agentId)) return current;
+    const next = new Map(current);
+    next.delete(agentId);
+    return next;
+  };
+}
+
 function mergeSnapshotTurn(previous: Agent | undefined, incoming: Agent): Agent {
   if (!previous) return incoming;
   const activeTurn =
@@ -65,7 +74,7 @@ export class AgentStoreProjection {
     agent?: Agent;
   } {
     if (delta.kind === "remove") {
-      this.remove(delta.agentId);
+      this.removeFromDirectory(delta.agentId);
       return { agentId: delta.agentId, stoppedRunning: false };
     }
     const normalized = normalizeAgentSnapshot(delta.agent, this.serverId);
@@ -141,29 +150,20 @@ export class AgentStoreProjection {
     useSessionStore.getState().setPendingPermissions(this.serverId, pending);
   }
 
-  remove(agentId: string): void {
+  removeFromDirectory(agentId: string): void {
     const store = useSessionStore.getState();
-    const removeKey = <T>(current: Map<string, T>): Map<string, T> => {
-      if (!current.has(agentId)) return current;
-      const next = new Map(current);
-      next.delete(agentId);
-      return next;
-    };
+    const removeKey = withoutAgent(agentId);
     clearArchiveAgentPending({ queryClient, serverId: this.serverId, agentId });
     store.clearAgentLastActivity(agentId);
     store.setAgents(this.serverId, removeKey);
     store.setAgentDetails(this.serverId, removeKey);
     store.setQueuedMessages(this.serverId, removeKey);
-    store.setAgentTimelineCursor(this.serverId, removeKey);
     store.setInitializingAgents(this.serverId, removeKey);
     store.setPendingPermissions(this.serverId, (current) => {
       const next = new Map(current);
       for (const [key, pending] of next) if (pending.agentId === agentId) next.delete(key);
       return next.size === current.size ? current : next;
     });
-    store.setAgentAuthoritativeHistoryApplied(this.serverId, agentId, false);
-    store.setAgentStreamTail(this.serverId, removeKey);
-    store.clearAgentStreamHead(this.serverId, agentId);
     useSessionStore.setState((state) => {
       const session = state.sessions[this.serverId];
       if (!session) return state;
@@ -176,11 +176,6 @@ export class AgentStoreProjection {
             focusedAgentId: session.focusedAgentId === agentId ? null : session.focusedAgentId,
             agentTasks: removeKey(session.agentTasks),
             messageSubmissions: removeKey(session.messageSubmissions),
-            agentTimelineHasOlder: removeKey(session.agentTimelineHasOlder),
-            agentTimelineHasNewer: removeKey(session.agentTimelineHasNewer),
-            agentTimelineOlderFetchInFlight: removeKey(session.agentTimelineOlderFetchInFlight),
-            agentHistorySyncGeneration: removeKey(session.agentHistorySyncGeneration),
-            agentAuthoritativeHistoryApplied: removeKey(session.agentAuthoritativeHistoryApplied),
             fileExplorer: removeKey(session.fileExplorer),
           },
         },
@@ -193,6 +188,35 @@ export class AgentStoreProjection {
     if (getInitDeferred(initKey)) {
       rejectInitDeferred(initKey, new Error("Agent was removed during initialization"));
     }
+  }
+
+  remove(agentId: string): void {
+    this.removeFromDirectory(agentId);
+    // Only entity deletion destroys the transcript. A filtered active-list
+    // response can arrive after a fresh history response for an archived agent.
+    const store = useSessionStore.getState();
+    const removeKey = withoutAgent(agentId);
+    store.setAgentTimelineCursor(this.serverId, removeKey);
+    store.setAgentAuthoritativeHistoryApplied(this.serverId, agentId, false);
+    store.setAgentStreamTail(this.serverId, removeKey);
+    store.clearAgentStreamHead(this.serverId, agentId);
+    useSessionStore.setState((state) => {
+      const session = state.sessions[this.serverId];
+      if (!session) return state;
+      return {
+        ...state,
+        sessions: {
+          ...state.sessions,
+          [this.serverId]: {
+            ...session,
+            agentTimelineHasOlder: removeKey(session.agentTimelineHasOlder),
+            agentTimelineHasNewer: removeKey(session.agentTimelineHasNewer),
+            agentTimelineOlderFetchInFlight: removeKey(session.agentTimelineOlderFetchInFlight),
+            agentHistorySyncGeneration: removeKey(session.agentHistorySyncGeneration),
+          },
+        },
+      };
+    });
   }
 
   archive(agentId: string, archivedAt: string): Agent | null {

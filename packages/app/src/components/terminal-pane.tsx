@@ -472,31 +472,11 @@ export function TerminalPane({
     [handleKeyboardChange],
   );
 
-  useEffect(() => {
-    if (!client || !isConnected || !isWorkspaceFocused) {
-      return;
-    }
-
-    return client.on("terminal_stream_exit", (message) => {
-      if (message.type !== "terminal_stream_exit") {
-        return;
-      }
-
-      const exitedTerminalId = message.payload.terminalId;
-      if (!exitedTerminalId) {
-        return;
-      }
-
-      workspaceTerminalSession.snapshots.clear({ terminalId: exitedTerminalId });
-      if (terminalIdRef.current === exitedTerminalId) {
-        emulatorRef.current?.clear();
-      }
-      streamControllerRef.current?.handleTerminalExit({
-        terminalId: exitedTerminalId,
-      });
-      setModifiers({ ...EMPTY_MODIFIERS });
-    });
-  }, [client, isConnected, isWorkspaceFocused, workspaceTerminalSession.snapshots]);
+  const handleStreamExit = useStableEvent((exitedTerminalId: string) => {
+    workspaceTerminalSession.snapshots.clear({ terminalId: exitedTerminalId });
+    if (terminalIdRef.current === exitedTerminalId) emulatorRef.current?.clear();
+    setModifiers({ ...EMPTY_MODIFIERS });
+  });
 
   useEffect(() => {
     measuredTerminalSizeRef.current = null;
@@ -590,6 +570,7 @@ export function TerminalPane({
       onOutput: handleStreamOutput,
       onRestore: handleStreamRestore,
       onSnapshot: handleStreamSnapshot,
+      onExit: handleStreamExit,
       getRestoreOptions: getStreamRestoreOptions,
       onStatusChange: handleStreamControllerStatus,
     });
@@ -610,6 +591,7 @@ export function TerminalPane({
     handleStreamOutput,
     handleStreamRestore,
     handleStreamSnapshot,
+    handleStreamExit,
     isConnected,
   ]);
 
