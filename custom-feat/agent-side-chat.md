@@ -106,6 +106,15 @@ Daemon restart resumes saved conversations on demand, even with a closed parent
 runtime. Concurrent resumes use the existing per-agent lifecycle queue. Closing
 an internal runtime preserves the storage record and committed timeline.
 
+`openSideChat` for a stored conversation already holds that side agent's
+lifecycle lane, so the resume inside it calls the unqueued internal resume.
+Calling the public resume would queue behind the lane it is already running in
+and never settle. For the same reason, replica cleanup runs through
+`AgentStoreProjection.removeFromDirectory` when a side agent leaves the active
+directory: it clears directory-owned state (focus, tasks, submissions, explorer)
+while leaving the transcript, its cursor, and its pagination metadata alone.
+Only entity deletion destroys a transcript.
+
 ## Limitations
 
 - Claude and Codex expose provider-native conversation forks, and so does any ACP

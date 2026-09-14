@@ -20,11 +20,15 @@ visible replay.
   current viewport is encoded, nothing older.
 - Two visibility barriers guarantee no mid-restore frame is ever seen:
   - the stream controller keeps `isAttaching` true until the **restore frame
-    arrives** (not merely until `subscribeTerminal` resolves), and the attach
-    overlay uses the opaque pane background;
+    arrives** (not merely until the terminal observation is ready), and the
+    attach overlay uses the opaque pane background;
   - the emulator host stays at `opacity: 0` from `restoreOutput` enqueue
     until that write **commits**, so the viewport paint itself is invisible
     while parsing.
+- The controller rides upstream's `observeTerminal` subscription: events arrive
+  through its `receive` callback and teardown is `subscription.release()`. The
+  restore frame still ends the attach phase, and the size claim is issued before
+  the observation opens so the snapshot is encoded at the claimed size.
 - Live-restore mode still skips the restore frame; subscribe errors and
   terminal exit always clear the attach cover.
 - A mounted pane keeps its subscription while the renderer is ready: focus

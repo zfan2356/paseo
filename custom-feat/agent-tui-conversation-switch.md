@@ -49,6 +49,17 @@ TUI view must be a real linked PTY running the provider CLI.
 - **Lifecycle serialization**: the terminal claim already owns the agent's
   lifecycle queue. It closes the runtime directly, rather than re-entering
   the queued public close operation and waiting on itself.
+- **Ownership release on exit**: a linked PTY that exits on its own releases the
+  Agent claim through the stream's `terminal.onExit` hook. The terminal carries
+  `linkedAgentId`, and the conversation terminal name parses back to one, so the
+  hook needs no separate exit-subscription registry. An exit caused by an
+  explicit kill or switch is skipped: those operations resume the Agent
+  themselves and must not race a second release.
+- **Loader ordering**: `ensureAgentLoaded` awaits the close barrier before it
+  joins an in-flight load, and its runtime-availability guard sits on the resume
+  path only. Joining earlier let a protected caller adopt a resume that a queued
+  archive then invalidated; guarding before the join deferred the broadcast
+  upgrade that a second caller contributes.
 - **Authorization**: conversation handoff requires `workspace.write`, including
   the legacy Codex switch RPC. Read-only clients cannot transfer the writer.
 - **Gating**: the button appears only for unarchived agents of providers
