@@ -1,4 +1,5 @@
 import type { AgentManager } from "./agent/agent-manager.js";
+import { getSideChatParentId } from "./agent/side-chat-history.js";
 import { stripInternalPaseoMcpServer } from "./agent/runtime-mcp-config.js";
 import type {
   AgentPersistenceHandle,
@@ -63,6 +64,7 @@ export function attachAgentStoragePersistence(
 }
 
 export function buildConfigOverrides(record: StoredAgentRecord): Partial<AgentSessionConfig> {
+  const internal = record.internal === true || getSideChatParentId(record) != null;
   return stripInternalPaseoMcpServer({
     provider: record.provider,
     cwd: record.cwd,
@@ -74,6 +76,7 @@ export function buildConfigOverrides(record: StoredAgentRecord): Partial<AgentSe
     toolPolicy: record.config?.toolPolicy ?? undefined,
     systemPrompt: record.config?.systemPrompt ?? undefined,
     mcpServers: record.config?.mcpServers ?? undefined,
+    ...(internal ? { internal: true } : {}),
   });
 }
 
@@ -96,6 +99,7 @@ export function buildSessionConfig(
     toolPolicy: overrides.toolPolicy,
     systemPrompt: overrides.systemPrompt,
     mcpServers: overrides.mcpServers,
+    ...(overrides.internal ? { internal: true } : {}),
   });
 }
 

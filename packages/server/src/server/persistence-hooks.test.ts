@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { SIDE_CHAT_PARENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import {
   buildConfigOverrides,
@@ -154,6 +155,16 @@ describe("persistence hooks", () => {
         url: "https://example.com/custom-paseo",
       },
     });
+  });
+
+  test("buildConfigOverrides restores internal for a labeled side chat", () => {
+    const record = createRecord({
+      internal: false,
+      labels: { [SIDE_CHAT_PARENT_LABEL]: "parent-agent" },
+    });
+
+    expect(buildConfigOverrides(record).internal).toBe(true);
+    expect(buildSessionConfig(record)?.internal).toBe(true);
   });
 
   test("buildSessionConfig accepts providers from the canonical manifest", () => {

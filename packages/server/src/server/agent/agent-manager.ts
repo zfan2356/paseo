@@ -67,7 +67,11 @@ import {
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
-import { getSideChatParentId } from "./side-chat-history.js";
+import {
+  getSideChatParentId,
+  SideChatIndependentArchiveError,
+  SideChatIndependentUnarchiveError,
+} from "./side-chat-history.js";
 import { buildConfigOverrides, extractTimestamps } from "../persistence-hooks.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
@@ -1899,14 +1903,38 @@ export class AgentManager {
     return this.runLifecycleMutation(agentId, () => this.archiveAgentUnlocked(agentId));
   }
 
+  private async assertSideChatArchiveAllowed(
+    agent: { labels?: Record<string, string> | null },
+    cascadeFromParentId?: string,
+  ): Promise<void> {
+    const parentId = getSideChatParentId(agent);
+    if (!parentId) return;
+    if (cascadeFromParentId === parentId) return;
+    const parent = await this.registry?.get(parentId);
+    if (parent?.archivedAt) return;
+    throw new SideChatIndependentArchiveError(parentId);
+  }
+
+  private async assertSideChatUnarchiveAllowed(
+    agent: { labels?: Record<string, string> | null },
+    cascadeFromParentId?: string,
+  ): Promise<void> {
+    const parentId = getSideChatParentId(agent);
+    if (!parentId) return;
+    if (cascadeFromParentId === parentId) return;
+    throw new SideChatIndependentUnarchiveError(parentId);
+  }
+
   private async archiveAgentUnlocked(
     agentId: string,
     requestedArchivedAt?: string,
+    cascadeFromParentId?: string,
   ): Promise<{ archivedAt: string }> {
     const agent = this.requireAgent(agentId);
     if (!this.registry) {
       throw new Error("Agent storage is not configured");
     }
+    await this.assertSideChatArchiveAllowed(agent, cascadeFromParentId);
 
     await this.registry.applySnapshot(agent, {
       internal: agent.internal,
@@ -1928,9 +1956,10 @@ export class AgentManager {
   }
 
   // Children created via the MCP `create_agent` tool carry the parent-agent-id
-  // label pointing back at the caller. Archiving the parent cascades to those
-  // children so subagent fleets don't outlive their orchestrator. Detached
-  // handoff agents omit this label, so they stand outside the cascade.
+  // label pointing back at the caller. Side chats carry paseo.sideChat.parentAgentId.
+  // Archiving the parent cascades to both so they cannot outlive the conversation
+  // they belong to. Detached MCP handoff agents omit the parent label. Side chats
+  // always follow the parent and are never detached because a tab is open.
   private async cascadeArchiveChildren(parentAgentId: string): Promise<void> {
     const registry = this.registry;
     if (!registry) {
@@ -1945,30 +1974,58 @@ export class AgentManager {
       if (record.archivedAt) {
         continue;
       }
-      if (record.labels?.[PARENT_AGENT_ID_LABEL] !== parentAgentId) {
+      const isSideChat = getSideChatParentId(record) === parentAgentId;
+      const isMcpChild = record.labels?.[PARENT_AGENT_ID_LABEL] === parentAgentId;
+      if (!isSideChat && !isMcpChild) {
         continue;
       }
       const child = await registry.get(record.id);
-      if (!child || child.archivedAt || child.labels?.[PARENT_AGENT_ID_LABEL] !== parentAgentId) {
+      if (!child || child.archivedAt) {
         continue;
       }
-      await this.runLifecycleMutation(child.id, async () => {
-        const currentChild = await registry.get(child.id);
-        if (
-          !currentChild ||
-          currentChild.archivedAt ||
-          currentChild.labels?.[PARENT_AGENT_ID_LABEL] !== parentAgentId
-        ) {
-          return;
-        }
-        if (shouldDetachFromArchivedParent(parent, currentChild)) {
-          await this.detachAgentUnlocked(currentChild.id);
-        } else if (this.agents.has(currentChild.id)) {
-          await this.archiveAgentUnlocked(currentChild.id);
-        } else {
-          await this.archiveSnapshotUnlocked(currentChild.id, new Date().toISOString());
-        }
-      });
+      const stillSideChat = getSideChatParentId(child) === parentAgentId;
+      const stillMcpChild = child.labels?.[PARENT_AGENT_ID_LABEL] === parentAgentId;
+      if (!stillSideChat && !stillMcpChild) {
+        continue;
+      }
+      await this.runLifecycleMutation(child.id, () =>
+        this.archiveCascadedChild(parent, child.id, parentAgentId),
+      );
+    }
+  }
+
+  private async archiveCascadedChild(
+    parent: StoredAgentRecord,
+    childId: string,
+    parentAgentId: string,
+  ): Promise<void> {
+    const currentChild = await this.requireRegistry().get(childId);
+    if (!currentChild || currentChild.archivedAt) {
+      return;
+    }
+    const currentIsSideChat = getSideChatParentId(currentChild) === parentAgentId;
+    const currentIsMcpChild = currentChild.labels?.[PARENT_AGENT_ID_LABEL] === parentAgentId;
+    if (!currentIsSideChat && !currentIsMcpChild) {
+      return;
+    }
+    if (currentIsSideChat) {
+      if (this.agents.has(currentChild.id)) {
+        await this.archiveAgentUnlocked(currentChild.id, undefined, parentAgentId);
+      } else {
+        await this.archiveSnapshotUnlocked(
+          currentChild.id,
+          new Date().toISOString(),
+          parentAgentId,
+        );
+      }
+      return;
+    }
+    if (shouldDetachFromArchivedParent(parent, currentChild)) {
+      await this.detachAgentUnlocked(currentChild.id);
+    } else if (this.agents.has(currentChild.id)) {
+      await this.archiveAgentUnlocked(currentChild.id);
+    } else {
+      await this.archiveSnapshotUnlocked(currentChild.id, new Date().toISOString());
     }
   }
 
@@ -2321,12 +2378,13 @@ export class AgentManager {
   private async archiveSnapshotUnlocked(
     agentId: string,
     archivedAt: string,
+    cascadeFromParentId?: string,
   ): Promise<StoredAgentRecord> {
     const registry = this.requireRegistry();
     // A stored-only archive can have waited behind a persisted resume. Reuse the
     // live archive transition so its newly acquired runtime is closed as well.
     if (this.agents.has(agentId)) {
-      await this.archiveAgentUnlocked(agentId, archivedAt);
+      await this.archiveAgentUnlocked(agentId, archivedAt, cascadeFromParentId);
       const archivedRecord = await registry.get(agentId);
       if (!archivedRecord) throw new Error(`Agent not found: ${agentId}`);
       return archivedRecord;
@@ -2336,6 +2394,7 @@ export class AgentManager {
     if (!record) {
       throw new Error(`Agent not found: ${agentId}`);
     }
+    await this.assertSideChatArchiveAllowed(record, cascadeFromParentId);
 
     const nextRecord = await this.persistArchivedRecord(record, { archivedAt });
 
@@ -2362,12 +2421,14 @@ export class AgentManager {
   private async unarchiveSnapshotUnlocked(
     agentId: string,
     updates?: { workspaceId?: string; labels?: AgentLabelPatch },
+    cascadeFromParentId?: string,
   ): Promise<boolean> {
     const registry = this.requireRegistry();
     const record = await registry.get(agentId);
     if (!record || !record.archivedAt) {
       return false;
     }
+    await this.assertSideChatUnarchiveAllowed(record, cascadeFromParentId);
 
     // Close and native restore share the lifecycle lane with persisted resume.
     // No new history or interactive runtime can acquire the writer between them.
@@ -2380,12 +2441,29 @@ export class AgentManager {
       ...(updates?.labels ? { labels: applyLabelPatch(record.labels, updates.labels) } : {}),
       archivedAt: null,
       updatedAt: new Date().toISOString(),
+      ...(getSideChatParentId(record) ? { internal: true } : {}),
     });
 
     if (this.getAgent(agentId)) {
       this.notifyAgentState(agentId);
     }
+    await this.cascadeUnarchiveSideChats(agentId);
     return true;
+  }
+
+  private async cascadeUnarchiveSideChats(parentAgentId: string): Promise<void> {
+    const registry = this.registry;
+    if (!registry) {
+      return;
+    }
+    const records = await registry.list();
+    for (const record of records) {
+      if (!record.archivedAt) continue;
+      if (getSideChatParentId(record) !== parentAgentId) continue;
+      await this.runLifecycleMutation(record.id, () =>
+        this.unarchiveSnapshotUnlocked(record.id, undefined, parentAgentId),
+      );
+    }
   }
 
   async unarchiveSnapshotByHandle(handle: AgentPersistenceHandle): Promise<void> {
@@ -3475,7 +3553,15 @@ export class AgentManager {
     parentAgentId: string,
     sideAgentId: string,
   ): Promise<ManagedAgent> {
-    const record = await this.getStoredSideChat(parentAgentId, sideAgentId);
+    let record = await this.getStoredSideChat(parentAgentId, sideAgentId);
+    if (record.archivedAt) {
+      const parent = await this.requireRegistry().get(parentAgentId);
+      if (parent?.archivedAt) {
+        throw new SideChatIndependentUnarchiveError(parentAgentId);
+      }
+      await this.unarchiveSnapshotUnlocked(sideAgentId, undefined, parentAgentId);
+      record = await this.getStoredSideChat(parentAgentId, sideAgentId);
+    }
     const live = this.agents.get(sideAgentId);
     if (live) return live;
     if (!record.persistence) throw new Error("Side chat has no resumable provider session");
@@ -3959,7 +4045,8 @@ export class AgentManager {
       lastUsage: options?.lastUsage,
       lastError: options?.lastError,
       attention: resolveInitialAttention(options?.attention),
-      internal: config.internal ?? false,
+      internal:
+        config.internal === true || getSideChatParentId({ labels: options?.labels }) != null,
       labels: options?.labels ?? {},
     } as ActiveManagedAgent;
   }
@@ -4185,7 +4272,10 @@ export class AgentManager {
     if (agent.internal && !getSideChatParentId(agent)) {
       return;
     }
-    await this.registry.applySnapshot(agent, options);
+    await this.registry.applySnapshot(agent, {
+      ...options,
+      ...(getSideChatParentId(agent) ? { internal: true } : {}),
+    });
   }
 
   private requireRegistry(): AgentStorage {

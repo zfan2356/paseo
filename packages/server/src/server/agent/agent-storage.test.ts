@@ -5,6 +5,8 @@ import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { promises as fs } from "node:fs";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
+import { SIDE_CHAT_PARENT_LABEL } from "@getpaseo/protocol/agent-labels";
+
 import { AgentStorage } from "./agent-storage.js";
 import { buildConfigOverrides, buildSessionConfig } from "../persistence-hooks.js";
 import type { ManagedAgent } from "./agent-manager.js";
@@ -129,6 +131,8 @@ function createManagedAgent(overrides: ManagedAgentOverrides = {}): ManagedAgent
     lastUserMessageAt: overrides.lastUserMessageAt ?? core.now,
     lastUsage: overrides.lastUsage,
     lastError: overrides.lastError,
+    labels: overrides.labels ?? {},
+    internal: overrides.internal,
   };
 }
 
@@ -248,6 +252,21 @@ describe("AgentStorage", () => {
       featureValues: {
         fast_mode: true,
       },
+    });
+  });
+
+  test("applySnapshot restores internal for a side chat whose flag was dropped", async () => {
+    await storage.applySnapshot(
+      createManagedAgent({
+        id: "leaked-side-chat",
+        internal: false,
+        labels: { [SIDE_CHAT_PARENT_LABEL]: "parent-agent" },
+      }),
+    );
+
+    expect(await storage.get("leaked-side-chat")).toMatchObject({
+      internal: true,
+      labels: { [SIDE_CHAT_PARENT_LABEL]: "parent-agent" },
     });
   });
 

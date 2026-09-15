@@ -13,6 +13,11 @@ import {
   type AgentManagerEvent,
   type ManagedAgent,
 } from "./agent-manager.js";
+import {
+  getSideChatParentId,
+  SideChatIndependentArchiveError,
+  SideChatIndependentUnarchiveError,
+} from "./side-chat-history.js";
 import { AgentStorage } from "./agent-storage.js";
 import { InMemoryAgentTimelineStore } from "./agent-timeline-store.js";
 import { toAgentPayload } from "./agent-projections.js";
@@ -843,6 +848,138 @@ test("side chat history rejects another parent and survives its own parent's clo
     await manager.closeSideChat(parent.id, side.id);
     await manager.flush();
   } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("side chats cannot be archived independently and follow the parent archive", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-archive-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new SideChatTestClient(workdir);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    const side = await manager.openSideChat(parent.id);
+    await expect(manager.archiveAgent(side.id)).rejects.toBeInstanceOf(
+      SideChatIndependentArchiveError,
+    );
+    expect((await storage.get(side.id))?.archivedAt ?? null).toBeNull();
+
+    const { archivedAt } = await manager.archiveAgent(parent.id);
+    expect((await storage.get(parent.id))?.archivedAt).toBe(archivedAt);
+    expect((await storage.get(side.id))?.archivedAt).toEqual(expect.any(String));
+    expect(manager.getAgent(side.id)).toBeNull();
+
+    await expect(manager.unarchiveSnapshot(side.id)).rejects.toBeInstanceOf(
+      SideChatIndependentUnarchiveError,
+    );
+    expect((await storage.get(side.id))?.archivedAt).toEqual(expect.any(String));
+
+    expect(await manager.unarchiveSnapshot(parent.id)).toBe(true);
+    expect((await storage.get(parent.id))?.archivedAt ?? null).toBeNull();
+    expect((await storage.get(side.id))?.archivedAt ?? null).toBeNull();
+  } finally {
+    await manager.flush().catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("parent snapshot archive cascades to a stored-only side chat", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-snapshot-archive-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new SideChatTestClient(workdir);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    const side = await manager.openSideChat(parent.id);
+    await manager.closeSideChat(parent.id, side.id);
+    await manager.closeAgent(parent.id);
+    await manager.flush();
+
+    const archivedAt = "2026-09-15T03:00:00.000Z";
+    await expect(manager.archiveSnapshot(side.id, archivedAt)).rejects.toBeInstanceOf(
+      SideChatIndependentArchiveError,
+    );
+    await manager.archiveSnapshot(parent.id, archivedAt);
+    expect((await storage.get(parent.id))?.archivedAt).toBe(archivedAt);
+    expect((await storage.get(side.id))?.archivedAt).toEqual(expect.any(String));
+  } finally {
+    await manager.flush().catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("side chat identity survives a dropped internal flag on resume", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-internal-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new SideChatTestClient(workdir);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    const side = await manager.openSideChat(parent.id);
+    await manager.closeSideChat(parent.id, side.id);
+    await manager.flush();
+    const stored = await storage.get(side.id);
+    if (!stored) throw new Error("expected stored side chat");
+    await storage.upsert({ ...stored, internal: false });
+
+    expect(getSideChatParentId((await storage.get(side.id))!)).toBe(parent.id);
+    expect(await manager.listSideChats(parent.id)).toEqual([
+      expect.objectContaining({ sideAgentId: side.id }),
+    ]);
+
+    const resumed = await manager.openSideChat(parent.id, side.id);
+    expect(resumed.internal).toBe(true);
+    expect(manager.listAgents().map((agent) => agent.id)).toEqual([parent.id]);
+    await manager.flush();
+    expect((await storage.get(side.id))?.internal).toBe(true);
+
+    await manager.closeSideChat(parent.id, side.id);
+    await manager.closeAgent(parent.id);
+  } finally {
+    await manager.flush().catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("opening a side chat restores one that was archived without its parent", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-side-chat-orphan-archive-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new SideChatTestClient(workdir);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    const side = await manager.openSideChat(parent.id);
+    await manager.closeSideChat(parent.id, side.id);
+    await manager.flush();
+    const stored = await storage.get(side.id);
+    if (!stored) throw new Error("expected stored side chat");
+    await storage.upsert({
+      ...stored,
+      internal: false,
+      archivedAt: "2026-09-15T02:22:37.508Z",
+    });
+
+    expect(await manager.listSideChats(parent.id)).toEqual([
+      expect.objectContaining({ sideAgentId: side.id }),
+    ]);
+    const resumed = await manager.openSideChat(parent.id, side.id);
+    expect(resumed.internal).toBe(true);
+    expect((await storage.get(side.id))?.archivedAt ?? null).toBeNull();
+    expect((await storage.get(side.id))?.internal).toBe(true);
+
+    await manager.closeSideChat(parent.id, side.id);
+    await manager.closeAgent(parent.id);
+  } finally {
+    await manager.flush().catch(() => undefined);
     rmSync(workdir, { recursive: true, force: true });
   }
 });

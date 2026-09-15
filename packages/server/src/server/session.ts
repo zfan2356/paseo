@@ -2150,10 +2150,7 @@ export class Session {
     if (!serializedEvent) {
       return;
     }
-    this.emit({
-      type: "agent_stream",
-      payload: this.buildAgentStreamPayload(event, serializedEvent),
-    });
+    this.forwardAgentStream(event, serializedEvent);
     if (event.event.type === "permission_requested") {
       this.emit({
         type: "agent_permission_request",

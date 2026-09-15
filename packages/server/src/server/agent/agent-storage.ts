@@ -6,6 +6,7 @@ import type { Logger } from "pino";
 import { writeJsonFileAtomic } from "../atomic-file.js";
 import { AgentFeatureSchema, AgentStatusSchema } from "../messages.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
+import { getSideChatParentId } from "./side-chat-history.js";
 import type { ManagedAgent } from "./agent-manager.js";
 import type { AgentSessionConfig } from "./agent-sdk-types.js";
 import { AgentOwnerSchema, daemonExecutionKey, type DaemonAgentOwner } from "./agent-owner.js";
@@ -247,10 +248,17 @@ export class AgentStorage {
     const hasInternalOverride =
       options !== undefined && Object.prototype.hasOwnProperty.call(options, "internal");
     await this.queueRecordMutation(agent.id, (existing) => {
+      let internal = agent.internal ?? existing?.internal;
+      if (hasInternalOverride) {
+        internal = options?.internal;
+      }
+      if (getSideChatParentId(agent) != null) {
+        internal = true;
+      }
       const record = toStoredAgentRecord(agent, {
         title: hasTitleOverride ? (options?.title ?? null) : (existing?.title ?? null),
         createdAt: existing?.createdAt,
-        internal: hasInternalOverride ? options?.internal : (agent.internal ?? existing?.internal),
+        internal,
       });
 
       // Preserve soft-delete/archive status across snapshot flushes. The

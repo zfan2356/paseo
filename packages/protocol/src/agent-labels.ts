@@ -17,11 +17,19 @@ export interface AgentLabelSource {
   labels?: Record<string, unknown> | null;
 }
 
+function readLabel(labels: Record<string, unknown> | null | undefined, key: string): string | null {
+  const value = labels?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 export function getParentAgentIdFromLabels(labels: Record<string, unknown> | null | undefined) {
-  const parentAgentId = labels?.[PARENT_AGENT_ID_LABEL];
-  return typeof parentAgentId === "string" && parentAgentId.trim().length > 0
-    ? parentAgentId.trim()
-    : null;
+  return readLabel(labels, PARENT_AGENT_ID_LABEL);
+}
+
+export function getSideChatParentIdFromLabels(
+  labels: Record<string, unknown> | null | undefined,
+): string | null {
+  return readLabel(labels, SIDE_CHAT_PARENT_LABEL);
 }
 
 export function getAgentTerminalOwnerId(

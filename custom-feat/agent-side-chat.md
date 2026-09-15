@@ -124,6 +124,19 @@ directory: it clears directory-owned state (focus, tasks, submissions, explorer)
 while leaving the transcript, its cursor, and its pagination metadata alone.
 Only entity deletion destroys a transcript.
 
+Side chats are not independent conversations. Archive and restore are refused
+unless the parent conversation is performing that same transition. Closing a
+leaked directory tab is layout-only. Parent archive always cascades to every
+labeled side chat and never detaches one because a tab is open. Parent restore
+restores those side chats with it. Identity follows `paseo.sideChat.parentAgentId`
+even if a resume dropped `internal`; persistence writes the flag back. Opening a
+side chat whose parent is still live also clears a leftover independent archive.
+
+Side-chat `agent_stream` events use the same viewed-timeline owned subscription
+as Main Chat. Broadcasting them from the Side Chat subscriber leaves 0.8.0
+clients with a hung overlay: the local prompt is visible, the daemon has
+replied, and the stop control stays armed.
+
 ## Limitations
 
 - Claude and Codex expose provider-native conversation forks, and so does any ACP
@@ -145,7 +158,7 @@ Only entity deletion destroys a transcript.
 npx vitest run packages/server/src/server/agent/agent-manager.test.ts packages/server/src/server/agent/provider-registry-wrap.test.ts --bail=1
 npx vitest run packages/server/src/server/session.test.ts -t "side chat" --bail=1
 cd packages/app
-npx vitest run --project=unit src/side-chat/model.test.ts src/side-chat/lifecycle.test.ts src/i18n/resources.test.ts
+npx vitest run --project=unit src/side-chat/model.test.ts src/side-chat/lifecycle.test.ts src/subagents/close-tab-policy.test.ts src/i18n/resources.test.ts
 npx playwright test e2e/browser/side-chat-history.real.spec.ts --project=real-provider
 ```
 

@@ -565,6 +565,74 @@ test("side chat reconnect replaces subscriptions without closing the conversatio
   expect(closeSideChat).not.toHaveBeenCalled();
 });
 
+test("side chat agent streams reach the viewed timeline subscription", async () => {
+  const messages: SessionOutboundMessage[] = [];
+  const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+  let sideListener: ((event: AgentManagerEvent) => void) | undefined;
+  const session = createSessionForTest({
+    messages,
+    targetedMessages,
+    agentManager: {
+      openSideChat: vi.fn().mockResolvedValue({ id: "side-agent" }),
+      isSideChatOpen: vi.fn().mockReturnValue(true),
+      subscribe: vi.fn(
+        (listener: (event: AgentManagerEvent) => void, options?: { agentId?: string }) => {
+          if (options?.agentId === "side-agent") {
+            sideListener = listener;
+          }
+          return () => {};
+        },
+      ),
+    },
+  });
+  const socket = {};
+  session.updateClientCapabilities(
+    { selective_agent_timeline: true, owned_subscriptions: true },
+    socket,
+  );
+  await session.handleMessage(
+    {
+      type: "agent.timeline.set_subscription.request",
+      agentIds: ["side-agent"],
+      requestId: "timeline-subscription-side",
+    },
+    socket,
+  );
+  await session.handleMessage({
+    type: "agent.side_question.ask.request",
+    agentId: "parent-agent",
+    operation: "open",
+    question: "",
+    requestId: "open-side-chat-stream",
+  });
+  targetedMessages.length = 0;
+  messages.length = 0;
+  if (!sideListener) throw new Error("Side chat stream listener was not installed");
+  sideListener({
+    type: "agent_stream",
+    agentId: "side-agent",
+    event: {
+      type: "timeline",
+      provider: "mock",
+      item: { type: "assistant_message", messageId: "side-message", text: "hello" },
+    },
+  });
+
+  expect(messages.filter((message) => message.type === "agent_stream")).toEqual([]);
+  expect(targetedMessages).toEqual([
+    {
+      source: socket,
+      message: expect.objectContaining({
+        type: "agent_stream",
+        payload: expect.objectContaining({
+          agentId: "side-agent",
+          subscriptionId: expect.any(String),
+        }),
+      }),
+    },
+  ]);
+});
+
 test("side chat history listing does not create or resume an agent", async () => {
   const messages: SessionOutboundMessage[] = [];
   const sideChats = [
