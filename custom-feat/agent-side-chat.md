@@ -95,7 +95,15 @@ the live agent and the returned session id is resumed through `session/load` or
 guard. Disposal needs `sessionCapabilities.close` and is a no-op without it.
 An ACP agent must therefore also support resume for the forked id, which is what
 the resumed side-chat agent uses in its own process.
-Both providers retain their native session across view closure. Native archival
+
+Custom ACP providers (`extends: "acp"`, including DSH) keep an inner session
+whose `provider` is `"acp"`. `wrapSessionProvider` remaps the fork handle to the
+registry id (`dsh`) before Side Chat resumes it, and remaps disposal back to
+`"acp"`. Without that remap, resume looks up a client named `"acp"` and fails
+with `No client registered for provider 'acp'`. The same remap applies to any
+derived provider whose inner client uses a different id.
+
+Claude, Codex, and ACP forks retain their native session across view closure. Native archival
 or deletion is used only to clean up an incomplete creation, not a saved chat.
 The old one-shot transports remain for protocol compatibility.
 
@@ -157,6 +165,7 @@ replied, and the stop control stays armed.
 ```bash
 npx vitest run packages/server/src/server/agent/agent-manager.test.ts packages/server/src/server/agent/provider-registry-wrap.test.ts --bail=1
 npx vitest run packages/server/src/server/session.test.ts -t "side chat" --bail=1
+npx vitest run packages/server/src/server/agent/providers/acp-agent.test.ts -t "ACPAgentSession side chat fork" --bail=1
 cd packages/app
 npx vitest run --project=unit src/side-chat/model.test.ts src/side-chat/lifecycle.test.ts src/subagents/close-tab-policy.test.ts src/i18n/resources.test.ts
 npx playwright test e2e/browser/side-chat-history.real.spec.ts --project=real-provider

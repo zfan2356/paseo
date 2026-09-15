@@ -443,6 +443,9 @@ function mergeModelAdditions(
 }
 
 export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession): AgentSession {
+  const forkForSideChat = inner.forkForSideChat?.bind(inner);
+  const disposeSideChatFork = inner.disposeSideChatFork?.bind(inner);
+
   return {
     provider,
     id: inner.id,
@@ -474,8 +477,15 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
     revertConversation: inner.revertConversation?.bind(inner),
     revertFiles: inner.revertFiles?.bind(inner),
     revertBoth: inner.revertBoth?.bind(inner),
-    forkForSideChat: inner.forkForSideChat?.bind(inner),
-    disposeSideChatFork: inner.disposeSideChatFork?.bind(inner),
+    forkForSideChat: forkForSideChat
+      ? async () => {
+          const handle = await forkForSideChat();
+          return { ...handle, provider };
+        }
+      : undefined,
+    disposeSideChatFork: disposeSideChatFork
+      ? (handle) => disposeSideChatFork({ ...handle, provider: inner.provider })
+      : undefined,
     askSideQuestion: inner.askSideQuestion?.bind(inner),
     tryHandleOutOfBand: inner.tryHandleOutOfBand?.bind(inner),
   };

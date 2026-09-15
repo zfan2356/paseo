@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type {
   AgentCapabilityFlags,
+  AgentPersistenceHandle,
   AgentPromptInput,
   AgentSession,
   AgentStreamEvent,
@@ -63,6 +64,7 @@ class FakeSession implements AgentSession {
   readonly capabilities = CAPABILITIES;
   readonly features = [];
   readonly recordedCalls: string[] = [];
+  disposedSideChatHandle: AgentPersistenceHandle | null = null;
 
   async run() {
     this.recordedCalls.push("run");
@@ -163,8 +165,9 @@ class FakeSession implements AgentSession {
     };
   }
 
-  async disposeSideChatFork() {
+  async disposeSideChatFork(handle: AgentPersistenceHandle) {
     this.recordedCalls.push("disposeSideChatFork");
+    this.disposedSideChatHandle = handle;
   }
 
   async askSideQuestion() {
@@ -201,9 +204,19 @@ describe("wrapSessionProvider", () => {
     await wrapped.revertFiles?.({ messageId: "message-1" });
     await wrapped.revertBoth?.({ messageId: "message-1" });
     const sideHandle = await wrapped.forkForSideChat?.();
+    expect(sideHandle).toEqual({
+      provider: "custom-claude",
+      sessionId: "side-session-1",
+      nativeHandle: "side-session-1",
+    });
     if (sideHandle) {
       await wrapped.disposeSideChatFork?.(sideHandle);
     }
+    expect(session.disposedSideChatHandle).toEqual({
+      provider: "claude",
+      sessionId: "side-session-1",
+      nativeHandle: "side-session-1",
+    });
     const sideAnswer = await wrapped.askSideQuestion?.({ question: "What happened?" });
     const handler = wrapped.tryHandleOutOfBand?.("/compact");
     await handler?.run({ emit: () => {} });
