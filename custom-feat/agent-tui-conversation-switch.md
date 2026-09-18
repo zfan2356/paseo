@@ -63,7 +63,7 @@ TUI view must be a real linked PTY running the provider CLI.
 - **Authorization**: conversation handoff requires `workspace.write`, including
   the legacy Codex switch RPC. Read-only clients cannot transfer the writer.
 - **Gating**: the button appears only for unarchived agents of providers
-  `codex` / `claude` / `cursor` with a `persistence.sessionId`, behind the
+  `codex` / `claude` / `cursor` / `antigravity` with a `persistence.sessionId`, behind the
   `agentConversationViewSwitch` feature (legacy `codexConversationViewSwitch`
   enables Codex only). Creating or leaving the TUI needs a live host and
   workspace directory. Legacy clients that kill a linked PTY get the kill
@@ -71,6 +71,10 @@ TUI view must be a real linked PTY running the provider CLI.
 - The client-side surface lives in `packages/app/src/conversation-surface/`;
   the server side spans agent-manager, session dispatch, and
   `codex-fork-terminal.ts` / `terminal-session-controller.ts`.
+
+Antigravity is also supported through its maintained ACP/CLI wrapper. Its
+shared-database contract and version pins are documented in
+[antigravity-conversations.md](antigravity-conversations.md).
 
 Depends on [persistent-terminal-sessions.md](persistent-terminal-sessions.md)
 for the PTY substrate. Do not auto-kill a linked conversation PTY just

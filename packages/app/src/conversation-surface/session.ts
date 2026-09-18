@@ -30,7 +30,12 @@ export function conversationSessionRefFromTabTarget(
 }
 
 export function isConversationTerminalProvider(provider: string | null | undefined): boolean {
-  return provider === "codex" || provider === "claude" || provider === "cursor";
+  return (
+    provider === "codex" ||
+    provider === "claude" ||
+    provider === "cursor" ||
+    provider === "antigravity"
+  );
 }
 
 export function canOfferConversationSurfaceSwitch(

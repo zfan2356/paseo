@@ -16,6 +16,7 @@ describe("agent conversation terminal metadata", () => {
     ["codex", "Codex Conversation"],
     ["claude", "Claude Code Conversation"],
     ["cursor", "Cursor Conversation"],
+    ["antigravity", "Antigravity Conversation"],
   ] as const)("round-trips a %s terminal link", (provider, displayName) => {
     const name = buildAgentConversationTerminalName("agent-1", provider);
     expect(parseAgentConversationTerminalLink(name)).toEqual({ agentId: "agent-1", provider });
@@ -33,6 +34,27 @@ describe("agent conversation terminal metadata", () => {
 });
 
 describe("buildAgentConversationTerminalLaunch", () => {
+  test("resumes Antigravity through its ACP wrapper with the same session and environment", () => {
+    expect(
+      buildAgentConversationTerminalLaunch({
+        provider: "antigravity",
+        cwd: "/work/project",
+        persistence: { provider: "antigravity", sessionId: "native-session" },
+        config: { model: "gemini-3.8-flash", modeId: "auto_edit" },
+        runtimeSettings: {
+          command: { mode: "replace", argv: ["/opt/antigravity-acp-ichat"] },
+          env: { ANTIGRAVITY_ICHAT_HOME: "/work/profile" },
+        },
+      }),
+    ).toEqual({
+      provider: "antigravity",
+      name: "Antigravity Conversation",
+      command: "/opt/antigravity-acp-ichat",
+      args: ["--tui", "native-session", "--model", "gemini-3.8-flash", "--mode", "accept-edits"],
+      env: { ANTIGRAVITY_ICHAT_HOME: "/work/profile" },
+    });
+  });
+
   test("reattaches shared Codex terminals to the same service", () => {
     const launch = buildAgentConversationTerminalLaunch({
       provider: "codex",

@@ -24,8 +24,9 @@ describe("conversation session ref", () => {
     expect(conversationSessionRefFromAgentId("   ")).toBeNull();
   });
 
-  it("offers the TUI switch only for live Codex, Claude, or Cursor sessions", () => {
+  it("offers the TUI switch only for supported live sessions", () => {
     expect(isConversationTerminalProvider("codex")).toBe(true);
+    expect(isConversationTerminalProvider("antigravity")).toBe(true);
     expect(isConversationTerminalProvider("mock")).toBe(false);
     expect(
       canOfferConversationSurfaceSwitch(
@@ -80,5 +81,11 @@ describe("conversation session ref", () => {
       ),
     ).toBe(false);
     expect(canOfferConversationSurfaceSwitch(null, supported)).toBe(false);
+    expect(
+      canOfferConversationSurfaceSwitch(
+        { provider: "antigravity", persistence: { sessionId: "native-session" } },
+        supported,
+      ),
+    ).toBe(true);
   });
 });

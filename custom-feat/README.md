@@ -43,6 +43,7 @@ stays authoritative for intent and design.
 | [viewport-only-terminal-restore.md](viewport-only-terminal-restore.md)         | Reopening a terminal paints the viewport, not replayed scrollback              |
 | [agent-tui-conversation-switch.md](agent-tui-conversation-switch.md)           | Switch an agent conversation between Agent view and its real TUI               |
 | [agent-side-chat.md](agent-side-chat.md)                                       | Side-question overlay on live Claude and Codex agents                          |
+| [antigravity-conversations.md](antigravity-conversations.md)                   | Antigravity snapshot Side Chats and same-session Agent/TUI switching           |
 | [codex-terminal-image-paste.md](codex-terminal-image-paste.md)                 | Paste clipboard images into Codex conversation terminals                       |
 | [ink-tui-caret-visibility.md](ink-tui-caret-visibility.md)                     | Visible caret for Ink TUIs on the WebGL renderer                               |
 | [kitty-graphics-ack.md](kitty-graphics-ack.md)                                 | Kitty graphics ACKs answered on stdin, never typed at the prompt               |

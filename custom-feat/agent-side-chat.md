@@ -147,6 +147,9 @@ replied, and the stop control stays armed.
 
 ## Limitations
 
+The maintained Antigravity wrapper adds snapshot-based `session/fork` to the
+official ACP kernel; see [antigravity-conversations.md](antigravity-conversations.md).
+
 - Claude and Codex expose provider-native conversation forks, and so does any ACP
   agent that advertises `session/fork`. ACP agents without the capability keep the
   shared "Provider does not support forked side chats" error and show no entry point.

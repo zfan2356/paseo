@@ -6,6 +6,7 @@ import type {
 import type { ProviderRuntimeSettings } from "../server/agent/provider-launch-config.js";
 import { resolveCursorConfigDirectory } from "./cursor-conversation-store.js";
 import { resolveSharedCodexSocket } from "../server/agent/providers/codex/shared-app-server.js";
+import { buildAntigravityLaunch } from "./antigravity-conversation.js";
 
 interface AgentConversationTerminalConfig {
   model?: string | null;
@@ -36,12 +37,13 @@ export interface AgentConversationTerminalLaunch {
 }
 
 export const CODEX_CONVERSATION_TERMINAL_NAME = "Codex Conversation";
-export type AgentConversationTerminalProvider = "codex" | "claude" | "cursor";
+export type AgentConversationTerminalProvider = "codex" | "claude" | "cursor" | "antigravity";
 
 const AGENT_CONVERSATION_TERMINAL_NAMES: Record<AgentConversationTerminalProvider, string> = {
   codex: CODEX_CONVERSATION_TERMINAL_NAME,
   claude: "Claude Code Conversation",
   cursor: "Cursor Conversation",
+  antigravity: "Antigravity Conversation",
 };
 const AGENT_CONVERSATION_TERMINAL_PREFIX = "__paseo_agent_conversation__:";
 const CODEX_CONVERSATION_TERMINAL_PREFIX = "__paseo_codex_conversation__:";
@@ -52,7 +54,12 @@ export type CodexConversationTerminalLaunch = AgentConversationTerminalLaunch;
 export function isAgentConversationTerminalProvider(
   provider: string,
 ): provider is AgentConversationTerminalProvider {
-  return provider === "codex" || provider === "claude" || provider === "cursor";
+  return (
+    provider === "codex" ||
+    provider === "claude" ||
+    provider === "cursor" ||
+    provider === "antigravity"
+  );
 }
 
 export function getAgentConversationTerminalDisplayName(
@@ -434,6 +441,9 @@ export function buildAgentConversationTerminalLaunch(
       break;
     case "cursor":
       launch = buildCursorLaunch(source, sessionId);
+      break;
+    case "antigravity":
+      launch = buildAntigravityLaunch(source, sessionId);
       break;
   }
   return applyProviderRuntimeSettings(launch, source.runtimeSettings);
