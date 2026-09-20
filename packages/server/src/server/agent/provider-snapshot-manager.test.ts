@@ -207,6 +207,34 @@ describe("ProviderSnapshotManager public surface", () => {
     }
   });
 
+  test("publishes one model per provider identity and retains the first definition", async () => {
+    const first = { provider: "codex", id: "shared", label: "First", isDefault: true };
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      extraClients: {
+        codex: createExtraClient("codex", {
+          isAvailable: async () => true,
+          fetchCatalog: async () => ({
+            models: [first, { ...first, label: "Duplicate" }],
+            modes: [],
+          }),
+        }),
+        claude: createExtraClient("claude", {
+          isAvailable: async () => true,
+          fetchCatalog: async () => ({ models: [{ ...first, provider: "claude" }], modes: [] }),
+        }),
+      },
+    });
+    try {
+      const codex = await manager.getProvider({ provider: "codex", wait: true });
+      const claude = await manager.getProvider({ provider: "claude", wait: true });
+      expect(codex.models).toEqual([first]);
+      expect(claude.models).toEqual([{ ...first, provider: "claude" }]);
+    } finally {
+      manager.destroy();
+    }
+  });
+
   test("inherits resolved runtime settings for derived providers", () => {
     const manager = new ProviderSnapshotManager({
       logger: createTestLogger(),
@@ -273,6 +301,51 @@ describe("ProviderSnapshotManager public surface", () => {
 
       manager.applyMutableProviderConfig({}, { replace: true });
       expect(manager.getProviderRuntimeSettings("codex")).toBeUndefined();
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("normalizes plugin model catalogs at the same publication boundary", async () => {
+    const manager = new ProviderSnapshotManager({ logger: createTestLogger() });
+    manager.replacePluginProviders([
+      {
+        id: "catalog-plugin",
+        label: "Catalog plugin",
+        async connect() {
+          let listener: ((event: ProviderEvent) => void) | undefined;
+          return {
+            version: 1,
+            capabilities: [],
+            async send(input) {
+              if (input.type === "catalog")
+                listener?.({
+                  type: "catalog",
+                  requestId: input.requestId,
+                  catalog: {
+                    models: [
+                      { id: "same", label: "First" },
+                      { id: "same", label: "Second" },
+                    ],
+                    modes: [],
+                  },
+                });
+            },
+            onEvent(next) {
+              listener = next;
+              return () => {
+                listener = undefined;
+              };
+            },
+            async close() {},
+          };
+        },
+      },
+    ]);
+    try {
+      const entry = await manager.getProvider({ provider: "catalog-plugin", wait: true });
+      expect(entry.models).toHaveLength(1);
+      expect(entry.models?.[0]).toMatchObject({ id: "same", label: "First" });
     } finally {
       manager.destroy();
     }

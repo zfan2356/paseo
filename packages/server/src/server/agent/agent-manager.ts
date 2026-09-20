@@ -1,3 +1,4 @@
+import { projectTimelineRows } from "./timeline-projection.js";
 import type { PluginLifecycle } from "../plugins/lifecycle/index.js";
 import { describeHookAgent, publishAgentStream } from "../plugins/lifecycle/index.js";
 import type { PluginSessionOpenRequest } from "@getpaseo/plugin/server";
@@ -107,6 +108,7 @@ import {
   type ProviderSubagentStoreEvent,
 } from "./provider-subagents/store.js";
 import { withTimeout } from "../../utils/promise-timeout.js";
+import { extractAttention } from "../persistence-hooks.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
@@ -359,7 +361,7 @@ export interface WaitForAgentStartOptions {
   signal?: AbortSignal;
 }
 
-type AttentionState =
+export type AttentionState =
   | { requiresAttention: false }
   | {
       requiresAttention: true;
@@ -1339,7 +1341,10 @@ export class AgentManager {
   async getTimelineRows(id: string): Promise<AgentTimelineRow[]> {
     this.requireAgent(id);
     if (this.durableTimelineStore) {
-      return await this.durableTimelineStore.getCommittedRows(id);
+      return projectTimelineRows({
+        rows: await this.durableTimelineStore.getCommittedRows(id),
+        mode: "projected",
+      }).map((entry) => Object.assign({ seq: entry.seqEnd }, entry));
     }
     return this.timelineStore.getRows(id);
   }
@@ -1465,6 +1470,7 @@ export class AgentManager {
       workspaceId?: string;
       owner?: AgentOwner;
       historyPrimed?: boolean;
+      attention?: AttentionState;
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1497,6 +1503,7 @@ export class AgentManager {
       workspaceId?: string;
       owner?: AgentOwner;
       historyPrimed?: boolean;
+      attention?: AttentionState;
     },
     resumeOptions?: AgentResumeSessionOptions,
   ): Promise<ManagedAgent> {
@@ -1553,6 +1560,7 @@ export class AgentManager {
     return this.registerSession(session, storedConfig, resolvedAgentId, {
       ...options,
       persistence: handle,
+      restoring: true,
     });
   }
 
@@ -1742,6 +1750,7 @@ export class AgentManager {
         lastUsage: preservedLastUsage,
         lastError: preservedLastError,
         attention: preservedAttention,
+        restoring: true,
       });
     } catch (error) {
       if (closedExisting) {
@@ -2078,14 +2087,7 @@ export class AgentManager {
 
   private dispatchStoredAgentState(record: StoredAgentRecord): void {
     const updatedAt = new Date(record.updatedAt);
-    const attention: AttentionState =
-      record.requiresAttention && record.attentionReason && record.attentionTimestamp
-        ? {
-            requiresAttention: true,
-            attentionReason: record.attentionReason,
-            attentionTimestamp: new Date(record.attentionTimestamp),
-          }
-        : { requiresAttention: false };
+    const attention = extractAttention(record);
     this.dispatch({
       type: "agent_state",
       agent: {
@@ -3852,6 +3854,12 @@ export class AgentManager {
       lastUsage?: AgentUsage;
       lastError?: string;
       attention?: AttentionState;
+      /**
+       * Bringing a known agent back, rather than starting a new one. Its timestamps and
+       * attention come from what was already recorded, and installing the session is not
+       * activity in it.
+       */
+      restoring?: boolean;
       initialTitle?: string | null;
       publishWhenReady?: boolean;
       workspaceId?: string;
@@ -3905,7 +3913,12 @@ export class AgentManager {
       await this.refreshSessionState(managed, { emit: false });
       this.assertAgentRegistrationActive(managed);
       managed.lifecycle = "idle";
-      this.touchUpdatedAt(managed);
+      // Stamping now over a restored timestamp rewrote the workspace's "last used" in the
+      // sidebar every time a chat was reopened, because workspace `statusEnteredAt` is
+      // re-derived from persisted agent `updatedAt` on every daemon start.
+      if (!options?.restoring) {
+        this.touchUpdatedAt(managed);
+      }
       await this.persistSnapshot(managed);
       this.assertAgentRegistrationActive(managed);
       this.emitState(managed, { persist: false });
