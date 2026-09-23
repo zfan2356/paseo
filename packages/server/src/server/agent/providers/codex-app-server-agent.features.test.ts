@@ -99,6 +99,8 @@ async function createConnectedSession(
 describe("Codex app-server provider features", () => {
   test.each([
     "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6-luna",
     "gpt-5.6",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
@@ -155,29 +157,32 @@ describe("Codex app-server provider features", () => {
     }
   });
 
-  test("restores Fast on Astra and preserves it when switching supported models", async () => {
-    const { session, appServer } = await createConnectedSession({
-      model: "gpt-6-astra",
-      featureValues: { fast_mode: true },
-    });
-    try {
-      expect(session.features).toContainEqual(
-        expect.objectContaining({
-          id: "fast_mode",
-          value: true,
-        }),
-      );
-      await session.setModel("gpt-5.6-sol");
-      await session.setModel("gpt-6-astra");
-      await session.startTurn("hello");
-      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-        model: "gpt-6-astra",
-        serviceTier: "fast",
+  test.each(["gpt-6-astra", "gpt-6-sol"])(
+    "restores Fast on %s and preserves it when switching supported models",
+    async (model) => {
+      const { session, appServer } = await createConnectedSession({
+        model,
+        featureValues: { fast_mode: true },
       });
-    } finally {
-      await session.close();
-    }
-  });
+      try {
+        expect(session.features).toContainEqual(
+          expect.objectContaining({
+            id: "fast_mode",
+            value: true,
+          }),
+        );
+        await session.setModel("gpt-5.6-sol");
+        await session.setModel(model);
+        await session.startTurn("hello");
+        await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+          model,
+          serviceTier: "fast",
+        });
+      } finally {
+        await session.close();
+      }
+    },
+  );
 
   test("features returns fast and plan toggles when supported", async () => {
     const { session } = await createConnectedSession();

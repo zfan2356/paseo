@@ -49,5 +49,6 @@ stays authoritative for intent and design.
 | [kitty-graphics-ack.md](kitty-graphics-ack.md)                                 | Kitty graphics ACKs answered on stdin, never typed at the prompt               |
 | [chrome-link-opener.md](chrome-link-opener.md)                                 | Host-window links open in Google Chrome                                        |
 | [codex-appearance-theme.md](codex-appearance-theme.md)                         | Codex charcoal appearance theme                                                |
+| [codex-gpt6-fast-mode.md](codex-gpt6-fast-mode.md)                             | Expose Codex Fast for supported GPT-6 models                                   |
 | [acp-stale-feature-fallback.md](acp-stale-feature-fallback.md)                 | Start ACP sessions when a saved feature has been retired                       |
 | [shared-codex-app-server.md](shared-codex-app-server.md)                       | Share Codex native conversations, live output, and interruption across clients |
