@@ -5,14 +5,14 @@
 
 ## Original requirement
 
-GPT-6 Sol appeared in Paseo's Codex model picker, but the Fast control was
+GPT-6 Sol and later GPT-6.1 Sol appeared in Paseo's Codex model picker, but the Fast control was
 absent. Listing a model in `agents.providers.codex.models` did not update the
 server's separate Fast capability allowlist.
 
 ## Design
 
-- Add GPT-6 Sol and GPT-6 Luna to the existing Codex Fast-supported model list,
-  matching the documented GPT-6 family alongside GPT-6 Astra. Do not infer
+- Add GPT-6.1 Sol, GPT-6 Sol, and GPT-6 Luna to the existing Codex Fast-supported model list,
+  matching [documented Fast support](https://developers.openai.com/codex/speed/) alongside GPT-6 Astra. Do not infer
   Fast support for unrelated or unknown model IDs.
 - Keep the existing feature flag, preference restore, and `turn/start`
   `serviceTier: "fast"` request path; no new UI, schema, or proxy behavior is added.

@@ -98,6 +98,7 @@ async function createConnectedSession(
 
 describe("Codex app-server provider features", () => {
   test.each([
+    "gpt-6.1-sol",
     "gpt-6-astra",
     "gpt-6-sol",
     "gpt-6-luna",
@@ -157,7 +158,7 @@ describe("Codex app-server provider features", () => {
     }
   });
 
-  test.each(["gpt-6-astra", "gpt-6-sol"])(
+  test.each(["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol"])(
     "restores Fast on %s and preserves it when switching supported models",
     async (model) => {
       const { session, appServer } = await createConnectedSession({
