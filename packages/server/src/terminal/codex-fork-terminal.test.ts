@@ -206,6 +206,42 @@ describe("buildAgentConversationTerminalLaunch", () => {
 });
 
 describe("buildCodexConversationTerminalLaunch", () => {
+  test.each(["default", "priority", "ultrafast"])(
+    "keeps the live %s speed tier when switching to TUI",
+    (serviceTier) => {
+      const launch = buildCodexConversationTerminalLaunch({
+        provider: "codex",
+        cwd: "/work/paseo",
+        persistence: { provider: "codex", sessionId: "thread-1" },
+        config: { featureValues: { service_tier: "stale-tier", fast_mode: true } },
+        features: [
+          {
+            type: "select",
+            id: "service_tier",
+            label: "Speed",
+            value: serviceTier,
+            options: [{ id: serviceTier, label: serviceTier }],
+          },
+        ],
+      });
+
+      expect(launch.args).toContain(`service_tier="${serviceTier}"`);
+      expect(launch.args).not.toContain('service_tier="stale-tier"');
+      expect(launch.args).not.toContain('service_tier="fast"');
+    },
+  );
+
+  test("restores the saved speed tier when no live features are available", () => {
+    const launch = buildCodexConversationTerminalLaunch({
+      provider: "codex",
+      cwd: "/work/paseo",
+      persistence: { provider: "codex", sessionId: "thread-1" },
+      config: { featureValues: { service_tier: "ultrafast" } },
+    });
+
+    expect(launch.args).toContain('service_tier="ultrafast"');
+  });
+
   test("keeps wrapper and generated config overrides in the root CLI scope", () => {
     const launch = buildCodexConversationTerminalLaunch({
       provider: "codex",

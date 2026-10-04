@@ -44,6 +44,10 @@ named Antigravity. Side Chat needs the updated wrapper on its next process start
 the TUI entry point also needs the updated daemon and frontend. Preserve the
 official version pins until the round-trip test passes against an upgrade.
 
+Upstream also ships an Antigravity plugin that drives `agy` directly. The configured
+`extends: "acp"` provider takes precedence over that plugin in the provider registry;
+keep that precedence so the snapshot and same-session TUI contracts remain available.
+
 ## Validation
 
 - Bridge unit tests exercise WAL snapshots, parent isolation, path validation,

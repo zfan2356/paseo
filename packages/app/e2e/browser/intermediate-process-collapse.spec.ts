@@ -5,7 +5,7 @@ import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-
 test("expands the live intermediate process and folds it after the final answer", async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   await page.addInitScript(() => {
     localStorage.setItem(
       "@paseo:app-settings",
@@ -18,7 +18,7 @@ test("expands the live intermediate process and folds it after the final answer"
   const agent = await seedMockAgentWorkspace({
     repoPrefix: "intermediate-process-collapse-",
     title: "Intermediate process collapse",
-    model: "ten-second-stream",
+    model: "one-minute-stream",
   });
 
   try {
@@ -31,12 +31,14 @@ test("expands the live intermediate process and folds it after the final answer"
     await expect(process.getByTestId("assistant-message").first()).toBeVisible();
     await expect(process.getByTestId("tool-call-badge").first()).toBeVisible();
 
+    await page.getByTestId("agent-chat-scroll").hover();
+    await page.mouse.wheel(0, -1200);
     await processToggle.click();
     await expect(process.getByTestId("assistant-message")).toHaveCount(0);
     await processToggle.click();
     await expect(process.getByTestId("assistant-message").first()).toBeVisible();
 
-    await expectAgentIdle(page, 30_000);
+    await expectAgentIdle(page, 90_000);
     await expect(process.getByTestId("assistant-message")).toHaveCount(0);
     await expect(process.getByTestId("tool-call-badge")).toHaveCount(0);
     await expect(

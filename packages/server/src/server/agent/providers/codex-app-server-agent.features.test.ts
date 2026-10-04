@@ -19,6 +19,41 @@ interface CollaborationModeRecord {
   developer_instructions?: string | null;
 }
 
+const TEST_SPEED_MODELS = [
+  "gpt-6-astra",
+  "gpt-6.1-sol",
+  "gpt-6-sol",
+  "gpt-6-luna",
+  "gpt-5.6",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-5.5",
+  "gpt-5.4",
+].map((id) => ({
+  id,
+  isDefault: id === "gpt-5.4",
+  defaultReasoningEffort: "medium",
+  serviceTiers: [{ id: "priority", name: "Fast", description: "Faster processing" }],
+}));
+
+function speedFeature(value: string) {
+  return {
+    type: "select",
+    id: "service_tier",
+    label: "Speed",
+    description: "Choose processing speed. Faster tiers increase usage.",
+    tooltip: "Select speed",
+    icon: "zap",
+    desktopTrigger: "icon",
+    value,
+    options: [
+      { id: "default", label: "Normal", isDefault: true },
+      { id: "priority", label: "Fast" },
+    ],
+  };
+}
+
 const TEST_COLLABORATION_MODES: CollaborationModeRecord[] = [
   {
     name: "Code",
@@ -65,7 +100,7 @@ function createConfig(overrides: Partial<AgentSessionConfig> = {}): AgentSession
 
 function createSessionHarness(
   configOverrides: Partial<AgentSessionConfig> = {},
-  options: { logger?: pino.Logger } = {},
+  options: { logger?: pino.Logger; models?: unknown[]; environment?: Record<string, string> } = {},
 ): {
   session: CodexFeaturesTestSession;
   appServer: FakeCodexAppServer;
@@ -73,19 +108,21 @@ function createSessionHarness(
   const config = createConfig(configOverrides);
   const appServer = createFakeCodexAppServer({
     "collaborationMode/list": () => ({ data: TEST_COLLABORATION_MODES }),
+    "model/list": () => ({ data: options.models ?? TEST_SPEED_MODELS }),
   });
   const session = new CodexAppServerAgentSession(
     { ...config, provider: CODEX_PROVIDER },
     null,
     options.logger ?? createTestLogger(),
     async () => appServer.child,
+    { environment: options.environment },
   ) as CodexFeaturesTestSession;
   return { session, appServer };
 }
 
 async function createConnectedSession(
   configOverrides: Partial<AgentSessionConfig> = {},
-  options: { logger?: pino.Logger } = {},
+  options: { logger?: pino.Logger; models?: unknown[]; environment?: Record<string, string> } = {},
 ): Promise<{
   session: CodexFeaturesTestSession;
   appServer: FakeCodexAppServer;
@@ -97,9 +134,226 @@ async function createConnectedSession(
 }
 
 describe("Codex app-server provider features", () => {
+  test("keeps saved iChat Fast on known models whose catalog has no tiers", async () => {
+    const { session, appServer } = await createConnectedSession(
+      { model: "gpt-6.1-sol", featureValues: { fast_mode: true } },
+      {
+        models: [{ id: "gpt-6.1-sol", serviceTiers: [] }],
+        environment: { ICHAT_PROXY_PY: "/opt/ichat/proxy.py" },
+      },
+    );
+    try {
+      expect(session.features).toContainEqual(
+        expect.objectContaining({
+          id: "service_tier",
+          value: "fast",
+          options: [
+            { id: "default", label: "Normal", isDefault: true },
+            { id: "fast", label: "Fast" },
+          ],
+        }),
+      );
+      await session.startTurn("hello");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: "fast" });
+    } finally {
+      await session.close();
+    }
+  });
+
   test.each([
-    "gpt-6.1-sol",
+    { id: "gpt-6.1-sol", environment: {} },
+    { id: "unknown-model", environment: { ICHAT_PROXY_PY: "/opt/ichat/proxy.py" } },
+  ])("does not invent speed tiers for $id outside the iChat contract", async (input) => {
+    const { session } = await createConnectedSession(
+      { model: input.id },
+      { models: [{ id: input.id, serviceTiers: [] }], environment: input.environment },
+    );
+    try {
+      expect(session.features?.some((feature) => feature.id === "service_tier")).toBe(false);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("prefers advertised iChat speed tiers over the legacy Fast contract", async () => {
+    const { session, appServer } = await createConnectedSession(
+      { model: "gpt-6.1-sol", featureValues: { fast_mode: true } },
+      { environment: { ICHAT_PROXY_PY: "/opt/ichat/proxy.py" } },
+    );
+    try {
+      expect(session.features).toContainEqual(speedFeature("priority"));
+      await session.startTurn("hello");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+        serviceTier: "priority",
+      });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("GPT-6.1 Sol offers catalog speed tiers and sends Ultrafast", async () => {
+    const { session, appServer } = await createConnectedSession(
+      { model: "gpt-6.1-sol" },
+      {
+        models: [
+          {
+            id: "gpt-6.1-sol",
+            serviceTiers: [
+              { id: "priority", name: "Fast", description: "Faster processing" },
+              { id: "ultrafast", name: "Ultrafast", description: "Lowest latency" },
+            ],
+          },
+        ],
+      },
+    );
+    try {
+      expect(session.features).toContainEqual(
+        expect.objectContaining({
+          id: "service_tier",
+          type: "select",
+          value: "default",
+          options: [
+            { id: "default", label: "Normal", isDefault: true },
+            { id: "priority", label: "Fast" },
+            { id: "ultrafast", label: "Ultrafast" },
+          ],
+        }),
+      );
+      await session.setFeature?.("service_tier", "ultrafast");
+      await session.startTurn("hello");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+        serviceTier: "ultrafast",
+      });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("new models and service tiers work without a Paseo catalog update", async () => {
+    const { session, appServer } = await createConnectedSession(
+      { model: "future-codex-model" },
+      {
+        models: [
+          {
+            id: "future-codex-model",
+            serviceTiers: [
+              { id: "future-tier", name: "Future speed", description: "A newly advertised tier" },
+            ],
+          },
+        ],
+      },
+    );
+    try {
+      expect(session.features).toContainEqual(
+        expect.objectContaining({
+          id: "service_tier",
+          options: [
+            { id: "default", label: "Normal", isDefault: true },
+            { id: "future-tier", label: "Future speed" },
+          ],
+        }),
+      );
+      await session.setFeature?.("service_tier", "future-tier");
+      await session.startTurn("hello");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+        model: "future-codex-model",
+        serviceTier: "future-tier",
+      });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test.each(["priority", "ultrafast"])(
+    "restores %s and Normal explicitly overrides an existing thread tier",
+    async (tier) => {
+      const { session, appServer } = await createConnectedSession(
+        { model: "future-model", featureValues: { service_tier: tier } },
+        {
+          models: [
+            {
+              id: "future-model",
+              serviceTiers: [
+                { id: "priority", name: "Fast", description: "Fast processing" },
+                { id: "ultrafast", name: "Ultrafast", description: "Ultra processing" },
+              ],
+            },
+          ],
+        },
+      );
+      try {
+        expect(session.features).toContainEqual(
+          expect.objectContaining({ id: "service_tier", value: tier }),
+        );
+        await session.getRuntimeInfo();
+        await session.setFeature?.("service_tier", "default");
+        await session.startTurn("hello");
+        await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+          serviceTier: "default",
+        });
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
+  test("rejects unadvertised tiers and non-string values", async () => {
+    const { session } = await createConnectedSession();
+    try {
+      for (const value of ["ultrafast", "bogus", true, null]) {
+        await expect(session.setFeature?.("service_tier", value)).rejects.toThrow(
+          "is not available",
+        );
+      }
+      expect(session.features).toContainEqual(
+        expect.objectContaining({ id: "service_tier", value: "default" }),
+      );
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("switching to a model without the selected tier resets speed", async () => {
+    const { session, appServer } = await createConnectedSession(
+      { model: "ultra-model", featureValues: { service_tier: "ultrafast" } },
+      {
+        models: [
+          {
+            id: "ultra-model",
+            serviceTiers: [{ id: "ultrafast", name: "Ultrafast", description: "Ultra processing" }],
+          },
+          ...TEST_SPEED_MODELS,
+        ],
+      },
+    );
+    try {
+      await session.setModel("gpt-6.1-sol");
+      expect(session.features).toContainEqual(
+        expect.objectContaining({ id: "service_tier", value: "default" }),
+      );
+      await session.startTurn("hello");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: "default" });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("maps legacy Fast commands to the catalog's request id", async () => {
+    const { session, appServer } = await createConnectedSession();
+    try {
+      await session.setFeature?.("fast_mode", true);
+      await session.startTurn("hello");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+        serviceTier: "priority",
+      });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test.each([
     "gpt-6-astra",
+    "gpt-6.1-sol",
     "gpt-6-sol",
     "gpt-6-luna",
     "gpt-5.6",
@@ -113,15 +367,15 @@ describe("Codex app-server provider features", () => {
     try {
       expect(session.features).toContainEqual(
         expect.objectContaining({
-          id: "fast_mode",
-          value: false,
+          id: "service_tier",
+          value: "default",
         }),
       );
-      await session.setFeature?.("fast_mode", true);
+      await session.setFeature?.("service_tier", "priority");
       await session.startTurn("hello");
       await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
         model,
-        serviceTier: "fast",
+        serviceTier: "priority",
       });
     } finally {
       await session.close();
@@ -150,54 +404,43 @@ describe("Codex app-server provider features", () => {
         `Codex fast mode is not available for model '${model}'`,
       );
       await session.startTurn("hello");
-      await expect(appServer.waitForTurnStart()).resolves.not.toMatchObject({
-        serviceTier: expect.anything(),
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+        serviceTier: "default",
       });
     } finally {
       await session.close();
     }
   });
 
-  test.each(["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol"])(
-    "restores Fast on %s and preserves it when switching supported models",
-    async (model) => {
-      const { session, appServer } = await createConnectedSession({
-        model,
-        featureValues: { fast_mode: true },
+  test("restores Fast on Astra and preserves it when switching supported models", async () => {
+    const { session, appServer } = await createConnectedSession({
+      model: "gpt-6-astra",
+      featureValues: { fast_mode: true },
+    });
+    try {
+      expect(session.features).toContainEqual(
+        expect.objectContaining({
+          id: "service_tier",
+          value: "priority",
+        }),
+      );
+      await session.setModel("gpt-5.6-sol");
+      await session.setModel("gpt-6-astra");
+      await session.startTurn("hello");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+        model: "gpt-6-astra",
+        serviceTier: "priority",
       });
-      try {
-        expect(session.features).toContainEqual(
-          expect.objectContaining({
-            id: "fast_mode",
-            value: true,
-          }),
-        );
-        await session.setModel("gpt-5.6-sol");
-        await session.setModel(model);
-        await session.startTurn("hello");
-        await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-          model,
-          serviceTier: "fast",
-        });
-      } finally {
-        await session.close();
-      }
-    },
-  );
+    } finally {
+      await session.close();
+    }
+  });
 
-  test("features returns fast and plan toggles when supported", async () => {
+  test("features returns speed selector and plan toggle when supported", async () => {
     const { session } = await createConnectedSession();
 
     expect(session.features).toEqual([
-      {
-        type: "toggle",
-        id: "fast_mode",
-        label: "Fast",
-        description: "Priority inference at increased usage",
-        tooltip: "Toggle fast mode",
-        icon: "zap",
-        value: false,
-      },
+      speedFeature("default"),
       {
         type: "toggle",
         id: "plan_mode",
@@ -209,19 +452,11 @@ describe("Codex app-server provider features", () => {
       },
     ]);
 
-    await session.setFeature?.("fast_mode", true);
+    await session.setFeature?.("service_tier", "priority");
     await session.setFeature?.("plan_mode", true);
 
     expect(session.features).toEqual([
-      {
-        type: "toggle",
-        id: "fast_mode",
-        label: "Fast",
-        description: "Priority inference at increased usage",
-        tooltip: "Toggle fast mode",
-        icon: "zap",
-        value: true,
-      },
+      speedFeature("priority"),
       {
         type: "toggle",
         id: "plan_mode",
@@ -269,23 +504,23 @@ describe("Codex app-server provider features", () => {
     ]);
 
     await session.startTurn("hello");
-    await expect(appServer.waitForTurnStart()).resolves.not.toMatchObject({
-      serviceTier: expect.anything(),
+    await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+      serviceTier: "default",
     });
   });
 
-  test("setFeature('fast_mode', true) sets serviceTier to fast", async () => {
+  test("selecting Fast sends the catalog service tier", async () => {
     const { session, appServer } = await createConnectedSession();
 
-    await session.setFeature?.("fast_mode", true);
+    await session.setFeature?.("service_tier", "priority");
     await session.startTurn("hello");
 
     await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-      serviceTier: "fast",
+      serviceTier: "priority",
     });
   });
 
-  test("setFeature('fast_mode', false) clears serviceTier to null", async () => {
+  test("legacy Fast off explicitly selects Normal", async () => {
     const { session, appServer } = await createConnectedSession({
       featureValues: { fast_mode: true },
     });
@@ -293,8 +528,8 @@ describe("Codex app-server provider features", () => {
     await session.setFeature?.("fast_mode", false);
     await session.startTurn("hello");
 
-    await expect(appServer.waitForTurnStart()).resolves.not.toMatchObject({
-      serviceTier: expect.anything(),
+    await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+      serviceTier: "default",
     });
   });
 
@@ -334,15 +569,7 @@ describe("Codex app-server provider features", () => {
     });
 
     expect(session.features).toEqual([
-      {
-        type: "toggle",
-        id: "fast_mode",
-        label: "Fast",
-        description: "Priority inference at increased usage",
-        tooltip: "Toggle fast mode",
-        icon: "zap",
-        value: true,
-      },
+      speedFeature("priority"),
       {
         type: "toggle",
         id: "plan_mode",
@@ -356,7 +583,7 @@ describe("Codex app-server provider features", () => {
 
     await session.startTurn("hello");
     await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-      serviceTier: "fast",
+      serviceTier: "priority",
       collaborationMode: expect.objectContaining({
         mode: "plan",
       }),
@@ -366,11 +593,11 @@ describe("Codex app-server provider features", () => {
   test("startTurn includes serviceTier when fast mode is enabled", async () => {
     const { session, appServer } = await createConnectedSession();
 
-    await session.setFeature?.("fast_mode", true);
+    await session.setFeature?.("service_tier", "priority");
     await session.startTurn("hello");
 
     await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-      serviceTier: "fast",
+      serviceTier: "priority",
     });
   });
 
@@ -392,7 +619,7 @@ describe("Codex app-server provider features", () => {
       msg: "Starting Codex app-server turn",
       model: "gpt-5.4",
       modeId: "auto",
-      serviceTier: "fast",
+      serviceTier: "priority",
       cwd: "/tmp/codex-fast-mode-test",
     });
     expect(JSON.stringify(entry)).not.toContain(prompt);
@@ -401,7 +628,7 @@ describe("Codex app-server provider features", () => {
   test("setModel clears fast mode when switching to an unsupported model", async () => {
     const { session, appServer } = await createConnectedSession();
 
-    await session.setFeature?.("fast_mode", true);
+    await session.setFeature?.("service_tier", "priority");
     await session.setModel("gpt-3.5-turbo");
 
     expect(session.features).toEqual([
@@ -417,8 +644,8 @@ describe("Codex app-server provider features", () => {
     ]);
     await session.startTurn("hello");
 
-    await expect(appServer.waitForTurnStart()).resolves.not.toMatchObject({
-      serviceTier: expect.anything(),
+    await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+      serviceTier: "default",
     });
   });
 

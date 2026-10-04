@@ -1,6 +1,6 @@
 # Codex GPT-6 Fast mode
 
-- Status: active
+- Status: upstream catalog speeds with an active iChat compatibility overlay
 - Ledger entry: "Codex GPT-6 Fast mode support"
 
 ## Original requirement
@@ -11,12 +11,17 @@ server's separate Fast capability allowlist.
 
 ## Design
 
-- Add GPT-6.1 Sol, GPT-6 Sol, and GPT-6 Luna to the existing Codex Fast-supported model list,
-  matching [documented Fast support](https://developers.openai.com/codex/speed/) alongside GPT-6 Astra. Do not infer
-  Fast support for unrelated or unknown model IDs.
-- Keep the existing feature flag, preference restore, and `turn/start`
-  `serviceTier: "fast"` request path; no new UI, schema, or proxy behavior is added.
-- Extend the existing provider test to cover visibility, request parameters,
-  and preference restore across supported model switches.
+- Upstream now owns the `service_tier` selector and discovers Fast and Ultrafast from
+  the Codex model catalog. Its existing migration preserves saved `fast_mode` preferences.
+- The iChat catalog currently advertises no speed tiers. The fork-owned
+  `codex/ichat-service-tiers.ts` preserves Fast for the previously supported models,
+  only when the session environment identifies the maintained iChat wrapper through
+  `ICHAT_PROXY_PY`. Unknown models and ordinary Codex sessions get no inferred capability.
+- Advertised tiers always take precedence. The compatibility tier sends `serviceTier: "fast"`;
+  it never invents Ultrafast or changes the model catalog, proxy, or live configuration.
+- Agent/TUI switching carries the live `service_tier` value into the root CLI config,
+  falling back to saved settings and then the legacy Fast preference for older sessions.
+- Provider and terminal-launch tests cover preference migration, advertised-tier precedence,
+  unsupported models, and Normal/Fast/Ultrafast handoff.
 - Fast request forwarding does not itself establish that the iChat proxy or
   upstream account provides faster inference; verify that separately.

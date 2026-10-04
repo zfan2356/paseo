@@ -36,6 +36,9 @@ TUI view must be a real linked PTY running the provider CLI.
   options precede `resume`. Splitting `-c` / `--config` options between the root
   command and subcommand can discard a wrapper's root-level provider configuration
   in Codex, sending the resumed conversation through the default account instead.
+- **Codex speed**: the live `service_tier` selector wins over saved configuration.
+  Normal, Fast, and Ultrafast keep their advertised request IDs during handoff.
+  Older sessions without that selector retain their saved Fast preference.
 - **Back to Agent**: `switchAgentTerminalToAgent` (legacy Codex RPC still
   supported) stops the PTY, resumes the Agent runtime with provider history
   rehydrated (`reconcileProviderHistory`; an empty TUI resume history must

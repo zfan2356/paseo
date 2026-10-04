@@ -93,6 +93,7 @@ export class FakePi implements PiRuntime {
 }
 
 export class FakePiSession implements PiRuntimeSession {
+  readonly environment: Record<string, string>;
   readonly prompts: Array<{ message: string; imageCount: number }> = [];
   readonly steerCalls: Array<{ message: string; imageCount: number }> = [];
   steerError: Error | null = null;
@@ -108,7 +109,10 @@ export class FakePiSession implements PiRuntimeSession {
   readonly handoffRequests: Array<{ customInstructions?: string }> = [];
   readonly sessionNameRequests: string[] = [];
   readonly rawFrames: Array<object & { type: string }> = [];
-  capturedUserEntries: Array<{ id: string; parentId: string | null; text: string }> = [];
+  // Every user entry in the session file, including rewound and compacted ones.
+  treeUserEntries: FakePiUserEntry[] = [];
+  // The user entries on the current branch that getMessages() replays.
+  contextUserEntries: FakePiUserEntry[] = [];
   abortRequested = false;
   readonly canceledExtensionUiRequests: string[] = [];
   readonly extensionUiResponses: Array<{
@@ -142,6 +146,7 @@ export class FakePiSession implements PiRuntimeSession {
     null;
 
   constructor(launch: PiRuntimeLaunch) {
+    this.environment = launch.env ?? {};
     this.state = {
       model: null,
       thinkingLevel: "medium",
@@ -265,6 +270,7 @@ export class FakePiSession implements PiRuntimeSession {
     if (!this.setModelResult) {
       throw new Error("FakePi setModel requires setModelResult to be scripted");
     }
+    this.state = { ...this.state, model: this.setModelResult };
     return this.setModelResult;
   }
 
@@ -453,7 +459,8 @@ export class FakePiSession implements PiRuntimeSession {
       message: `PASEO_ENTRY_CAPTURE ${JSON.stringify({
         reason,
         requestId,
-        entries: this.capturedUserEntries,
+        treeEntries: this.treeUserEntries,
+        contextEntries: this.contextUserEntries,
       })}`,
     });
   }

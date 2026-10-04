@@ -250,9 +250,19 @@ function appendModelAndPerformanceArgs(
     pushConfigArg(args, "model_reasoning_effort", thinkingOptionId);
   }
 
-  const fastMode = resolveFeatureToggle(source, "fast_mode");
-  if (fastMode !== null) {
-    pushConfigArg(args, "service_tier", fastMode ? "fast" : "default");
+  const speedFeature = source.features?.find(
+    (feature) => feature.type === "select" && feature.id === "service_tier",
+  );
+  const serviceTier = nonEmptyString(
+    speedFeature?.value ?? source.config?.featureValues?.service_tier,
+  );
+  if (serviceTier) {
+    pushConfigArg(args, "service_tier", serviceTier);
+  } else {
+    const fastMode = resolveFeatureToggle(source, "fast_mode");
+    if (fastMode !== null) {
+      pushConfigArg(args, "service_tier", fastMode ? "fast" : "default");
+    }
   }
 }
 
