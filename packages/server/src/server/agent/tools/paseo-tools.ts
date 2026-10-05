@@ -62,6 +62,8 @@ import {
   waitForAgentWithTimeout,
 } from "../mcp-shared.js";
 import {
+  formatSystemNotificationPrompt,
+  isSystemInjectedEnvelope,
   sendPromptToAgent,
   setupFinishNotification,
   waitForAgentRunStartWithTimeout,
@@ -1897,7 +1899,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     {
       title: "Send agent prompt",
       description:
-        "Send a task to a running agent. Agent-scoped callers run in background by default; top-level callers wait by default.",
+        "Send a task to a running agent. Messages between agents are internal context, not visible user messages. Agent-scoped callers run in background by default; top-level callers wait by default.",
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
         success: z.boolean(),
@@ -1932,7 +1934,10 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         agentManager,
         agentStorage,
         agentId,
-        prompt,
+        prompt:
+          callerAgentId && callerAgentId !== agentId && !isSystemInjectedEnvelope(prompt)
+            ? formatSystemNotificationPrompt(`Message from agent ${callerAgentId}:\n${prompt}`)
+            : prompt,
         sessionMode,
         logger: childLogger,
       });

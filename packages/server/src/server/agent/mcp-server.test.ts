@@ -13,6 +13,7 @@ import { createTestLogger } from "../../test-utils/test-logger.js";
 import { createAgentMcpServer } from "./mcp-server.js";
 import { AgentManager, type ManagedAgent } from "./agent-manager.js";
 import { AgentStorage, type StoredAgentRecord } from "./agent-storage.js";
+import { formatSystemNotificationPrompt } from "./agent-prompt.js";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
 import type {
   AgentClient,
@@ -3835,6 +3836,84 @@ describe("send_agent_prompt MCP tool", () => {
   const logger = createTestLogger();
   const existingCwd = process.cwd();
 
+  it("delivers scheduled observer prompts as internal agent context", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const observer = createManagedAgent({
+      id: "observer-agent",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+      labels: { "paseo.schedule-id": "schedule-1", "paseo.schedule-run": "run-1" },
+    });
+    const parent = createManagedAgent({
+      id: "parent-agent",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+    });
+    spies.agentManager.getAgent.mockImplementation((agentId: string) => {
+      if (agentId === observer.id) return observer;
+      if (agentId === parent.id) return parent;
+      return null;
+    });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: observer.id,
+      logger,
+    });
+    const prompt = "Heartbeat observer checked the running job; no duplicate action needed.";
+
+    await invokeToolWithParsedInput(registeredTool(server, "send_agent_prompt"), {
+      agentId: parent.id,
+      prompt,
+      background: true,
+      notifyOnFinish: false,
+    });
+
+    expect(spies.agentManager.streamAgent).toHaveBeenCalledWith(
+      parent.id,
+      formatSystemNotificationPrompt(`Message from agent ${observer.id}:\n${prompt}`),
+      undefined,
+    );
+    expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "top-level", callerAgentId: undefined, prompt: "/goal pause" },
+    { name: "self-directed", callerAgentId: "child-agent", prompt: "/goal pause" },
+    {
+      name: "already enveloped",
+      callerAgentId: "parent-agent",
+      prompt: formatSystemNotificationPrompt("Observer update"),
+    },
+  ])("preserves $name prompts without wrapping them", async ({ callerAgentId, prompt }) => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({ id: "child-agent", cwd: existingCwd, workspaceId: "wks_parent" }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId,
+      logger,
+    });
+
+    await invokeToolWithParsedInput(registeredTool(server, "send_agent_prompt"), {
+      agentId: "child-agent",
+      prompt,
+      background: true,
+      notifyOnFinish: false,
+    });
+
+    expect(spies.agentManager.tryRunOutOfBand).toHaveBeenCalledWith(
+      "child-agent",
+      prompt,
+      undefined,
+    );
+    expect(spies.agentManager.streamAgent).toHaveBeenCalledWith("child-agent", prompt, undefined);
+  });
+
   it("defaults agent-scoped prompts to background finish notifications", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const parentAgent = {
@@ -3882,6 +3961,11 @@ describe("send_agent_prompt MCP tool", () => {
 
     const response = await tool.handler(parsed.data as Record<string, unknown>);
 
+    expect(spies.agentManager.streamAgent).toHaveBeenCalledWith(
+      "child-agent",
+      formatSystemNotificationPrompt("Message from agent parent-agent:\nFollow up"),
+      undefined,
+    );
     expect(spies.agentManager.subscribe).toHaveBeenCalledTimes(1);
     expect(spies.agentManager.waitForAgentEvent).not.toHaveBeenCalled();
     expect(response.structuredContent.guidance).toBe(
@@ -3923,6 +4007,11 @@ describe("send_agent_prompt MCP tool", () => {
 
     await tool.handler(parsed.data as Record<string, unknown>);
 
+    expect(spies.agentManager.streamAgent).toHaveBeenCalledWith(
+      "child-agent",
+      "Follow up",
+      undefined,
+    );
     expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
     expect(spies.agentManager.waitForAgentEvent).toHaveBeenCalledWith(
       "child-agent",
@@ -4134,7 +4223,11 @@ describe("send_agent_prompt MCP tool", () => {
         agentId: child.id,
         prompt: "Follow up",
       });
-      await vi.waitFor(() => expect(childSession.prompts).toEqual(["Follow up"]));
+      await vi.waitFor(() =>
+        expect(childSession.prompts).toEqual([
+          formatSystemNotificationPrompt(`Message from agent ${parent.id}:\nFollow up`),
+        ]),
+      );
       acknowledgeTurnStart();
       const response = await pending;
 

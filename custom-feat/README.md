@@ -38,6 +38,7 @@ stays authoritative for intent and design.
 | [safe-local-macos-app-replacement.md](safe-local-macos-app-replacement.md)     | Installer that replaces the running Mac app safely with rollback               |
 | [stable-local-macos-signing.md](stable-local-macos-signing.md)                 | Reusable `Paseo Local` signing identity so TCC grants survive rebuilds         |
 | [intermediate-process-folding.md](intermediate-process-folding.md)             | Fold reasoning/tool calls/todos into one collapsible group per turn            |
+| [internal-agent-messages.md](internal-agent-messages.md)                       | Keep agent-to-agent context out of visible user messages                       |
 | [compact-codex-assistant-boundaries.md](compact-codex-assistant-boundaries.md) | Compact visible divider between Codex assistant messages                       |
 | [persistent-terminal-sessions.md](persistent-terminal-sessions.md)             | PTYs owned by a detached worker survive daemon restarts                        |
 | [viewport-only-terminal-restore.md](viewport-only-terminal-restore.md)         | Reopening a terminal paints the viewport, not replayed scrollback              |
