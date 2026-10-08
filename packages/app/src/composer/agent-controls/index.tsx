@@ -404,7 +404,8 @@ function selectAgentControlsSlice(
   serverId: string,
   agentId: string,
 ): AgentControlsSlice {
-  const currentAgent = state.sessions[serverId]?.agents?.get(agentId) ?? null;
+  const session = state.sessions[serverId];
+  const currentAgent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId) ?? null;
   if (!currentAgent) {
     return null;
   }

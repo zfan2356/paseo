@@ -248,7 +248,8 @@ export function useLiveAgentModeControl(
 ): AgentModeControlValue | null {
   const slice = useSessionStore(
     useShallow((state) => {
-      const agent = state.sessions[serverId]?.agents?.get(agentId);
+      const session = state.sessions[serverId];
+      const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
       if (!agent) return null;
       return {
         provider: agent.provider,
@@ -259,7 +260,11 @@ export function useLiveAgentModeControl(
   );
   const availableModes = useStoreWithEqualityFn(
     useSessionStore,
-    (state) => state.sessions[serverId]?.agents?.get(agentId)?.availableModes ?? EMPTY_MODES,
+    (state) => {
+      const session = state.sessions[serverId];
+      const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
+      return agent?.availableModes ?? EMPTY_MODES;
+    },
     compareAvailableModes,
   );
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);

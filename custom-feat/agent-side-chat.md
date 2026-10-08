@@ -28,6 +28,9 @@ refresh. The revised contract is:
   other parents or hosts, so reconnecting cannot restore removed child state.
 - Agent detail lookups retain Side Chats in the detail cache, just like timeline
   snapshots; fetching one must never create an ordinary workspace Agent tab.
+- Composer controls and usage read that same detail cache. Side conversations
+  retain their own model, thinking, and permission controls after close/reopen
+  and refresh without changing Main Chat's configuration.
 - The validated layout storage schema includes the Side Chat target, so persisting
   its pane does not discard the workspace layout and refresh restores the history view.
 - Main Chat and each Side Chat advance independently; reopening is not re-forking.
@@ -71,6 +74,10 @@ promoting them into the public directory or auto-opening ordinary agent tabs.
 View closure preserves local transcripts and drafts so the timeline owner's
 cached cursor is never left pointing at deleted local rows. Explicit parent
 deletion still uses `AgentStoreProjection.remove` for replica cleanup.
+
+Modern clients receive Side Chat state updates through the viewed timeline's
+existing delivery owner. Unowned broadcasts are rejected, so model changes
+would otherwise succeed on the host while the Composer keeps its old settings.
 
 The existing `agent.side_question.ask.request` / response pair remains compatible:
 

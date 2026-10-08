@@ -2126,13 +2126,22 @@ export class Session {
 
   private forwardSideChatAgentEvent(parentAgentId: string, event: AgentManagerEvent): void {
     if (event.type === "agent_state") {
-      this.emit({
+      const message: SessionOutboundMessage = {
         type: "agent.side_chat.agent_state",
         payload: {
           parentAgentId,
           agent: serializeAgentSnapshot(event.agent),
         },
-      });
+      };
+      for (const subscription of this.timelineSubscriptions.values()) {
+        if (
+          subscription.agentIds.has(event.agent.id) &&
+          this.delivery.isModern(subscription.owner.source)
+        ) {
+          subscription.owner.emit(message);
+        }
+      }
+      this.emit(message);
       return;
     }
 
