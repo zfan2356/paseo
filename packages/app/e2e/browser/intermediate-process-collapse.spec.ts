@@ -42,9 +42,7 @@ test("expands the live intermediate process and folds it after the final answer"
     await expect(process.getByTestId("assistant-message")).toHaveCount(0);
     await expect(process.getByTestId("tool-call-badge")).toHaveCount(0);
     await expect(
-      page
-        .getByTestId("assistant-message")
-        .filter({ hasText: "The change should keep scroll-to-bottom working" }),
+      page.getByTestId("assistant-message").filter({ hasText: "(end of synthetic stream)" }),
     ).toBeVisible();
 
     await processToggle.click();

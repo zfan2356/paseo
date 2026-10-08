@@ -146,7 +146,7 @@ test("managed two-home restart retains its supervisor and never routes ordinary 
     expect(await f.ok(["project", "ls", "--home", a])).toEqual([]);
     expect((await f.ok(["project", "ls", "--home", b], poisoned)).length).toBe(1);
     const stream = await f.run(["logs", "missing-agent", "--follow", "--home", b], poisoned);
-    expect(stream.stderr).toContain("Agent not found: missing-agent");
+    expect(stream.stderr).toContain("No agent found matching: missing-agent");
     const restart = await f.ok(["restart", "--home", b, "--timeout", "30"], poisoned);
     expect(restart.supervisorPid).toBe(launchB.pid);
     expect(restart.workerPid).not.toBe(beforeB.workerPid);
@@ -358,14 +358,21 @@ test.skipIf(process.platform === "win32").each([["start"], ["daemon", "run"]])(
         stdio: "ignore",
       });
       const exited = new Promise((resolve) => child!.once("exit", resolve));
+      // The lock file exists before its contents identify the supervisor.
+      let supervisorPid: number | undefined;
       await expect
-        .poll(async () => existsSync(path.join(home, "paseo.pid")), { timeout: 10_000 })
-        .toBe(true);
-      const lock = JSON.parse(await readFile(path.join(home, "paseo.pid"), "utf8"));
+        .poll(
+          async () => {
+            supervisorPid = (await readDaemonInstance(home))?.pid;
+            return supervisorPid;
+          },
+          { timeout: 10_000 },
+        )
+        .toBeTypeOf("number");
       await f.ok(["status", "--home", home]);
       child.kill("SIGINT");
       await exited;
-      expect(() => process.kill(lock.pid, 0)).toThrow();
+      expect(() => process.kill(supervisorPid!, 0)).toThrow();
       expect((await f.ok(["status", "--home", home])).localDaemon).toBe("stopped");
     } finally {
       child?.kill("SIGTERM");
@@ -503,7 +510,7 @@ test("raw log following subscribes to a stored agent that exists only in B", asy
     const launchA = await f.ok(["start", "--home", a]);
     await f.ok(["start", "--home", b]);
     const absent = await f.run(["logs", agentId, "--home", a]);
-    expect(absent.stderr).toContain("Agent not found");
+    expect(absent.stderr).toContain(`No agent found matching: ${agentId}`);
     follower = spawn(
       process.execPath,
       [cli, "logs", agentId, "--follow", "--tail", "0", "--home", b],
@@ -522,7 +529,7 @@ test("raw log following subscribes to a stored agent that exists only in B", asy
       errors += data;
     });
     await expect.poll(() => output, { timeout: 15_000 }).toContain("Following logs (no history;");
-    expect(errors).not.toContain("Agent not found");
+    expect(errors).not.toContain("No agent found matching");
   } finally {
     if (follower && follower.exitCode === null) {
       const exited = new Promise((resolve) => follower!.once("exit", resolve));

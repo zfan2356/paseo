@@ -506,6 +506,7 @@ function wrapClientProvider(
   const listFeatures = inner.listFeatures?.bind(inner);
   const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
   const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
+  const configuredModelIds = [...profileModels, ...additionalModels].map((model) => model.id);
 
   return {
     provider,
@@ -523,7 +524,7 @@ function wrapClientProvider(
             providerOptions: mergeProviderOptions(providerOptions, config.providerOptions),
           },
           launchContext,
-          options,
+          { ...options, configuredModelIds },
         ),
       ),
     resumeSession: async (handle, overrides, launchContext, options) =>
@@ -540,7 +541,7 @@ function wrapClientProvider(
             providerOptions: mergeProviderOptions(providerOptions, overrides?.providerOptions),
           },
           launchContext,
-          options,
+          { ...options, configuredModelIds },
         ),
       ),
     fetchCatalog: async (options, context) => {

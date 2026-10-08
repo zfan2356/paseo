@@ -24,6 +24,12 @@ refresh. The revised contract is:
 - Closing hides the view. It does not destroy history or interrupt in-flight work.
 - Refreshing displays history again, never automatically creating a conversation.
 - Transient reconnects reattach the selected conversation by its original ID.
+- Deleting a parent clears its provider-subagent reconnect tracking without affecting
+  other parents or hosts, so reconnecting cannot restore removed child state.
+- Agent detail lookups retain Side Chats in the detail cache, just like timeline
+  snapshots; fetching one must never create an ordinary workspace Agent tab.
+- The validated layout storage schema includes the Side Chat target, so persisting
+  its pane does not discard the workspace layout and refresh restores the history view.
 - Main Chat and each Side Chat advance independently; reopening is not re-forking.
 
 ## Design

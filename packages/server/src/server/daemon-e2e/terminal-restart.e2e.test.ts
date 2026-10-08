@@ -171,6 +171,7 @@ test("terminal stays alive and captures output across daemon restart", async () 
     const pid = initialText.match(/READY:(\d+)/)?.[1];
     expect(pid).toEqual(expect.stringMatching(/^\d+$/));
 
+    await initialSubscription.subscription.release();
     await ctx.cleanup();
     ctx = null;
     writeFileSync(gatePath, "go");
@@ -198,6 +199,7 @@ test("terminal stays alive and captures output across daemon restart", async () 
     );
     ctx.client.sendTerminalInput(terminalId, { type: "input", data: "a\r" });
     expect(await afterOutputPromise).toContain(`AFTER:${pid}`);
+    await restoredSubscription.subscription.release();
   } finally {
     if (!ctx && terminalId) {
       ctx = await createDaemonTestContext({ paseoHomeRoot, staticDir, cleanup: false });

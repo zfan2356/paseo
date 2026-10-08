@@ -2,6 +2,7 @@ import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { SIDE_CHAT_PARENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import type { TFunction } from "i18next";
 import { SquarePen } from "lucide-react-native";
 import React, {
@@ -359,7 +360,9 @@ function resolveWorkspaceAgentTabLabel(title: string | null | undefined): string
 }
 
 function shouldStoreFetchedAgentInActiveDirectory(agent: Agent): boolean {
-  return !agent.archivedAt && Boolean(agent.projectPlacement);
+  return (
+    !agent.archivedAt && !agent.labels[SIDE_CHAT_PARENT_LABEL] && Boolean(agent.projectPlacement)
+  );
 }
 
 type FetchAgentResult = Awaited<ReturnType<DaemonClient["fetchAgent"]>>;

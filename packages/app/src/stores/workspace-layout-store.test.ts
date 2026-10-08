@@ -1388,6 +1388,41 @@ describe("workspace-layout-store actions", () => {
     expect(state.explorerSidebarPaneIdByWorkspace[workspaceKey]).toBe(explorerSidebarPaneId);
   });
 
+  it("persists Side Chat panes without dropping the parent workspace layout", async () => {
+    await AsyncStorage.removeItem("workspace-layout-state");
+    const workspaceKey = createWorkspaceKey();
+    const source = createWorkspaceLayoutStore(createDeterministicWorkspaceLayoutIds());
+    await source.persist.rehydrate();
+    source.getState().openTab({
+      workspaceKey,
+      target: { kind: "agent", agentId: "parent" },
+      intent: "reveal",
+    });
+    const paneId = source.getState().ensureSidePane(workspaceKey);
+    if (!paneId) throw new Error("Expected a Side Chat pane");
+    const sideTabId = source.getState().openTab({
+      workspaceKey,
+      target: { kind: "side_chat", parentAgentId: "parent" },
+      intent: "reveal",
+      placement: { mode: "prefer", paneId },
+    });
+    await vi.waitFor(async () => {
+      expect(await AsyncStorage.getItem("workspace-layout-state")).not.toBeNull();
+    });
+
+    const restored = createWorkspaceLayoutStore(createDeterministicWorkspaceLayoutIds());
+    await restored.persist.rehydrate();
+    const layout = restored.getState().layoutByWorkspace[workspaceKey];
+    expect(collectAllTabs(layout.root).map((tab) => tab.target)).toEqual([
+      { kind: "agent", agentId: "parent" },
+      { kind: "files" },
+      { kind: "changes_tree" },
+      { kind: "side_chat", parentAgentId: "parent" },
+    ]);
+    expect(findPaneById(layout.root, paneId)?.focusedTabId).toBe(sideTabId);
+    expect(restored.getState().sidePaneIdByWorkspace[workspaceKey]).toBe(paneId);
+  });
+
   it("persists and rehydrates independent Changes state through validated storage", async () => {
     await AsyncStorage.removeItem("workspace-layout-state");
     const workspaceKey = createWorkspaceKey();

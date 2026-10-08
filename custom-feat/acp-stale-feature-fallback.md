@@ -1,6 +1,6 @@
 # ACP stale feature fallback
 
-- Status: active
+- Status: absorbed by upstream
 - Commits: `08889940e`
 - Ledger entry: "ACP sessions tolerate retired feature preferences"
 
@@ -16,6 +16,9 @@ without making saved Paseo conversations or New Agent preferences unusable.
 
 ## Design
 
+- Upstream's `applyConfiguredOverrides` now owns startup recovery for unavailable
+  options and invalid-parameter errors after switching models. The fork no longer
+  adds a separate precheck; its regression test remains.
 - During session initialization, Paseo applies a saved ACP feature override
   only when the new session advertises the matching config option.
 - A missing option produces a warning and leaves the provider default intact.
