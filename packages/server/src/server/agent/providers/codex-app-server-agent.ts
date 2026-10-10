@@ -53,6 +53,7 @@ import path from "node:path";
 import { z } from "zod";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
+import { CODEX_GOAL_CONTROL_INSTRUCTIONS } from "./codex/goal-control.js";
 import { curateAgentActivity } from "../activity-curator.js";
 import { CodexAsyncQuestions, codexAsyncQuestionToTimeline } from "./codex/async-questions.js";
 import { resolveIchatServiceTiers } from "./codex/ichat-service-tiers.js";
@@ -3891,6 +3892,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       match.developer_instructions,
       this.config.systemPrompt,
       this.config.daemonAppendSystemPrompt,
+      this.goalsEnabled ? CODEX_GOAL_CONTROL_INSTRUCTIONS : undefined,
     );
     if (developerInstructions) settings.developer_instructions = developerInstructions;
     if (this.config.model) settings.model = this.config.model;
@@ -4121,6 +4123,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     const developerInstructions = composeSystemPromptParts(
       this.config.systemPrompt,
       this.config.daemonAppendSystemPrompt,
+      this.goalsEnabled ? CODEX_GOAL_CONTROL_INSTRUCTIONS : undefined,
     );
     if (developerInstructions) {
       params.developerInstructions = developerInstructions;
@@ -4294,6 +4297,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     const developerInstructions = composeSystemPromptParts(
       this.config.systemPrompt,
       this.config.daemonAppendSystemPrompt,
+      this.goalsEnabled ? CODEX_GOAL_CONTROL_INSTRUCTIONS : undefined,
     );
     if (developerInstructions) {
       params.developerInstructions = developerInstructions;
@@ -5517,6 +5521,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     const developerInstructions = composeSystemPromptParts(
       this.config.systemPrompt,
       this.config.daemonAppendSystemPrompt,
+      this.goalsEnabled ? CODEX_GOAL_CONTROL_INSTRUCTIONS : undefined,
     );
     const params: Record<string, unknown> = {
       model,

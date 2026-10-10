@@ -84,6 +84,7 @@ describe("Codex executable discovery", () => {
 });
 
 import { CodexAppServerClient } from "./codex/app-server-transport.js";
+import { CODEX_GOAL_CONTROL_INSTRUCTIONS } from "./codex/goal-control.js";
 import {
   createFakeCodexAppServer,
   type FakeCodexAppServer,
@@ -5542,6 +5543,87 @@ describe("Codex app-server provider", () => {
       { method: "thread/resume", params: { threadId: "archived-thread-id" } },
     ]);
   });
+
+  test.each([
+    { goalsEnabled: true, resume: false },
+    { goalsEnabled: false, resume: false },
+    { goalsEnabled: true, resume: true },
+    { goalsEnabled: false, resume: true },
+  ])(
+    "sends goal control guidance only when enabled (goals=$goalsEnabled, resume=$resume)",
+    async ({ goalsEnabled, resume }) => {
+      const appServer = createFakeCodexAppServer();
+      const session = new CodexAppServerAgentSession(
+        createConfig({
+          systemPrompt: "User instructions.",
+          daemonAppendSystemPrompt: "Daemon instructions.",
+        }),
+        resume ? archivedThreadHandle() : null,
+        createTestLogger(),
+        async () => appServer.child,
+        {},
+        false,
+        goalsEnabled,
+      );
+      const expectedInstructions = [
+        "User instructions.",
+        "Daemon instructions.",
+        ...(goalsEnabled ? [CODEX_GOAL_CONTROL_INSTRUCTIONS] : []),
+      ].join("\n\n");
+      try {
+        await session.startTurn("continue");
+        expect(await appServer.waitForTurnStart()).toMatchObject({
+          developerInstructions: expectedInstructions,
+        });
+        expect(appServer.requests()).toContainEqual(
+          expect.objectContaining({
+            method: resume ? "thread/resume" : "thread/start",
+            params: expect.objectContaining({ developerInstructions: expectedInstructions }),
+          }),
+        );
+        appServer.assertNoErrors();
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
+  test.each([
+    { rpcError: null, expected: "Goal paused.\n\n" },
+    {
+      rpcError: "goal storage unavailable",
+      expected: "Failed to update goal: goal storage unavailable\n\n",
+    },
+  ])(
+    "reports the actual pause RPC outcome without interrupting ($rpcError)",
+    async ({ rpcError, expected }) => {
+      const requests: Array<{ method: string; params: unknown }> = [];
+      const session = createSession({}, { goalsEnabled: true });
+      session.client = {
+        request: async (method, params) => {
+          requests.push({ method, params });
+          if (method === "thread/loaded/list") return { data: ["test-thread"] };
+          if (method === "thread/goal/set" && rpcError) throw new Error(rpcError);
+          return {};
+        },
+      };
+      const handler = session.tryHandleOutOfBand?.("/goal pause");
+      if (!handler) throw new Error("Expected a goal command handler");
+      const events: AgentStreamEvent[] = [];
+      await handler.run({ emit: (event) => events.push(event) });
+      expect(requests).toEqual([
+        { method: "thread/loaded/list", params: {} },
+        { method: "thread/goal/set", params: { threadId: "test-thread", status: "paused" } },
+      ]);
+      expect(events).toEqual([
+        {
+          type: "timeline",
+          provider: "codex",
+          item: { type: "assistant_message", text: expected },
+        },
+      ]);
+    },
+  );
 
   test("appends blank-line spacing to /goal status messages", async () => {
     const requests: Array<{ method: string; params: unknown }> = [];

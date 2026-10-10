@@ -98,6 +98,7 @@ interface LooseContentBlock {
 }
 
 interface RegisteredMcpTool {
+  description?: string;
   inputSchema: LooseInputSchema;
   callback?: (
     input: unknown,
@@ -3834,6 +3835,51 @@ class HeldTurnAgentClient implements AgentClient {
 describe("send_agent_prompt MCP tool", () => {
   const logger = createTestLogger();
   const existingCwd = process.cwd();
+
+  it.each([true, false])(
+    "acknowledges self-directed goal commands without waiting or notifying (background=%s)",
+    async (background) => {
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      spies.agentManager.getAgent.mockReturnValue(
+        createManagedAgent({
+          id: "self-agent",
+          cwd: existingCwd,
+          workspaceId: "wks_parent",
+          lifecycle: "running",
+        }),
+      );
+      spies.agentManager.tryRunOutOfBand.mockReturnValue(true);
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        callerAgentId: "self-agent",
+        logger,
+      });
+      const tool = registeredTool(server, "send_agent_prompt");
+      expect(tool.description).toContain('agentId="self-agent"');
+      expect(tool.description).toContain("explicit user request");
+      const response = await invokeToolWithParsedInput(tool, {
+        agentId: "self-agent",
+        prompt: "/goal pause",
+        background,
+      });
+      expect(response.structuredContent).toMatchObject({
+        success: true,
+        status: "running",
+        lastMessage: null,
+        permission: null,
+        guidance: expect.stringContaining("Dispatch does not confirm"),
+      });
+      expect(spies.agentManager.tryRunOutOfBand).toHaveBeenCalledWith(
+        "self-agent",
+        "/goal pause",
+        undefined,
+      );
+      expect(spies.agentManager.streamAgent).not.toHaveBeenCalled();
+      expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
+    },
+  );
 
   it("delivers scheduled observer prompts as internal agent context", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();

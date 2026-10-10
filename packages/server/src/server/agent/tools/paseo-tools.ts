@@ -5,6 +5,10 @@ import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager } from "../agent-manager.js";
+import {
+  goalControlToolDescription,
+  OUT_OF_BAND_COMMAND_GUIDANCE,
+} from "../providers/codex/goal-control.js";
 import { AgentProfileSchema } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import {
@@ -1899,7 +1903,8 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     {
       title: "Send agent prompt",
       description:
-        "Send a task to a running agent. Messages between agents are internal context, not visible user messages. Agent-scoped callers run in background by default; top-level callers wait by default.",
+        "Send a task to a running agent. Messages between agents are internal context, not visible user messages. Agent-scoped callers run in background by default; top-level callers wait by default." +
+        goalControlToolDescription(callerAgentId),
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
         success: z.boolean(),
@@ -1941,6 +1946,19 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         sessionMode,
         logger: childLogger,
       });
+
+      if (disposition === "out_of_band") {
+        return {
+          content: [],
+          structuredContent: {
+            success: true,
+            status: agentManager.getAgent(agentId)?.lifecycle ?? "idle",
+            lastMessage: null,
+            permission: null,
+            guidance: OUT_OF_BAND_COMMAND_GUIDANCE,
+          },
+        };
+      }
 
       // If not running in background, wait for completion
       if (!background) {
