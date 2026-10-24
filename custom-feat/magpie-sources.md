@@ -17,6 +17,14 @@ previews use an iframe. The plugin obtains a sign-in link on demand and Magpie
 exchanges it for an HTTP-only cookie. The key never enters quota snapshots or
 saved configuration. SSH mode refuses a loopback link to the wrong machine.
 
+For CVM, a private `~/.config/magpie/paseo-web.json` on the daemon host selects
+`http://cvm-magpie.localhost:3431`. A Mac LaunchAgent
+`com.paseo.magpie-cvm-tunnel` maintains an SSH forward from loopback port 3431 to
+CVM loopback port 3430, reconnecting on failure. The distinct hostname isolates
+the remote cookie from local Magpie's identically named cookie. No remote
+listener is exposed and neither Magpie nor Paseo needs a restart. Other client
+machines require their own forward. Malformed configuration fails explicitly.
+
 `plugins/magpie/server/projection.ts` continues to project display-only provider
 data for menu-bar quotas and composer shortcuts. Quota failures remain distinct
 from source configuration and never imply a fallback route exists.
@@ -30,7 +38,8 @@ No default agent routing is changed by this UI or startup configuration.
 ## Validation
 
 The projection tests verify model counts and removal of credential fields.
-`server/web.test.ts` verifies the management link and invalid/missing key handling.
+`server/web.test.ts` verifies local and forwarded management links, independent
+cookie hostnames, rejected URL credentials/paths and invalid/missing key handling.
 `magpie-native.real.spec.ts` opens the real upstream page, navigates its provider
 and routing views, and checks that the key has left the page URL.
 `packages/desktop/e2e/magpie-native.electron.mjs` checks the same navigation in
