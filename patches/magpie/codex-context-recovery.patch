@@ -192,10 +192,10 @@ index fb8f8c38..4d375b63 100644
  	h.Set("Cache-Control", "no-cache")
 diff --git a/internal/gateway/codex_portable_compaction.go b/internal/gateway/codex_portable_compaction.go
 new file mode 100644
-index 00000000..ac537d87
+index 00000000..088d7307
 --- /dev/null
 +++ b/internal/gateway/codex_portable_compaction.go
-@@ -0,0 +1,192 @@
+@@ -0,0 +1,193 @@
 +package gateway
 +
 +import (
@@ -379,7 +379,8 @@ index 00000000..ac537d87
 +	prompt, _ := json.Marshal(userMessage(codexCompactPrompt + "\nPreserve concrete values from tool results and pending requests. Do not perform tasks or call tools."))
 +	request["input"], _ = json.Marshal(append(kept, prompt))
 +	request["stream"], request["store"], request["tools"] = json.RawMessage("true"), json.RawMessage("false"), json.RawMessage("[]")
-+	for _, field := range []string{"previous_response_id", "tool_choice", "parallel_tool_calls", "response_format", "text"} {
++	request["parallel_tool_calls"] = json.RawMessage("false")
++	for _, field := range []string{"previous_response_id", "tool_choice", "response_format", "text"} {
 +		delete(request, field)
 +	}
 +	body, _ = json.Marshal(request)
@@ -390,10 +391,10 @@ index 00000000..ac537d87
 +}
 diff --git a/internal/gateway/codex_portable_compaction_test.go b/internal/gateway/codex_portable_compaction_test.go
 new file mode 100644
-index 00000000..d8143ab6
+index 00000000..b5250577
 --- /dev/null
 +++ b/internal/gateway/codex_portable_compaction_test.go
-@@ -0,0 +1,221 @@
+@@ -0,0 +1,229 @@
 +package gateway
 +
 +import (
@@ -461,6 +462,13 @@ index 00000000..d8143ab6
 +	var mu sync.Mutex
 +	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
 +		b, _ := io.ReadAll(r.Body)
++		if r.Header.Get("X-OpenAI-Internal-Codex-Responses-Lite") == "true" {
++			var decoded obj
++			decodeJSON(b, &decoded)
++			if string(decoded["parallel_tool_calls"]) != "false" {
++				t.Error("Responses Lite summary lost parallel_tool_calls=false")
++			}
++		}
 +		mu.Lock()
 +		path, request = r.URL.Path, b
 +		mu.Unlock()
@@ -474,6 +482,7 @@ index 00000000..d8143ab6
 +	req := httptest.NewRequest("POST", CodexPath+"/responses/compact", strings.NewReader(`{"model":"gpt-6.1-sol","service_tier":"ultrafast","input":[{"type":"function_call","call_id":"c1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"azalea-42"},{"type":"message","role":"user","content":[{"type":"input_text","text":"remember the lookup"}]}]}`))
 +	req.Header.Set("Authorization", "Bearer header.payload.signature")
 +	req.Header.Set("chatgpt-account-id", "acct-native")
++	req.Header.Set("X-OpenAI-Internal-Codex-Responses-Lite", "true")
 +	rec := httptest.NewRecorder()
 +	New().Handler().ServeHTTP(rec, req)
 +	if rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") {
