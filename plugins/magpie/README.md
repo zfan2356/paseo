@@ -5,6 +5,14 @@ usage, plugins and settings come directly from Magpie; Paseo does not reimplemen
 that UI. Its `magpie.snapshot` RPC still supplies the desktop menu bar and composer
 source/speed shortcuts. It is not registered as a built-in plugin.
 
+After first opening a host's page, its webview remains resident for the renderer's
+lifetime. Closing the panel or switching hosts only parks it; reopening reuses
+the same guest, navigation and form state without fetching another sign-in link.
+Local and CVM pages each own one independent instance. App exit releases them.
+An explicit retry replaces only the failed host's page. Hidden pages keep their
+last viewport and do not intercept clicks or keyboard input; browser throttling
+remains enabled when the app window is hidden.
+
 Magpie source is included as the `third_party/magpie` submodule from
 [yetone/magpie](https://github.com/yetone/magpie), pinned to
 `9572a35761c2606257e8493ab47dedda38eb6b88`. The source keeps its upstream license.
@@ -37,10 +45,25 @@ when opening the page. Magpie exchanges the key for its HTTP-only cookie and
 removes it from the page URL. The link is not part of quota snapshots or saved
 plugin configuration. No Magpie frontend assets are copied or restyled.
 
-The embedded page currently targets Magpie on the same Mac as the client.
-An SSH bridge refuses to return a misleading client-loopback URL; use Magpie's
-own forwarded web page for that host. The bridge's quota and shortcut RPCs remain
-available.
+By default the page targets Magpie on the same Mac as the client. For a remote
+Paseo daemon, forward its management port to the client and create
+`~/.config/magpie/paseo-web.json` on the daemon host:
+
+```json
+{ "url": "http://cvm-magpie.localhost:3431" }
+```
+
+This URL must be an HTTP(S) origin without credentials, path, query or fragment.
+For CVM, forward Mac `127.0.0.1:3431` to CVM `127.0.0.1:3430` with SSH. Chromium
+resolves `*.localhost` to loopback. Use this distinct hostname so the local and
+remote Magpie instances do not overwrite each other's identically named cookies.
+The key stays on its owning host and travels only through the authenticated
+Paseo RPC and the encrypted SSH tunnel. Keep both management listeners on
+loopback. Other client machines need the same forwarding setup or their own
+reachable management origin.
+
+This setting supports a plugin installed on the remote Paseo daemon. The
+separate SSH RPC bridge still refuses to return a client-loopback URL.
 
 If Magpie must use a different Codex account directory than the daemon or shell,
 create a private `~/.config/magpie/runtime.json` containing
@@ -89,3 +112,6 @@ for the browser page and
 `node packages/desktop/e2e/magpie-native.electron.mjs /Applications/Paseo.app`
 for the installed Electron renderer. The desktop test uses an isolated profile
 and daemon; it leaves the running app and production daemon untouched.
+Set `PASEO_MAGPIE_REMOTE_ENDPOINT=<cvm-host>:6767` to additionally check the deployed
+remote plugin and return to the local page, proving the two login cookies do not
+collide. This check requires the client-side SSH forward described above.

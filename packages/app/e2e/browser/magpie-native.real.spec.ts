@@ -42,6 +42,19 @@ test("Magpie opens its upstream page and navigates the native management views",
     expect(embedded).toBeDefined();
     expect(new URL(embedded!.url()).searchParams.has("k")).toBe(false);
     await expect(page.getByText("个人优先路由", { exact: true })).toHaveCount(0);
+    const origin = await embedded!.evaluate(() => performance.timeOrigin);
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await page.getByTestId("plugin-surface-close").click();
+      await expect(page.locator('iframe[title="Magpie"]')).toHaveCount(1);
+      await page.getByRole("button", { name: "Magpie", exact: true }).click();
+      await expect(page.getByText("正在打开 Magpie 原生管理页面…", { exact: true })).toHaveCount(0);
+      await expect(frame.locator("#nav")).toBeVisible();
+      expect(await embedded!.evaluate(() => performance.timeOrigin)).toBe(origin);
+      await expect(frame.locator('#nav [data-view="routing"]')).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    }
   } finally {
     await client.removePlugin("magpie").catch(() => undefined);
     await client
