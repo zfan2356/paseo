@@ -106,7 +106,7 @@ jobs:
           export HOME="$test_home" USERPROFILE="$test_home" XDG_CONFIG_HOME="$test_home/.config" XDG_CACHE_HOME="$test_home/.cache"
           go vet -tags nogui ./...
           go test -tags nogui ./... -timeout 60m
-          go test -race -tags nogui ./internal/gateway -run 'TestCodexNativeForeignReasoningRecovery|TestCodexNativeDoesNotReplayAfterOutput|TestNativeRefusedReasoningConcurrentReaders|TestForeignSeal' -count=5 -timeout 10m
+          go test -race -tags nogui ./internal/gateway -run 'TestCodexNativeForeignReasoningRecovery|TestCodexNativeDoesNotReplayAfterOutput|TestNativeRefusedReasoningConcurrentReaders|TestNativeCompaction|TestOldNativeCompaction|TestLegacyMigration|TestForeignSeal' -count=5 -timeout 10m
 
       - name: Build the verified Magpie binary
         env:

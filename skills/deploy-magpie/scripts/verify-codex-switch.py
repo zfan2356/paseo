@@ -21,7 +21,10 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--port", type=int, default=24825)
     parser.add_argument("--compact", action="store_true")
+    parser.add_argument("--seed-magpie", type=Path, help="Create an old native checkpoint with this binary, then switch to --magpie")
     args = parser.parse_args()
+    if args.seed_magpie and not args.compact:
+        parser.error("--seed-magpie requires --compact")
     output = args.output.resolve()
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     gateway_home = output / "gateway-home"
@@ -73,21 +76,24 @@ def main():
     try:
         gateway_log = (output / "gateway.log").open("w")
         logs.append(gateway_log)
-        gateway = subprocess.Popen([str(args.magpie), "serve"], env=env, stdout=gateway_log, stderr=subprocess.STDOUT)
-        processes.append(gateway)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            if gateway.poll() is not None:
-                raise RuntimeError("Isolated Magpie exited; inspect its private log")
-            try:
-                with opener.open(gateway_url + "/", timeout=1) as response:
-                    if json.load(response).get("name") == "magpie":
-                        break
-            except OSError:
-                time.sleep(0.2)
-        else:
+
+        def start_gateway(binary):
+            gateway = subprocess.Popen([str(binary), "serve"], env=env, stdout=gateway_log, stderr=subprocess.STDOUT)
+            processes.append(gateway)
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                if gateway.poll() is not None:
+                    raise RuntimeError("Isolated Magpie exited; inspect its private log")
+                try:
+                    with opener.open(gateway_url + "/", timeout=1) as response:
+                        if json.load(response).get("name") == "magpie":
+                            return gateway
+                except OSError:
+                    time.sleep(0.2)
             raise TimeoutError("Isolated Magpie startup")
+
+        gateway = start_gateway(args.seed_magpie or args.magpie)
         codex_log = (output / "codex.log").open("w")
         logs.append(codex_log)
         client = subprocess.Popen(
@@ -169,14 +175,16 @@ def main():
                     if item.get("type") == "commandExecution":
                         tools += 1
             text = "\n".join(messages)
-            stage = {"label": label, "model": model, "status": completed.get("status"), "seconds": round(time.monotonic() - started, 2), "toolCalls": tools, "rememberedToken": token in text if expect_token else None}
+            stage = {"label": label, "model": model, "status": completed.get("status"), "seconds": round(time.monotonic() - started, 2), "toolCalls": tools, "rememberedToken": token in text if expect_token else None, "replyText": text}
             report["stages"].append(stage)
             (output / "verification.json").write_text(json.dumps(report, indent=2))
-            print(json.dumps(stage), flush=True)
+            print(json.dumps({key: value for key, value in stage.items() if key != "replyText"}), flush=True)
             if completed.get("status") != "completed":
                 raise RuntimeError(f"{label}: turn failed; private error: {completed.get('error')}")
             if expect_token and token not in text:
                 raise AssertionError(f"{label}: lost the earlier tool result")
+            if expect_tool and text.strip() != "READY":
+                raise AssertionError(f"{label}: initial reply was not READY")
             if expect_tool and tools != 1:
                 raise AssertionError(f"{label}: expected exactly one terminal execution")
             if expect_token and tools:
@@ -193,6 +201,11 @@ def main():
                 if note.get("method") == "item/completed" and note.get("params", {}).get("item", {}).get("type") == "contextCompaction":
                     break
             report["compacted"] = True
+            if args.seed_magpie:
+                gateway.terminate()
+                gateway.wait(timeout=8)
+                gateway = start_gateway(args.magpie)
+                report["seededLegacyCheckpoint"] = True
         prompt = "Reply with exactly the token you read earlier. Do not call any tools."
         for index in range(5):
             turn(f"ichat-{index + 1}", "ichat/gpt-6.1-sol", prompt, expect_token=True)
