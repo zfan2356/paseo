@@ -5,6 +5,14 @@ usage, plugins and settings come directly from Magpie; Paseo does not reimplemen
 that UI. Its `magpie.snapshot` RPC still supplies the desktop menu bar and composer
 source/speed shortcuts. It is not registered as a built-in plugin.
 
+After first opening a host's page, its webview remains resident for the renderer's
+lifetime. Closing the panel or switching hosts only parks it; reopening reuses
+the same guest, navigation and form state without fetching another sign-in link.
+Local and CVM pages each own one independent instance. App exit releases them.
+An explicit retry replaces only the failed host's page. Hidden pages keep their
+last viewport and do not intercept clicks or keyboard input; browser throttling
+remains enabled when the app window is hidden.
+
 Magpie source is included as the `third_party/magpie` submodule from
 [yetone/magpie](https://github.com/yetone/magpie), pinned to
 `9572a35761c2606257e8493ab47dedda38eb6b88`. The source keeps its upstream license.

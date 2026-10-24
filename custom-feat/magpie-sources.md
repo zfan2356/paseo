@@ -17,6 +17,17 @@ previews use an iframe. The plugin obtains a sign-in link on demand and Magpie
 exchanges it for an HTTP-only cookie. The key never enters quota snapshots or
 saved configuration. SSH mode refuses a loopback link to the wrong machine.
 
+The user requires pages to remain open while Paseo runs, not reload on every
+route visit. A renderer-owned registry keeps one permanent body-level webview
+per host after first use. Route components own only a measured anchor; leaving
+the route parks the permanent surface without moving or removing its guest.
+The hidden surface is inert and clipped to 1x1 while the guest keeps its last
+viewport. Reopening restores geometry and page state. Sign-in queries stay in
+memory, and the resident link seeds a replacement plugin installation. Nothing
+is persisted to disk; renderer exit releases all guests. Explicit retry replaces
+only the failed host. This remains a plugin-only overlay, with no core route,
+terminal or browser-runtime changes.
+
 For CVM, a private `~/.config/magpie/paseo-web.json` on the daemon host selects
 `http://cvm-magpie.localhost:3431`. A Mac LaunchAgent
 `com.paseo.magpie-cvm-tunnel` maintains an SSH forward from loopback port 3431 to
@@ -45,6 +56,10 @@ and routing views, and checks that the key has left the page URL.
 `packages/desktop/e2e/magpie-native.electron.mjs` checks the same navigation in
 the installed Electron renderer, verifies the page has no Node access and
 occupies the pane, and exercises the packaged daemon and terminal smoke.
+Both browser and Electron regressions close/reopen the page three times and
+assert unchanged page birth time and native navigation. Electron also verifies
+unchanged guest IDs, hidden input isolation and repeated local/CVM SPA switches
+with exactly two resident guests.
 Starter tests verify process-local home selection and rejection of invalid paths
 or unrelated settings. Reload the directory plugin to activate UI changes;
 rebuilding or restarting Paseo is unnecessary.

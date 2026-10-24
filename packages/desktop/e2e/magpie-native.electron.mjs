@@ -21,7 +21,7 @@ function connectClient(endpoint) {
 }
 
 async function verifyNativePage(page, expectedOrigin, artifactName) {
-  const view = page.locator('webview[title="Magpie"]');
+  const view = page.locator('[data-magpie-host][aria-hidden="false"] webview[title="Magpie"]');
   await expect(view).toBeVisible();
   await expect
     .poll(() =>
@@ -84,6 +84,45 @@ async function verifyNativePage(page, expectedOrigin, artifactName) {
   }
 }
 
+async function pageIdentity(page) {
+  return page
+    .locator('[data-magpie-host][aria-hidden="false"] webview[title="Magpie"]')
+    .evaluate(async (element) => ({
+      guestId: element.getWebContentsId(),
+      birth: await element.executeJavaScript("performance.timeOrigin"),
+      current: await element.executeJavaScript(
+        'document.querySelector("#nav [aria-current=page]").getAttribute("data-view")',
+      ),
+      viewport: await element.executeJavaScript("({ width: innerWidth, height: innerHeight })"),
+    }));
+}
+
+async function verifyRouteResidency(page) {
+  const identity = await pageIdentity(page);
+  const count = await page.locator('webview[title="Magpie"]').count();
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    await page.getByTestId("plugin-surface-close").click();
+    await expect(page.locator('webview[title="Magpie"]')).toHaveCount(count);
+    await expect(page.locator('[data-magpie-host][aria-hidden="false"]')).toHaveCount(0);
+    expect(
+      await page
+        .locator("[data-magpie-host]")
+        .evaluateAll((elements) =>
+          elements.every((element) => element.inert && element.style.pointerEvents === "none"),
+        ),
+    ).toBe(true);
+    await page.getByRole("button", { name: "Magpie", exact: true }).click();
+    await expect(page.getByText("正在打开 Magpie 原生管理页面…", { exact: true })).toHaveCount(0);
+    await expect.poll(() => pageIdentity(page)).toEqual(identity);
+  }
+  return identity;
+}
+
+async function selectHost(page, label) {
+  await page.getByTestId("plugin-host-filter-trigger").click();
+  await page.getByRole("button", { name: label, exact: true }).click();
+}
+
 async function verifyRemotePage(page, endpoint, localUrl) {
   const remote = connectClient(endpoint);
   try {
@@ -114,10 +153,27 @@ async function verifyRemotePage(page, endpoint, localUrl) {
     url.pathname = `/h/${encodeURIComponent(serverId)}/plugin/magpie/surface/main`;
     await page.goto(url.href);
     await verifyNativePage(page, remoteOrigin, "magpie-cvm.png");
-    // Returning to local Magpie must keep its independent cookie valid.
-    await page.goto(localUrl);
+    const remoteIdentity = await verifyRouteResidency(page);
+    const localId = decodeURIComponent(new URL(localUrl).pathname.split("/")[2]);
+    const localLabel = await page.evaluate(
+      (id) =>
+        JSON.parse(localStorage.getItem("@paseo:daemon-registry")).find(
+          (host) => host.serverId === id,
+        ).label,
+      localId,
+    );
+    // These are SPA host switches, not full renderer reloads.
+    await selectHost(page, localLabel);
     await verifyNativePage(page, "http://127.0.0.1:3430", "magpie-local-return.png");
-    console.log("CVM native page and local/remote cookie isolation passed.");
+    const localIdentity = await verifyRouteResidency(page);
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await selectHost(page, "CVM Magpie");
+      await expect.poll(() => pageIdentity(page)).toEqual(remoteIdentity);
+      await selectHost(page, localLabel);
+      await expect.poll(() => pageIdentity(page)).toEqual(localIdentity);
+      await expect(page.locator('webview[title="Magpie"]')).toHaveCount(2);
+    }
+    console.log("CVM/local page residency, SPA switching and cookie isolation passed.");
   } finally {
     await remote.close();
   }
@@ -138,6 +194,7 @@ await smokePackagedDesktopApp({
       await client.installDirectoryPlugin(path.join(root, "plugins/magpie"));
       await page.getByRole("button", { name: "Magpie", exact: true }).click();
       await verifyNativePage(page, "http://127.0.0.1:3430", "magpie-native.png");
+      await verifyRouteResidency(page);
       console.log("Magpie native desktop page, sign-in, navigation and sandbox passed.");
       const remoteEndpoint = process.env.PASEO_MAGPIE_REMOTE_ENDPOINT;
       if (remoteEndpoint) {
