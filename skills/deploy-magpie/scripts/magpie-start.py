@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Start a user-owned Magpie CLI bound to loopback; keep its key private."""
 import fcntl
+import json
 import os
 from pathlib import Path
 import secrets
@@ -11,9 +12,13 @@ import urllib.request
 
 def healthy():
     try:
-        with urllib.request.urlopen("http://127.0.0.1:3425/health", timeout=2) as response:
-            return response.status == 200
-    except (OSError, urllib.error.URLError):
+        # Magpie exposes its identity at GET /, not /health. Loopback probes
+        # must not follow the user's HTTP proxy configuration.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open("http://127.0.0.1:3425/", timeout=2) as response:
+            info = json.load(response)
+            return response.status == 200 and isinstance(info, dict) and info.get("name") == "magpie"
+    except (OSError, urllib.error.URLError, ValueError):
         return False
 
 

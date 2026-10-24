@@ -26,7 +26,7 @@ For an SSH bridge, deploy on the Magpie host first and set the bridge variables 
 
 ## Verify and roll back
 
-- Check `~/.local/bin/magpie --version` against the lock's build version. Check the loopback health endpoint at `http://127.0.0.1:3425/health` after startup. If it fails, inspect `~/.local/state/magpie/serve.log` locally without copying tokens or account records into chat.
+- Check `~/.local/bin/magpie --version` against the lock's build version. Check `GET http://127.0.0.1:3425/` after startup and require a JSON object with `name: "magpie"`; there is no `/health` endpoint. Bypass HTTP proxies for this loopback check. If it fails, inspect `~/.local/state/magpie/serve.log` locally without copying tokens or account records into chat.
 - Require `paseo plugin ls` to show `magpie` running. Verify a snapshot and refresh from the target host, then check the desktop quota selector. Test source/speed changes only on a route the user requested. Login and route reconfiguration are separate actions, not deployment prerequisites.
 - Report the source revision, binary version, plugin status, and whether the process was restarted. Never report secret key contents.
 - To roll back, stop the identified Magpie process if authorized, atomically restore the saved binary in `~/.local/lib/magpie/backups`, then run `magpie-start`. Keep provider config and credentials. Restore the prior plugin source/revision and reload only that plugin if needed. Verify health and snapshot again.
