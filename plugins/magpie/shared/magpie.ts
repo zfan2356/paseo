@@ -82,6 +82,11 @@ export const snapshotRpc = defineRpc({
   input: z.object({ refresh: z.boolean().default(false) }),
   output: snapshotSchema,
 });
+export const webUiRpc = defineRpc({
+  name: "magpie.web.open",
+  input: z.object({}),
+  output: z.object({ url: z.url() }),
+});
 export const startRpc = defineRpc({
   name: "magpie.start",
   input: z.object({}),

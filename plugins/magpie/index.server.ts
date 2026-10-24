@@ -1,8 +1,10 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { MagpieBridge } from "./server/magpie.js";
+import { localRequest, MagpieBridge } from "./server/magpie.js";
+import { webUiLink } from "./server/web.js";
 import { SshBridge, sshConfig } from "./server/ssh.js";
 import {
   snapshotRpc,
+  webUiRpc,
   startRpc,
   sourceRpc,
   ultraRpc,
@@ -15,6 +17,17 @@ import {
 export default function contribute(server: PluginServerContext) {
   const config = sshConfig(process.env);
   const bridge = config ? new SshBridge(config) : new MagpieBridge();
+  server.handle(webUiRpc, async () => {
+    if (config) {
+      throw new Error("远程 Magpie 原生页面需要先转发管理端口，请在该主机打开管理页面。");
+    }
+    try {
+      await localRequest("/api/state");
+      return await webUiLink();
+    } catch {
+      throw new Error("无法打开 Magpie 原生页面，请在本机运行 magpie-start 后重试。");
+    }
+  });
   server.handle(snapshotRpc, ({ refresh }) => bridge.snapshot(refresh));
   server.handle(startRpc, () => bridge.start());
   server.handle(sourceRpc, async ({ groupId, source }) => {

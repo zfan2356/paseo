@@ -1,8 +1,9 @@
 # Magpie for Paseo
 
-Optional plugin for account sign-in, quota inspection, personal/ichat source selection,
-and model-supported Ultra fast controls. Its `magpie.snapshot` RPC also supplies the
-desktop menu bar. It is not registered as a built-in plugin.
+Optional plugin embedding Magpie's own web management page. Accounts, routes,
+usage, plugins and settings come directly from Magpie; Paseo does not reimplement
+that UI. Its `magpie.snapshot` RPC still supplies the desktop menu bar and composer
+source/speed shortcuts. It is not registered as a built-in plugin.
 
 Magpie source is included as the `third_party/magpie` submodule from
 [yetone/magpie](https://github.com/yetone/magpie), pinned to
@@ -29,10 +30,17 @@ the gateway at `127.0.0.1:3425`. The start action calls `~/.local/bin/magpie-sta
 These paths match the deployment script. No keys or account stores belong in this
 repository. RPC responses project only display data and never raw provider records.
 
-The account page displays every configured source, including Cursor and custom API
-providers such as iChat and DeepSeek, with the number of exposed models. A ready
-source means configured, not a successful inference or a known remaining balance.
-API sources without a quota endpoint do not invent subscription or balance data.
+The surface loads the original page from `127.0.0.1:3430`. On Electron it uses
+Paseo's existing sandboxed webview profile; browser previews use an iframe.
+`magpie.web.open` obtains the existing host-local management sign-in link only
+when opening the page. Magpie exchanges the key for its HTTP-only cookie and
+removes it from the page URL. The link is not part of quota snapshots or saved
+plugin configuration. No Magpie frontend assets are copied or restyled.
+
+The embedded page currently targets Magpie on the same Mac as the client.
+An SSH bridge refuses to return a misleading client-loopback URL; use Magpie's
+own forwarded web page for that host. The bridge's quota and shortcut RPCs remain
+available.
 
 If Magpie must use a different Codex account directory than the daemon or shell,
 create a private `~/.config/magpie/runtime.json` containing
@@ -75,3 +83,9 @@ agent catalogs, provider logins or routes.
 After editing, typecheck and `paseo plugin reload magpie`. Validate the selected
 host's snapshot, refresh/error states and compact layout. Backend tests run with
 `npm run test --workspace=@getpaseo/builtin-plugins -- magpie/server --bail=1`.
+With the local management server running, use
+`npm run test:e2e:real --workspace=@getpaseo/app -- e2e/browser/magpie-native.real.spec.ts`
+for the browser page and
+`node packages/desktop/e2e/magpie-native.electron.mjs /Applications/Paseo.app`
+for the installed Electron renderer. The desktop test uses an isolated profile
+and daemon; it leaves the running app and production daemon untouched.
