@@ -34,6 +34,8 @@ export interface AgentSendOptions extends CommandOptions {
   image?: string[];
   prompt?: string;
   promptFile?: string;
+  ifIdle?: boolean;
+  messageId?: string;
 }
 
 export function addSendOptions(cmd: Command): Command {
@@ -49,6 +51,11 @@ export function addSendOptions(cmd: Command): Command {
         "--behavior <behavior>",
         "Active-turn behavior (agent default: steer; otherwise: interrupt)",
       ).choices(["interrupt", "steer"]),
+    )
+    .option("--message-id <id>", "Caller-supplied ID for message deduplication")
+    .option(
+      "--if-idle",
+      "Reject with agent_busy instead of steering or interrupting an active turn",
     )
     .option("--no-wait", "Return immediately without waiting for completion");
 }
@@ -170,6 +177,112 @@ function buildSendResult(agentIdArg: string, state: SendWaitState): AgentSendRes
   return { agentId, status: "completed", message: "Agent completed processing the message" };
 }
 
+const SEND_IF_IDLE_ERROR_CODES = new Set([
+  "agent_busy",
+  "agent_request_key_conflict",
+  "agent_request_outcome_unknown",
+]);
+
+/** Preserve the SDK's stable rejection code so `--json` reports the native reason. */
+function toSendIfIdleCommandError(error: unknown): CommandError {
+  const message = error instanceof Error ? error.message : String(error);
+  const errorCode =
+    typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+      ? error.code.trim()
+      : undefined;
+  const code = errorCode || message.trim();
+
+  // Capability absence is a host dependency, not a send failure.
+  if (code === "unsupported_operation") {
+    return {
+      code: "DAEMON_UPDATE_REQUIRED",
+      message: "Update the host to send messages only when the agent is idle.",
+    };
+  }
+  if (SEND_IF_IDLE_ERROR_CODES.has(code)) return { code, message };
+  return { code: "SEND_FAILED", message: `Failed to send message: ${message}` };
+}
+
+function resolveIfIdleRequest(
+  options: AgentSendOptions,
+  messageId: string | undefined,
+): { messageId: string } | null {
+  if (!options.ifIdle) return null;
+  if (!messageId) {
+    throw {
+      code: "MISSING_MESSAGE_ID",
+      message: "--if-idle requires a nonempty --message-id",
+      details: "Retries must reuse the same --message-id so the host can deduplicate them.",
+    } satisfies CommandError;
+  }
+  if (options.behavior !== undefined) {
+    throw {
+      code: "CONFLICTING_OPTIONS",
+      message: "--if-idle cannot be combined with --behavior",
+      details: "Idle-only sends never steer or interrupt an active turn.",
+    } satisfies CommandError;
+  }
+  return { messageId };
+}
+
+interface SendAcceptance {
+  agentId: string;
+  queued?: boolean;
+}
+
+async function sendIfIdle(
+  client: Awaited<ReturnType<typeof connectToDaemon>>,
+  agentId: string,
+  prompt: string,
+  request: {
+    messageId: string;
+    images?: Array<{ data: string; mimeType: string }>;
+    sourceAgentId?: string;
+  },
+): Promise<SendAcceptance> {
+  try {
+    const accepted = await client.sendAgentMessageIfIdle(agentId, prompt, {
+      messageId: request.messageId,
+      ...(request.images ? { images: request.images } : {}),
+      ...(request.sourceAgentId ? { sourceAgentId: request.sourceAgentId } : {}),
+    });
+    return { agentId: accepted.agentId };
+  } catch (err) {
+    throw toSendIfIdleCommandError(err);
+  }
+}
+
+async function finishSend(
+  client: Awaited<ReturnType<typeof connectToDaemon>>,
+  acceptance: SendAcceptance,
+  wait: boolean | undefined,
+): Promise<SingleResult<AgentSendResult>> {
+  try {
+    if (wait === false) {
+      return {
+        type: "single",
+        data: {
+          agentId: acceptance.agentId,
+          status: acceptance.queued ? "queued" : "sent",
+          message: acceptance.queued
+            ? "Message queued for delivery after two quiet seconds"
+            : "Message sent, not waiting for completion",
+        },
+        schema: agentSendSchema,
+      };
+    }
+
+    const state = await client.waitForFinish(acceptance.agentId, 600000); // 10 minute timeout
+    return {
+      type: "single",
+      data: buildSendResult(acceptance.agentId, state),
+      schema: agentSendSchema,
+    };
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
 export async function runSendCommand(
   agentIdArg: string,
   prompt: string | undefined,
@@ -186,6 +299,9 @@ export async function runSendCommand(
     throw error;
   }
 
+  const messageId = options.messageId?.trim() || undefined;
+  const ifIdleRequest = resolveIfIdleRequest(options, messageId);
+
   const promptInput = await resolvePromptInput({
     promptArgument: prompt,
     promptOption: options.prompt,
@@ -200,39 +316,25 @@ export async function runSendCommand(
       options.image && options.image.length > 0 ? await readImageFiles(options.image) : undefined;
 
     const sourceAgentId = process.env.PASEO_AGENT_ID?.trim() || undefined;
-    // Send the message
-    const receipt = await client.sendAgentMessage(agentIdArg, promptInput, {
-      images,
-      sourceAgentId,
-      activeTurnBehavior: options.behavior ?? (sourceAgentId ? "steer" : "interrupt"),
-    });
 
-    // If --no-wait, return immediately
-    if (options.wait === false) {
-      await client.close();
-
-      return {
-        type: "single",
-        data: {
-          agentId: agentIdArg,
-          status: receipt.deliveryStatus ?? "sent",
-          message:
-            receipt.deliveryStatus === "queued"
-              ? "Message queued for delivery after two quiet seconds"
-              : "Message sent, not waiting for completion",
-        },
-        schema: agentSendSchema,
-      };
+    let acceptance: SendAcceptance;
+    if (ifIdleRequest) {
+      acceptance = await sendIfIdle(client, agentIdArg, promptInput, {
+        messageId: ifIdleRequest.messageId,
+        images,
+        sourceAgentId,
+      });
+    } else {
+      const receipt = await client.sendAgentMessage(agentIdArg, promptInput, {
+        images,
+        sourceAgentId,
+        activeTurnBehavior: options.behavior ?? (sourceAgentId ? "steer" : "interrupt"),
+        messageId,
+      });
+      acceptance = { agentId: agentIdArg, queued: receipt.deliveryStatus === "queued" };
     }
 
-    const state = await client.waitForFinish(agentIdArg, 600000); // 10 minute timeout
-    await client.close();
-
-    return {
-      type: "single",
-      data: buildSendResult(agentIdArg, state),
-      schema: agentSendSchema,
-    };
+    return await finishSend(client, acceptance, options.wait);
   } catch (err) {
     await client.close().catch(() => {});
 

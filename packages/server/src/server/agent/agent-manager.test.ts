@@ -7511,6 +7511,184 @@ test("replaceAgentRun stays running when a stale old terminal arrives before the
   unsubscribe();
 });
 
+test("idle-only admission rejects in the held replacement gap and the ordinary replacement wins", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-idle-replacement-"));
+  const storagePath = join(workdir, "agents");
+  const storage = new AgentStorage(storagePath, logger);
+  const interruptStarted = deferred<void>();
+  const allowInterruptToFinish = deferred<void>();
+  const allowReplacementTurnToFinish = deferred<void>();
+  const oldTurnSettled = deferred<void>();
+  const prompts: string[] = [];
+
+  class ReplacementGapSession extends TestAgentSession {
+    private localTurnCounter = 0;
+
+    override async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
+      prompts.push(typeof prompt === "string" ? prompt : JSON.stringify(prompt));
+      const turnId = `turn-${++this.localTurnCounter}`;
+      const turnNum = this.localTurnCounter;
+      setTimeout(async () => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        if (turnNum === 1) return;
+        await allowReplacementTurnToFinish.promise;
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+
+    override async interrupt(): Promise<void> {
+      interruptStarted.resolve();
+      // The old run settles here and finalizeForegroundTurn holds
+      // lifecycle="running" for pendingReplacement. Holding the interrupt keeps
+      // the replacement's own admission from resuming inside that window.
+      this.pushEvent({
+        type: "turn_canceled",
+        provider: this.provider,
+        reason: "interrupted",
+        turnId: "turn-1",
+      });
+      await allowInterruptToFinish.promise;
+    }
+  }
+
+  class ReplacementGapClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new ReplacementGapSession(config);
+    }
+  }
+
+  const manager = new AgentManager({
+    clients: {
+      codex: new ReplacementGapClient(),
+    },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000127",
+  });
+
+  const snapshot = await manager.createAgent(
+    {
+      provider: "codex",
+      cwd: workdir,
+    },
+    undefined,
+    { workspaceId: undefined },
+  );
+
+  const unsubscribe = manager.subscribe(
+    (event) => {
+      if (
+        event.type === "agent_stream" &&
+        event.agentId === snapshot.id &&
+        event.event.type === "turn_canceled"
+      ) {
+        oldTurnSettled.resolve();
+      }
+    },
+    { agentId: snapshot.id, replayState: false },
+  );
+
+  const firstRun = manager.streamAgent(snapshot.id, "held turn");
+  const firstRunDrain = (async () => {
+    for await (const _event of firstRun) {
+      // Drain the interrupted run.
+    }
+  })();
+  await manager.waitForAgentRunStart(snapshot.id);
+
+  const replacementPromise = manager.replaceAgentRun(snapshot.id, "ordinary replacement", {
+    clientMessageId: "replacement-client-message",
+  });
+  await interruptStarted.promise;
+  await oldTurnSettled.promise;
+
+  const managerInternals = manager as unknown as {
+    runs: { hasRun(agentId: string): boolean };
+  };
+  const gap = manager.getAgent(snapshot.id);
+  expect(gap?.pendingReplacement).toBe(true);
+  expect(gap?.activeForegroundTurnId).toBeNull();
+  expect(gap?.lifecycle).toBe("running");
+  expect(managerInternals.runs.hasRun(snapshot.id)).toBe(false);
+  const permissionsBefore = manager.getPendingPermissions(snapshot.id);
+
+  try {
+    // The production race reaches this same boundary from the WS handler; the
+    // interrupt hold only makes the replacement window deterministic.
+    const admission = await manager.tryStreamAgentIfIdle(snapshot.id, "idle notification");
+    expect(admission.status).toBe("busy");
+
+    const afterIdle = manager.getAgent(snapshot.id);
+    expect(afterIdle?.pendingReplacement).toBe(true);
+    expect(afterIdle?.activeForegroundTurnId).toBeNull();
+    expect(afterIdle?.lifecycle).toBe("running");
+    expect(managerInternals.runs.hasRun(snapshot.id)).toBe(false);
+    expect(prompts).toEqual(["held turn"]);
+    expect(manager.getPendingPermissions(snapshot.id)).toEqual(permissionsBefore);
+  } finally {
+    allowInterruptToFinish.resolve();
+  }
+
+  const replacementRun = await replacementPromise;
+  const replacementDrain = (async () => {
+    for await (const _event of replacementRun) {
+      // Drain the replacement run.
+    }
+  })();
+  await manager.waitForAgentRunStart(snapshot.id);
+  allowReplacementTurnToFinish.resolve();
+  await firstRunDrain;
+  await replacementDrain;
+  unsubscribe();
+
+  expect(prompts).toEqual(["held turn", "ordinary replacement"]);
+  const timelineRows = manager.fetchTimeline(snapshot.id, { direction: "tail", limit: 0 }).rows;
+  expect(
+    timelineRows.find(
+      (row) =>
+        row.item.type === "user_message" &&
+        row.item.clientMessageId === "replacement-client-message",
+    )?.item,
+  ).toMatchObject({ messageId: "replacement-client-message" });
+  expect(
+    timelineRows.some(
+      (row) => row.item.type === "user_message" && row.item.text.includes("idle notification"),
+    ),
+  ).toBe(false);
+});
+
+test("idle-only admission rejects while archive is committed but runtime closure is pending", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-idle-archive-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new SessionRecordingAgentClient();
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  const committed = deferred<void>();
+  const release = deferred<void>();
+  const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  manager.setAgentArchivedCallback(async () => {
+    committed.resolve();
+    await release.promise;
+  });
+  const archive = manager.archiveAgent(agent.id);
+  onTestFinished(async () => {
+    release.resolve();
+    await archive;
+    rmSync(workdir, { recursive: true, force: true });
+  });
+  await committed.promise;
+  expect((await storage.get(agent.id))?.archivedAt).toBeTruthy();
+  expect(manager.hasInFlightRun(agent.id)).toBe(false);
+  const startTurn = vi.spyOn(client.sessions[0], "startTurn");
+  const admission = manager.tryStreamAgentIfIdle(agent.id, "must not run after archive");
+  release.resolve();
+  expect(await admission).toEqual({ status: "archived" });
+  expect(startTurn).not.toHaveBeenCalled();
+  expect((await storage.get(agent.id))?.archivedAt).toBeTruthy();
+});
+
 test("applies live autonomous events and preserves usage omitted from completion", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-live-events-"));
   const storagePath = join(workdir, "agents");

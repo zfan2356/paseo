@@ -297,9 +297,20 @@ paseo send <id> "now run the tests"
 paseo send <id> --image screenshot.png "what's wrong here?"
 paseo send <id> --no-wait "run this task"
 paseo send <id> --behavior interrupt "stop and do this instead"
+paseo send <id> --if-idle --message-id deploy-2026-10-23 --prompt-file task.md --no-wait --json
 ```
 
 由 Agent 发起的发送（设置了 `PASEO_AGENT_ID`）默认引导正在进行的轮次。其他发送默认中断它。使用 `--behavior steer` 或 `--behavior interrupt` 覆盖默认行为。引导使用与客户端相同的后备方式：如果无法引导，正在进行的轮次会被中断并替换。
+
+当消息只允许在空闲会话中开始新一轮时，使用 `--if-idle`。如果已有轮次正在运行或正在接单，宿主不会接受任何内容，命令以 `agent_busy` 失败；它不会引导、中断或排队该消息。`--if-idle` 需要非空的 `--message-id`，且不能与 `--behavior` 同时使用。重试时复用同一个 `--message-id`：宿主会对已完成的消息去重，并对内容冲突报错。
+
+`--message-id` 也可用于普通发送。使用 `--json` 时，idle-only 拒绝会以非零状态退出，并把原生原因写到 stderr：
+
+```json
+{ "error": { "code": "agent_busy", "message": "agent_busy" } }
+```
+
+不支持 idle-only 的 host 会以 `DAEMON_UPDATE_REQUIRED` 失败并提示更新 host，绝不会退回普通发送。接受后的 `--no-wait` 结果包含规范化 Agent ID 和 `"status": "sent"`。
 
 ## 查看日志 {#viewing-logs}
 

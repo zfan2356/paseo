@@ -460,6 +460,16 @@ export interface SendMessageOptions {
   attachments?: SendAgentMessageRequest["attachments"];
 }
 
+/** Options for idle-only delivery. There is deliberately no active-turn behavior. */
+export interface SendMessageIfIdleOptions {
+  /** Stable caller-supplied delivery identity; required for receipt-based retries. */
+  messageId: string;
+  images?: Array<{ data: string; mimeType: string }>;
+  attachments?: SendAgentMessageRequest["attachments"];
+  sourceAgentId?: string;
+  sourceAgentServerId?: string;
+}
+
 export interface AgentAttentionRequiredNotification {
   agentId: string;
   reason: "finished" | "error" | "permission";
@@ -3831,6 +3841,54 @@ export class DaemonClient {
     options?: SendMessageOptions,
   ): Promise<{ deliveryStatus?: "queued" }> {
     return this.sendAgentMessage(agentId, text, options);
+  }
+
+  /**
+   * Deliver one message only when the agent has no active or pending turn.
+   * There is no fallback to send/steer on an older host.
+   */
+  async sendAgentMessageIfIdle(
+    agentId: string,
+    text: string,
+    options: SendMessageIfIdleOptions,
+  ): Promise<{ agentId: string }> {
+    if (this.lastServerInfoMessage?.features?.agentMessageIfIdle !== true) {
+      throw Object.assign(
+        new Error("Update the Paseo host to send messages only when an agent is idle."),
+        { code: "unsupported_operation" },
+      );
+    }
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.message.send_if_idle.request",
+      requestId,
+      agentId,
+      text,
+      messageId: options.messageId,
+      sourceAgentId: options.sourceAgentId,
+      sourceAgentServerId: options.sourceAgentServerId,
+      images: options.images,
+      attachments: options.attachments,
+    });
+    const payload = await this.sendRequest({
+      requestId,
+      message,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.message.send_if_idle.response") {
+          return null;
+        }
+        if (msg.payload.requestId !== requestId) {
+          return null;
+        }
+        return msg.payload;
+      },
+    });
+    if (!payload.accepted) {
+      const code = payload.error ?? "agent_message_rejected";
+      throw Object.assign(new Error(code), { code });
+    }
+    return { agentId: payload.agentId };
   }
 
   async rewindAgent(

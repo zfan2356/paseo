@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonFileAtomic } from "../atomic-file.js";
@@ -15,6 +15,12 @@ interface SendMessageInput {
   request: unknown;
   send: () => Promise<void>;
   prepare?: () => Promise<void>;
+  /**
+   * Only for an error that proves the provider saw no work: the pending receipt
+   * is removed so the same message ID may retry. Any other error keeps the
+   * receipt pending because the outcome is unknown.
+   */
+  isProvenNoEffect?: (error: unknown) => boolean;
 }
 
 /** Owns message delivery receipts; creation is owned by CreationService. */
@@ -51,7 +57,14 @@ export class MessageReceipts {
     await input.prepare?.();
     const receipt = { fingerprint, agentId: input.agentId };
     await writeJsonFileAtomic(file, { ...receipt, state: "pending" });
-    await input.send();
+    try {
+      await input.send();
+    } catch (error) {
+      if (input.isProvenNoEffect?.(error)) {
+        await rm(file, { force: true });
+      }
+      throw error;
+    }
     await writeJsonFileAtomic(file, { ...receipt, state: "completed" });
   }
 }

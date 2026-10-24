@@ -2850,6 +2850,29 @@ export class AgentManager {
     }
   }
 
+  private hasForegroundAdmission(agent: ManagedAgent, agentId: string): boolean {
+    return Boolean(agent.activeForegroundTurnId) || this.runs.hasRun(agentId);
+  }
+
+  // Serialize the archive check with lifecycle mutations. The final busy check
+  // and run reservation are synchronous, including a replacement's reserved gap.
+  tryStreamAgentIfIdle(
+    agentId: string,
+    prompt: AgentPromptInput,
+    options?: AgentRunOptions,
+  ): Promise<
+    | { status: "busy" }
+    | { status: "archived" }
+    | { status: "started"; iterator: AsyncGenerator<AgentStreamEvent> }
+  > {
+    return this.runLifecycleMutation(agentId, async () => {
+      const record = await this.requireRegistry().get(agentId);
+      if (record?.archivedAt) return { status: "archived" };
+      if (this.hasInFlightRun(agentId)) return { status: "busy" };
+      return { status: "started", iterator: this.streamAgent(agentId, prompt, options) };
+    });
+  }
+
   streamAgent(
     agentId: string,
     prompt: AgentPromptInput,
@@ -2870,7 +2893,7 @@ export class AgentManager {
       },
       "agent.manager.stream.request",
     );
-    if (existingAgent.activeForegroundTurnId || this.runs.hasRun(agentId)) {
+    if (this.hasForegroundAdmission(existingAgent, agentId)) {
       this.logger.trace(
         {
           agentId,

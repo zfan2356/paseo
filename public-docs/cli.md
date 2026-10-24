@@ -316,9 +316,20 @@ paseo send <id> "now run the tests"
 paseo send <id> --image screenshot.png "what's wrong here?"
 paseo send <id> --no-wait "run this task"
 paseo send <id> --behavior interrupt "stop and do this instead"
+paseo send <id> --if-idle --message-id deploy-2026-10-23 --prompt-file task.md --no-wait --json
 ```
 
 Agent-originated sends (`PASEO_AGENT_ID` set) default to steering the running turn. Other sends default to interrupting it. Use `--behavior steer` or `--behavior interrupt` to override the default. Steering uses the same fallback as the client: if steering is unavailable, the running turn is interrupted and replaced.
+
+Use `--if-idle` when a message must only start a turn in an idle session. If a turn is active or being admitted, the host accepts nothing and the command fails with `agent_busy`; it never steers, interrupts, or queues the message. `--if-idle` requires a nonempty `--message-id` and cannot be combined with `--behavior`. Reuse the same `--message-id` when retrying: the host deduplicates completed messages and reports conflicting content.
+
+`--message-id` also works for ordinary sends. With `--json`, an idle-only rejection exits nonzero and writes the native reason to stderr:
+
+```json
+{ "error": { "code": "agent_busy", "message": "agent_busy" } }
+```
+
+Hosts without idle-only support fail with `DAEMON_UPDATE_REQUIRED` and an update instruction; they never fall back to a normal send. An accepted `--no-wait` result carries the canonical agent ID and `"status": "sent"`.
 
 ## Viewing logs
 

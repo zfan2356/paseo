@@ -81,6 +81,14 @@ Agent-originated messages and automatic notifications share a recipient-daemon d
 
 The pending window is in memory. Clean shutdown flushes it before closing agents; an abrupt crash can lose it. A durable send receipt remains pending until actual dispatch acknowledgment, so a lost window never becomes a completed receipt. Completion waits cover queued admission within their original timeout and cancellation scope.
 
+### Idle-only delivery
+
+`agent.message.send_if_idle.request` starts a turn only when the agent has no active or pending foreground run. It is a separate RPC, not a flag on `send_agent_message_request`: an older daemon would strip an unknown flag and interrupt the turn. Clients check `server_info.features.agentMessageIfIdle` once and fail clearly when the host lacks it; there is no fallback to send or steer.
+
+Admission uses the manager's existing run boundary and lifecycle lane. A notification cannot take a slot reserved by a normal replacement, or start after an archive has committed. Busy rejection returns `agent_busy` without a turn, prompt row, permission clear, mode change, or archive change. It never steers, replaces, runs an out-of-band command, or reloads the provider session.
+
+The operation never unarchives. An archived agent rejects with guidance; unarchive it explicitly first. Busy and archived admission rejections reserve no run, so their pending receipts can be removed for an explicit retry. Other uncertain dispatch failures retain their receipts. Receipts share the agent + message ID identity with ordinary sends: a completed ID is acknowledged without another turn, a different request under the same ID conflicts, and a receipt left pending by a crash reports `agent_request_outcome_unknown`. Acceptance means the provider accepted the turn start, not transactional exactly-once execution.
+
 Permission requests are notification checkpoints, not the end of that subscription. The caller is notified again after a permission response when the child finishes, errors, or requests another permission.
 The permission notification includes the normalized request plus the child and request IDs, so the caller can inspect it and respond without fetching agent status.
 A watched child that closes before its finish event also notifies the caller so delegated work cannot disappear silently during archive or workspace teardown.

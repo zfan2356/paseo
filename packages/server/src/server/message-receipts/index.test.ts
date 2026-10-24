@@ -75,3 +75,43 @@ test("failed local message preparation does not leave an ambiguous receipt", asy
   await requests.send(input);
   expect(sends).toBe(1);
 });
+
+test("a proven no-effect rejection removes the receipt so the same id can retry", async () => {
+  const { requests, directory } = await fixture();
+  let busy = true;
+  let sends = 0;
+  const input = {
+    agentId: "agent",
+    messageId: "message",
+    request: {},
+    isProvenNoEffect: (error: unknown) => error instanceof Error && error.message === "agent_busy",
+    send: async () => {
+      sends++;
+      if (busy) throw new Error("agent_busy");
+    },
+  };
+  await expect(requests.send(input)).rejects.toThrow("agent_busy");
+  busy = false;
+  await new MessageReceipts(directory).send(input);
+  expect(sends).toBe(2);
+});
+
+test("a send failure that is not proven no-effect stays ambiguous", async () => {
+  const { requests, directory } = await fixture();
+  let sends = 0;
+  const input = {
+    agentId: "agent",
+    messageId: "message",
+    request: {},
+    isProvenNoEffect: (error: unknown) => error instanceof Error && error.message === "agent_busy",
+    send: async () => {
+      sends++;
+      throw new Error("provider connection lost");
+    },
+  };
+  await expect(requests.send(input)).rejects.toThrow("provider connection lost");
+  await expect(new MessageReceipts(directory).send(input)).rejects.toThrow(
+    "agent_request_outcome_unknown",
+  );
+  expect(sends).toBe(1);
+});

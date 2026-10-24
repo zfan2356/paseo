@@ -7808,6 +7808,90 @@ test.each([false, true])(
   },
 );
 
+test("idle-only delivery neither falls back to legacy send nor invents an active-turn behavior", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "if-idle",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: {} });
+  await connecting;
+
+  await expect(
+    client.sendAgentMessageIfIdle("agent-1", "notification", { messageId: "message-1" }),
+  ).rejects.toMatchObject({ code: "unsupported_operation" });
+  expect(transport.sent).toHaveLength(0);
+
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "status",
+      payload: {
+        status: "server_info",
+        serverId: "srv_if_idle",
+        features: { agentMessageIfIdle: true },
+      },
+    }),
+  );
+  const accepted = client.sendAgentMessageIfIdle("agent-1", "notification", {
+    messageId: "message-1",
+  });
+  const request = parseSentFrame(transport.sent[0]);
+  expect(request).toMatchObject({
+    type: "agent.message.send_if_idle.request",
+    agentId: "agent-1",
+    text: "notification",
+    messageId: "message-1",
+  });
+  expect(request).not.toHaveProperty("activeTurnBehavior");
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.message.send_if_idle.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "canonical-agent",
+        accepted: true,
+        error: null,
+      },
+    }),
+  );
+  await expect(accepted).resolves.toEqual({ agentId: "canonical-agent" });
+});
+
+test("idle-only delivery surfaces the daemon rejection code", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "if-idle-busy",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: { agentMessageIfIdle: true } });
+  await connecting;
+
+  const result = client.sendAgentMessageIfIdle("agent-1", "notification", {
+    messageId: "message-1",
+  });
+  const request = parseSentFrame(transport.sent[0]);
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.message.send_if_idle.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "agent-1",
+        accepted: false,
+        error: "agent_busy",
+      },
+    }),
+  );
+  await expect(result).rejects.toMatchObject({ code: "agent_busy", message: "agent_busy" });
+});
+
 test("measures an outbound message in UTF-8 bytes against the daemon's message limit", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({

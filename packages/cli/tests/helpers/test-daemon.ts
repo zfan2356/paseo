@@ -346,7 +346,7 @@ export async function startTestDaemon(options?: {
  * to point at the test daemon.
  */
 export async function runPaseoCli(
-  ctx: TestDaemonContext,
+  ctx: Pick<TestDaemonContext, "paseoHome" | "workDir">,
   args: string[],
   options?: {
     timeout?: number;

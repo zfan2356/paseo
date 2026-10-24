@@ -13,7 +13,7 @@ import type {
 } from "./agent-sdk-types.js";
 import type { AgentManager, ManagedAgent } from "./agent-manager.js";
 import type { AgentStorage } from "./agent-storage.js";
-import { ensureAgentLoaded } from "./agent-loading.js";
+import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent-loading.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import {
   getParentAgentIdFromLabels,
@@ -34,6 +34,24 @@ export type AgentRunController = Pick<
 > & {
   reloadAgentSession(agentId: string): Promise<unknown>;
 };
+
+/** A proven no-effect rejection: the manager admitted no turn for this prompt. */
+export class AgentBusyError extends Error {
+  readonly code = "agent_busy";
+  constructor(readonly agentId: string) {
+    super("agent_busy");
+    this.name = "AgentBusyError";
+  }
+}
+
+/** Idle-only delivery never unarchives: the caller must do it explicitly. */
+export class AgentArchivedError extends Error {
+  readonly code = "agent_archived";
+  constructor(readonly agentId: string) {
+    super(`Agent ${agentId} is archived; unarchive it before sending an idle-only message.`);
+    this.name = "AgentArchivedError";
+  }
+}
 
 export interface StartAgentRunOptions {
   /** Called after selecting the run, before consuming its events. */
@@ -204,6 +222,56 @@ async function startAgentRunInner(
 }
 
 /**
+ * Idle-only dispatch for `agent.message.send_if_idle`.
+ *
+ * Reuses the ordinary source/envelope preparation and the manager's pending-run
+ * reservation, then drains the iterator. It never steers, replaces, unarchives,
+ * runs an out-of-band command, or reloads the provider session: a busy manager
+ * throws {@link AgentBusyError} before any provider work, so the caller can drop
+ * its pending receipt and retry the same message ID.
+ */
+export async function sendIdleAgentMessage(params: {
+  agentManager: AgentManager;
+  agentStorage: AgentStorage;
+  agentId: string;
+  prompt: AgentPromptInput;
+  source?: AgentPromptSource;
+  messageId?: string;
+  logger: Logger;
+}): Promise<void> {
+  const source = await resolvePromptSource(params.source, params.agentManager, params.agentStorage);
+  const delivery = prepareAgentMessage(params.prompt, source, params.messageId);
+  const runOptions: AgentRunOptions | undefined = delivery.messageId
+    ? { clientMessageId: delivery.messageId }
+    : undefined;
+  const snapshot = params.agentManager.getAgent(params.agentId);
+  const admission = await params.agentManager.tryStreamAgentIfIdle(
+    params.agentId,
+    delivery.prompt,
+    runOptions,
+  );
+  if (admission.status === "busy") throw new AgentBusyError(params.agentId);
+  if (admission.status === "archived") throw new AgentArchivedError(params.agentId);
+  params.logger.trace(
+    {
+      agentId: params.agentId,
+      provider: snapshot?.provider,
+      providerSessionId: snapshot?.persistence?.sessionId ?? undefined,
+    },
+    "agent.session.idle_stream.iterator_returned",
+  );
+  void (async () => {
+    try {
+      await drainAgentRunIterator(admission.iterator);
+    } catch (error) {
+      // No stale-session reload here: the provider may have seen the prompt, so
+      // recovery would replay an uncertain dispatch. The receipt stays pending.
+      params.logger.error({ err: error, agentId: params.agentId }, "Agent stream failed");
+    }
+  })();
+}
+
+/**
  * Clear the archived flag from a stored agent record.
  * Shared across Session (app/WS), MCP, and CLI so every surface that acts on
  * an archived agent unarchives it the same way.
@@ -305,6 +373,26 @@ async function resolvePromptSource(
     manager.getAgent(source.agentId)?.config.title ?? (await storage.get(source.agentId))?.title
   )?.trim();
   return title ? { ...source, title } : source;
+}
+
+/**
+ * Preflight for idle-only delivery. Runs before the receipt is written so a busy
+ * rejection leaves no receipt and returns before loading or touching the agent.
+ */
+export async function prepareIdlePromptDelivery(params: {
+  agentManager: AgentManager;
+  agentStorage: AgentStorage;
+  agentId: string;
+  logger: Logger;
+}): Promise<void> {
+  if (params.agentManager.hasInFlightRun(params.agentId)) {
+    throw new AgentBusyError(params.agentId);
+  }
+  await ensureUnarchivedAgentLoaded(params.agentId, {
+    agentManager: params.agentManager,
+    agentStorage: params.agentStorage,
+    logger: params.logger,
+  });
 }
 
 /**

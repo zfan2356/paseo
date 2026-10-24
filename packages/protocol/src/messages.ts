@@ -1398,6 +1398,23 @@ export const SendAgentMessageRequestSchema = z.object({
   attachments: AgentAttachmentsSchema,
 });
 
+// A distinct RPC so an old daemon can never interpret an idle-only delivery as
+// an ordinary send and steer or interrupt an active turn.
+export const SendAgentMessageIfIdleRequestSchema = z.object({
+  type: z.literal("agent.message.send_if_idle.request"),
+  requestId: z.string(),
+  /** Accepts full ID, unique prefix, or exact full title (server resolves). */
+  agentId: z.string(),
+  text: z.string(),
+  /** Stable caller-supplied delivery identity; required for receipt-based retries. */
+  messageId: z.string().min(1),
+  /** Opaque sender identity for agent-originated prompts. */
+  sourceAgentId: z.string().min(1).optional(),
+  sourceAgentServerId: z.string().min(1).optional(),
+  images: z.array(ImageAttachmentSchema).optional(),
+  attachments: AgentAttachmentsSchema,
+});
+
 export const WaitForFinishRequestSchema = z.object({
   type: z.literal("wait_for_finish_request"),
   requestId: z.string(),
@@ -3327,6 +3344,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceRecoveryRestoreRequestSchema,
   SetVoiceModeMessageSchema,
   SendAgentMessageRequestSchema,
+  SendAgentMessageIfIdleRequestSchema,
   WaitForFinishRequestSchema,
   DaemonGetStatusRequestSchema,
   DaemonGetPairingOfferRequestSchema,
@@ -3854,6 +3872,8 @@ export const ServerInfoStatusPayloadSchema = z
         canonicalSubmittedPrompts: z.boolean().optional(),
         agentMessageProvenance: z.boolean().optional(),
         agentMessageBatching: z.boolean().optional(),
+        // COMPAT(agentMessageIfIdle): added in v0.13.0, remove gate after 2027-10-23.
+        agentMessageIfIdle: z.boolean().optional(),
         // COMPAT(agentTurnIdentity): accept peers that observed pre-release v0.2.6 through 2027-01-31.
         agentTurnIdentity: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
@@ -5108,6 +5128,17 @@ export const SendAgentMessageResponseMessageSchema = z.object({
     agentId: z.string(),
     accepted: z.boolean(),
     deliveryStatus: z.literal("queued").optional(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const SendAgentMessageIfIdleResponseMessageSchema = z.object({
+  type: z.literal("agent.message.send_if_idle.response"),
+  payload: z.object({
+    requestId: z.string(),
+    /** Canonical agent ID after prefix or title resolution. */
+    agentId: z.string(),
+    accepted: z.boolean(),
     error: z.string().nullable(),
   }),
 });
@@ -7131,6 +7162,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceClearAttentionResponseSchema,
   WorkspaceMarkUnreadResponseSchema,
   SendAgentMessageResponseMessageSchema,
+  SendAgentMessageIfIdleResponseMessageSchema,
   SetVoiceModeResponseMessageSchema,
   DaemonGetStatusResponseSchema,
   DaemonGetPairingOfferResponseSchema,

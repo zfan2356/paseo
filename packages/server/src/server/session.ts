@@ -72,6 +72,10 @@ import {
 } from "./persistence-hooks.js";
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent/agent-loading.js";
 import {
+  AgentBusyError,
+  AgentArchivedError,
+  prepareIdlePromptDelivery,
+  sendIdleAgentMessage,
   sendPromptToAgent,
   waitForAgentRunStartWithTimeout,
   unarchiveAgentState,
@@ -3406,6 +3410,9 @@ export class Session {
 
   private async dispatchMiscMessage(msg: SessionInboundMessage): Promise<void> {
     switch (msg.type) {
+      case "agent.message.send_if_idle.request":
+        await this.handleSendAgentMessageIfIdleRequest(msg);
+        return;
       case "list_commands_request":
         await this.handleListCommandsRequest(msg);
         return;
@@ -8654,6 +8661,109 @@ export class Session {
           agentId: resolved.agentId,
           accepted: false,
           error: errorToFriendlyMessage(error),
+        },
+      });
+    }
+  }
+
+  private async handleSendAgentMessageIfIdleRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.message.send_if_idle.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveAgentIdentifier(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.message.send_if_idle.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          accepted: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+
+    const agentId = resolved.agentId;
+    try {
+      const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments);
+      const source = msg.sourceAgentId
+        ? {
+            kind: "agent-message" as const,
+            agentId: msg.sourceAgentId,
+            serverId: msg.sourceAgentServerId,
+            title: !msg.sourceAgentServerId
+              ? (this.agentManager.getAgent(msg.sourceAgentId)?.config.title ?? undefined)
+              : undefined,
+          }
+        : undefined;
+      this.sessionLogger.trace(
+        { agentId, messageId: msg.messageId, textPrefix: msg.text.slice(0, 80) },
+        "agent.session.send_agent_message_if_idle",
+      );
+      await this.messageReceipts.send({
+        agentId,
+        messageId: msg.messageId,
+        request: {
+          operation: "send_if_idle",
+          prompt,
+          sourceAgentId: msg.sourceAgentId,
+          sourceAgentServerId: msg.sourceAgentServerId,
+        },
+        prepare: async () => {
+          await prepareIdlePromptDelivery({
+            agentManager: this.agentManager,
+            agentStorage: this.agentStorage,
+            agentId,
+            logger: this.sessionLogger,
+          });
+        },
+        // Both rejections occur before the manager reserves a provider run.
+        isProvenNoEffect: (error) =>
+          error instanceof AgentBusyError || error instanceof AgentArchivedError,
+        send: async () => {
+          await sendIdleAgentMessage({
+            agentManager: this.agentManager,
+            agentStorage: this.agentStorage,
+            agentId,
+            prompt,
+            messageId: msg.messageId,
+            source,
+            logger: this.sessionLogger,
+          });
+          // Acceptance means the provider acknowledged the turn start. A start
+          // that fails leaves the pending receipt ambiguous.
+          await waitForAgentRunStartWithTimeout(
+            this.agentManager,
+            agentId,
+            this.delivery.requestSignal,
+          );
+        },
+      });
+
+      this.emit({
+        type: "agent.message.send_if_idle.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId,
+          accepted: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      if (this.delivery.requestSignal.aborted) return;
+      const details = { err: error, agentId, messageId: msg.messageId };
+      if (error instanceof AgentBusyError) {
+        this.sessionLogger.trace(details, "Idle-only agent message rejected while busy");
+      } else {
+        this.sessionLogger.warn(details, "Idle-only agent message was not accepted");
+      }
+      this.emit({
+        type: "agent.message.send_if_idle.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId,
+          accepted: false,
+          error: error instanceof AgentBusyError ? "agent_busy" : errorToFriendlyMessage(error),
         },
       });
     }

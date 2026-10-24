@@ -18,6 +18,27 @@ describe("canonical CLI surface", () => {
     ).rejects.toThrow();
   });
 
+  it.each(["send", "agent send"])(
+    "%s offers idle-only send and caller message IDs",
+    async (path) => {
+      const cli = createCli();
+      const owner =
+        path === "send" ? cli : cli.commands.find((command) => command.name() === "agent")!;
+      const send = owner.commands.find((command) => command.name() === "send")!;
+      const help = send.helpInformation();
+
+      expect(help).toContain("--if-idle");
+      expect(help).toContain("--message-id <id>");
+
+      send.action(() => {});
+      await send.parseAsync(
+        ["target", "message", "--if-idle", "--message-id", "stable-id", "--no-wait"],
+        { from: "user" },
+      );
+      expect(send.opts()).toMatchObject({ ifIdle: true, messageId: "stable-id", wait: false });
+    },
+  );
+
   it("offers daemon host selection as a global option", () => {
     expect(createCli().helpInformation()).toContain("--host <host>");
   });

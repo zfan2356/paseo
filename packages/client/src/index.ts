@@ -61,6 +61,7 @@ import type {
   FetchAgentTimelinePayload,
   FetchAgentTimelineProjection,
   SendMessageOptions,
+  SendMessageIfIdleOptions,
   WaitForFinishResult,
 } from "./daemon-client.js";
 
@@ -285,6 +286,7 @@ export interface PaseoAgentTimelineRefetchOptions {
 }
 
 export type PaseoAgentSendOptions = SendMessageOptions;
+export type PaseoAgentSendIfIdleOptions = SendMessageIfIdleOptions;
 
 export interface PaseoAgentRunOptions extends PaseoAgentSendOptions {
   timeoutMs?: number;
