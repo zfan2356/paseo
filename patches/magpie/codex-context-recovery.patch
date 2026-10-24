@@ -1,0 +1,316 @@
+diff --git a/docs/subsystems/gateway-routing.md b/docs/subsystems/gateway-routing.md
+index a03beb3b..2c10d45e 100644
+--- a/docs/subsystems/gateway-routing.md
++++ b/docs/subsystems/gateway-routing.md
+@@ -105,6 +105,7 @@ recorded as a prediction failure (`noPrediction`).
+ ## Constraints and failure behavior
+
+ - A fallback happens only while none of the reply has been sent. An agent never gets half a reply from one upstream and the rest from another.
++- Native Codex turns that switch between a ChatGPT subscription and a Responses relay recover from `invalid_encrypted_content` before any output is published, including failures inside a 200 SSE response. A named unreadable reasoning item causes all reasoning items in that request to be omitted in one retry, preserving messages, tool exchanges and request options. The omitted seals are remembered only for that sign-in, model and conversation; new reasoning from the current source is retained. Other errors and errors after output are returned without replay. See `recoverCodexReasoning` and `codexReasoningKey` in [`codex_reasoning_recovery.go`](../../internal/gateway/codex_reasoning_recovery.go).
+ - A refusal that comes as an error (#2400, Jichao). An error whose own `message` is, whole, `The request was rejected because it was considered high risk` is a refusal with no code beside it (`highRiskRefusal` in `policyRefusal`): in an HTTP error body or a stream's error event, never in an answer's text, which may quote it. The vendor that sends it isn't known; it says the request was turned away, so it goes to the next candidate under `RefusalRetries` like any refusal and rests nobody. A refusal error event before any content ends the try at once (`eventRefusalError`, `stop` as for any error), so an upstream that keeps the stream open doesn't hold the next candidate back; a refusal's stop or finish marker is still read to the end for the usage and terminator after it. After content, every write is read for a late refusal (`refusalAfter`), so one whose `event: error` name and data come in separate writes is still noted, and nothing is replayed. `TestHighRisk*`, `TestRefusalErrorDoesNotWaitForEOF` in [`refusal_error_test.go`](../../internal/gateway/refusal_error_test.go).
+ - A request is one usage record, counted once by how it ended (小一 on Discord: Codex on credits showed "5,482 · 1,094 failed" while rows said "2 tries/3 tries" and had been answered). The final record carries `tries` when the route took more than one (`rec.Tries`, from the trace's `Tries`). A try a vendor refused or turned away (`hw.refused`, `hw.turnedAway`) still writes its own record, for what it billed and why it failed, marked `handed_on`; `usage.Totals.count` skips such a record for calls and failures. A request failed only when the agent got an error (`LostRequest`); one answered after a failed try is counted beside it as answered on a retry (`Totals.Retried`, `RetriedRequest`, the `retried` filter). Logs written before `handed_on` are read the same way: the log index marks a failed, non-rejected record followed by another of the same route id as handed on (`routeRows` in [`log_index.go`](../../internal/usage/log_index.go)). Counts by account or route (`vias`, window holds) still count every try. A turn relayed on Codex's own ChatGPT sign-in is recorded as that codex account (`codexServed` in [`codex_backend.go`](../../internal/gateway/codex_backend.go)), so the account card's window counts it; the Routing view still names the seat OpenAI, an API-key call stays `openai` with no account, as does one whose `chatgpt-account-id` isn't the account Codex's auth.json here is signed in to (a Codex in WSL or under another `CODEX_HOME`), and a row already written without an account is left as it is. Those relay rows are still not a lead's answerer (`loggedAnswers`, #1367); a row an account answered, its host `host as email`, still is.
+ - Each record keeps the service tier three ways (#1784): `tier_asked` is what the client's body asked (`bodyTier`; Claude's speed fast reads `fast`), `tier_sent` is what that try's last request went out with, noted in `forwardOnce` after every rewrite (fast picks, Ultrafast to priority on a plan without it) onto the per-attempt `wireAt`, and `tier_served` is only what the reply said it ran at (`upstreamTier`, read by the sniffer and the translated readers), empty when it says nothing. The route's tries carry `tier` and `tier_served` the same way. A bridge that doesn't go through `forwardOnce` (the Claude subscription, Cursor's built-in) leaves `tier_sent` empty. Code: [`tier_record.go`](../../internal/gateway/tier_record.go).
+diff --git a/internal/gateway/affinity.go b/internal/gateway/affinity.go
+index a30da86d..e484559d 100644
+--- a/internal/gateway/affinity.go
++++ b/internal/gateway/affinity.go
+@@ -29,6 +29,7 @@ package gateway
+ import (
+ 	"crypto/sha256"
+ 	"encoding/json"
++	"maps"
+ 	"net/http"
+ 	"os"
+ 	"path/filepath"
+@@ -793,6 +794,9 @@ func withoutRefused(key, who string, body []byte) ([]byte, bool) {
+ 		delete(refusedSeals.m, k)
+ 		ok = false
+ 	}
++	if ok {
++		r.seals = maps.Clone(r.seals)
++	}
+ 	refusedSeals.Unlock()
+ 	if !ok {
+ 		return nil, false
+diff --git a/internal/gateway/codex_backend.go b/internal/gateway/codex_backend.go
+index fb8f8c38..c0e37003 100644
+--- a/internal/gateway/codex_backend.go
++++ b/internal/gateway/codex_backend.go
+@@ -862,6 +862,12 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 	if apiKey(r.Header) && rest != "/models" {
+ 		base = codexAPIBase
+ 	}
++	sealKey := codexReasoningKey(r, body, base, on)
++	if rest == "/responses" {
++		if b, ok := withoutRefused(sealKey, "native", body); ok {
++			body = b
++		}
++	}
+ 	if r.Method == http.MethodPost && rest == "/responses" && base == provider.CodexBase {
+ 		// a replayed web search the request doesn't declare the tool for
+ 		// is refused by the ChatGPT backend (#1270), as on an account's
+@@ -881,7 +887,8 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 	overload := r.Method == http.MethodPost && rest == "/responses" && base == provider.CodexBase && on == nil
+ 	streams := streamOf(body)
+ 	kept := &keptAlive{proto: provider.Responses, told: start, streams: streams}
+-	busyAgain := 0     // times the turn was asked again for an overload
++	busyAgain := 0 // times the turn was asked again for an overload
++	sealRetries := 0
+ 	var tried []string // what each of those said, for the request log
+ 	// a turn goes in the Routing view's live trace as the others do, to
+ 	// the one it can go to: Codex's own sign-in, or its key
+@@ -1134,7 +1141,7 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 			msg, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+ 			res.Body.Close()
+ 			res.Body = io.NopCloser(bytes.NewReader(msg))
+-			b, ok := withoutUnreadable(body, msg)
++			b, ok := recoverCodexReasoning(sealKey, body, msg)
+ 			if !ok {
+ 				break
+ 			}
+@@ -1192,7 +1199,7 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 		// come, an error before them held for the turn to be asked again
+ 		out := w
+ 		var hw *holdWriter
+-		if overload && streams && (busyAgain < lastRetries || kept.sent || s.codexFallsBack(modelOf(body), body)) {
++		if rest == "/responses" && streams {
+ 			hw = newHoldWriter(w, true)
+ 			hw.alive, hw.streams, hw.ctx, hw.stop = kept, true, r.Context(), cancel
+ 			// reasoning goes to Codex at once, as it always went
+@@ -1255,6 +1262,14 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 			break
+ 		}
+ 		hw.settle()
++		if hw.mayAskAgain() && sealRetries < 3 && foreignReasoning.Match(hw.errBody()) && r.Context().Err() == nil {
++			if b, ok := recoverCodexReasoning(sealKey, body, hw.errBody()); ok {
++				sealRetries++
++				body = b
++				res.Body.Close()
++				continue
++			}
++		}
+ 		if hw.mayAskAgain() && hw.failure != 0 && !hw.refused && codexBusy(hw.failure, hw.errBody()) && r.Context().Err() == nil {
+ 			// the backend too busy for the turn, said on its stream before
+ 			// any of the reply (#1418)
+@@ -1441,6 +1456,13 @@ func withoutUnreadable(body, msg []byte) ([]byte, bool) {
+ 		return nil, false
+ 	}
+ 	if m := unreadableItem.FindSubmatch(msg); m != nil {
++		// Old iChat turns can contain hundreds of seals. Removing one
++		// per retry exhausts the native retry budget before they are gone.
++		if foreignReasoning.Match(msg) && anyInputItem(body, func(it []byte) bool {
++			return gjson.GetBytes(it, "type").String() == "reasoning" && gjson.GetBytes(it, "id").String() == string(m[1])
++		}) {
++			return withoutReasoning(body)
++		}
+ 		if b, ok := withoutItem(body, string(m[1])); ok {
+ 			return b, true
+ 		}
+diff --git a/internal/gateway/codex_reasoning_recovery.go b/internal/gateway/codex_reasoning_recovery.go
+new file mode 100644
+index 00000000..87bb0e40
+--- /dev/null
++++ b/internal/gateway/codex_reasoning_recovery.go
+@@ -0,0 +1,47 @@
++package gateway
++
++import (
++	"crypto/sha256"
++	"encoding/json"
++	"fmt"
++	"net/http"
++
++	"github.com/yetone/magpie/internal/provider"
++)
++
++// Native Codex requests bypass candidate affinity. Scope refused reasoning
++// to the actual sign-in and conversation instead of sharing a native seat.
++func codexReasoningKey(r *http.Request, body []byte, base string, on *provider.Provider) string {
++	owner := base + "\x00" + r.Header.Get("Authorization") + "\x00" + r.Header.Get("chatgpt-account-id")
++	if on != nil && on.Account != nil {
++		owner += "\x00" + on.ID + "\x00" + on.Account.User
++	}
++	return fmt.Sprintf("codex-native/%x/%s|%s", sha256.Sum256([]byte(owner)), modelOf(body), conversationID(r.Header, body))
++}
++
++func recoverCodexReasoning(key string, body, refusal []byte) ([]byte, bool) {
++	b, ok := withoutUnreadable(body, refusal)
++	if !ok || len(seals(b, "reasoning")) >= len(seals(body, "reasoning")) {
++		return b, ok
++	}
++	kept := map[[sha256.Size]byte]bool{}
++	for _, seal := range seals(b, "reasoning") {
++		kept[seal] = true
++	}
++	var original struct {
++		Input []sealedItem `json:"input"`
++	}
++	if decodeJSON(body, &original) != nil {
++		return b, ok
++	}
++	var removed []sealedItem
++	for _, item := range original.Input {
++		if item.Type == "reasoning" && item.Enc != "" && !kept[sha256.Sum256([]byte(item.Enc))] {
++			removed = append(removed, item)
++		}
++	}
++	if rejected, err := json.Marshal(map[string]any{"input": removed}); err == nil {
++		refused(key, "native", rejected, "reasoning")
++	}
++	return b, ok
++}
+diff --git a/internal/gateway/codex_reasoning_recovery_test.go b/internal/gateway/codex_reasoning_recovery_test.go
+new file mode 100644
+index 00000000..e9ccd305
+--- /dev/null
++++ b/internal/gateway/codex_reasoning_recovery_test.go
+@@ -0,0 +1,149 @@
++package gateway
++
++import (
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"testing"
++
++	"github.com/yetone/magpie/internal/provider"
++)
++
++// A real native Codex request can carry many reasoning items from iChat.
++// Recover before publishing content, then remember the refused seals only
++// for this conversation and sign-in. Messages, calls and speed stay intact.
++func TestCodexNativeForeignReasoningRecovery(t *testing.T) {
++	for _, streamedError := range []bool{false, true} {
++		t.Run(fmt.Sprint(streamedError), func(t *testing.T) {
++			setup(t, provider.Chat, &fake{t: t})
++			var mu sync.Mutex
++			var requests []map[string]json.RawMessage
++			chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
++				b, _ := io.ReadAll(r.Body)
++				var q map[string]json.RawMessage
++				if err := json.Unmarshal(b, &q); err != nil {
++					t.Error(err)
++					w.WriteHeader(500)
++					return
++				}
++				mu.Lock()
++				requests = append(requests, q)
++				mu.Unlock()
++				var items []struct {
++					Type string `json:"type"`
++					ID   string `json:"id"`
++					Enc  string `json:"encrypted_content"`
++				}
++				json.Unmarshal(q["input"], &items)
++				for _, item := range items {
++					if item.Type != "reasoning" || !strings.HasPrefix(item.Enc, "ichat-") {
++						continue
++					}
++					failure := fmt.Sprintf(`{"code":"invalid_encrypted_content","message":"The encrypted content for item %s could not be verified. Reason: Encrypted content could not be decrypted or parsed."}`, item.ID)
++					if streamedError {
++						w.Header().Set("Content-Type", "text/event-stream")
++						io.WriteString(w, sse(`data: {"type":"response.created","response":{"id":"rejected"}}`, `data: {"type":"response.failed","response":{"id":"rejected","error":`+failure+`}}`))
++					} else {
++						w.Header().Set("Content-Type", "application/json")
++						w.WriteHeader(400)
++						io.WriteString(w, `{"error":`+failure+`}`)
++					}
++					return
++				}
++				w.Header().Set("Content-Type", "text/event-stream")
++				io.WriteString(w, sse(`data: {"type":"response.output_text.delta","delta":"continued"}`, `data: {"type":"response.completed","response":{"id":"accepted","usage":{"input_tokens":7,"output_tokens":1}}}`))
++			})
++			server := New()
++			var history []string
++			for i := range 8 {
++				history = append(history, fmt.Sprintf(`{"type":"reasoning","id":"rs_%d","summary":[],"encrypted_content":"ichat-%d"}`, i, i))
++			}
++			public := `{"type":"message","role":"user","content":[{"type":"input_text","text":"Remember azalea-42"}]},{"type":"function_call","call_id":"c1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"azalea-42"}`
++			turn := func(session, account, suffix string) {
++				t.Helper()
++				body := `{"model":"gpt-6.1-sol","stream":true,"service_tier":"ultrafast","input":[` + strings.Join(history, ",") + "," + public + suffix + `]}`
++				req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(body))
++				req.Header.Set("Authorization", "Bearer test-"+account)
++				req.Header.Set("chatgpt-account-id", account)
++				req.Header.Set("session_id", session)
++				rec := httptest.NewRecorder()
++				server.Handler().ServeHTTP(rec, req)
++				if rec.Code != 200 || !strings.Contains(rec.Body.String(), "continued") || strings.Contains(rec.Body.String(), "invalid_encrypted_content") || strings.Contains(rec.Body.String(), "rejected") {
++					t.Fatalf("conversation did not continue: %d %s", rec.Code, rec.Body.String())
++				}
++			}
++			count := func() int { mu.Lock(); defer mu.Unlock(); return len(requests) }
++			turn("switch-session", "account-1", "")
++			if got := count(); got != 2 {
++				t.Fatalf("recover all foreign reasoning in one retry: got %d requests", got)
++			}
++			turn("switch-session", "account-1", `,{"type":"reasoning","id":"rs_own","summary":[],"encrypted_content":"native-own"}`)
++			if got := count(); got != 3 {
++				t.Fatalf("later turn replayed refused reasoning: got %d requests", got)
++			}
++			mu.Lock()
++			last, _ := json.Marshal(requests[2])
++			mu.Unlock()
++			if strings.Contains(string(last), "ichat-") || !strings.Contains(string(last), "native-own") || !strings.Contains(string(last), "azalea-42") || !strings.Contains(string(last), "function_call_output") || !strings.Contains(string(last), "ultrafast") {
++				t.Fatalf("recovery altered public history, own reasoning or speed: %s", last)
++			}
++			turn("other-session", "account-1", "")
++			turn("switch-session", "account-2", "")
++			if got := count(); got != 7 {
++				t.Fatalf("refused seals leaked across conversations or sign-ins: got %d requests", got)
++			}
++		})
++	}
++}
++
++func TestCodexNativeDoesNotReplayAfterOutput(t *testing.T) {
++	setup(t, provider.Chat, &fake{t: t})
++	var mu sync.Mutex
++	asks := 0
++	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
++		mu.Lock()
++		asks++
++		mu.Unlock()
++		w.Header().Set("Content-Type", "text/event-stream")
++		io.WriteString(w, sse(`data: {"type":"response.output_text.delta","delta":"already visible"}`, `data: {"type":"response.failed","response":{"id":"failed","error":{"code":"invalid_encrypted_content","message":"The encrypted content for item rs_old could not be verified."}}}`))
++	})
++	_, body := codexPost(t, `{"model":"gpt-6.1-sol","stream":true,"input":[{"type":"reasoning","id":"rs_old","summary":[],"encrypted_content":"foreign"},{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`)
++	mu.Lock()
++	defer mu.Unlock()
++	if asks != 1 || !strings.Contains(body, "already visible") || !strings.Contains(body, "response.failed") {
++		t.Fatalf("partially published response was replayed: asks=%d body=%s", asks, body)
++	}
++}
++
++func TestNativeRefusedReasoningConcurrentReaders(t *testing.T) {
++	key := "native-concurrent-recovery"
++	body := []byte(`{"input":[{"type":"reasoning","encrypted_content":"foreign"},{"type":"reasoning","encrypted_content":"current-own"}]}`)
++	refused(key, "native", []byte(`{"input":[{"type":"reasoning","encrypted_content":"foreign"}]}`), "reasoning")
++	start := make(chan struct{})
++	var workers sync.WaitGroup
++	workers.Add(2)
++	go func() {
++		defer workers.Done()
++		<-start
++		for range 1000 {
++			refused(key, "native", []byte(`{"input":[{"type":"reasoning","encrypted_content":"foreign"}]}`), "reasoning")
++		}
++	}()
++	go func() {
++		defer workers.Done()
++		<-start
++		for range 1000 {
++			clean, ok := withoutRefused(key, "native", body)
++			if !ok || strings.Contains(string(clean), `"foreign"`) || !strings.Contains(string(clean), "current-own") {
++				t.Error("concurrent recovery altered the current source's reasoning")
++				return
++			}
++		}
++	}()
++	close(start)
++	workers.Wait()
++}

@@ -58,6 +58,78 @@ jobs:
       - name: Validate CI contracts
         run: node --test scripts/ci-workflow.test.mjs scripts/daemon-launch-contract.test.mjs scripts/sync-fdroid-changelogs.test.mjs scripts/upload-release-assets.test.mjs
 
+  magpie-build:
+    name: magpie-build
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.full != 'false' || needs.changes.outputs.quality != 'false') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-amd64
+            goos: linux
+          - os: macos-14
+            target: darwin-arm64
+            goos: darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.8"
+          cache-dependency-path: third_party/magpie/go.sum
+
+      - name: Verify and apply pinned Magpie patches
+        run: |
+          python3 skills/deploy-magpie/scripts/deploy.py --check
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          root = Path.cwd()
+          lock = json.loads((root / "third_party/magpie.lock.json").read_text())
+          patches = [str(root / p["path"]) for p in lock.get("patches", [])]
+          if patches:
+              subprocess.run(["git", "-C", str(root / "third_party/magpie"), "apply", *patches], check=True)
+          PY
+
+      - name: Test Magpie in an isolated home
+        working-directory: third_party/magpie
+        run: |
+          export GOPATH="$(go env GOPATH)" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)"
+          test_home="$(mktemp -d)"
+          trap 'chmod -R u+w "$test_home"; rm -rf "$test_home"' EXIT
+          export HOME="$test_home" USERPROFILE="$test_home" XDG_CONFIG_HOME="$test_home/.config" XDG_CACHE_HOME="$test_home/.cache"
+          go vet -tags nogui ./...
+          go test -tags nogui ./... -timeout 60m
+          go test -race -tags nogui ./internal/gateway -run 'TestCodexNativeForeignReasoningRecovery|TestCodexNativeDoesNotReplayAfterOutput|TestNativeRefusedReasoningConcurrentReaders|TestForeignSeal' -count=5 -timeout 10m
+
+      - name: Build the verified Magpie binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goos == 'darwin' && 'arm64' || 'amd64' }}
+        run: |
+          mkdir -p artifacts/magpie
+          version="$(python3 -c 'import json; print(json.load(open("third_party/magpie.lock.json"))["version"])')"
+          (cd third_party/magpie && go build -tags nogui -trimpath -ldflags "-s -w -X main.version=$version" -o ../../artifacts/magpie/magpie .)
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          lock = json.loads(Path("third_party/magpie.lock.json").read_text())
+          lock.update(paseoRevision=os.environ["GITHUB_SHA"], sha256=hashlib.sha256(Path("artifacts/magpie/magpie").read_bytes()).hexdigest())
+          Path("artifacts/magpie/build.json").write_text(json.dumps(lock, indent=2) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: magpie-${{ matrix.target }}
+          path: artifacts/magpie/
+
   quality:
     name: quality
     needs: changes

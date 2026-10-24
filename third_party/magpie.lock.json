@@ -1,6 +1,12 @@
 {
   "repository": "https://github.com/yetone/magpie.git",
   "revision": "9572a35761c2606257e8493ab47dedda38eb6b88",
-  "version": "0.1.1319-paseo.9572a357",
-  "go": "1.26.8"
+  "version": "0.1.1319-paseo.9572a357.context1",
+  "go": "1.26.8",
+  "patches": [
+    {
+      "path": "patches/magpie/codex-context-recovery.patch",
+      "sha256": "94e2fc90a11f41cf751da8a0b7964be82e2294efdda056e29850b13cff0e3391"
+    }
+  ]
 }

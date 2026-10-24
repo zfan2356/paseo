@@ -1,5 +1,6 @@
 """Exercise deployment boundaries with a temporary checkout and build adapter."""
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -36,6 +37,7 @@ class DeploymentTest(unittest.TestCase):
         self.config = self.home / ".config/magpie/accounts.json"
         self.config.parent.mkdir(parents=True)
         self.config.write_text("private fixture must remain unchanged")
+        self.build_inputs = []
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.source), *args], check=True, text=True, capture_output=True)
@@ -48,6 +50,7 @@ class DeploymentTest(unittest.TestCase):
                 return real_run(*command, **kwargs)
             if fail_build:
                 raise subprocess.CalledProcessError(1, command)
+            self.build_inputs.append((Path(kwargs["cwd"]) / "source.txt").read_text())
             output = Path(command[command.index("-o") + 1])
             output.write_text("#!/bin/sh\necho 'magpie 0.1.0-test'\n")
             output.chmod(0o755)
@@ -83,6 +86,40 @@ class DeploymentTest(unittest.TestCase):
         (self.source / "source.txt").write_text("unreviewed change")
         with self.assertRaises(SystemExit):
             self.invoke("--install")
+        self.assertEqual(self.binary.read_text(), "old binary")
+
+    def add_patch(self):
+        patch_file = self.root / "patches/magpie/context.patch"
+        patch_file.parent.mkdir(parents=True)
+        patch_file.write_text(
+            "diff --git a/source.txt b/source.txt\n"
+            "--- a/source.txt\n+++ b/source.txt\n"
+            "@@ -1 +1 @@\n-pinned source\n+patched source\n"
+        )
+        self.lock["patches"] = [{
+            "path": "patches/magpie/context.patch",
+            "sha256": hashlib.sha256(patch_file.read_bytes()).hexdigest(),
+        }]
+        (self.root / "third_party/magpie.lock.json").write_text(json.dumps(self.lock))
+        return patch_file
+
+    def test_patch_is_verified_and_built_without_editing_submodule(self):
+        self.add_patch()
+        self.invoke("--dry-run")
+        self.assertEqual((self.source / "source.txt").read_text(), "pinned source\n")
+        self.assertEqual(self.git("status", "--porcelain").stdout, "")
+        self.invoke("--install")
+        self.assertEqual(self.build_inputs, ["patched source\n"])
+        self.assertEqual((self.source / "source.txt").read_text(), "pinned source\n")
+        manifest = json.loads((self.binary.resolve().parent / "build.json").read_text())
+        self.assertEqual(manifest["patches"], self.lock["patches"])
+
+    def test_changed_patch_is_rejected_before_build_or_install(self):
+        patch_file = self.add_patch()
+        patch_file.write_text(patch_file.read_text().replace("patched source", "unreviewed source"))
+        with self.assertRaises(SystemExit):
+            self.invoke("--install")
+        self.assertEqual(self.build_inputs, [])
         self.assertEqual(self.binary.read_text(), "old binary")
 
 

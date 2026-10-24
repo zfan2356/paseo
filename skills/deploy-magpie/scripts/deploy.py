@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import time
 
@@ -31,6 +32,14 @@ def main():
     dirty = run("git", "-C", str(source), "status", "--porcelain", capture_output=True).stdout
     if revision != lock["revision"] or dirty:
         raise SystemExit("Magpie source must be clean and match third_party/magpie.lock.json")
+    patches = []
+    for entry in lock.get("patches", []):
+        patch_file = (root / entry["path"]).resolve()
+        if not patch_file.is_relative_to(root) or hashlib.sha256(patch_file.read_bytes()).hexdigest() != entry["sha256"]:
+            raise SystemExit("Magpie patch must match third_party/magpie.lock.json: " + entry["path"])
+        patches.append(patch_file)
+    if patches:
+        run("git", "-C", str(source), "apply", "--check", *map(str, patches))
     if not shutil.which("go") and not args.dry_run:
         raise SystemExit("Install Go (the pinned source requires " + lock["go"] + ")")
     print("Verified Magpie source " + revision)
@@ -38,7 +47,9 @@ def main():
         return
     home = Path.home()
     bindir = home / ".local/bin"
-    release = home / ".local/lib/magpie" / revision
+    patch_identity = hashlib.sha256(json.dumps(lock.get("patches", []), sort_keys=True).encode()).hexdigest()[:12]
+    release_id = revision + "-" + patch_identity if patches else revision
+    release = home / ".local/lib/magpie" / release_id
     print("Build " + lock["version"] + "; install under " + str(release))
     print("Existing services, provider accounts and routes are preserved.")
     if args.dry_run:
@@ -49,9 +60,19 @@ def main():
     release.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="magpie-build-") as temporary:
         binary = Path(temporary) / "magpie"
+        build_source = source
+        if patches:
+            archive_file = Path(temporary) / "source.tar"
+            with archive_file.open("wb") as output:
+                run("git", "-C", str(source), "archive", "HEAD", stdout=output)
+            build_source = Path(temporary) / "source"
+            build_source.mkdir()
+            with tarfile.open(archive_file) as archive:
+                archive.extractall(build_source, filter="data")
+            run("git", "-C", str(build_source), "apply", *map(str, patches))
         env = {**os.environ, "CGO_ENABLED": "0"}
         run("go", "build", "-tags", "nogui", "-trimpath", "-ldflags",
-            "-s -w -X main.version=" + lock["version"], "-o", str(binary), ".", cwd=source, env=env)
+            "-s -w -X main.version=" + lock["version"], "-o", str(binary), ".", cwd=build_source, env=env)
         version = run(str(binary), "--version", capture_output=True).stdout.strip()
         if lock["version"] not in version:
             raise SystemExit("Built binary version does not match the lock")

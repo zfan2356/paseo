@@ -55,3 +55,4 @@ stays authoritative for intent and design.
 | [acp-stale-feature-fallback.md](acp-stale-feature-fallback.md)                 | Start ACP sessions when a saved feature has been retired                            |
 | [shared-codex-app-server.md](shared-codex-app-server.md)                       | Share Codex native conversations, live output, and interruption across clients      |
 | [magpie-sources.md](magpie-sources.md)                                         | Magpie displays all account/API sources and selects its own Codex subscription home |
+| [magpie-context-recovery.md](magpie-context-recovery.md)                       | Recover Codex conversations when subscription and iChat reasoning seals differ      |
