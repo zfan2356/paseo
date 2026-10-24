@@ -3,6 +3,8 @@ import importlib.util
 import io
 from pathlib import Path
 import unittest
+import tempfile
+import json
 from unittest.mock import patch
 import urllib.error
 
@@ -37,6 +39,20 @@ class ReadinessTest(unittest.TestCase):
             with self.subTest(error=error), patch.object(starter.urllib.request, "build_opener") as build:
                 build.return_value.open.side_effect = error
                 self.assertFalse(starter.healthy())
+
+
+class RuntimeTest(unittest.TestCase):
+    def test_codex_home_is_scoped_to_child_environment(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(starter.Path, "home", return_value=Path(root)), patch.dict(starter.os.environ, {"CODEX_HOME": "/inherited"}):
+            config = Path(root) / ".config/magpie/runtime.json"
+            config.parent.mkdir(parents=True)
+            config.write_text(json.dumps({"codexHome": root}))
+            self.assertEqual(starter.launch_environment()["CODEX_HOME"], root)
+            self.assertEqual(starter.os.environ["CODEX_HOME"], "/inherited")
+            for value in ({"codexHome": "relative"}, {"codexHome": "/nonexistent-magpie-test"}, {"MAGPIE_ADDR": "0.0.0.0"}, []):
+                config.write_text(json.dumps(value))
+                with self.subTest(value=value), self.assertRaises(SystemExit):
+                    starter.launch_environment()
 
 
 if __name__ == "__main__":

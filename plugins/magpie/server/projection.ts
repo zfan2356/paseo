@@ -22,6 +22,7 @@ const providerList = z.object({
       name: text,
       ready: z.boolean().optional(),
       off: z.boolean().optional(),
+      exposed: z.number().int().nonnegative().default(0),
       account: z.object({ user: text, plan: text, logins: z.array(login).nullish() }).nullish(),
     }),
   ),
@@ -95,6 +96,7 @@ export function projectSnapshot(providers: unknown, groups: unknown, quotas: unk
       id: p.id,
       name: p.name || p.id,
       ready: p.ready === true && !p.off,
+      modelCount: p.exposed,
       accounts: projectAccounts(p),
     })),
     groups: gs.map((g) => ({

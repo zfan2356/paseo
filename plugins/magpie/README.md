@@ -29,6 +29,17 @@ the gateway at `127.0.0.1:3425`. The start action calls `~/.local/bin/magpie-sta
 These paths match the deployment script. No keys or account stores belong in this
 repository. RPC responses project only display data and never raw provider records.
 
+The account page displays every configured source, including Cursor and custom API
+providers such as iChat and DeepSeek, with the number of exposed models. A ready
+source means configured, not a successful inference or a known remaining balance.
+API sources without a quota endpoint do not invent subscription or balance data.
+
+If Magpie must use a different Codex account directory than the daemon or shell,
+create a private `~/.config/magpie/runtime.json` containing
+`{"codexHome":"/absolute/path/to/subscription-home"}` and restart Magpie. The
+starter applies this directory only to the Magpie child process; it does not copy
+credentials or change other Codex launchers. The directory must already exist.
+
 Connect Paseo to the daemon on the Magpie host to use it remotely. When Magpie is on
 an SSH host without a Paseo daemon, set these variables in the local daemon's environment:
 

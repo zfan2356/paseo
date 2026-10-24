@@ -27,6 +27,7 @@ export const snapshotSchema = z.object({
       id: z.string(),
       name: z.string(),
       ready: z.boolean(),
+      modelCount: z.number().int().nonnegative().default(0),
       accounts: z.array(
         z.object({
           user: z.string(),

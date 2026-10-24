@@ -6,7 +6,14 @@ import { allowedSignInUrl, projectSignIn, projectSnapshot, validCallback } from 
 const secret = "DO_NOT_EXPOSE_CREDENTIAL";
 const providers = {
   providers: [
-    { id: "ichat", name: "iChat", ready: true, key: secret, headers: { Authorization: secret } },
+    {
+      id: "ichat",
+      name: "iChat",
+      ready: true,
+      exposed: 12,
+      key: secret,
+      headers: { Authorization: secret },
+    },
     {
       id: "codex",
       name: "ChatGPT",
@@ -72,6 +79,8 @@ const waiting = {
 test("snapshots project credentials out and preserve priority, status and percent units", () => {
   const out = projectSnapshot(providers, groups, quotas);
   assert.equal(JSON.stringify(out).includes(secret), false);
+  assert.equal(out.providers[0].modelCount, 12);
+  assert.equal(out.providers[1].modelCount, 0);
   assert.equal(out.groups[0].members[0].id, "codex/gpt-test");
   assert.equal(out.groups[0].members[0].ready, false);
   assert.equal(out.groups[0].members[1].ready, true);

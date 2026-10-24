@@ -23,7 +23,9 @@ const key = ["magpie", "snapshot"] as const;
 const labels: Record<string, string> = {
   codex: "ChatGPT / Codex",
   claude: "Claude",
-  ichat: "ichat",
+  ichat: "iChat",
+  cursor: "Cursor",
+  deepseek: "DeepSeek",
 };
 const date = (value: string) => (value ? new Date(value).toLocaleString() : "尚未读取");
 const errorText = (error: unknown) =>
@@ -310,8 +312,7 @@ function Action({
 }
 
 function statusDetails(m: Model) {
-  const personal =
-    m.data?.providers.filter((p) => ["codex", "claude"].includes(p.id) && p.ready).length ?? 0;
+  const sources = m.data?.providers.filter((p) => p.ready).length ?? 0;
   const fallbacks =
     m.data?.groups.filter(
       (g) =>
@@ -327,11 +328,11 @@ function statusDetails(m: Model) {
     m.complete.error ??
     m.cancelLogin.error ??
     m.login.error;
-  return { personal, fallbacks, error };
+  return { sources, fallbacks, error };
 }
 
 function Status({ model: m, styles: s, theme }: SectionProps) {
-  const { personal, fallbacks, error } = statusDetails(m);
+  const { sources, fallbacks, error } = statusDetails(m);
   let title = "Magpie 暂不可用";
   if (m.snapshot.isPending) title = "正在连接…";
   else if (m.data?.available) title = "Magpie 已连接";
@@ -342,8 +343,8 @@ function Status({ model: m, styles: s, theme }: SectionProps) {
           <Text style={s.title}>{title}</Text>
           <Text style={s.muted}>
             {m.data?.available
-              ? `${personal} 个个人订阅来源可用 · ${fallbacks} 条个人优先路由`
-              : "服务就绪后即可在这里管理个人账号。"}
+              ? `${sources} 个来源可用 · ${fallbacks} 条个人优先路由`
+              : "服务就绪后即可在这里查看账号与 API 来源。"}
           </Text>
         </View>
         {m.data?.available ? (
@@ -366,11 +367,6 @@ function Status({ model: m, styles: s, theme }: SectionProps) {
         )}
       </View>
       {m.data?.issue && <Text style={s.warning}>{m.data.issue}</Text>}
-      {m.data?.available && personal === 0 && (
-        <Text style={s.muted}>
-          个人账号尚未就绪，目前由 ichat 回答。登录后，对应模型会按已配置的顺序优先使用个人额度。
-        </Text>
-      )}
       {error && (
         <Text accessibilityRole="alert" style={s.danger}>
           {errorText(error)}
@@ -380,14 +376,13 @@ function Status({ model: m, styles: s, theme }: SectionProps) {
   );
 }
 
-function Account({ id, model: m, styles: s, theme }: SectionProps & { id: "codex" | "claude" }) {
+function Account({ id, model: m, styles: s, theme }: SectionProps & { id: string }) {
   const provider = m.data?.providers.find((p) => p.id === id);
-  let status = "未登录";
-  if (provider?.ready) status = "个人订阅已接入";
-  else if (provider?.accounts.length) status = "账号需要检查";
+  const loginAgent = id === "codex" || id === "claude" ? id : null;
+  const status = providerStatus(provider, Boolean(loginAgent));
   return (
     <View style={s.card}>
-      <Text style={s.title}>{labels[id]}</Text>
+      <Text style={s.title}>{labels[id] || provider?.name || id}</Text>
       <Text style={provider?.ready ? s.success : s.muted}>{status}</Text>
       {provider?.accounts.map((account) => (
         <View key={account.user} style={s.detail}>
@@ -399,16 +394,24 @@ function Account({ id, model: m, styles: s, theme }: SectionProps & { id: "codex
           </Text>
         </View>
       ))}
-      <Action
-        title={`登录${id === "codex" ? " ChatGPT" : " Claude"}`}
-        theme={theme}
-        primary={!provider?.ready}
-        disabled={!m.data?.available || m.signIn.isPending || pending(m.flow)}
-        action={id}
-        onAction={m.onAction}
-      />
+      {provider && <Text style={s.muted}>{provider.modelCount} 个模型可用</Text>}
+      {loginAgent && (
+        <Action
+          title={`登录${loginAgent === "codex" ? " ChatGPT" : " Claude"}`}
+          theme={theme}
+          primary={!provider?.ready}
+          disabled={!m.data?.available || m.signIn.isPending || pending(m.flow)}
+          action={loginAgent}
+          onAction={m.onAction}
+        />
+      )}
     </View>
   );
+}
+function providerStatus(provider: Snapshot["providers"][number] | undefined, canLogin: boolean) {
+  if (provider?.ready) return "已接入";
+  if (provider?.accounts.length) return "账号需要检查";
+  return canLogin ? "未登录" : "未配置";
 }
 function accountStatus(account: Snapshot["providers"][number]["accounts"][number]) {
   if (account.needsLogin) return "需要重新登录";
@@ -582,14 +585,11 @@ function Accounts(props: SectionProps) {
         </View>
       </View>
       <Login {...props} />
-      <View style={s.card}>
-        <Text style={s.title}>ichat · 备用来源</Text>
-        <Text style={s.muted}>
-          {m.data?.providers.find((p) => p.id === "ichat")?.ready
-            ? "已配置。个人账号不可用、额度不足或不支持所选模型时，按路由顺序回退。"
-            : "尚未读取到可用的 ichat 配置。"}
-        </Text>
-      </View>
+      {m.data?.providers
+        .filter((provider) => provider.id !== "codex" && provider.id !== "claude")
+        .map((provider) => (
+          <Account key={provider.id} {...props} id={provider.id} />
+        ))}
       <Text style={s.title}>额度窗口</Text>
       {(m.data?.quotas.length ?? 0) === 0 && (
         <View style={s.card}>
