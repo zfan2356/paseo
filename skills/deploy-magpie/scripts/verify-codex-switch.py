@@ -193,13 +193,18 @@ def main():
         turn("subscription-read-tool", "gpt-6.1-sol", "Read ./switch-token.txt using exactly one terminal command: cat ./switch-token.txt. Remember the token for later turns. Reply only READY, without repeating the token.", expect_tool=True)
         token_file.unlink()
         if args.compact:
+            compact_start = len(notes)
             rpc("thread/compact/start", {"threadId": thread_id})
             while True:
-                note = receive(180)
-                if note.get("method") == "thread/compacted":
+                completed = any(
+                    note.get("method") == "thread/compacted"
+                    or note.get("method") == "item/completed"
+                    and note.get("params", {}).get("item", {}).get("type") == "contextCompaction"
+                    for note in notes[compact_start:]
+                )
+                if completed:
                     break
-                if note.get("method") == "item/completed" and note.get("params", {}).get("item", {}).get("type") == "contextCompaction":
-                    break
+                receive(180)
             report["compacted"] = True
             if args.seed_magpie:
                 gateway.terminate()
