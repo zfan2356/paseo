@@ -52,6 +52,23 @@ async function verifyNativePage(page, expectedOrigin, artifactName) {
       )
       .toBe("page");
   }
+  const providers = await view.evaluate((element) =>
+    element.executeJavaScript(
+      'fetch("/api/providers").then(async response => ({ status: response.status, count: (await response.json()).providers.length }))',
+    ),
+  );
+  expect(providers.status).toBe(200);
+  expect(providers.count).toBeGreaterThan(0);
+  await view.evaluate((element) =>
+    element.executeJavaScript("document.querySelector('[data-view=\"providers\"]').click()"),
+  );
+  await expect
+    .poll(() =>
+      view.evaluate((element) =>
+        element.executeJavaScript('document.getElementById("providers").children.length'),
+      ),
+    )
+    .toBeGreaterThan(0);
   const frame = await view.evaluate((element) =>
     element.executeJavaScript(
       "({ node: typeof require, title: document.title, origin: location.origin })",
