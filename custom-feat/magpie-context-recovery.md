@@ -20,8 +20,8 @@ does not exhaust the retry budget one item at a time. Refused seals are remember
 per sign-in, model and conversation; newly generated reasoning still passes.
 Once output reaches the client, an error is returned without replay.
 
-Signed-in GPT-6 native compaction also produces portable summaries when native
-compaction is off. Legacy sealed checkpoints moving to iChat are read with the
+Signed-in GPT-6 native compaction produces portable summaries on both the
+compact endpoint and compaction-trigger requests when native compaction is off. Legacy sealed checkpoints moving to iChat are read with the
 original Codex sign-in and returned as a portable checkpoint, so the client
 retains the migration once. A checkpoint the original source cannot read is
 never dropped or flattened into an incomplete summary. Explicit native
@@ -47,5 +47,7 @@ Live acceptance uses an isolated gateway and Codex test conversation with real
 subscription and iChat credentials, checking remembered facts and tool output
 after subscription → iChat → subscription transitions, including compaction.
 `--seed-magpie` first creates a legacy checkpoint with the earlier binary and
-then validates automatic migration by the candidate without rewriting history. Production conversations
+then validates automatic migration by the candidate without rewriting history.
+Migration returns the portable checkpoint and the actual target-source reply
+together; it never ends the user turn with only a checkpoint. Production conversations
 are not rewritten by this gateway fix.

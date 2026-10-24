@@ -214,6 +214,7 @@ def main():
         turn("unified", "group/codex-unified", prompt, expect_token=True)
         turn("ichat-return", "ichat/gpt-6.1-sol", prompt, expect_token=True)
         turn("subscription-final", "gpt-6.1-sol", prompt, expect_token=True)
+        turn("subscription-tool-after-switch", "gpt-6.1-sol", "Run exactly one terminal command: printf switch-verified. Then reply only READY.", expect_tool=True)
         rows = []
         usage_file = gateway_home / ".config/magpie/usage.jsonl"
         for line in usage_file.read_text().splitlines():
