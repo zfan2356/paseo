@@ -58,16 +58,21 @@ view or import an unavailable host module. It accesses the existing
 Fabric installs this delegate even without a JS listener; omitting the response
 leaves the first load waiting indefinitely. The first real iPhone run registered
 the view but produced only the native background and no load/message events.
-Probe v2 adds this handshake and an eight-second readiness diagnostic; rendering
-and click delivery remain pending another real iPhone run.
-An error boundary reports a missing
-JavaScript view registration. Native view presence alone does not prove rendering.
+Probe v2 adds this handshake and an eight-second readiness diagnostic.
+An error boundary reports a missing JavaScript view registration.
 The self-contained page checks JavaScript and native message delivery without a
 network request, account access, or Magpie management key. Runtime facts and
 bounded probe events go to that plugin's normal logs over the existing RPC.
-Only a real iPhone run can establish compatibility; successful compilation and
-browser checks do not. This probe neither changes the main Magpie plugin nor
-solves access to the Mac-only forwarded management origin. It targets iOS only.
+
+The real iPhone run on 2026-10-25 at 23:21 UTC+08:00 used iOS 26.6.1 and React
+Native 0.86.3. Its screenshot shows the rendered HTML and running JavaScript;
+daemon logs received `navigation-allowed`, `ready`, and `loaded` from that phone.
+This verifies inline rendering and the page-to-plugin-to-daemon message path
+without rebuilding the app or restarting the daemon. The screenshot's click
+count was zero and no `clicked` event was received, so manual click delivery is
+still unverified. Other app versions and Android are untested. The probe does
+not yet load the real Magpie page, change the main plugin, or solve access to
+the Mac-only forwarded management origin.
 
 The projection tests verify model counts and removal of credential fields.
 `server/web.test.ts` verifies local and forwarded management links, independent
