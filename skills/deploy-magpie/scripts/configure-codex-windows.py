@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enable subscription-first routing without changing credentials or other groups."""
+"""Align Codex member windows without changing routing, credentials, or clients."""
 import argparse
 import copy
 import hashlib
@@ -22,17 +22,14 @@ def prepare(config, model_cache):
         model = members[0].split("/", 1)[1]
         if members[1] != "ichat/" + model:
             continue
-        if group.get("routing") != "order" or any(group.get(k) for k in ["rules", "match", "sink", "firstToken", "effort"]):
-            raise ValueError("Codex Unified group has custom routing; inspect before changing it")
         known = models[model]
         window = max(known.get("Context", 0), known.get("MaxContext", 0))
         if window <= 0:
             raise ValueError("The native catalog has no known window for " + model)
         windows[model] = window
-        group.update(quotaOnly=True, affinity="off")
         groups.append(group["id"])
     if not groups:
-        raise ValueError("No ordered Codex/iChat Unified pairs found")
+        raise ValueError("No Codex/iChat Unified pairs found")
     provider = next((p for p in result["providers"] if p["id"] == "codex"), None)
     if provider is None:
         provider = {"id": "codex"}
@@ -67,7 +64,7 @@ def main():
             stream.write(original)
         if args.config.read_bytes() != original:
             raise RuntimeError("Configuration changed during preparation; nothing was applied")
-        fd, temporary = tempfile.mkstemp(prefix=".quota-only-", dir=args.config.parent)
+        fd, temporary = tempfile.mkstemp(prefix=".codex-windows-", dir=args.config.parent)
         try:
             with os.fdopen(fd, "w") as stream:
                 json.dump(updated, stream, ensure_ascii=False, indent=2)

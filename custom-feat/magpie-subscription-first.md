@@ -1,6 +1,11 @@
 # Magpie subscription-first routing
 
-Status: active
+Status: removed
+
+The user chose the original routing behavior on 2026-10-25. The quota-only
+extension from `927f0e1c0` is removed; retain only the member-window correction
+described in [magpie-codex-windows.md](magpie-codex-windows.md). Do not reapply the
+historical policy below during upgrades.
 
 ## Original requirement
 
@@ -9,7 +14,7 @@ confirmed subscription quota exhaustion may send the conversation to iChat.
 An advertised 1M group window must not silently move a long conversation to a
 paid fallback because Magpie cached the subscription's default 500K window.
 
-## Design
+## Historical Design
 
 The pinned `codex-quota-only.patch` adds opt-in `quotaOnly` to explicit, flat,
 ordered chat/Responses groups. Routing rules, nested groups, sink, and
