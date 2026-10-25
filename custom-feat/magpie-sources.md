@@ -68,10 +68,11 @@ The real iPhone run on 2026-10-25 at 23:21 UTC+08:00 used iOS 26.6.1 and React
 Native 0.86.3. Its screenshot shows the rendered HTML and running JavaScript;
 daemon logs received `navigation-allowed`, `ready`, and `loaded` from that phone.
 This verifies inline rendering and the page-to-plugin-to-daemon message path
-without rebuilding the app or restarting the daemon. The screenshot's click
-count was zero and no `clicked` event was received, so manual click delivery is
-still unverified. Other app versions and Android are untested. The probe does
-not yet load the real Magpie page, change the main plugin, or solve access to
+without rebuilding the app or restarting the daemon. A second run at 23:25
+received the same startup events, followed by two `clicked` events at 23:25:49
+and 23:25:50 UTC+08:00; the user also confirmed normal interaction. Manual click
+delivery is verified on that app. Other app versions and Android are untested.
+The probe does not yet load the real Magpie page, change the main plugin, or solve access to
 the Mac-only forwarded management origin.
 
 The projection tests verify model counts and removal of credential fields.
