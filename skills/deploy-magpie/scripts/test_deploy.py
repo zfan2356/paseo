@@ -14,6 +14,35 @@ spec = importlib.util.spec_from_file_location("deploy", Path(__file__).with_name
 deploy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deploy)
 
+quota_spec = importlib.util.spec_from_file_location("quota", Path(__file__).with_name("configure-codex-quota-only.py"))
+quota = importlib.util.module_from_spec(quota_spec)
+quota_spec.loader.exec_module(quota)
+
+
+class QuotaConfigurationTest(unittest.TestCase):
+    def test_preserves_credentials_other_groups_and_client_window(self):
+        original = {"providers": [{"id": "ichat", "key": "private-fixture"}], "groups": [
+            {"id": "codex-unified", "members": ["codex/gpt-6.1-sol", "ichat/gpt-6.1-sol"], "routing": "order", "affinity": "session", "context": 1000000},
+            {"id": "other", "members": ["a/m", "b/m"], "routing": "rotate"},
+        ]}
+        models = {"models": [{"ID": "gpt-6.1-sol", "Context": 500000, "MaxContext": 872000}]}
+        updated, report = quota.prepare(original, models)
+        self.assertEqual(updated["providers"][0], original["providers"][0])
+        self.assertEqual(updated["groups"][1], original["groups"][1])
+        self.assertEqual(updated["groups"][0]["context"], 1000000)
+        self.assertEqual(updated["groups"][0]["affinity"], "off")
+        self.assertTrue(updated["groups"][0]["quotaOnly"])
+        self.assertEqual(report["contexts"], {"gpt-6.1-sol": 872000})
+        self.assertNotIn("quotaOnly", original["groups"][0])
+        self.assertEqual(quota.prepare(updated, models)[0], updated)
+
+    def test_refuses_to_replace_an_explicit_model_window(self):
+        original = {"providers": [{"id": "codex", "contexts": {"gpt-6.1-sol": 1000000}}], "groups": [
+            {"id": "g", "members": ["codex/gpt-6.1-sol", "ichat/gpt-6.1-sol"], "routing": "order"},
+        ]}
+        with self.assertRaises(ValueError):
+            quota.prepare(original, {"models": [{"ID": "gpt-6.1-sol", "Context": 500000, "MaxContext": 872000}]})
+
 
 class DeploymentTest(unittest.TestCase):
     def setUp(self):

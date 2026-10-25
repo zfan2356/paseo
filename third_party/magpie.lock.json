@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/yetone/magpie.git",
   "revision": "9572a35761c2606257e8493ab47dedda38eb6b88",
-  "version": "0.1.1319-paseo.9572a357.context5-history",
+  "version": "0.1.1319-paseo.9572a357.context6-quota",
   "go": "1.26.8",
   "patches": [
     {
@@ -11,6 +11,10 @@
     {
       "path": "patches/magpie/codex-paginated-history.patch",
       "sha256": "50a43f0d1123da1b60464ea50ae5ea6a9dbf3306285fccc393e8261eee2957cf"
+    },
+    {
+      "path": "patches/magpie/codex-quota-only.patch",
+      "sha256": "95d4e26f1d9aab7ff10d8fe58bca25e12a57e79aa155e17d9a28c54e3298d0da"
     }
   ]
 }

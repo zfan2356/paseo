@@ -56,4 +56,5 @@ stays authoritative for intent and design.
 | [shared-codex-app-server.md](shared-codex-app-server.md)                       | Share Codex native conversations, live output, and interruption across clients      |
 | [magpie-sources.md](magpie-sources.md)                                         | Magpie displays all account/API sources and selects its own Codex subscription home |
 | [magpie-context-recovery.md](magpie-context-recovery.md)                       | Recover Codex conversations when subscription and iChat reasoning seals differ      |
+| [magpie-subscription-first.md](magpie-subscription-first.md)                   | Keep Codex Unified on the subscription until confirmed quota exhaustion             |
 | [dsh-model-routes.md](dsh-model-routes.md)                                     | Explicit Official, Unified and iChat model routes for DSH                           |

@@ -18,6 +18,15 @@ Do not substitute a release download, `latest`, or `magpie update`.
 
 Pass `--repo /absolute/checkout` when invoking an installed copy of this skill from outside the checkout. The installer does not stop services or start a new one. Inspect the running service before replacing it. If a restart is in scope, stop only the identified Magpie process owned by this user, then run `~/.local/bin/magpie-start`. Never stop the Paseo daemon as part of Magpie deployment. A live older Magpie process keeps its old executable until restarted.
 
+## Configure Subscription Priority
+
+For subscription-first Codex Unified repairs, review
+`custom-feat/magpie-subscription-first.md`. After installing its supporting
+binary, dry-run `scripts/configure-codex-quota-only.py`, then apply with
+`--apply --backup-dir <private-directory>` when configuration changes are
+authorized. It preserves credentials and unrelated routes; restart only the
+authorized Magpie process after the configuration and artifact are verified.
+
 ## Connect Paseo
 
 Run `npm ci` and `npm run build:server` in the checkout, then `npm run typecheck --workspace=@getpaseo/builtin-plugins` before installing the source plugin. Confirm the target daemon's `pluginsEnabled` setting; enabling trusted unsandboxed plugins needs the user's authorization if it was not already given. Install with `paseo plugin install /absolute/checkout/plugins/magpie --id magpie`, or reload that ID if it already points here. Do not overwrite another installation without checking its path.
