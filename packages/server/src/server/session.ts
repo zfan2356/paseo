@@ -475,7 +475,7 @@ export interface SessionOptions {
   worktreesRoot?: string;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
-  messageReceipts: Pick<MessageReceipts, "send">;
+  messageReceipts: Pick<MessageReceipts, "send" | "lookup">;
   agentMessages: AgentMessageDelivery;
   creationService: Pick<CreationService, "create" | "subscribe">;
   projectRegistry: ProjectRegistry;
@@ -834,7 +834,7 @@ export class Session {
   private readonly daemonSession: DaemonSession;
   private readonly hubExecutionController: HubExecutionController | null;
   private readonly workspaceScripts: WorkspaceScriptsService;
-  private readonly messageReceipts: Pick<MessageReceipts, "send">;
+  private readonly messageReceipts: Pick<MessageReceipts, "send" | "lookup">;
   private readonly agentMessages: AgentMessageDelivery;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
@@ -3412,6 +3412,9 @@ export class Session {
     switch (msg.type) {
       case "agent.message.send_if_idle.request":
         await this.handleSendAgentMessageIfIdleRequest(msg);
+        return;
+      case "agent.message.get_receipt.request":
+        await this.handleGetAgentMessageReceiptRequest(msg);
         return;
       case "list_commands_request":
         await this.handleListCommandsRequest(msg);
@@ -8764,6 +8767,55 @@ export class Session {
           agentId,
           accepted: false,
           error: error instanceof AgentBusyError ? "agent_busy" : errorToFriendlyMessage(error),
+        },
+      });
+    }
+  }
+
+  private async handleGetAgentMessageReceiptRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.message.get_receipt.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveAgentIdentifier(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.message.get_receipt.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          messageId: msg.messageId,
+          status: null,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+
+    try {
+      const status = await this.messageReceipts.lookup(resolved.agentId, msg.messageId);
+      this.emit({
+        type: "agent.message.get_receipt.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          messageId: msg.messageId,
+          status,
+          error: null,
+        },
+      });
+    } catch (error) {
+      if (this.delivery.requestSignal.aborted) return;
+      this.sessionLogger.warn(
+        { err: error, agentId: resolved.agentId, messageId: msg.messageId },
+        "Failed to look up agent message receipt",
+      );
+      this.emit({
+        type: "agent.message.get_receipt.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          messageId: msg.messageId,
+          status: null,
+          error: errorToFriendlyMessage(error),
         },
       });
     }

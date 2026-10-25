@@ -2121,6 +2121,8 @@ export class VoiceAssistantWebSocketServer {
         agentMessageBatching: true,
         // COMPAT(agentMessageIfIdle): added in v0.13.0, remove gate after 2027-10-23.
         agentMessageIfIdle: true,
+        // COMPAT(agentMessageReceiptLookup): added in v0.13.1, remove gate after 2027-10-25.
+        agentMessageReceiptLookup: true,
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
         stableProjectIdentity: true,
         // COMPAT(workspaceScriptManagement): added in v0.1.105, remove gate after 2027-01-10.

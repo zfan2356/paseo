@@ -605,9 +605,10 @@ npm run cli -- agent open <id>       # Focus an existing agent in Paseo Desktop
 npm run cli -- daemon status         # Check daemon status
 npm run cli -- clone owner/repo --dir ~/workspace # Clone GitHub repo and register project
 npm run cli -- send <id> --if-idle --message-id <stable-id> --prompt-file task.md --no-wait --json
+npm run cli -- agent receipt <id> <stable-id> --json
 ```
 
-`--if-idle` fails with `agent_busy` instead of steering or interrupting an active turn. It requires `--message-id`, which ordinary sends also accept; reuse the same ID across retries. A host without idle-only support reports `DAEMON_UPDATE_REQUIRED`; the command never falls back to a normal send. See [Sending messages](../public-docs/cli.md#sending-messages).
+`--if-idle` fails with `agent_busy` instead of steering or interrupting an active turn. It requires `--message-id`, which ordinary sends also accept; reuse the same ID across retries. A host without idle-only support reports `DAEMON_UPDATE_REQUIRED`; the command never falls back to a normal send. `agent receipt` reads the same stable ID without redelivering; see [Sending messages](../public-docs/cli.md#sending-messages) and [delivery receipt lookup](agent-lifecycle.md#delivery-receipt-lookup).
 
 Use the global `--host` option to point the CLI at a different daemon:
 

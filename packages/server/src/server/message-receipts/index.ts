@@ -9,6 +9,9 @@ const ReceiptSchema = z.object({
   state: z.enum(["pending", "completed"]),
   agentId: z.string(),
 });
+
+export type MessageReceiptStatus = "accepted" | "pending" | "absent";
+
 interface SendMessageInput {
   agentId: string;
   messageId: string;
@@ -30,7 +33,7 @@ export class MessageReceipts {
 
   send(input: SendMessageInput): Promise<void> {
     // Preserve the existing on-disk identity and shape across daemon upgrades.
-    const key = digest(["send", input.agentId, input.messageId]);
+    const key = receiptKey(input.agentId, input.messageId);
     const previous = this.pending.get(key);
     const result = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(() =>
       this.sendOnce(key, input),
@@ -44,8 +47,31 @@ export class MessageReceipts {
     return result;
   }
 
+  /**
+   * Read the durable receipt for one delivery identity without sending,
+   * loading an agent, or clearing a pending outcome.
+   *
+   * `accepted` means the provider accepted the turn start. `pending` means a
+   * receipt exists but completion was never recorded, so the outcome is
+   * unknown. `absent` only means no local receipt was found: it is not proof
+   * that the request never ran, and callers must not replay on it alone.
+   */
+  async lookup(agentId: string, messageId: string): Promise<MessageReceiptStatus> {
+    const key = receiptKey(agentId, messageId);
+    const existing = await readReceipt(receiptFile(this.directory, key));
+    if (!existing) {
+      // A send for this identity may still be preparing, before its receipt is
+      // written. Report the delivery as unresolved rather than absent.
+      return this.pending.has(key) ? "pending" : "absent";
+    }
+    if (existing.agentId !== agentId) {
+      throw new Error("agent_request_receipt_identity_mismatch");
+    }
+    return existing.state === "completed" ? "accepted" : "pending";
+  }
+
   private async sendOnce(key: string, input: SendMessageInput): Promise<void> {
-    const file = path.join(this.directory, `${key}.json`);
+    const file = receiptFile(this.directory, key);
     const fingerprint = digest(input.request);
     const existing = await readReceipt(file);
     if (existing) {
@@ -67,6 +93,14 @@ export class MessageReceipts {
     }
     await writeJsonFileAtomic(file, { ...receipt, state: "completed" });
   }
+}
+
+function receiptKey(agentId: string, messageId: string): string {
+  return digest(["send", agentId, messageId]);
+}
+
+function receiptFile(directory: string, key: string): string {
+  return path.join(directory, `${key}.json`);
 }
 
 async function readReceipt(file: string): Promise<z.infer<typeof ReceiptSchema> | null> {

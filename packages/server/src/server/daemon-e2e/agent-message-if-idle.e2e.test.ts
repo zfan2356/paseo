@@ -246,6 +246,11 @@ test("a completed duplicate after a daemon restart is acknowledged without anoth
   const second = await startHarness(root, cwd);
   try {
     const before = await second.fetchAgent(agentId);
+    await expect(second.client.getAgentMessageReceipt(agentId, "replay-1")).resolves.toEqual({
+      agentId,
+      messageId: "replay-1",
+      status: "accepted",
+    });
     await expect(
       second.client.sendAgentMessageIfIdle(agentId, "replay notification", {
         messageId: "replay-1",
@@ -282,6 +287,11 @@ test("a receipt left pending by a crash stays outcome_unknown instead of replayi
 
   const second = await startHarness(root, cwd);
   try {
+    await expect(second.client.getAgentMessageReceipt(agentId, "ambiguous-1")).resolves.toEqual({
+      agentId,
+      messageId: "ambiguous-1",
+      status: "pending",
+    });
     await expect(
       second.client.sendAgentMessageIfIdle(agentId, "ambiguous notification", {
         messageId: "ambiguous-1",
@@ -290,6 +300,113 @@ test("a receipt left pending by a crash stays outcome_unknown instead of replayi
     expect(second.prompts).toHaveLength(0);
   } finally {
     await second.close();
+  }
+});
+
+test("receipt lookup is readonly for absent and delivered identities", async () => {
+  const { root, cwd } = await makeRoot();
+  const harness = await startHarness(root, cwd);
+  try {
+    const agentId = await harness.createAgent();
+    const before = await harness.fetchAgent(agentId);
+
+    await expect(harness.client.getAgentMessageReceipt(agentId, "lookup-1")).resolves.toEqual({
+      agentId,
+      messageId: "lookup-1",
+      status: "absent",
+    });
+    expect(harness.prompts).toHaveLength(0);
+    const stillIdle = await harness.fetchAgent(agentId);
+    expect(stillIdle.status).toBe("idle");
+    expect(stillIdle.persistence?.sessionId).toBe(before.persistence?.sessionId);
+
+    await harness.client.sendAgentMessageIfIdle(agentId, "lookup notification", {
+      messageId: "lookup-1",
+    });
+    await harness.client.waitForFinish(agentId, 10_000);
+    const delivered = await harness.fetchAgent(agentId);
+
+    await expect(harness.client.getAgentMessageReceipt(agentId, "lookup-1")).resolves.toEqual({
+      agentId,
+      messageId: "lookup-1",
+      status: "accepted",
+    });
+    expect(harness.prompts.filter((prompt) => prompt.includes("lookup notification"))).toHaveLength(
+      1,
+    );
+    const after = await harness.fetchAgent(agentId);
+    expect(after.status).toBe("idle");
+    expect(after.persistence?.sessionId).toBe(delivered.persistence?.sessionId);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("receipt lookup does not unarchive an archived agent", async () => {
+  const { root, cwd } = await makeRoot();
+  const harness = await startHarness(root, cwd);
+  try {
+    const agentId = await harness.createAgent();
+    await harness.client.sendAgentMessageIfIdle(agentId, "archived lookup", {
+      messageId: "archived-lookup-1",
+    });
+    await harness.client.waitForFinish(agentId, 10_000);
+    await harness.client.archiveAgent(agentId);
+    const archived = await harness.fetchAgent(agentId);
+    expect(archived.archivedAt).toBeTypeOf("string");
+    const promptCount = harness.prompts.length;
+
+    await expect(
+      harness.client.getAgentMessageReceipt(agentId, "archived-lookup-1"),
+    ).resolves.toEqual({
+      agentId,
+      messageId: "archived-lookup-1",
+      status: "accepted",
+    });
+    const after = await harness.fetchAgent(agentId);
+    expect(after.archivedAt).toBe(archived.archivedAt);
+    expect(harness.prompts).toHaveLength(promptCount);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("the same message ID stays isolated across agents", async () => {
+  const { root, cwd } = await makeRoot();
+  const harness = await startHarness(root, cwd);
+  try {
+    const first = await harness.createAgent();
+    const second = await harness.createAgent();
+    await harness.client.sendAgentMessageIfIdle(first, "first shared", {
+      messageId: "shared-1",
+    });
+    await harness.client.waitForFinish(first, 10_000);
+
+    await expect(harness.client.getAgentMessageReceipt(first, "shared-1")).resolves.toMatchObject({
+      agentId: first,
+      status: "accepted",
+    });
+    await expect(harness.client.getAgentMessageReceipt(second, "shared-1")).resolves.toMatchObject({
+      agentId: second,
+      status: "absent",
+    });
+
+    await harness.client.sendAgentMessageIfIdle(second, "second shared", {
+      messageId: "shared-1",
+    });
+    await harness.client.waitForFinish(second, 10_000);
+    await expect(harness.client.getAgentMessageReceipt(first, "shared-1")).resolves.toMatchObject({
+      agentId: first,
+      status: "accepted",
+    });
+    await expect(harness.client.getAgentMessageReceipt(second, "shared-1")).resolves.toMatchObject({
+      agentId: second,
+      status: "accepted",
+    });
+    expect(harness.prompts.filter((prompt) => prompt.includes("first shared"))).toHaveLength(1);
+    expect(harness.prompts.filter((prompt) => prompt.includes("second shared"))).toHaveLength(1);
+  } finally {
+    await harness.close();
   }
 });
 
@@ -554,6 +671,44 @@ test("CLI idle-only delivery preserves structured busy, retry, and replay result
       harness.prompts.filter((prompt) => prompt.includes(busyText)).length,
       1,
       "completed replay should not execute again",
+    );
+
+    // Receipt lookup reports the stable identity without redelivering.
+    const receiptArgs = (target: string, messageId: string) => [
+      "--json",
+      "agent",
+      "receipt",
+      target,
+      messageId,
+      "--host",
+      `127.0.0.1:${harness.daemon.port}`,
+    ];
+    const acceptedReceipt = await runCli(receiptArgs(prefix, "cli-idle-busy"));
+    assert.strictEqual(
+      acceptedReceipt.exitCode,
+      0,
+      `receipt lookup should succeed: ${acceptedReceipt.stderr}`,
+    );
+    assert.deepStrictEqual(JSON.parse(acceptedReceipt.stdout.trim()), {
+      agentId,
+      messageId: "cli-idle-busy",
+      status: "accepted",
+    });
+    const absentReceipt = await runCli(receiptArgs(prefix, "cli-absent-1"));
+    assert.strictEqual(
+      absentReceipt.exitCode,
+      0,
+      `unknown receipt should be a valid result: ${absentReceipt.stderr}`,
+    );
+    assert.deepStrictEqual(JSON.parse(absentReceipt.stdout.trim()), {
+      agentId,
+      messageId: "cli-absent-1",
+      status: "absent",
+    });
+    assert.strictEqual(
+      harness.prompts.filter((prompt) => prompt.includes(busyText)).length,
+      1,
+      "receipt lookups must not dispatch another prompt",
     );
 
     const after = await harness.fetchAgent(agentId);
