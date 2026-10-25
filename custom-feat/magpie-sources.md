@@ -48,6 +48,19 @@ No default agent routing is changed by this UI or startup configuration.
 
 ## Validation
 
+An opt-in `plugins/magpie-mobile-probe` directory plugin tests the user's existing
+iOS app without rebuilding it. Open **Magpie 手机测试**, then start the offline
+test and tap the button inside the green page. The plugin references the
+`RNCWebView` host view already registered by the app; it does not register another
+view or import an unavailable host module. An error boundary reports a missing
+JavaScript view registration. Native view presence alone does not prove rendering.
+The self-contained page checks JavaScript and native message delivery without a
+network request, account access, or Magpie management key. Runtime facts and
+bounded probe events go to that plugin's normal logs over the existing RPC.
+Only a real iPhone run can establish compatibility; successful compilation and
+browser checks do not. This probe neither changes the main Magpie plugin nor
+solves access to the Mac-only forwarded management origin. It targets iOS only.
+
 The projection tests verify model counts and removal of credential fields.
 `server/web.test.ts` verifies local and forwarded management links, independent
 cookie hostnames, rejected URL credentials/paths and invalid/missing key handling.
