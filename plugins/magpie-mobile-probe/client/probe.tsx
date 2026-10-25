@@ -15,12 +15,18 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TurboModuleRegistry,
   UIManager,
   View,
   type NativeSyntheticEvent,
 } from "react-native";
 import { pageMessage, reportRpc, type ProbeStage } from "../shared/probe.js";
 import { probeHtml } from "./document.js";
+import {
+  answerNavigation,
+  type NavigationController,
+  type NavigationRequest,
+} from "./navigation.js";
 
 interface ProbeEvent {
   stage: ProbeStage;
@@ -44,17 +50,21 @@ const source = { html: probeHtml, baseUrl: "about:blank" };
 const labels: Record<ProbeStage, string> = {
   inspected: "已检查原生组件",
   started: "正在挂载网页",
+  "navigation-allowed": "已回复允许加载",
+  "navigation-blocked": "已阻止离线页面以外的导航",
   loaded: "网页加载完成",
   ready: "JavaScript 已运行，回传成功",
   clicked: "网页点击已回传到插件",
   "native-error": "网页加载失败",
   "render-error": "原生组件挂载失败",
+  timeout: "8 秒内未收到页面就绪回传",
 };
 
 function inspectRuntime() {
   if (Platform.OS !== "ios") {
     return {
       nativeView: false,
+      navigation: null,
       reactNativeVersion: "unavailable",
       detail: "This probe targets iOS.",
     };
@@ -63,10 +73,12 @@ function inspectRuntime() {
   const reactNativeVersion = `${version.major}.${version.minor}.${version.patch}`;
   try {
     const nativeView = UIManager.hasViewManagerConfig("RNCWebView");
-    return { nativeView, reactNativeVersion, detail: `RNCWebView registered: ${nativeView}` };
+    const navigation = TurboModuleRegistry.get<NavigationController>("RNCWebViewModule");
+    const detail = `RNCWebView registered: ${nativeView}; navigation module: ${navigation !== null}`;
+    return { nativeView, navigation, reactNativeVersion, detail };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    return { nativeView: false, reactNativeVersion, detail };
+    return { nativeView: false, navigation: null, reactNativeVersion, detail };
   }
 }
 
@@ -131,6 +143,17 @@ export function MobileProbe({ theme }: PluginSurfaceProps) {
     if (Platform.OS === "ios") record("inspected", runtime.detail);
   }, [record, runtime]);
   const start = useCallback(() => record("started"), [record]);
+  const allowNavigation = useCallback(
+    (event: NativeSyntheticEvent<NavigationRequest>) => {
+      if (!runtime.navigation) {
+        record("native-error", "The native navigation module is unavailable.");
+        return;
+      }
+      const allowed = answerNavigation(runtime.navigation, event.nativeEvent);
+      record(allowed ? "navigation-allowed" : "navigation-blocked", event.nativeEvent.url);
+    },
+    [record, runtime],
+  );
   const loaded = useCallback(() => record("loaded"), [record]);
   const failed = useCallback((message: string) => record("render-error", message), [record]);
   const loadError = useCallback(
@@ -150,6 +173,19 @@ export function MobileProbe({ theme }: PluginSurfaceProps) {
     (event) => `${labels[event.stage]}${event.detail ? `：${event.detail}` : ""}`,
   );
   const eventText = eventLines.join("\n");
+  const settled = state.events.some(
+    (event) =>
+      event.stage === "ready" ||
+      event.stage === "clicked" ||
+      event.stage === "native-error" ||
+      event.stage === "render-error",
+  );
+  useEffect(() => {
+    if (state.attempt === 0 || settled) return;
+    const timer = setTimeout(() => record("timeout"), 8000);
+    return () => clearTimeout(timer);
+  }, [record, settled, state.attempt]);
+  const canStart = runtime.nativeView && runtime.navigation !== null;
   if (Platform.OS !== "ios") {
     return (
       <View style={styles.container}>
@@ -175,16 +211,19 @@ export function MobileProbe({ theme }: PluginSurfaceProps) {
       onMessage: message,
       onLoadingFinish: loaded,
       onLoadingError: loadError,
+      onShouldStartLoadWithRequest: allowNavigation,
     });
   return (
     <View style={styles.container}>
       <Text style={foreground}>第一步：验证现有 App 能否内嵌网页</Text>
+      <Text style={foreground}>探针 v2 · 已补充 iOS 导航握手</Text>
       <Text style={foreground}>
         iOS {String(Platform.Version)} · React Native {runtime.reactNativeVersion}
         {"\n"}RNCWebView：{runtime.nativeView ? "已注册" : "不可用"}
+        {"\n"}导航模块：{runtime.navigation ? "已就绪" : "不可用"}
       </Text>
       <Text style={foreground}>开始后，在绿色网页里点击“点击测试回传”。</Text>
-      {runtime.nativeView ? (
+      {canStart ? (
         <Pressable accessibilityRole="button" onPress={start} style={styles.button}>
           <Text style={styles.buttonText}>
             {state.attempt === 0 ? "开始离线网页测试" : "重新测试"}

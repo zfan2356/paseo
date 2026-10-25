@@ -5,11 +5,14 @@ export const pageMessage = z.enum(["ready", "clicked"]);
 export const probeStage = z.enum([
   "inspected",
   "started",
+  "navigation-allowed",
+  "navigation-blocked",
   "loaded",
   "ready",
   "clicked",
   "native-error",
   "render-error",
+  "timeout",
 ]);
 export type ProbeStage = z.infer<typeof probeStage>;
 

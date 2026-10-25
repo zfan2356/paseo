@@ -52,7 +52,15 @@ An opt-in `plugins/magpie-mobile-probe` directory plugin tests the user's existi
 iOS app without rebuilding it. Open **Magpie 手机测试**, then start the offline
 test and tap the button inside the green page. The plugin references the
 `RNCWebView` host view already registered by the app; it does not register another
-view or import an unavailable host module. An error boundary reports a missing
+view or import an unavailable host module. It accesses the existing
+`RNCWebViewModule` through React Native's TurboModule registry to acknowledge each
+`onShouldStartLoadWithRequest` lock, allowing only `about:blank` and its fragments.
+Fabric installs this delegate even without a JS listener; omitting the response
+leaves the first load waiting indefinitely. The first real iPhone run registered
+the view but produced only the native background and no load/message events.
+Probe v2 adds this handshake and an eight-second readiness diagnostic; rendering
+and click delivery remain pending another real iPhone run.
+An error boundary reports a missing
 JavaScript view registration. Native view presence alone does not prove rendering.
 The self-contained page checks JavaScript and native message delivery without a
 network request, account access, or Magpie management key. Runtime facts and
