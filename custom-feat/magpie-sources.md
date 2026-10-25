@@ -33,8 +33,36 @@ For CVM, a private `~/.config/magpie/paseo-web.json` on the daemon host selects
 `com.paseo.magpie-cvm-tunnel` maintains an SSH forward from loopback port 3431 to
 CVM loopback port 3430, reconnecting on failure. The distinct hostname isolates
 the remote cookie from local Magpie's identically named cookie. No remote
-listener is exposed and neither Magpie nor Paseo needs a restart. Other client
-machines require their own forward. Malformed configuration fails explicitly.
+listener is exposed and neither Magpie nor Paseo needs a restart. Other desktop
+clients require their own forward. Malformed configuration fails explicitly.
+
+iOS uses the existing Paseo connection instead of the desktop's loopback URL.
+The directory plugin reads Magpie's live root page and inlines its own scripts
+and styles. A small page adapter carries GET/POST requests and their binary
+responses through plugin RPC. The daemon fixes the destination to loopback port
+3430 and adds the management cookie privately; neither the key nor a public
+management endpoint is needed on the phone. Only management API paths, known
+static resource paths and icons are accepted; traversal and external URLs are
+rejected. Cookie headers never cross back to the page. The HTML wire size is
+capped at 6 MiB and individual upstream responses at 4 MiB.
+
+The existing app's registered `RNCWebView` displays this page. Its existing
+`RNCWebViewModule` acknowledges each navigation lock. Replies use React Native's
+`findNodeHandle` and `UIManager.dispatchViewManagerCommand` with the WebView's
+existing `injectJavaScript` command. No app bundle, native dependency, core RPC
+or daemon protocol changes are needed. Page networking stays blocked by CSP;
+same-service images and masks use data URLs supplied by RPC. Clipboard writes
+use Paseo's client clipboard, and HTTP(S) links open through its external opener.
+History updates account for a local HTML document whose URL differs from its
+virtual base URL.
+
+This transport covers the built-in management views. Browser file downloads and
+third-party plugin iframes are not transported. Native pages are recreated when
+their surface unmounts; the renderer-resident desktop pages keep their existing
+lifetime. Android keeps the existing external-browser behavior and is untested.
+Real iPhone rendering and outbound messages were verified with the retired
+probe below; the complete management-page command/reply path needs a phone run
+after this rollout.
 
 `plugins/magpie/server/projection.ts` continues to project display-only provider
 data for menu-bar quotas and composer shortcuts. Quota failures remain distinct
@@ -48,32 +76,24 @@ No default agent routing is changed by this UI or startup configuration.
 
 ## Validation
 
-An opt-in `plugins/magpie-mobile-probe` directory plugin tests the user's existing
-iOS app without rebuilding it. Open **Magpie 手机测试**, then start the offline
-test and tap the button inside the green page. The plugin references the
-`RNCWebView` host view already registered by the app; it does not register another
-view or import an unavailable host module. It accesses the existing
-`RNCWebViewModule` through React Native's TurboModule registry to acknowledge each
-`onShouldStartLoadWithRequest` lock, allowing only `about:blank` and its fragments.
-Fabric installs this delegate even without a JS listener; omitting the response
-leaves the first load waiting indefinitely. The first real iPhone run registered
-the view but produced only the native background and no load/message events.
-Probe v2 adds this handshake and an eight-second readiness diagnostic.
-An error boundary reports a missing JavaScript view registration.
-The self-contained page checks JavaScript and native message delivery without a
-network request, account access, or Magpie management key. Runtime facts and
-bounded probe events go to that plugin's normal logs over the existing RPC.
+The temporary `magpie-mobile-probe` was introduced in `4d3951a96` and its missing
+native navigation acknowledgement was fixed in `d17896b0a`. Fabric installs the
+decision delegate even without a JS listener, leaving the load pending until
+the corresponding lock is answered. Real runs on 2026-10-25 at 23:21 and 23:25
+UTC+08:00 used iOS 26.6.1 and React Native 0.86.3. They rendered the offline HTML
+and delivered `navigation-allowed`, `ready`, `loaded` and two `clicked` events
+to the daemon. The user confirmed normal interaction. That probe accessed no
+accounts or management key. The user then requested its removal; its installed
+entry and source directory are removed, with this evidence retained in history.
+The working navigation contract is now owned by the main Magpie plugin.
 
-The real iPhone run on 2026-10-25 at 23:21 UTC+08:00 used iOS 26.6.1 and React
-Native 0.86.3. Its screenshot shows the rendered HTML and running JavaScript;
-daemon logs received `navigation-allowed`, `ready`, and `loaded` from that phone.
-This verifies inline rendering and the page-to-plugin-to-daemon message path
-without rebuilding the app or restarting the daemon. A second run at 23:25
-received the same startup events, followed by two `clicked` events at 23:25:49
-and 23:25:50 UTC+08:00; the user also confirmed normal interaction. Manual click
-delivery is verified on that app. Other app versions and Android are untested.
-The probe does not yet load the real Magpie page, change the main plugin, or solve access to
-the Mac-only forwarded management origin.
+`server/web.test.ts` covers resource-path confinement and page assembly;
+`client/native-navigation.test.ts` checks both allowed and denied lock replies.
+The mobile case in `magpie-native.real.spec.ts` uses the real Magpie page,
+daemon and plugin RPC with a browser adapter for the WKWebView JS boundary. It
+checks provider rendering, routing/usage/settings navigation, a harmless
+unhandled POST returning 404, and blocked external requests. It does not replace
+the final iOS command/reply check.
 
 The projection tests verify model counts and removal of credential fields.
 `server/web.test.ts` verifies local and forwarded management links, independent

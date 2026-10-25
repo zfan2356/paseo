@@ -138,18 +138,14 @@ async function createRootAlias(directory: string): Promise<string> {
 }
 
 describe("plugin runtime entries", () => {
-  it("compiles the mobile Magpie probe with only existing plugin host modules", async () => {
-    const directory = path.resolve(
-      import.meta.dirname,
-      "../../../../..",
-      "plugins/magpie-mobile-probe",
-    );
+  it("compiles mobile Magpie with only existing plugin host modules", async () => {
+    const directory = path.resolve(import.meta.dirname, "../../../../..", "plugins/magpie");
     const result = await compilePlugin({
       client: path.join(directory, "index.client.tsx"),
       server: path.join(directory, "index.server.ts"),
     });
     expect(result.clientBundle).toContain("RNCWebView");
-    expect(result.serverBundle).toContain("magpie.mobile.probe.report");
+    expect(result.serverBundle).toContain("magpie.mobile.request");
   });
 
   it.each([
