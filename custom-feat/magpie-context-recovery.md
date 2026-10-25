@@ -12,8 +12,8 @@ speed choices and must not require editing the conversation's rollout.
 
 ## Design
 
-The pinned Magpie source is built with the reviewed patch in
-`patches/magpie/codex-context-recovery.patch`. Native Codex's subscription relay
+The pinned Magpie source is built with the reviewed patches in
+`patches/magpie/`. Native Codex's subscription relay
 handles both HTTP refusals and pre-output SSE failures. A refusal naming a
 reasoning item removes the request's reasoning items together, so a long history
 does not exhaust the retry budget one item at a time. Refused seals are remembered
@@ -26,6 +26,12 @@ original Codex sign-in and returned as a portable checkpoint, so the client
 retains the migration once. A checkpoint the original source cannot read is
 never dropped or flattened into an incomplete summary. Explicit native
 compaction stays bound to its recorded writer.
+
+`codex-paginated-history.patch` excludes paginated histories from upstream's
+background, disconnect, and shutdown portability sweeps. Codex persists byte
+offsets in its history index; retaining line counts and taking an idle thread's
+writer lock does not make a length-changing rewrite safe. Legacy histories keep
+the upstream behavior.
 
 The deployment lock verifies the patch checksum. Builds apply it to an archived
 copy of the clean upstream submodule and record both the source pin and patch
@@ -51,3 +57,6 @@ then validates automatic migration by the candidate without rewriting history.
 Migration returns the portable checkpoint and the actual target-source reply
 together; it never ends the user turn with only a checkpoint. Production conversations
 are not rewritten by this gateway fix.
+
+`TestPortCodexRolloutsPreservesPaginatedOffsets` checks
+byte-for-byte preservation of both plain and compressed paginated rollouts.
