@@ -7892,6 +7892,94 @@ test("idle-only delivery surfaces the daemon rejection code", async () => {
   await expect(result).rejects.toMatchObject({ code: "agent_busy", message: "agent_busy" });
 });
 
+test("receipt lookup is gated on host capability and sends no delivery payload", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "receipt-lookup",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: {} });
+  await connecting;
+
+  await expect(client.getAgentMessageReceipt("agent-1", "message-1")).rejects.toMatchObject({
+    code: "unsupported_operation",
+  });
+  expect(transport.sent).toHaveLength(0);
+
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "status",
+      payload: {
+        status: "server_info",
+        serverId: "srv_receipt_lookup",
+        features: { agentMessageReceiptLookup: true },
+      },
+    }),
+  );
+  const lookup = client.getAgentMessageReceipt("agent-1", "message-1");
+  const request = parseSentFrame(transport.sent[0]);
+  expect(request).toMatchObject({
+    type: "agent.message.get_receipt.request",
+    agentId: "agent-1",
+    messageId: "message-1",
+  });
+  expect(request).not.toHaveProperty("text");
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.message.get_receipt.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "agent-1",
+        messageId: "message-1",
+        status: "pending",
+        error: null,
+      },
+    }),
+  );
+  await expect(lookup).resolves.toEqual({
+    agentId: "agent-1",
+    messageId: "message-1",
+    status: "pending",
+  });
+});
+
+test("receipt lookup surfaces a daemon error instead of inventing a status", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "receipt-lookup-error",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: { agentMessageReceiptLookup: true } });
+  await connecting;
+
+  const lookup = client.getAgentMessageReceipt("missing", "message-1");
+  const request = parseSentFrame(transport.sent[0]);
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.message.get_receipt.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "missing",
+        messageId: "message-1",
+        status: null,
+        error: "Agent not found: missing",
+      },
+    }),
+  );
+  await expect(lookup).rejects.toMatchObject({
+    code: "Agent not found: missing",
+    message: "Agent not found: missing",
+  });
+});
+
 test("measures an outbound message in UTF-8 bytes against the daemon's message limit", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({

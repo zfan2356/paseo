@@ -124,6 +124,7 @@ import type {
   SessionInboundMessage,
   SessionOutboundMessage,
   SendAgentMessageRequest,
+  AgentMessageReceiptStatus,
   PaseoConfigRaw,
   PaseoConfigRevision,
   WorkspaceCreateRequest,
@@ -3889,6 +3890,58 @@ export class DaemonClient {
       throw Object.assign(new Error(code), { code });
     }
     return { agentId: payload.agentId };
+  }
+
+  /**
+   * Read the delivery receipt for a stable message ID without delivering it
+   * again. `pending` means the outcome is unknown; `absent` only means no local
+   * receipt was found and must not be treated as proof that delivery failed.
+   */
+  async getAgentMessageReceipt(
+    agentId: string,
+    messageId: string,
+  ): Promise<{
+    agentId: string;
+    messageId: string;
+    status: AgentMessageReceiptStatus;
+  }> {
+    if (this.lastServerInfoMessage?.features?.agentMessageReceiptLookup !== true) {
+      throw Object.assign(
+        new Error("Update the Paseo host to look up message delivery receipts."),
+        { code: "unsupported_operation" },
+      );
+    }
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.message.get_receipt.request",
+      requestId,
+      agentId,
+      messageId,
+    });
+    const payload = await this.sendRequest({
+      requestId,
+      message,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.message.get_receipt.response") {
+          return null;
+        }
+        if (msg.payload.requestId !== requestId) {
+          return null;
+        }
+        return msg.payload;
+      },
+    });
+    if (payload.error !== null) {
+      const code = payload.error || "agent_message_receipt_lookup_failed";
+      throw Object.assign(new Error(code), { code });
+    }
+    if (payload.status === null) {
+      throw Object.assign(new Error("agent_message_receipt_lookup_failed"), {
+        code: "agent_message_receipt_lookup_failed",
+      });
+    }
+    return { agentId: payload.agentId, messageId: payload.messageId, status: payload.status };
   }
 
   async rewindAgent(

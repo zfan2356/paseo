@@ -1415,6 +1415,17 @@ export const SendAgentMessageIfIdleRequestSchema = z.object({
   attachments: AgentAttachmentsSchema,
 });
 
+// A read-only companion to idle-only delivery. It reads the durable receipt by
+// the same agent + message identity and never starts, resumes, or cancels a turn.
+export const GetAgentMessageReceiptRequestSchema = z.object({
+  type: z.literal("agent.message.get_receipt.request"),
+  requestId: z.string(),
+  /** Accepts full ID, unique prefix, or exact full title (server resolves). */
+  agentId: z.string().min(1),
+  /** Stable caller-supplied delivery identity used for the original send. */
+  messageId: z.string().min(1),
+});
+
 export const WaitForFinishRequestSchema = z.object({
   type: z.literal("wait_for_finish_request"),
   requestId: z.string(),
@@ -3345,6 +3356,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetVoiceModeMessageSchema,
   SendAgentMessageRequestSchema,
   SendAgentMessageIfIdleRequestSchema,
+  GetAgentMessageReceiptRequestSchema,
   WaitForFinishRequestSchema,
   DaemonGetStatusRequestSchema,
   DaemonGetPairingOfferRequestSchema,
@@ -3874,6 +3886,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentMessageBatching: z.boolean().optional(),
         // COMPAT(agentMessageIfIdle): added in v0.13.0, remove gate after 2027-10-23.
         agentMessageIfIdle: z.boolean().optional(),
+        // COMPAT(agentMessageReceiptLookup): added in v0.13.1, remove gate after 2027-10-25.
+        agentMessageReceiptLookup: z.boolean().optional(),
         // COMPAT(agentTurnIdentity): accept peers that observed pre-release v0.2.6 through 2027-01-31.
         agentTurnIdentity: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
@@ -5139,6 +5153,27 @@ export const SendAgentMessageIfIdleResponseMessageSchema = z.object({
     /** Canonical agent ID after prefix or title resolution. */
     agentId: z.string(),
     accepted: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentMessageReceiptStatusSchema = z.enum(["accepted", "pending", "absent"]);
+export type AgentMessageReceiptStatus = z.infer<typeof AgentMessageReceiptStatusSchema>;
+
+export const GetAgentMessageReceiptResponseMessageSchema = z.object({
+  type: z.literal("agent.message.get_receipt.response"),
+  payload: z.object({
+    requestId: z.string(),
+    /** Canonical agent ID after prefix or title resolution. */
+    agentId: z.string(),
+    messageId: z.string(),
+    /**
+     * `accepted`: the provider accepted the turn start for this identity.
+     * `pending`: a receipt exists but completion was not recorded; outcome unknown.
+     * `absent`: no local receipt was found. It does not prove the request never ran.
+     * `null` only when `error` is non-null.
+     */
+    status: AgentMessageReceiptStatusSchema.nullable(),
     error: z.string().nullable(),
   }),
 });
@@ -7163,6 +7198,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceMarkUnreadResponseSchema,
   SendAgentMessageResponseMessageSchema,
   SendAgentMessageIfIdleResponseMessageSchema,
+  GetAgentMessageReceiptResponseMessageSchema,
   SetVoiceModeResponseMessageSchema,
   DaemonGetStatusResponseSchema,
   DaemonGetPairingOfferResponseSchema,

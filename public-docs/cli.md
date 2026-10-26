@@ -331,6 +331,20 @@ Use `--if-idle` when a message must only start a turn in an idle session. If a t
 
 Hosts without idle-only support fail with `DAEMON_UPDATE_REQUIRED` and an update instruction; they never fall back to a normal send. An accepted `--no-wait` result carries the canonical agent ID and `"status": "sent"`.
 
+Check the durable receipt for a stable message ID without sending it again:
+
+```bash
+paseo agent receipt <id> deploy-2026-10-23 --json
+```
+
+The result carries the canonical agent ID, the message ID, and one of these statuses:
+
+- `accepted`: the host's provider accepted the turn start for this identity.
+- `pending`: a receipt exists but completion was not recorded; the outcome is unknown. Do not retry blindly.
+- `absent`: no local receipt was found. This does not prove the message never ran.
+
+An unreadable receipt is an error, not `absent`. Hosts without receipt lookup fail with `DAEMON_UPDATE_REQUIRED`.
+
 ## Viewing logs
 
 ```bash

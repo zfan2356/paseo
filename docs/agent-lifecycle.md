@@ -112,6 +112,12 @@ Admission uses the manager's existing run boundary and lifecycle lane. A notific
 
 The operation never unarchives. An archived agent rejects with guidance; unarchive it explicitly first. Busy and archived admission rejections reserve no run, so their pending receipts can be removed for an explicit retry. Other uncertain dispatch failures retain their receipts. Receipts share the agent + message ID identity with ordinary sends: a completed ID is acknowledged without another turn, a different request under the same ID conflicts, and a receipt left pending by a crash reports `agent_request_outcome_unknown`. Acceptance means the provider accepted the turn start, not transactional exactly-once execution.
 
+### Delivery receipt lookup
+
+`agent.message.get_receipt.request` reads the durable receipt for the same agent + message ID without delivering anything. It reports `accepted` when the provider accepted the turn start, `pending` when a receipt exists but completion was never recorded (outcome unknown), and `absent` when no local receipt exists. `absent` is not evidence that the request never ran, so a caller must not replay on it alone. An unreadable or mismatched receipt is an error, not `absent`.
+
+The lookup never loads an agent, starts, resumes, or cancels a turn, clears a pending receipt, creates a session, or unarchives an agent. It uses the same agent resolution as a send and the read permission of other observation RPCs. Clients check `server_info.features.agentMessageReceiptLookup` once and report a host update requirement when it is absent; there is no fallback to resending the message.
+
 Permission requests are notification checkpoints, not the end of that subscription. The caller is notified again after a permission response when the child finishes, errors, or requests another permission.
 The permission notification includes the normalized request plus the child and request IDs, so the caller can inspect it and respond without fetching agent status.
 A watched child that closes before its finish event also notifies the caller so delegated work cannot disappear silently during archive or workspace teardown.
