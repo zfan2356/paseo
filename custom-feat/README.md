@@ -56,6 +56,7 @@ stays authoritative for intent and design.
 | [shared-codex-app-server.md](shared-codex-app-server.md)                       | Share Codex native conversations, live output, and interruption across clients        |
 | [magpie-sources.md](magpie-sources.md)                                         | Magpie account/API sources, native management pages and iOS access through plugin RPC |
 | [magpie-context-recovery.md](magpie-context-recovery.md)                       | Recover Codex conversations when subscription and iChat reasoning seals differ        |
+| [magpie-private-provider.md](magpie-private-provider.md)                       | Direct provider access with host-local credentials and protocol compatibility         |
 | [magpie-subscription-first.md](magpie-subscription-first.md)                   | Removed quota-only routing extension; retained as historical documentation            |
 | [magpie-codex-windows.md](magpie-codex-windows.md)                             | Align Codex member windows without changing the original routing behavior             |
 | [dsh-model-routes.md](dsh-model-routes.md)                                     | Explicit Official, Unified and iChat model routes for DSH                             |
