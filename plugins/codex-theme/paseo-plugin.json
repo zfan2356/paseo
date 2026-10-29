@@ -1,0 +1,4 @@
+{
+  "id": "codex-theme",
+  "requirements": { "paseo": ">=0.14.0-beta.2" }
+}

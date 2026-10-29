@@ -136,6 +136,12 @@ Daemon restart resumes saved conversations on demand, even with a closed parent
 runtime. Concurrent resumes use the existing per-agent lifecycle queue. Closing
 an internal runtime preserves the storage record and committed timeline.
 
+`isEphemeralAgent` separates disposable helpers from labeled, durable Side Chats.
+The upstream idle collector may release an idle Side Chat runtime after its
+normal safety checks; reopening preserves the same native session and history.
+An in-progress fork protects its parent's runtime from collection. Restart
+continuation remains on demand for Side Chats, independently of directory visibility.
+
 `openSideChat` for a stored conversation already holds that side agent's
 lifecycle lane, so the resume inside it calls the unqueued internal resume.
 Calling the public resume would queue behind the lane it is already running in

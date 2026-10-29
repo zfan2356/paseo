@@ -240,6 +240,16 @@ export function runPluginClientBundle(
   }
   const pluginContext: PluginClientContext = {
     ...runtime,
+    features: { composerExtensions: true, themeOverrides: true },
+    addComposerExtension(contribution) {
+      const extensionId = requireId(contribution.id, "composer extension id");
+      const extensions = (collector.composerExtensions ??= []);
+      if (extensions.some((entry) => entry.id === extensionId))
+        throw new Error(`Duplicate composer extension: ${extensionId}`);
+      if (!isComponentType(contribution.Component))
+        throw new Error(`Composer extension ${extensionId} is not a component`);
+      return register(extensions, { ...contribution, id: extensionId }, () => {});
+    },
     addSettingsScreen(contribution) {
       const screenId = requireId(contribution.id, "settings screen id");
       if (settingsScreenIds.has(screenId))
@@ -586,6 +596,7 @@ export function runPluginClientBundle(
     legacySidebarItems: collector.legacySidebarItems,
     filePanels: collector.filePanels,
     workspacePanels: collector.workspacePanels as EvaluatedPlugin["workspacePanels"],
+    composerExtensions: collector.composerExtensions,
     commandCenterItems: collector.commandCenterItems,
     clientSlashCommands: collector.clientSlashCommands,
     attachmentSources: collector.attachmentSources,

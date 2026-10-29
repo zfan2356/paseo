@@ -88,13 +88,8 @@ import {
 } from "./turn-footer";
 import { resolveBottomOverlayTailInset } from "./bottom-overlay-inset";
 import { layoutStream, type StreamLayoutItem } from "./layout";
-import { getAssistantMessageSpacing, getGapBetweenStreamItems } from "./spacing";
-import {
-  getIntermediateProcessDefaultExpanded,
-  projectIntermediateProcess,
-  type IntermediateProcessGroup,
-} from "./intermediate-process/model";
-import { IntermediateProcessGroupView } from "./intermediate-process/view";
+import { isTurnTrigger } from "./turn-membership";
+import type { ProcessExpansion } from "./turn-collapse/model";
 import {
   type BottomAnchorLocalRequest,
   type BottomAnchorRouteRequest,
@@ -326,44 +321,6 @@ function useRetainedValue<T>(value: T, active: boolean): T {
 }
 const EMPTY_PENDING_MESSAGE_SUBMISSIONS: readonly PendingMessageSubmission[] = [];
 const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
-const EMPTY_INTERMEDIATE_PROCESS_LAYOUT_ITEMS: StreamLayoutItem[] = [];
-
-interface IntermediateProcessExpansionOverride {
-  expanded: boolean;
-  phase: "active" | "complete";
-}
-
-function isIntermediateToolSequenceItem(item: StreamItem | null): boolean {
-  return item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
-}
-
-function layoutIntermediateProcessItems(
-  group: IntermediateProcessGroup,
-  hostLayoutItem: StreamLayoutItem,
-): StreamLayoutItem[] {
-  return group.items.map((item, index, items) => {
-    const aboveItem = items[index - 1] ?? null;
-    const belowItem = items[index + 1] ?? null;
-    return {
-      item,
-      index,
-      items: [...items],
-      aboveItem,
-      belowItem,
-      gapBelow: getGapBetweenStreamItems(item, belowItem),
-      assistantSpacing: getAssistantMessageSpacing({ item }),
-      completedFooter: null,
-      toolSequence: "none",
-      isFirstInUserGroup: false,
-      isLastInUserGroup: false,
-      isLastInToolSequence:
-        isIntermediateToolSequenceItem(item) && !isIntermediateToolSequenceItem(belowItem),
-      frameOrder: hostLayoutItem.frameOrder,
-      phase: "complete",
-    };
-  });
-}
-
 function resolveBottomOverlayControlOffset(clearance: number | undefined): number {
   return Math.max(16, clearance ?? 0);
 }
@@ -417,7 +374,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const expandedToolCallGroups = useExpandedToolCallGroups(toolCallExpansion);
     const [expandedTurnHostIds, setExpandedTurnHostIds] = useState<ReadonlySet<string>>(new Set());
     const [intermediateProcessExpansionById, setIntermediateProcessExpansionById] = useState<
-      Map<string, IntermediateProcessExpansionOverride>
+      Map<string, ProcessExpansion>
     >(new Map());
 
     // Get serverId (fallback to agent's serverId if not provided)
@@ -580,6 +537,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           display: chatDisplay,
           autoExpandReasoning,
           expandedTurnHostIds,
+          processExpansion: intermediateProcessExpansionById,
           isTurnActive,
           activeTurnId: effectiveTurnPresentation.turnId,
         }),
@@ -591,19 +549,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         chatDisplay,
         autoExpandReasoning,
         expandedTurnHostIds,
+        intermediateProcessExpansionById,
         isTurnActive,
         effectiveTurnPresentation.turnId,
       ],
-    );
-    const projectedIntermediateProcess = useMemo(
-      () =>
-        projectIntermediateProcess({
-          tail: presentation.tail,
-          head: presentation.head,
-          isTurnActive,
-          enabled: chatDisplay === "full",
-        }),
-      [chatDisplay, isTurnActive, presentation.head, presentation.tail],
     );
     const {
       start: historyWindowStart,
@@ -612,7 +561,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       loadOlder,
     } = useStreamHistoryWindow({
       agentId,
-      items: projectedIntermediateProcess.tail,
+      items: presentation.tail,
       loadRemoteOlder,
     });
     const isLoadingOlder = remoteIsLoadingOlder;
@@ -623,8 +572,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       return buildAgentStreamRenderModel({
         isTurnActive,
         activeTurnStartedAt: effectiveTurnPresentation.startedAt,
-        tail: projectedIntermediateProcess.tail,
-        head: projectedIntermediateProcess.head,
+        tail: presentation.tail,
+        head: presentation.head,
         platform: isWeb ? "web" : "native",
         isMobileBreakpoint: isMobile,
         historyStart: historyWindowStart,
@@ -632,8 +581,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     }, [
       isMobile,
       isTurnActive,
-      projectedIntermediateProcess.head,
-      projectedIntermediateProcess.tail,
+      presentation.head,
+      presentation.tail,
       effectiveTurnPresentation.startedAt,
       historyWindowStart,
     ]);
@@ -669,10 +618,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         baseRenderModel.segments.liveHead.map(getStreamItemMessageId),
       );
       return {
-        has: (messageId: string) =>
-          mountedHistoryMessageIds.has(messageId) || liveHeadMessageIds.has(messageId),
+        has: (messageId: string) => {
+          const hostId = presentation.turns.hostIdByFoldedMessageId.get(messageId);
+          if (hostId && !presentation.turns.turnsByHostId.get(hostId)?.expanded) return false;
+          return mountedHistoryMessageIds.has(messageId) || liveHeadMessageIds.has(messageId);
+        },
       };
-    }, [baseRenderModel.segments.liveHead, mountedHistoryMessageIds]);
+    }, [baseRenderModel.segments.liveHead, mountedHistoryMessageIds, presentation.turns]);
     const chatOutline = useChatOutline({
       agentId,
       serverId: resolvedServerId,
@@ -732,9 +684,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [streamRenderStrategy],
     );
 
-    const setTurnExpanded = useCallback((hostId: string, expanded: boolean) => {
+    const setTurnExpanded = useStableEvent((hostId: string, expanded: boolean) => {
       // A turn opens below its summary line; keep that line under the reader's pointer.
       viewportRef.current?.holdReadingPosition();
+      const turn = presentation.turns.turnsByHostId.get(hostId);
+      if (turn?.process) {
+        setIntermediateProcessExpansionById((previous) =>
+          new Map(previous).set(hostId, {
+            expanded,
+            phase: turn.process!.active ? "active" : "complete",
+          }),
+        );
+        return;
+      }
       setExpandedTurnHostIds((previous) => {
         if (previous.has(hostId) === expanded) return previous;
         const next = new Set(previous);
@@ -745,11 +707,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         }
         return next;
       });
-    }, []);
+    });
     // Chat find reveals a match inside a collapsed turn by opening the turn first.
     const revealLoadedMessage = useStableEvent((messageId: string): boolean => {
       const hostId = presentation.turns.hostIdByFoldedMessageId.get(messageId);
-      if (hostId && !expandedTurnHostIds.has(hostId)) {
+      if (hostId && !presentation.turns.turnsByHostId.get(hostId)?.expanded) {
         setTurnExpanded(hostId, true);
         return true;
       }
@@ -770,24 +732,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     });
 
     const setToolCallGroupExpanded = toolCallExpansion.setGroupExpanded;
-
-    const setIntermediateProcessExpanded = useCallback(
-      (groupId: string, expanded: boolean) => {
-        const group = projectedIntermediateProcess.groupsByHostId.get(groupId);
-        if (!group) {
-          return;
-        }
-        setIntermediateProcessExpansionById((previous) => {
-          const next = new Map(previous);
-          next.set(groupId, {
-            expanded,
-            phase: group.isActive ? "active" : "complete",
-          });
-          return next;
-        });
-      },
-      [projectedIntermediateProcess.groupsByHostId],
-    );
 
     const renderUserMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
@@ -1019,7 +963,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             return (
               <>
                 {renderToolCallItem(layoutItem, item)}
-                {getCollapsedTurn(item.id) ? (
+                {getCollapsedTurn(item.id) && !getCollapsedTurn(item.id)?.process ? (
                   <TurnSummaryLine
                     turn={getCollapsedTurn(item.id)!}
                     onExpandedChange={setTurnExpanded}
@@ -1065,38 +1009,18 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderStreamItemContent = useCallback(
       (layoutItem: StreamLayoutItem) => {
-        const group = projectedIntermediateProcess.groupsByHostId.get(layoutItem.item.id);
-        if (!group) {
+        const turn = getCollapsedTurn(layoutItem.item.id);
+        if (!turn?.process || isTurnTrigger(layoutItem.item)) {
           return renderRegularStreamItemContent(layoutItem);
         }
-        const phase = group.isActive ? "active" : "complete";
-        const expansionOverride = intermediateProcessExpansionById.get(group.id);
-        const expanded =
-          (expansionOverride?.phase === phase ? expansionOverride.expanded : undefined) ??
-          getIntermediateProcessDefaultExpanded(group);
-        const memberLayouts = expanded
-          ? layoutIntermediateProcessItems(group, layoutItem)
-          : EMPTY_INTERMEDIATE_PROCESS_LAYOUT_ITEMS;
         return (
-          <IntermediateProcessGroupView
-            group={group}
-            expanded={expanded}
-            onExpandedChange={setIntermediateProcessExpanded}
-          >
-            {memberLayouts.map((memberLayout) => (
-              <React.Fragment key={memberLayout.item.id}>
-                {renderRegularStreamItemContent(memberLayout)}
-              </React.Fragment>
-            ))}
-          </IntermediateProcessGroupView>
+          <>
+            <TurnSummaryLine turn={turn} onExpandedChange={setTurnExpanded} />
+            {turn.expanded ? renderRegularStreamItemContent(layoutItem) : null}
+          </>
         );
       },
-      [
-        intermediateProcessExpansionById,
-        projectedIntermediateProcess.groupsByHostId,
-        renderRegularStreamItemContent,
-        setIntermediateProcessExpanded,
-      ],
+      [getCollapsedTurn, renderRegularStreamItemContent, setTurnExpanded],
     );
 
     const bottomTurnFooterHost = streamLayout.auxiliaryTurnFooter;
@@ -1282,7 +1206,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         contentById: {
           has: (id: string) =>
             presentation.historyGroupUpdatesByHostId.has(id) ||
-            projectedIntermediateProcess.historyGroupUpdatesByHostId.has(id),
+            presentation.turns.turnsByHostId.get(id)?.process?.active === true,
         },
         displayStateById: {
           // An opened lone call also marks its future group open; that row stays unrevised
@@ -1302,7 +1226,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         isMobile,
         nestedItemIds,
         intermediateProcessExpansionById,
-        projectedIntermediateProcess.historyGroupUpdatesByHostId,
+        presentation.turns.turnsByHostId,
         presentation.historyGroupUpdatesByHostId,
       ],
     );

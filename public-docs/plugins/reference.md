@@ -1278,6 +1278,12 @@ Every color is a hex string; anything else fails to load. Paseo expands the pale
 token set the built-in dark themes use, so a contributed theme covers panels, menus, diffs, status
 colors, and the terminal without listing them.
 
+Clients advertising `client.features.themeOverrides` also accept an optional
+`overrides` palette for `surface3`, `surface4`, `surfaceDiffEmpty`, `surfaceSidebar`,
+`foregroundExtraMuted`, `borderAccent`, `accentBright`, `accentForeground`,
+`destructive`, `terminalBlack` and `terminalBrightBlack`. Every override is a
+validated hex color. Gate this once for older clients before registering the theme.
+
 | Color             | Becomes                                                           |
 | ----------------- | ----------------------------------------------------------------- |
 | `background`      | App, workspace, and terminal background                           |
@@ -1893,6 +1899,15 @@ icon and title; its menus and popovers open as pages of that sheet. Placement an
 decisions.
 
 ## Composer pills
+
+Clients advertising `client.features.composerExtensions` support
+`addComposerExtension({ id, Component })`. The component mounts with
+`{ agentId, workspaceId }` for each displayed composer, including private
+conversations that are intentionally absent from public agent lists. Use
+`useAgent(agentId, selector)` for that exact agent; `featureValues` contains its
+current provider feature selections. Register scoped pills in an effect and
+remove them in cleanup. The mount does not grant discovery or server permissions.
+Return an idempotent remover from the plugin entry as with other UI registrations.
 
 `client.addComposerPill({ id, workspaceId, agentId, button })` uses the same [button descriptor](#button-descriptor)
 and returns the same registration. It targets one agent's composer track alongside Tasks and

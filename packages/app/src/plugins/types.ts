@@ -12,6 +12,7 @@ import type {
   PluginCommandCenterItemContribution as SDKPluginCommandCenterItemContribution,
   PluginClientSlashCommandContribution as SDKPluginClientSlashCommandContribution,
   PluginComposerPillContribution as SDKPluginComposerPillContribution,
+  PluginComposerExtensionContribution,
   PluginSidebarContribution as SDKPluginSidebarContribution,
   PluginSidebarItemContribution as SDKPluginSidebarItemContribution,
   PluginScreenContribution as SDKPluginScreenContribution,
@@ -44,6 +45,7 @@ export type EvaluatedPluginWorkspacePanelContribution = PluginWorkspacePanelCont
 };
 
 export interface EvaluatedPlugin {
+  composerExtensions?: PluginComposerExtensionContribution[];
   id: string;
   cleanup: PluginCleanup;
   surfaces: PluginScreenContribution[];

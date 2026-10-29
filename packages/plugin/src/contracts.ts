@@ -36,6 +36,7 @@ export interface PluginWorkspaceSnapshot {
 }
 
 export interface PluginAgentSnapshot {
+  readonly featureValues?: Readonly<Record<string, unknown>>;
   readonly id: string;
   readonly workspaceId: string;
   readonly provider: string;
@@ -70,6 +71,23 @@ export interface PluginThemeContribution<Text extends PluginText = string> {
   name: Text;
   appearance: "light" | "dark";
   colors: PluginThemeColors;
+  /** Optional semantic colors for palettes whose surfaces differ from the compact defaults. */
+  overrides?: Partial<
+    Record<
+      | "surface3"
+      | "surface4"
+      | "surfaceDiffEmpty"
+      | "surfaceSidebar"
+      | "foregroundExtraMuted"
+      | "borderAccent"
+      | "accentBright"
+      | "accentForeground"
+      | "destructive"
+      | "terminalBlack"
+      | "terminalBrightBlack",
+      string
+    >
+  >;
 }
 
 export interface PluginAttachmentSourceContribution<Text extends PluginText = string> {

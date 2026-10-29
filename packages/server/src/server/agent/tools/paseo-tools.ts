@@ -1942,6 +1942,25 @@ function createToolCatalog(
     );
   }
 
+  async function dispatchSelfCommand(agentId: string, prompt: string) {
+    if (
+      callerAgentId !== agentId ||
+      !(await agentManager.tryRunOutOfBand(agentId, prompt, undefined))
+    )
+      return null;
+    return {
+      content: [],
+      structuredContent: {
+        success: true,
+        disposition: "out_of_band",
+        status: agentManager.getAgent(agentId)?.lifecycle ?? "idle",
+        lastMessage: null,
+        permission: null,
+        guidance: OUT_OF_BAND_COMMAND_GUIDANCE,
+      },
+    };
+  }
+
   const PROMPTED_AGENT_NOTIFICATION_GUIDANCE =
     "You will get notified when the prompted agent finishes, errors, or needs permission. Do not poll for status; continue with other work until the notification arrives.";
 
@@ -1972,6 +1991,8 @@ function createToolCatalog(
       if (callerAgentId && !agentManager.getAgent(agentId) && !(await agentStorage.get(agentId))) {
         throw new PaseoToolInputError(`Agent ${agentId} not found`);
       }
+      const command = await dispatchSelfCommand(agentId, prompt);
+      if (command) return command;
       const notifyCallerId =
         notifyOnFinish && callerAgentId !== agentId ? callerAgentId : undefined;
       const notification = notifyCallerId
@@ -1994,7 +2015,7 @@ function createToolCatalog(
           );
       }
 
-      if (callerAgentId && callerAgentId !== agentId) {
+      if (callerAgentId) {
         const receipt = (() => {
           try {
             return agentMessages().enqueue({

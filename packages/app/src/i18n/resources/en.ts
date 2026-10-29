@@ -2530,6 +2530,7 @@ export const en = {
         label: "Chat display",
         description: "How much of an agent's work the chat shows",
         options: {
+          collapseProcess: "Collapse process",
           full: "Full",
           collapseToolCalls: "Collapse tool calls",
           collapseTurns: "Collapse turns",

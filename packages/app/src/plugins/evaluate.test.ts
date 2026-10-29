@@ -17,6 +17,27 @@ const runtime = {
   },
 } as unknown as PluginClientRuntime;
 
+it("owns composer extensions for the installation lifetime and rejects duplicate IDs", async () => {
+  const plugin = evaluatePluginClientBundle(
+    "composer-test",
+    bundle(`
+    plugin.addComposerExtension({id: "controls", Component: () => null});
+  `),
+  );
+  expect(plugin.composerExtensions?.map((entry) => entry.id)).toEqual(["controls"]);
+  await plugin.cleanup();
+  expect(plugin.composerExtensions).toEqual([]);
+  expect(() =>
+    evaluatePluginClientBundle(
+      "composer-test",
+      bundle(`
+    plugin.addComposerExtension({id: "same", Component: () => null});
+    plugin.addComposerExtension({id: "same", Component: () => null});
+  `),
+    ),
+  ).toThrow("Duplicate composer extension");
+});
+
 function evaluatePluginClientBundle(id: string, source: string) {
   return runPluginClientBundle(id, source, runtime);
 }

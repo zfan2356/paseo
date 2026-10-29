@@ -2425,6 +2425,7 @@ export const ja: TranslationResources = {
         label: "チャットの表示",
         description: "チャットに表示するエージェントの作業量",
         options: {
+          collapseProcess: "処理過程を折りたたむ",
           full: "すべて",
           collapseToolCalls: "ツール呼び出しを折りたたむ",
           collapseTurns: "ターンを折りたたむ",

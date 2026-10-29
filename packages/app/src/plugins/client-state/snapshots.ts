@@ -34,6 +34,9 @@ export function createPluginAgentSnapshot(agent: Agent, workspaceId: string): Pl
   if (cached) return cached;
   const snapshot = Object.freeze({
     id: agent.id,
+    featureValues: Object.freeze(
+      Object.fromEntries((agent.features ?? []).map((feature) => [feature.id, feature.value])),
+    ),
     workspaceId,
     provider: agent.provider,
     status: agent.status,

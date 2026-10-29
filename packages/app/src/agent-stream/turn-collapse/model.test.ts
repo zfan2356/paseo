@@ -48,6 +48,34 @@ function collapse(tail: StreamItem[], options: Partial<CollapseTurnsInput> = {})
 const ids = (items: StreamItem[]) => items.map((item) => item.id);
 
 describe("collapseTurns", () => {
+  it("keeps an earlier answer outside an automatically continued process", () => {
+    const rows = [
+      { ...user("u1"), turnId: "one" },
+      { ...shell("c1"), turnId: "one" },
+      { ...reply("final-one"), turnId: "one" },
+      { ...thought("next"), turnId: "two" },
+      { ...shell("c2"), turnId: "two" },
+    ];
+    const result = collapse(rows, { process: true, isLatestTurnOpen: true });
+    expect(ids(result.tail)).toContain("final-one");
+    expect(result.hostIdByFoldedMessageId.get("c1")).toBe("u1");
+    expect(result.turnsByHostId.get("next")?.process?.active).toBe(true);
+  });
+
+  it("maps process members for search and resets live expansion after completion", () => {
+    const rows = [user("u"), thought("thinking"), shell("tool"), reply("final")];
+    const expansion = new Map([["u", { expanded: true, phase: "active" as const }]]);
+    const result = collapse(rows, { process: true, processExpansion: expansion });
+    expect(ids(result.tail)).toEqual(["u", "final"]);
+    expect(result.hostIdByFoldedMessageId.get("thinking")).toBe("u");
+    expect(result.hostIdByHiddenRowId.get("tool")).toBe("u");
+    const opened = collapse(rows, {
+      process: true,
+      processExpansion: new Map([["u", { expanded: true, phase: "complete" }]]),
+    });
+    expect(ids(opened.tail)).toEqual(ids(rows));
+    expect(opened.nestedItemIds.has("thinking")).toBe(true);
+  });
   it("maps hidden rows only while their turn is closed", () => {
     const result = collapse([user("u1"), shell("c1"), reply("final")]);
     expect(result.hostIdByHiddenRowId.get("c1")).toBe("u1");
@@ -201,4 +229,27 @@ describe("collapseTurns", () => {
       tools: { commandCount: 3 },
     });
   });
+});
+
+it("keeps compaction inside a completed process and failure does not open it", () => {
+  const failed = shell("failed");
+  failed.payload.data.status = "failed";
+  const marker: StreamItem = {
+    kind: "compaction",
+    id: "compact",
+    timestamp: at,
+    status: "completed",
+  };
+  const rows = [user("u"), thought("reason"), failed, marker, reply("final")];
+  const closed = collapse(rows, { process: true });
+  expect(ids(closed.tail)).toEqual(["u", "final"]);
+  expect(closed.turnsByHostId.get("u")).toMatchObject({
+    expanded: false,
+    process: { hasError: true },
+  });
+  const opened = collapse(rows, {
+    process: true,
+    processExpansion: new Map([["u", { phase: "complete", expanded: true }]]),
+  });
+  expect(ids(opened.tail)).toEqual(ids(rows));
 });

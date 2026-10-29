@@ -15,7 +15,6 @@ import type { TerminalClipboardWriter } from "../terminal/native-renderer/termin
 import type { TerminalFile } from "../terminal/file-paste";
 import type { PendingTerminalModifiers } from "../utils/terminal-keys";
 import type { TerminalRendererReadyChange } from "../utils/terminal-renderer-readiness";
-import type { TerminalPastedImage } from "../terminal/runtime/terminal-image-paste";
 
 export interface TerminalEmulatorHandle {
   find?: TerminalFindHandle;
@@ -66,8 +65,6 @@ export interface TerminalEmulatorProps {
   onPendingModifiersConsumed?: () => Promise<void> | void;
   onInputModeChange?: (state: TerminalInputModeState) => Promise<void> | void;
   onSelectionChange?: (hasSelection: boolean) => void;
-  onPasteImages?: (images: TerminalPastedImage[]) => Promise<void> | void;
-  onPasteImagesError?: (message: string) => void;
   onResolveLocalFileLink?: (
     source: TerminalLocalFileLinkSource,
   ) => Promise<TerminalLocalFileLinkTarget | null> | TerminalLocalFileLinkTarget | null;

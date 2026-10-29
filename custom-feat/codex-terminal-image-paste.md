@@ -23,6 +23,10 @@ conversation terminals.
 
 The old optional `codexTerminalImagePaste` and per-terminal `imagePaste` fields
 remain accepted for wire compatibility. They no longer gate the current client.
+
+The unused fork upload helper, its detached tests and the obsolete emulator
+callback props were removed in the October 29 customization refactor. Shared
+`terminal/file-paste` and the real conversation-terminal regression own coverage.
 The fork still owns Agent/TUI conversation handoff and terminal persistence.
 
 ## Original design

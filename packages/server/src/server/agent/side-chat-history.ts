@@ -30,3 +30,10 @@ export function getSideChatParentId(agent: {
 }): string | null {
   return getSideChatParentIdFromLabels(agent.labels);
 }
+
+export function isEphemeralAgent(agent: {
+  internal?: boolean;
+  labels?: Record<string, string> | null;
+}): boolean {
+  return agent.internal === true && getSideChatParentId(agent) === null;
+}

@@ -22,6 +22,8 @@ including a daemon signal without an explicit stop intent. Explicit close
 requests still win. Existing fork NDJSON workers are adopted through
 `legacy-worker-connection.ts`, not replaced or sent through the new reaper;
 their explicit close waits for each terminal to exit before disconnecting.
+They occupy the pool's draining slot: new terminals use the current worker,
+and closing the last legacy terminal releases that slot immediately.
 See [the fork design](../custom-feat/persistent-terminal-sessions.md).
 
 ## Record, socket and secret

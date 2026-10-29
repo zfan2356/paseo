@@ -2445,6 +2445,7 @@ export const ru: TranslationResources = {
         label: "Отображение чата",
         description: "Какую часть работы агента показывает чат",
         options: {
+          collapseProcess: "Сворачивать процесс",
           full: "Полностью",
           collapseToolCalls: "Сворачивать вызовы инструментов",
           collapseTurns: "Сворачивать ходы",

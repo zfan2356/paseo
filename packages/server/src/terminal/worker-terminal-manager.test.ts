@@ -1890,6 +1890,7 @@ it("keeps the existing manager attached while a replacement manager starts", asy
     expect(secondManager.getTerminal(firstSession.id)).toBeDefined();
     await expect(firstManager.getTerminalState(firstSession.id)).resolves.not.toBeNull();
 
+    const tokenPath = join(root, "second-controller-token");
     const [firstCreated, secondCreated] = await Promise.all([
       firstManager.createTerminal({
         workspaceId: "ws-overlap",
@@ -1901,11 +1902,17 @@ it("keeps the existing manager attached while a replacement manager starts", asy
         workspaceId: "ws-overlap",
         cwd,
         name: "Second controller",
-        ...nodeTerminalCommand("setInterval(() => {}, 1000)"),
+        ...nodeTerminalCommand(
+          `require("node:fs").writeFileSync(${JSON.stringify(tokenPath)}, process.env.PASEO_ACTIVITY_TOKEN); setInterval(() => {}, 1000)`,
+        ),
       }),
     ]);
     expect(firstCreated.name).toBe("First controller");
     expect(secondCreated.name).toBe("Second controller");
+    await waitForCondition(() => existsSync(tokenPath), 5000);
+    expect(
+      firstManager.validateTerminalActivityToken(secondCreated.id, readFileSync(tokenPath, "utf8")),
+    ).toBe("valid");
     expect((await firstManager.getTerminals(cwd)).map((terminal) => terminal.id).sort()).toEqual(
       [firstSession.id, firstCreated.id, secondCreated.id].sort(),
     );
@@ -2194,6 +2201,7 @@ it("adopts a legacy fork worker without replacing its conversation PTY", async (
         void (async () => {
           switch (request.type) {
             case "attach":
+              if (terminal.getExitInfo()) break;
               connection.transport.send({
                 type: "terminalCreated",
                 terminal: {
@@ -2219,6 +2227,11 @@ it("adopts a legacy fork worker without replacing its conversation PTY", async (
               return;
             case "killTerminalAndWait":
               await terminal.killAndWait();
+              connection.transport.send({
+                type: "terminalExit",
+                terminalId: terminal.id,
+                info: terminal.getExitInfo()!,
+              });
               break;
             case "shutdown":
               local.killAll();
@@ -2250,17 +2263,28 @@ it("adopts a legacy fork worker without replacing its conversation PTY", async (
         local.getTerminalActivityToken(terminal.id)!,
       ),
     ).toBe("valid");
-    expect(await listTerminalWorkerRecords(paseoHome)).toEqual([]);
+    expect(await listTerminalWorkerRecords(paseoHome)).toHaveLength(1);
+    const fresh = await manager.createTerminal({
+      cwd: paseoHome,
+      workspaceId: "ws-new",
+      ...nodeTerminalCommand("setInterval(() => {}, 1000)"),
+    });
+    expect(fresh.id).not.toBe(terminal.id);
+    expect(local.getTerminal(fresh.id)).toBeUndefined();
     writeFileSync(runtime.tokenFile, "A".repeat(43));
     await expect(startRealWorkerManager({ paseoHome })).rejects.toBeInstanceOf(
       PersistentTerminalWorkerAuthenticationError,
     );
-    expect(await listTerminalWorkerRecords(paseoHome)).toEqual([]);
+    expect(await listTerminalWorkerRecords(paseoHome)).toHaveLength(1);
     expect(terminal.getExitInfo()).toBeNull();
     writeFileSync(runtime.tokenFile, runtime.authToken);
     await replacement.detach();
     replacement = null;
     await expect(manager.getTerminalState(terminal.id)).resolves.not.toBeNull();
+    await manager.killTerminalAndWait(terminal.id);
+    await waitForCondition(() => server.connectionCount === 0, 5000);
+    expect(manager.getTerminal(terminal.id)).toBeUndefined();
+    await expect(manager.getTerminalState(fresh.id)).resolves.not.toBeNull();
     await manager.closeTerminals();
     manager = null;
     expect(terminal.getExitInfo()).not.toBeNull();

@@ -279,6 +279,7 @@ function runWorker(argv: string[]): void {
       ...(session.linkedAgentId ? { linkedAgentId: session.linkedAgentId } : {}),
       ...(session.getTitle() ? { title: session.getTitle() } : {}),
       activity: session.getActivity(),
+      activityToken: manager.getTerminalActivityToken(session.id) ?? undefined,
     };
   }
 

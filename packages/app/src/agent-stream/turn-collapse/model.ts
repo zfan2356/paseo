@@ -16,6 +16,12 @@ export interface CollapsedTurn {
   hostId: string;
   expanded: boolean;
   summary: TurnSummary;
+  process?: { active: boolean; hasError: boolean; stepCount: number };
+}
+
+export interface ProcessExpansion {
+  expanded: boolean;
+  phase: "active" | "complete";
 }
 
 export interface TurnCollapse {
@@ -36,6 +42,8 @@ export interface CollapseTurnsInput {
   expandedHostIds: ReadonlySet<string>;
   /** The calls a tool-call group row stands for; undefined for a single call. */
   getGroupedCalls: (itemId: string) => readonly (ToolCallItem | ThoughtItem)[] | undefined;
+  process?: boolean;
+  processExpansion?: ReadonlyMap<string, ProcessExpansion>;
 }
 
 const EMPTY_TURNS: ReadonlyMap<string, CollapsedTurn> = new Map();
@@ -86,26 +94,15 @@ export function collapseTurns(input: CollapseTurnsInput): TurnCollapse {
 
   let runStart = 0;
   const flushRun = (runEnd: number) => {
-    const host = tail[runStart - 1];
-    const isClosed = runEnd < tail.length || !input.isLatestTurnOpen;
-    const replyIndex = findLastAssistantIndex(tail, runStart, runEnd);
-    if (
-      !host ||
-      (host.kind !== "user_message" && host.kind !== "tool_call") ||
-      !isClosed ||
-      replyIndex <= runStart
-    ) {
+    const run = describeRun(input, runStart, runEnd);
+    if (!run) {
       output.push(...tail.slice(runStart, runEnd));
       return;
     }
-    const folded = tail.slice(runStart, replyIndex);
-    const summary = summarizeTurn(folded, input.getGroupedCalls);
-    if (!hasWork(summary) && !folded.some((item) => item.kind === "assistant_message")) {
-      output.push(...tail.slice(runStart, runEnd));
-      return;
-    }
-    const expanded = input.expandedHostIds.has(host.id);
-    turnsByHostId.set(host.id, { hostId: host.id, expanded, summary });
+    const { host, folded, end, turn } = run;
+    const { expanded } = turn;
+    const process = input.process === true;
+    turnsByHostId.set(host.id, turn);
     const revealed = expanded
       ? folded.flatMap<StreamItem>((item) =>
           item.kind === "tool_call" || item.kind === "thought"
@@ -114,15 +111,18 @@ export function collapseTurns(input: CollapseTurnsInput): TurnCollapse {
         )
       : folded;
     for (const item of revealed) {
-      if (staysVisibleWhenCollapsed(item)) continue;
+      if (!process && staysVisibleWhenCollapsed(item)) continue;
       hostIdByFoldedMessageId.set(getStreamItemMessageId(item), host.id);
+      if (item.id === host.id) continue;
       if (expanded) nestedItemIds.add(item.id);
       else hostIdByHiddenRowId.set(item.id, host.id);
     }
     output.push(
-      ...(expanded ? revealed : folded.filter((item) => staysVisibleWhenCollapsed(item))),
+      ...(expanded
+        ? revealed.filter((item) => item.id !== host.id)
+        : folded.filter((item) => !process && staysVisibleWhenCollapsed(item))),
     );
-    output.push(...tail.slice(replyIndex, runEnd));
+    output.push(...tail.slice(end, runEnd));
   };
 
   for (let index = 0; index < tail.length; index += 1) {
@@ -156,4 +156,72 @@ export function collapseTurns(input: CollapseTurnsInput): TurnCollapse {
     hostIdByFoldedMessageId,
     hostIdByHiddenRowId,
   };
+}
+
+function isProcessStep(item: StreamItem): boolean {
+  return item.kind === "thought" || item.kind === "tool_call" || item.kind === "todo_list";
+}
+
+function processEnd(items: StreamItem[], start: number, end: number): number {
+  let foldedEnd = start;
+  let hasStep = false;
+  for (let index = start; index < end; index++) {
+    const item = items[index]!;
+    if (isProcessStep(item)) {
+      hasStep = true;
+      foldedEnd = index + 1;
+    } else if (hasStep && item.kind === "compaction") {
+      foldedEnd = index + 1;
+    }
+  }
+  return foldedEnd;
+}
+
+interface FoldableRun {
+  host: StreamItem;
+  folded: StreamItem[];
+  end: number;
+  turn: CollapsedTurn;
+}
+
+function describeRun(
+  input: CollapseTurnsInput,
+  runStart: number,
+  runEnd: number,
+): FoldableRun | null {
+  const { tail } = input;
+  const host = tail[runStart - 1];
+  if (!host) return null;
+  const process = input.process === true;
+  const isClosed = runEnd < tail.length || !input.isLatestTurnOpen;
+  if (!process && (!isClosed || (host.kind !== "user_message" && host.kind !== "tool_call")))
+    return null;
+  const start = process && !isTurnTrigger(host) ? runStart - 1 : runStart;
+  const end = process
+    ? processEnd(tail, start, runEnd)
+    : findLastAssistantIndex(tail, start, runEnd);
+  if (end <= start) return null;
+  const folded = tail.slice(start, end);
+  const summary = summarizeTurn(folded, input.getGroupedCalls);
+  if (!process && !hasWork(summary) && !folded.some((item) => item.kind === "assistant_message"))
+    return null;
+  const active = !isClosed;
+  const expanded = process
+    ? processExpanded(input.processExpansion?.get(host.id), active)
+    : input.expandedHostIds.has(host.id);
+  const turn: CollapsedTurn = { hostId: host.id, expanded, summary };
+  if (process)
+    turn.process = {
+      active,
+      hasError: folded.some(
+        (item) => item.kind === "tool_call" && item.payload.data.status === "failed",
+      ),
+      stepCount: folded.filter(isProcessStep).length,
+    };
+  return { host, folded, end, turn };
+}
+
+function processExpanded(override: ProcessExpansion | undefined, active: boolean): boolean {
+  const phase = active ? "active" : "complete";
+  return override?.phase === phase ? override.expanded : active;
 }

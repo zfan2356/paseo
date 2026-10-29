@@ -68,6 +68,14 @@ after this rollout.
 data for menu-bar quotas and composer shortcuts. Quota failures remain distinct
 from source configuration and never imply a fallback route exists.
 
+Composer shortcuts now belong to the Magpie client plugin. A generic
+`addComposerExtension` mount follows the displayed composer, including Side Chat,
+and registers standard `addComposerPill` buttons through existing Magpie RPCs.
+The plugin reads the exact viewed agent through `useAgent`; it does not enumerate
+private agents or require a desktop bridge. Native sheets and desktop menus use
+the host's normal pill presentation. Each mount removes its buttons and polling
+on disposal. Old clients retain their native controls behind one capability gate.
+
 `skills/deploy-magpie/scripts/magpie-start.py` accepts a private host-local
 `~/.config/magpie/runtime.json` with an absolute existing `codexHome`. This overrides
 CODEX_HOME only for Magpie; subscription credentials stay in their original home.

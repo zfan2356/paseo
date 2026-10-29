@@ -2442,6 +2442,7 @@ export const ptBR: TranslationResources = {
         label: "Exibição do chat",
         description: "Quanto do trabalho do agente o chat mostra",
         options: {
+          collapseProcess: "Recolher processo",
           full: "Completo",
           collapseToolCalls: "Recolher chamadas de ferramentas",
           collapseTurns: "Recolher turnos",

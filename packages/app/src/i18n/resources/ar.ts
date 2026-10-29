@@ -2441,6 +2441,7 @@ export const ar: TranslationResources = {
         label: "عرض المحادثة",
         description: "مقدار عمل الوكيل الذي تعرضه المحادثة",
         options: {
+          collapseProcess: "طي خطوات التنفيذ",
           full: "كامل",
           collapseToolCalls: "طيّ استدعاءات الأدوات",
           collapseTurns: "طيّ الأدوار",

@@ -37,12 +37,15 @@ from `#7644`. The fork keeps the following overlay:
 New workers receive the current daemon environment and CLI path on every
 terminal creation. Linked conversation identity, activity tokens and explicit
 titles survive adoption. Requests reply only to their originating connection;
-terminal events reach every attached daemon.
+terminal events and their activity tokens reach every attached daemon.
 
 `legacy-worker-connection.ts` adapts an already-running fork NDJSON worker's
 attach response to upstream's listing contract. It never launches another
-legacy worker, replaces its PTYs or bypasses authentication. After it exits,
-the next daemon start uses the upstream backend.
+legacy worker, replaces its PTYs or bypasses authentication. The old worker is
+a draining member of the upstream pool. New terminals use the current worker;
+closing the last old terminal releases its attachment without another daemon
+restart. An explicit close reconnects to the legacy endpoint and confirms its
+terminals exited before the new worker's reaper runs.
 
 ### Explicit non-goals / limitations
 
@@ -56,6 +59,8 @@ the next daemon start uses the upstream backend.
 - No second tmux-based keepalive path — this design is the only one.
 
 An unspecified graceful daemon shutdown still keeps terminals in this fork.
+The supervisor maps SIGINT/SIGTERM to an explicit keep intent before sending
+shutdown IPC, so signaling the supervisor and signaling its child agree.
 Explicit close requests, including `daemon stop` and `restart --kill-terminals`,
 use upstream's cleanup semantics. Deployment and production restarts require
 separate consent.

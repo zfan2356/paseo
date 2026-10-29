@@ -185,10 +185,11 @@ describe("loadAppSettingsFromStorage", () => {
 
     expect(result).toEqual(DEFAULT_CLIENT_SETTINGS);
     expect(DEFAULT_CLIENT_SETTINGS.language).toBe("system");
-    expect(DEFAULT_CLIENT_SETTINGS.chatDisplay).toBe("full");
-    expect(JSON.parse(deps.storage.entries.get(APP_SETTINGS_KEY) ?? "null")).toEqual(
-      DEFAULT_CLIENT_SETTINGS,
-    );
+    expect(DEFAULT_CLIENT_SETTINGS.chatDisplay).toBe("collapseProcess");
+    expect(JSON.parse(deps.storage.entries.get(APP_SETTINGS_KEY) ?? "null")).toEqual({
+      chatDisplayVersion: 1,
+      ...DEFAULT_CLIENT_SETTINGS,
+    });
   });
 
   it("defaults language to system when storage is empty", async () => {
@@ -488,10 +489,11 @@ describe("loadAppSettingsFromStorage", () => {
       ...DEFAULT_CLIENT_SETTINGS,
       theme: "dark",
       contentFontSize: DEFAULT_UI_BASE_FONT_SIZE,
-      chatDisplay: "full",
+      chatDisplay: "collapseProcess",
     });
     expect(JSON.parse(deps.storage.entries.get(APP_SETTINGS_KEY) ?? "null")).toEqual({
       manageBuiltInDaemon: false,
+      chatDisplayVersion: 1,
       releaseChannel: "beta",
       ...result,
     });
@@ -627,7 +629,7 @@ describe("loadSettingsFromStorage", () => {
       ...DEFAULT_APP_SETTINGS,
       theme: "light",
       contentFontSize: DEFAULT_UI_BASE_FONT_SIZE,
-      chatDisplay: "full",
+      chatDisplay: "collapseProcess",
     });
   });
 
@@ -672,7 +674,7 @@ describe("loadSettingsFromStorage", () => {
       ...DEFAULT_APP_SETTINGS,
       theme: "light",
       contentFontSize: DEFAULT_UI_BASE_FONT_SIZE,
-      chatDisplay: "full",
+      chatDisplay: "collapseProcess",
       manageBuiltInDaemon: false,
       releaseChannel: "beta",
     });
@@ -694,7 +696,7 @@ describe("loadSettingsFromStorage", () => {
       ...DEFAULT_APP_SETTINGS,
       theme: "light",
       contentFontSize: DEFAULT_UI_BASE_FONT_SIZE,
-      chatDisplay: "full",
+      chatDisplay: "collapseProcess",
     });
   });
 });
@@ -744,12 +746,11 @@ describe("saveAppSettings", () => {
       deps,
     });
 
-    expect(deps.storage.entries.get(APP_SETTINGS_KEY)).toBe(
-      JSON.stringify({
-        ...DEFAULT_CLIENT_SETTINGS,
-        terminalScrollbackLines: 42_000,
-      }),
-    );
+    expect(JSON.parse(deps.storage.entries.get(APP_SETTINGS_KEY) ?? "null")).toEqual({
+      chatDisplayVersion: 1,
+      ...DEFAULT_CLIENT_SETTINGS,
+      terminalScrollbackLines: 42_000,
+    });
   });
 
   it("normalizes a legacy cached settings shape before saving", async () => {
@@ -767,6 +768,7 @@ describe("saveAppSettings", () => {
     });
 
     expect(JSON.parse(deps.storage.entries.get(APP_SETTINGS_KEY) ?? "null")).toEqual({
+      chatDisplayVersion: 1,
       ...DEFAULT_CLIENT_SETTINGS,
       theme: "light",
       contentFontSize: DEFAULT_UI_BASE_FONT_SIZE,
@@ -825,7 +827,7 @@ describe("appearance settings", () => {
     expect(result.contentFontSize).toBe(DEFAULT_UI_BASE_FONT_SIZE);
     expect(result.codeFontSize).toBe(DEFAULT_CODE_FONT_SIZE);
     expect(result.syntaxTheme).toBe("one");
-    expect(result.chatDisplay).toBe("full");
+    expect(result.chatDisplay).toBe("collapseProcess");
   });
 
   it("migrates the enabled compact tool call preference to collapsed tool calls", async () => {
@@ -841,8 +843,8 @@ describe("appearance settings", () => {
   it.each([
     ["overview", "collapseToolCalls"],
     ["concise", "collapseToolCalls"],
-    ["detailed", "full"],
-    ["unknown", "full"],
+    ["detailed", "collapseProcess"],
+    ["unknown", "collapseProcess"],
   ])("reads the %s tool call detail level as the %s chat display", async (legacy, display) => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({
@@ -1188,4 +1190,17 @@ describe("font family CSS safety", () => {
       expect(await loadAppSettingsFromStorage(deps)).toMatchObject({ [field]: "" });
     },
   );
+});
+
+it("migrates the old full process mode once and preserves a later explicit Full choice", async () => {
+  const deps = makeDeps({
+    storage: createInMemoryKeyValueStorage({
+      [APP_SETTINGS_KEY]: JSON.stringify({ chatDisplay: "full" }),
+    }),
+  });
+  expect((await loadAppSettingsFromStorage(deps)).chatDisplay).toBe("collapseProcess");
+  const queryClient = new QueryClient();
+  await saveAppSettings({ queryClient, updates: { chatDisplay: "full" }, deps });
+  await saveAppSettings({ queryClient, updates: { autoExpandReasoning: true }, deps });
+  expect((await loadAppSettingsFromStorage(deps)).chatDisplay).toBe("full");
 });

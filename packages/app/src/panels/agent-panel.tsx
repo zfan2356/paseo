@@ -1,3 +1,4 @@
+import { PluginComposerExtensions } from "@/plugins/composer-extensions";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
@@ -1328,6 +1329,9 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   );
   const streamContent = (
     <View style={animatedStaticStyles.content}>
+      {hasActiveComposer ? (
+        <PluginComposerExtensions serverId={serverId} workspaceId={workspaceId} agentId={agentId} />
+      ) : null}
       {showsComposer ? null : <SheetAgentFacts serverId={serverId} agentId={agentId} />}
       <RenderProfile id={`AgentStreamSection:${agentId}`}>
         <AgentStreamSection

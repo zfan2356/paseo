@@ -46,6 +46,9 @@ still own an exclusive writer. A close failure retains that runtime for cleanup 
 replacement. Once closure succeeds, a failed resume leaves the durable agent closed and retryable.
 
 Idle resumable runtimes are collected after one hour without activity, checked once a minute.
+Labeled durable Side Chats use the same collection policy. Their hidden directory
+status does not make them disposable helpers. They continue to resume on demand
+after a daemon restart; enabling restart recovery does not automatically reopen them.
 Collection releases the process and preserves the agent record, conversation, relationships, and
 provider session. The next prompt resumes that session. Set `agents.idleRuntimeCleanup: false` in
 host config to disable automatic collection. The host setting applies immediately; config-file edits

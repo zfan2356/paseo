@@ -2458,6 +2458,7 @@ export const fr: TranslationResources = {
         label: "Affichage du chat",
         description: "La part du travail de l’agent affichée dans le chat",
         options: {
+          collapseProcess: "Replier le déroulement",
           full: "Complet",
           collapseToolCalls: "Réduire les appels d’outils",
           collapseTurns: "Réduire les tours",

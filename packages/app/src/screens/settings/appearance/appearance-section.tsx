@@ -1,3 +1,5 @@
+import { CODEX_THEME_ID } from "../../../../../../plugins/codex-theme/shared/palette";
+import { resolveThemeSelection } from "@/appearance/theme-selection";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -199,6 +201,11 @@ function ThemeRow({
         </DropdownTrigger>
         <DropdownMenuContent side="bottom" align="end" width={200} scrollable>
           {THEME_OPTIONS.map((option, index) => {
+            if (
+              option.name === "codex" &&
+              pluginThemes.some((theme) => theme.id === CODEX_THEME_ID)
+            )
+              return null;
             const previousOption = THEME_OPTIONS[index - 1];
             return (
               <Fragment key={option.name}>
@@ -629,7 +636,7 @@ export function AppearanceSection() {
       <SettingsSection title={t("settings.appearance.theme.title")}>
         <View style={settingsStyles.card}>
           <ThemeRow
-            value={settings.theme}
+            value={resolveThemeSelection(settings).fallbackPreference}
             pluginThemes={pluginThemes}
             selectedPluginTheme={selectedPluginTheme}
             onChange={handleThemeChange}

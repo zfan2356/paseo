@@ -10,7 +10,7 @@ import {
   type ToolCallDetailProjection,
 } from "@/tool-calls/detail-level/projection";
 import type { StreamItem, UserMessageItem } from "@/types/stream";
-import { collapseTurns, type TurnCollapse } from "./turn-collapse/model";
+import { collapseTurns, type TurnCollapse, type ProcessExpansion } from "./turn-collapse/model";
 import type { ReadingRowReplacements } from "./reading-anchor";
 
 interface PresentationInput {
@@ -21,6 +21,7 @@ interface PresentationInput {
   autoExpandReasoning?: boolean;
   /** User messages whose collapsed turn the reader opened. */
   expandedTurnHostIds: ReadonlySet<string>;
+  processExpansion?: ReadonlyMap<string, ProcessExpansion>;
   isTurnActive: boolean;
   activeTurnId?: string | null;
 }
@@ -83,6 +84,7 @@ export function createStreamPresentation() {
   let collapsedIsLatestTurnOpen = false;
   let collapsedExpandedHostIds: ReadonlySet<string> | undefined;
   let collapsed: TurnCollapse | undefined;
+  let processTail: StreamItem[] = [];
 
   function presentRows(item: StreamItem): StreamItem[] {
     if (item.kind === "tool_call" && item.payload.source === "agent") {
@@ -108,6 +110,11 @@ export function createStreamPresentation() {
     projection: ToolCallDetailProjection,
     input: PresentationInput,
   ): Omit<StreamPresentation, "readingRowReplacements"> {
+    if (input.display === "collapseProcess") {
+      const result = collapseProcess(projection, input);
+      if (!sameRows(processTail, result.tail)) processTail = result.tail;
+      return { ...result, tail: processTail };
+    }
     if (input.display !== "collapseTurns") {
       return { ...projection, turns: NO_COLLAPSED_TURNS };
     }
@@ -157,7 +164,8 @@ export function createStreamPresentation() {
   }
 
   return (input: PresentationInput): StreamPresentation => {
-    const level: ToolCallDetailLevel = input.display === "full" ? "detailed" : "overview";
+    const level: ToolCallDetailLevel =
+      input.display === "full" || input.display === "collapseProcess" ? "detailed" : "overview";
     // Retained history is not reprojected or regrouped on each live text update.
     if (historySource !== input.tail || historyTransform !== input.transform) {
       historyRows = projectPluginTimelineItems(input.tail, input.transform).flatMap<StreamItem>(
@@ -214,5 +222,34 @@ export function createStreamPresentation() {
         },
       },
     };
+  };
+}
+
+function sameRows(previous: StreamItem[], next: StreamItem[]): boolean {
+  return previous.length === next.length && previous.every((item, index) => item === next[index]);
+}
+
+function collapseProcess(
+  projection: ToolCallDetailProjection,
+  input: PresentationInput,
+): Omit<StreamPresentation, "readingRowReplacements"> {
+  const all = [...projection.tail, ...projection.head];
+  const latestId = all.at(-1)?.turnId;
+  const isLatestTurnOpen =
+    input.isTurnActive && (latestId === undefined || latestId === input.activeTurnId);
+  const { tail: rows, ...turns } = collapseTurns({
+    tail: all,
+    isLatestTurnOpen,
+    expandedHostIds: input.expandedTurnHostIds,
+    getGroupedCalls: (id) => projection.groupsByHostId.get(id)?.run.calls,
+    process: true,
+    processExpansion: input.processExpansion,
+  });
+  const headIds = new Set(projection.head.map((item) => item.id));
+  return {
+    ...projection,
+    tail: rows.filter((item) => !headIds.has(item.id)),
+    head: rows.filter((item) => headIds.has(item.id)),
+    turns,
   };
 }

@@ -2459,6 +2459,7 @@ export const es: TranslationResources = {
         label: "Visualización del chat",
         description: "Cuánto del trabajo del agente muestra el chat",
         options: {
+          collapseProcess: "Contraer el proceso",
           full: "Completo",
           collapseToolCalls: "Contraer llamadas a herramientas",
           collapseTurns: "Contraer turnos",

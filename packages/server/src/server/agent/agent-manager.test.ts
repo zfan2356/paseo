@@ -11059,6 +11059,35 @@ test("idle runtime cleanup honors a provider veto and resumes the saved conversa
   }
 });
 
+test("idle cleanup releases a durable side chat without archiving or reforking it", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "side-chat-idle-cleanup-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new SideChatTestClient(workdir);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const side = await manager.openSideChat(parent.id);
+  try {
+    await drainAsyncGenerator(manager.streamAgent(side.id, "Remember this side conversation"));
+    await manager.flush();
+    const handle = side.persistence;
+    const collected = await runtimeCleanup(manager)({ now: new Date(Date.now() + 61 * 60_000) });
+    expect(collected.collected.map((entry) => entry.agentId)).toContain(side.id);
+    expect(manager.getAgent(side.id)).toBeNull();
+    expect(await storage.get(side.id)).toMatchObject({ persistence: handle, internal: true });
+    const resumed = await manager.openSideChat(parent.id, side.id);
+    expect(resumed.persistence).toEqual(handle);
+    expect(client.parentSession.forkCalls).toBe(1);
+    expect(manager.listAgents().some((agent) => agent.id === side.id)).toBe(false);
+  } finally {
+    await manager.closeAgent(side.id);
+    await manager.closeAgent(parent.id);
+    await storage.flush();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("idle agents remain resident until an explicit lifecycle action closes them", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-idle-residency-"));
   let closeCount = 0;

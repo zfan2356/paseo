@@ -1068,6 +1068,12 @@ export default function contribute(client: PluginClientContext) {
 
 每种颜色都是十六进制字符串；其他格式会导致加载失败。Paseo 会把调色板扩展为内置深色主题所使用的完整令牌集合，因此贡献的主题无需逐一列出，就能覆盖面板、菜单、diff、状态颜色和终端。
 
+支持 `client.features.themeOverrides` 的客户端还接受可选的 `overrides`：
+`surface3`、`surface4`、`surfaceDiffEmpty`、`surfaceSidebar`、`foregroundExtraMuted`、
+`borderAccent`、`accentBright`、`accentForeground`、`destructive`、
+`terminalBlack` 和 `terminalBrightBlack`。每个覆盖值都必须是有效的十六进制颜色；
+注册前统一检查该能力，避免旧客户端拒绝调色板。
+
 | 颜色              | 用作                                              |
 | ----------------- | ------------------------------------------------- |
 | `background`      | 应用、工作区和终端的背景                          |
@@ -1601,6 +1607,13 @@ review.remove();
 菜单（`···`）中的一行，显示它的图标和标题；它的菜单和弹出框以该底部面板中的页面打开。位置和溢出由宿主决定。
 
 ## Composer 胶囊 {#composer-pills}
+
+支持 `client.features.composerExtensions` 的客户端提供
+`addComposerExtension({ id, Component })`。组件随当前显示的输入框挂载，接收
+`{ agentId, workspaceId }`，也覆盖不会进入公共 agent 列表的侧聊。
+通过 `useAgent(agentId, selector)` 读取这个明确指定的会话；`featureValues`
+包含当前 provider 的特性选项。在 effect 中注册胶囊，并在 cleanup 中移除。
+该挂载点不会扩大 agent 发现范围或服务器权限。
 
 `client.addComposerPill({ id, workspaceId, agentId, button })` 使用同样的[按钮描述符](#button-descriptor)，
 并返回同样的注册对象。它面向某个 Agent 的 Composer 栏，与 Tasks 和 Subagents 并列。Composer 胶囊始终

@@ -2379,6 +2379,7 @@ export const zhCN: TranslationResources = {
         label: "聊天显示",
         description: "聊天中显示多少智能体的工作",
         options: {
+          collapseProcess: "折叠过程",
           full: "完整",
           collapseToolCalls: "折叠工具调用",
           collapseTurns: "折叠轮次",

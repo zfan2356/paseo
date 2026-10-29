@@ -92,6 +92,7 @@ describe("plugin context snapshots", () => {
 
     expect(snapshot).toEqual({
       id: "agent-1",
+      featureValues: {},
       workspaceId: "workspace-1",
       provider: "codex",
       status: "running",

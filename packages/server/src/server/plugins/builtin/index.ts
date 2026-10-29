@@ -6,6 +6,7 @@ export const builtinPlugins = [
   "antigravity-provider",
   "claude-usage-source",
   "codex-usage-source",
+  "codex-theme",
   "copilot-usage-source",
   "cursor-usage-source",
   "grok-usage-source",

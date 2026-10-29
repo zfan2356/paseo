@@ -2418,6 +2418,7 @@ export const ko: TranslationResources = {
         label: "채팅 표시",
         description: "채팅에 표시할 에이전트 작업의 양",
         options: {
+          collapseProcess: "진행 과정 접기",
           full: "전체",
           collapseToolCalls: "도구 호출 접기",
           collapseTurns: "턴 접기",

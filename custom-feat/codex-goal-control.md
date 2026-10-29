@@ -30,6 +30,11 @@ response tells Codex to verify with native `get_goal`, while the existing comman
 path publishes its acknowledgement or error to the conversation. If verification
 does not settle, Codex must report uncertainty rather than success.
 
+Only a self-directed command accepted by the provider's out-of-band handler
+bypasses the agent-message queue. Ordinary self-prompts use the same authenticated
+source envelope and quiet-period delivery as other agent messages. Neither path
+registers a completion notification back to its own caller.
+
 The overlay lives in `providers/codex/goal-control.ts`, with call sites in the
 Codex provider and existing Paseo tool catalog. No new RPC, persisted state,
 frontend control, or natural-language keyword interception is added.

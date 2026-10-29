@@ -249,6 +249,9 @@ export function createWorkerTerminalManager(
     info: RequiredWorkerTerminalInfo;
     state: TerminalState;
   }): TerminalSession {
+    if (input.info.activityToken) {
+      terminalActivityTokenById.set(input.info.id, input.info.activityToken);
+    }
     const existing = recordsById.get(input.info.id);
     if (existing) {
       existing.info = cloneTerminalInfo(input.info);
@@ -1038,32 +1041,8 @@ export async function startWorkerTerminalManager(
   options: StartWorkerTerminalManagerOptions,
 ): Promise<DaemonTerminalManager> {
   const legacy = await connectLegacyWorker(options.paseoHome);
-  if (legacy) {
-    options.logger.info("Adopting the existing fork terminal worker until its terminals drain");
-    const manager = createWorkerTerminalManager({
-      worker: legacy,
-      ...options,
-      reconnect: () => connectLegacyWorker(options.paseoHome),
-    });
-    try {
-      await manager.adoptTerminals();
-    } catch (error) {
-      legacy.disconnect();
-      throw error;
-    }
-    return {
-      ...manager,
-      async closeTerminals() {
-        await Promise.all(
-          manager.listDirectories().map(async (cwd) => {
-            const terminals = await manager.getTerminals(cwd);
-            await Promise.all(terminals.map((terminal) => terminal.killAndWait()));
-          }),
-        );
-        await manager.closeTerminals();
-      },
-    };
-  }
+  const legacyMember = legacy ? await adoptLegacyWorker(legacy, options) : null;
+  const legacyMembers = legacyMember ? [legacyMember] : [];
   const logger = options.logger.child({ module: "terminal-worker" });
   const inspector = createTerminalWorkerProcessInspector();
   const log = (message: string, fields?: Record<string, unknown>) => logger.info(fields, message);
@@ -1136,6 +1115,7 @@ export async function startWorkerTerminalManager(
   }
 
   const closeAll = async () => {
+    await closeLegacyWorkerTerminals(options);
     const result = await reapTerminalWorkers({ paseoHome: options.paseoHome, inspector, log });
     logger.info(result, "Terminals closed");
   };
@@ -1166,7 +1146,7 @@ export async function startWorkerTerminalManager(
     await prune();
     return createTerminalWorkerPool({
       current: null,
-      draining: [],
+      draining: legacyMembers,
       incompatible,
       closeAll,
     });
@@ -1250,7 +1230,7 @@ export async function startWorkerTerminalManager(
   };
 
   let current: TerminalWorkerPoolMember | null = null;
-  const draining: TerminalWorkerPoolMember[] = [];
+  const draining: TerminalWorkerPoolMember[] = [...legacyMembers];
   const adoptable = [
     ...live.filter((entry) => entry.fit === "current"),
     ...live.filter((entry) => entry.fit === "previous"),
@@ -1287,7 +1267,9 @@ export async function startWorkerTerminalManager(
   // Counted from the records rather than from what startup drove: a worker a cleanup could not
   // confirm gone keeps running, and a draining one exits on its own.
   const startCurrent = async (): Promise<TerminalWorkerPoolMember> => {
-    const running = await countRunningTerminalWorkers(options.paseoHome, inspector);
+    const legacyIsRunning = await legacyMember?.ready();
+    const running =
+      (await countRunningTerminalWorkers(options.paseoHome, inspector)) + (legacyIsRunning ? 1 : 0);
     if (running >= MAX_TERMINAL_WORKERS) {
       throw new NoTerminalWorkerAvailableError(
         `${running} terminal workers are already running in ${options.paseoHome}; new terminals can open once one of them exits`,
@@ -1325,10 +1307,69 @@ export async function startWorkerTerminalManager(
     startCurrent,
     closeAll,
     onDrained: (member) => {
+      member.stopRecovery();
       log("Released drained terminal worker", { pid: member.workerPid });
-      void pruneAfterExit(member.workerPid);
+      if (member !== legacyMember) void pruneAfterExit(member.workerPid);
     },
   });
+}
+
+async function adoptLegacyWorker(
+  connection: TerminalWorkerConnection,
+  options: StartWorkerTerminalManagerOptions,
+): Promise<TerminalWorkerPoolMember> {
+  let stopped = false;
+  let alive = true;
+  let resolveExit!: () => void;
+  const exited = new Promise<void>((resolve) => {
+    resolveExit = resolve;
+  });
+  const manager = createWorkerTerminalManager({
+    ...options,
+    worker: connection,
+    reconnect: async () => {
+      if (stopped) return null;
+      const reconnected = await connectLegacyWorker(options.paseoHome);
+      if (!reconnected) {
+        alive = false;
+        resolveExit();
+      }
+      return reconnected;
+    },
+  });
+  try {
+    await manager.adoptTerminals();
+  } catch (error) {
+    connection.disconnect();
+    throw error;
+  }
+  return {
+    manager,
+    workerPid: connection.workerPid,
+    exited,
+    ready: async () => alive && !stopped,
+    stopRecovery: () => {
+      stopped = true;
+    },
+  };
+}
+
+async function closeLegacyWorkerTerminals(
+  options: StartWorkerTerminalManagerOptions,
+): Promise<void> {
+  const connection = await connectLegacyWorker(options.paseoHome);
+  if (!connection) return;
+  const manager = createWorkerTerminalManager({ worker: connection });
+  try {
+    await manager.adoptTerminals();
+    const terminals = new Map<string, TerminalSession>();
+    for (const cwd of manager.listDirectories()) {
+      for (const terminal of await manager.getTerminals(cwd)) terminals.set(terminal.id, terminal);
+    }
+    await Promise.all([...terminals.values()].map((terminal) => terminal.killAndWait()));
+  } finally {
+    await manager.detach();
+  }
 }
 
 // Every worker that may still run in this home, one per record: a worker and its cleanup record

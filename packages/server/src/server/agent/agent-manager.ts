@@ -76,6 +76,7 @@ import { toStoredAgentRecord } from "./agent-projections.js";
 import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
 import {
   getSideChatParentId,
+  isEphemeralAgent,
   SideChatIndependentArchiveError,
   SideChatIndependentUnarchiveError,
 } from "./side-chat-history.js";
@@ -2081,8 +2082,9 @@ export class AgentManager {
   private runtimeHasNoPendingWork(agent: LiveManagedAgent): boolean {
     return (
       agent.lifecycle === "idle" &&
-      !agent.internal &&
+      !isEphemeralAgent(agent) &&
       agent.activeForegroundTurnId === null &&
+      !this.inFlightSideChatOpensByParent.has(agent.id) &&
       !this.runs.hasRun(agent.id) &&
       !agent.pendingReplacement &&
       agent.pendingPermissions.size === 0 &&
@@ -2209,7 +2211,7 @@ export class AgentManager {
     cascadeFromParentId?: string,
   ): Promise<{ archivedAt: string }> {
     const agent = this.requireAgent(agentId);
-    if (agent.internal && !getSideChatParentId(agent)) {
+    if (isEphemeralAgent(agent)) {
       // Nothing about an internal agent is on disk, and archiving must not put
       // it there. Its final snapshot is kept in memory for a while (see
       // getRetiredInternalAgent); the runtime is closed and the committed
@@ -4692,7 +4694,7 @@ export class AgentManager {
     if (!this.registry) {
       return;
     }
-    if (agent.internal && !getSideChatParentId(agent)) {
+    if (isEphemeralAgent(agent)) {
       return;
     }
     await this.registry.applySnapshot(agent, {

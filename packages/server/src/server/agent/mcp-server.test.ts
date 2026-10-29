@@ -4070,7 +4070,7 @@ describe("send_agent_prompt MCP tool", () => {
         notifyOnFinish: false,
       });
 
-      if (callerAgentId === "parent-agent") {
+      if (callerAgentId) {
         expect(parseAgentMessage(spies.agentManager.streamAgent.mock.calls[0][1])).toMatchObject({
           source: { kind: "agent-message", agentId: callerAgentId },
           text: prompt,

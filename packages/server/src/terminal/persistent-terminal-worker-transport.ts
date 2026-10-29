@@ -8,10 +8,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { open, readFile, rm, stat } from "node:fs/promises";
 import net, { type Server, type Socket } from "node:net";
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
 import {
   ensurePrivateDirectory,
   ensurePrivateFile,
@@ -21,22 +19,13 @@ import {
   NdjsonSocketConnection,
   type NdjsonSocketConnectionOptions,
 } from "./terminal-worker-ndjson.js";
-import { TERMINAL_WORKER_PROTOCOL_VERSION } from "./terminal-worker-protocol.js";
+const TERMINAL_WORKER_PROTOCOL_VERSION = 1;
 
-export const PERSISTENT_TERMINAL_WORKER_MODE_ENV = "PASEO_TERMINAL_WORKER_MODE";
-export const PERSISTENT_TERMINAL_WORKER_ENDPOINT_ENV = "PASEO_TERMINAL_WORKER_ENDPOINT";
-export const PERSISTENT_TERMINAL_WORKER_TOKEN_FILE_ENV = "PASEO_TERMINAL_WORKER_TOKEN_FILE";
-
-const PERSISTENT_WORKER_MODE = "persistent";
-const PERSISTENT_WORKER_LAUNCHER_MODE = "persistent-launcher";
 const RUNTIME_DIRECTORY_NAME = "terminal-worker";
 const TOKEN_FILE_NAME = "auth-token";
 const MAX_SAFE_UNIX_SOCKET_PATH_BYTES = 100;
 const DEFAULT_CONNECT_TIMEOUT_MS = 1_000;
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 3_000;
-const DEFAULT_STARTUP_TIMEOUT_MS = 10_000;
-const DEFAULT_STARTUP_POLL_INTERVAL_MS = 50;
-const DEFAULT_STALE_SPAWN_LOCK_MS = 30_000;
 const HANDSHAKE_AUTH_DOMAIN = "paseo-terminal-worker-auth-v1";
 const HANDSHAKE_RANDOM_BYTES = 32;
 const MAX_HANDSHAKE_ID_LENGTH = 256;
@@ -94,7 +83,6 @@ export interface PersistentTerminalWorkerRuntime {
   runtimeDirectory: string;
   endpoint: string;
   tokenFile: string;
-  spawnLockFile: string;
   authToken: string;
 }
 
@@ -110,31 +98,6 @@ export interface ConnectPersistentTerminalWorkerOptions<TInbound> {
   connectTimeoutMs?: number;
   handshakeTimeoutMs?: number;
   ndjson?: NdjsonSocketConnectionOptions<TInbound>;
-}
-
-export interface SpawnPersistentTerminalWorkerOptions {
-  runtime: PersistentTerminalWorkerRuntime;
-  entrypoint: string;
-  command?: string;
-  execArgv?: readonly string[];
-  args?: readonly string[];
-  env?: NodeJS.ProcessEnv;
-  spawnProcess?: typeof spawn;
-}
-
-export interface ConnectOrSpawnPersistentTerminalWorkerOptions<
-  TInbound,
-> extends ConnectPersistentTerminalWorkerOptions<TInbound> {
-  paseoHome: string;
-  entrypoint: string;
-  command?: string;
-  execArgv?: readonly string[];
-  args?: readonly string[];
-  env?: NodeJS.ProcessEnv;
-  startupTimeoutMs?: number;
-  startupPollIntervalMs?: number;
-  staleSpawnLockMs?: number;
-  spawnProcess?: typeof spawn;
 }
 
 export interface PersistentTerminalWorkerServerConnection<TInbound, TOutbound> {
@@ -178,16 +141,6 @@ export class PersistentTerminalWorkerEndpointInUseError extends Error {
   }
 }
 
-export function isPersistentTerminalWorkerProcess(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env[PERSISTENT_TERMINAL_WORKER_MODE_ENV] === PERSISTENT_WORKER_MODE;
-}
-
-export function isPersistentTerminalWorkerLauncherProcess(
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return env[PERSISTENT_TERMINAL_WORKER_MODE_ENV] === PERSISTENT_WORKER_LAUNCHER_MODE;
-}
-
 export function resolvePersistentTerminalWorkerRuntime(
   paseoHome: string,
 ): PersistentTerminalWorkerRuntime {
@@ -196,10 +149,6 @@ export function resolvePersistentTerminalWorkerRuntime(
   ensurePrivateDirectory(runtimeDirectory);
 
   const tokenFile = path.join(runtimeDirectory, TOKEN_FILE_NAME);
-  const spawnLockFile = path.join(
-    runtimeDirectory,
-    `spawn-v${TERMINAL_WORKER_PROTOCOL_VERSION}.lock`,
-  );
   const endpoint = resolvePersistentTerminalWorkerEndpoint(resolvedHome, runtimeDirectory);
   const endpointDirectory = process.platform === "win32" ? null : path.dirname(endpoint);
   if (endpointDirectory) {
@@ -211,102 +160,8 @@ export function resolvePersistentTerminalWorkerRuntime(
     runtimeDirectory,
     endpoint,
     tokenFile,
-    spawnLockFile,
     authToken: loadOrCreatePersistentTerminalWorkerToken(tokenFile),
   };
-}
-
-export function resolvePersistentTerminalWorkerRuntimeFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
-): PersistentTerminalWorkerRuntime {
-  const paseoHome = env.PASEO_HOME;
-  if (!paseoHome) {
-    throw new Error("PASEO_HOME is required for the persistent terminal worker");
-  }
-  const runtime = resolvePersistentTerminalWorkerRuntime(paseoHome);
-  const configuredEndpoint = env[PERSISTENT_TERMINAL_WORKER_ENDPOINT_ENV];
-  const configuredTokenFile = env[PERSISTENT_TERMINAL_WORKER_TOKEN_FILE_ENV];
-  if (configuredEndpoint && configuredEndpoint !== runtime.endpoint) {
-    throw new Error("Persistent terminal worker endpoint does not match PASEO_HOME");
-  }
-  if (configuredTokenFile && path.resolve(configuredTokenFile) !== runtime.tokenFile) {
-    throw new Error("Persistent terminal worker token file does not match PASEO_HOME");
-  }
-  return runtime;
-}
-
-export async function spawnDetachedPersistentTerminalWorker(
-  options: SpawnPersistentTerminalWorkerOptions,
-): Promise<ChildProcess> {
-  const spawnProcess = options.spawnProcess ?? spawn;
-  const command = options.command ?? process.execPath;
-  const child = spawnProcess(
-    command,
-    [...(options.execArgv ?? []), options.entrypoint, ...(options.args ?? [])],
-    {
-      cwd: options.runtime.paseoHome,
-      detached: true,
-      windowsHide: true,
-      stdio: "ignore",
-      env: {
-        ...process.env,
-        ...options.env,
-        PASEO_HOME: options.runtime.paseoHome,
-        [PERSISTENT_TERMINAL_WORKER_MODE_ENV]: PERSISTENT_WORKER_LAUNCHER_MODE,
-        [PERSISTENT_TERMINAL_WORKER_ENDPOINT_ENV]: options.runtime.endpoint,
-        [PERSISTENT_TERMINAL_WORKER_TOKEN_FILE_ENV]: options.runtime.tokenFile,
-      },
-    },
-  );
-  await new Promise<void>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(
-          new Error(
-            `Persistent terminal worker launcher exited with ${signal ?? `code ${code ?? "unknown"}`}`,
-          ),
-        );
-      }
-    });
-  });
-  return child;
-}
-
-export async function launchPersistentTerminalWorkerFromLauncher(): Promise<void> {
-  if (!isPersistentTerminalWorkerLauncherProcess()) {
-    throw new Error("Persistent terminal worker launcher mode is required");
-  }
-  const entrypoint = process.argv[1];
-  if (!entrypoint) {
-    throw new Error("Persistent terminal worker entrypoint is required");
-  }
-
-  const child = spawn(
-    process.execPath,
-    [...process.execArgv, entrypoint, ...process.argv.slice(2)],
-    {
-      cwd: process.cwd(),
-      detached: true,
-      windowsHide: true,
-      // The IPC channel is only a launch barrier. The final worker waits for
-      // its launcher to exit before listening, so process-tree cleanup can no
-      // longer discover it as a descendant of the Paseo daemon.
-      stdio: ["ignore", "ignore", "ignore", "ipc"],
-      env: {
-        ...process.env,
-        [PERSISTENT_TERMINAL_WORKER_MODE_ENV]: PERSISTENT_WORKER_MODE,
-      },
-    },
-  );
-
-  await new Promise<void>((resolve, reject) => {
-    child.once("spawn", resolve);
-    child.once("error", reject);
-  });
-  child.unref();
 }
 
 export async function connectPersistentTerminalWorker<TInbound, TOutbound>(
@@ -392,56 +247,6 @@ export async function connectPersistentTerminalWorker<TInbound, TOutbound>(
     rawTransport.destroy();
     throw error;
   }
-}
-
-export async function connectOrSpawnPersistentTerminalWorker<TInbound, TOutbound>(
-  options: ConnectOrSpawnPersistentTerminalWorkerOptions<TInbound>,
-): Promise<PersistentTerminalWorkerConnection<TInbound, TOutbound>> {
-  const runtime = resolvePersistentTerminalWorkerRuntime(options.paseoHome);
-  const deadline = Date.now() + (options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS);
-  const pollIntervalMs = options.startupPollIntervalMs ?? DEFAULT_STARTUP_POLL_INTERVAL_MS;
-  const staleSpawnLockMs = options.staleSpawnLockMs ?? DEFAULT_STALE_SPAWN_LOCK_MS;
-  let releaseSpawnLock: (() => Promise<void>) | null = null;
-  let spawned = false;
-  let lastUnavailableError: unknown;
-
-  try {
-    while (Date.now() < deadline) {
-      try {
-        return await connectPersistentTerminalWorker<TInbound, TOutbound>(runtime, options);
-      } catch (error) {
-        if (!isUnavailableEndpointError(error)) {
-          throw error;
-        }
-        lastUnavailableError = error;
-      }
-
-      if (!spawned && !releaseSpawnLock) {
-        releaseSpawnLock = await tryAcquireSpawnLock(runtime.spawnLockFile, staleSpawnLockMs);
-        if (releaseSpawnLock) {
-          await spawnDetachedPersistentTerminalWorker({
-            runtime,
-            entrypoint: options.entrypoint,
-            ...(options.command ? { command: options.command } : {}),
-            ...(options.execArgv ? { execArgv: options.execArgv } : {}),
-            ...(options.args ? { args: options.args } : {}),
-            ...(options.env ? { env: options.env } : {}),
-            ...(options.spawnProcess ? { spawnProcess: options.spawnProcess } : {}),
-          });
-          spawned = true;
-        }
-      }
-
-      await delay(Math.min(pollIntervalMs, Math.max(1, deadline - Date.now())));
-    }
-  } finally {
-    await releaseSpawnLock?.();
-  }
-
-  throw new Error(
-    `Persistent terminal worker did not become ready within ${options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS}ms`,
-    { cause: lastUnavailableError },
-  );
 }
 
 export async function listenPersistentTerminalWorkerServer<TInbound, TOutbound>(
@@ -905,94 +710,6 @@ async function closeServer(server: Server): Promise<void> {
       }
     });
   });
-}
-
-async function tryAcquireSpawnLock(
-  lockFile: string,
-  staleAfterMs: number,
-): Promise<(() => Promise<void>) | null> {
-  ensurePrivateDirectory(path.dirname(lockFile));
-  await removeStaleSpawnLock(lockFile, staleAfterMs);
-  let handle: Awaited<ReturnType<typeof open>>;
-  try {
-    handle = await open(lockFile, "wx", PRIVATE_FILE_MODE);
-  } catch (error) {
-    if (isNodeErrorWithCode(error, "EEXIST")) {
-      return null;
-    }
-    throw error;
-  }
-  await handle.writeFile(
-    `${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`,
-    "utf8",
-  );
-  await handle.close();
-  ensurePrivateFile(lockFile);
-  let released = false;
-  return async () => {
-    if (released) {
-      return;
-    }
-    released = true;
-    await rm(lockFile, { force: true });
-  };
-}
-
-async function removeStaleSpawnLock(lockFile: string, staleAfterMs: number): Promise<void> {
-  let lockStats: Awaited<ReturnType<typeof stat>>;
-  try {
-    lockStats = await stat(lockFile);
-  } catch (error) {
-    if (isNodeErrorWithCode(error, "ENOENT")) {
-      return;
-    }
-    throw error;
-  }
-  let ownerPid: number | null = null;
-  try {
-    const parsed = JSON.parse(await readFile(lockFile, "utf8")) as { pid?: unknown };
-    ownerPid = typeof parsed.pid === "number" && Number.isInteger(parsed.pid) ? parsed.pid : null;
-  } catch {
-    // A stale, unreadable lock cannot have a trustworthy live owner.
-  }
-  if (ownerPid !== null) {
-    if (isProcessAlive(ownerPid)) {
-      return;
-    }
-    await rm(lockFile, { force: true });
-    return;
-  }
-  if (Date.now() - lockStats.mtimeMs < staleAfterMs) {
-    return;
-  }
-  await rm(lockFile, { force: true });
-}
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return isNodeErrorWithCode(error, "EPERM");
-  }
-}
-
-function isUnavailableEndpointError(error: unknown): boolean {
-  const code = getErrorCode(error);
-  return code === "ENOENT" || code === "ECONNREFUSED" || code === "ECONNRESET" || code === "EPIPE";
-}
-
-function getErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null) {
-    return undefined;
-  }
-  if ("code" in error && typeof error.code === "string") {
-    return error.code;
-  }
-  if ("cause" in error) {
-    return getErrorCode(error.cause);
-  }
-  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

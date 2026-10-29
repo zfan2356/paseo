@@ -544,7 +544,7 @@ export function runSupervisor(options: SupervisorOptions): SupervisorController 
   };
 
   const forwardSignal = (signal: NodeJS.Signals) => {
-    requestShutdown(`supervisor_received_${signal}`);
+    requestShutdown(`supervisor_received_${signal}`, { keepTerminals: true });
   };
 
   process.on("SIGINT", () => forwardSignal("SIGINT"));

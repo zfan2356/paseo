@@ -93,6 +93,13 @@ function scriptedWorker(firstIntent: string, secondIntent = "") {
 const stopKeeping = `process.send({ type: "paseo:shutdown", reason: "test", keepTerminals: true });`;
 
 describe("supervisor terminal cleanup", () => {
+  test("a supervisor SIGTERM preserves terminals through the shutdown IPC", async () => {
+    const result = await runSupervisorWith(
+      scriptedWorker(`process.kill(process.ppid, "SIGTERM");`),
+    );
+    expect(result.code, result.output).toBe(0);
+    expect(result.events).toEqual([{ started: 1 }, { graceful: 1, keepTerminals: true }]);
+  });
   test("a keep restart passes keepTerminals and never cleans up", async () => {
     const result = await runSupervisorWith(
       scriptedWorker(

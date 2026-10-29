@@ -17,7 +17,7 @@ direct messages between agents did not.
 - The receiving provider retains the message as context. Existing daemon
   timeline filtering excludes it during live delivery and history replay;
   no client update or new protocol field is needed.
-- Top-level requests and messages an agent sends to itself keep their original
+- Top-level requests and accepted self-directed control commands keep their original
   text, including slash commands. Existing envelopes are not nested.
 - This only controls the input message's visibility. Assistant replies remain
   visible, and native provider transcripts retain the injected context.
