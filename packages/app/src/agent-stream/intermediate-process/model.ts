@@ -127,11 +127,15 @@ export function projectIntermediateProcess(input: {
   tail: StreamItem[];
   head: StreamItem[];
   isTurnActive: boolean;
+  enabled?: boolean;
 }): IntermediateProcessProjection {
-  const positioned: PositionedItem[] = [
-    ...input.tail.map((item) => ({ item, segment: "tail" as const })),
-    ...input.head.map((item) => ({ item, segment: "head" as const })),
-  ];
+  const positioned: PositionedItem[] =
+    input.enabled === false
+      ? []
+      : [
+          ...input.tail.map((item) => ({ item, segment: "tail" as const })),
+          ...input.head.map((item) => ({ item, segment: "head" as const })),
+        ];
   const ranges = findGroupRanges(positioned);
   if (ranges.length === 0) {
     return {

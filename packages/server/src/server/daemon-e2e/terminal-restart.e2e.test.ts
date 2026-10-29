@@ -1,10 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TerminalState } from "@getpaseo/protocol/messages";
 import { expect, test } from "vitest";
-import { resolvePersistentTerminalWorkerRuntime } from "../../terminal/persistent-terminal-worker-transport.js";
+import { listTerminalWorkerRecords } from "../../terminal/terminal-worker-record.js";
 import { createDaemonTestContext, type DaemonTestContext } from "../test-utils/index.js";
 
 function extractStateText(state: Pick<TerminalState, "grid" | "scrollback">): string {
@@ -97,20 +96,6 @@ async function waitForCapturedText(
   return text;
 }
 
-async function canConnectToEndpoint(endpoint: string): Promise<boolean> {
-  const socket = net.createConnection(endpoint);
-  const connected = await Promise.race([
-    new Promise<boolean>((resolve) => socket.once("connect", () => resolve(true))),
-    new Promise<boolean>((resolve) => socket.once("error", () => resolve(false))),
-    new Promise<boolean>((resolve) => {
-      const timeout = setTimeout(() => resolve(true), 250);
-      timeout.unref();
-    }),
-  ]);
-  socket.destroy();
-  return connected;
-}
-
 test("terminal stays alive and captures output across daemon restart", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "daemon-terminal-restart-"));
   const cwd = path.join(root, "workspace");
@@ -118,9 +103,6 @@ test("terminal stays alive and captures output across daemon restart", async () 
   const staticDir = path.join(root, "static");
   const gatePath = path.join(root, "emit-while-daemon-stopped");
   const ackPath = path.join(root, "detached-output-ack");
-  const workerEndpoint = resolvePersistentTerminalWorkerRuntime(
-    path.join(paseoHomeRoot, ".paseo"),
-  ).endpoint;
   let ctx: DaemonTestContext | null = null;
   let terminalId: string | null = null;
 
@@ -212,7 +194,7 @@ test("terminal stays alive and captures output across daemon restart", async () 
       expect((await ctx.client.listTerminals(cwd)).terminals).toEqual([]);
     }
     await ctx?.cleanup();
-    await waitForCondition(async () => !(await canConnectToEndpoint(workerEndpoint)), 5_000);
+    expect(await listTerminalWorkerRecords(path.join(paseoHomeRoot, ".paseo"))).toEqual([]);
     rmSync(root, { recursive: true, force: true });
   }
 }, 60_000);

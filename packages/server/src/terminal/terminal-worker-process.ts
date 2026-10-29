@@ -1,549 +1,789 @@
-import { randomBytes } from "node:crypto";
+import { spawn } from "node:child_process";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { chmodSync, closeSync, existsSync, openSync, rmSync, writeSync } from "node:fs";
+import { createServer, type Server, type Socket } from "node:net";
+import { fileURLToPath } from "node:url";
+import { currentBootId } from "../server/pid-lock.js";
+import { PRIVATE_FILE_MODE } from "../server/private-files.js";
 import { createTerminalManager } from "./terminal-manager.js";
 import { captureTerminalLines } from "./terminal-capture.js";
 import { TerminalOutputCoalescer } from "./terminal-output-coalescer.js";
-import {
-  isPersistentTerminalWorkerLauncherProcess,
-  isPersistentTerminalWorkerProcess,
-  launchPersistentTerminalWorkerFromLauncher,
-  listenPersistentTerminalWorkerServer,
-  resolvePersistentTerminalWorkerRuntimeFromEnv,
-  type PersistentTerminalWorkerServer,
-  type PersistentTerminalWorkerServerConnection,
-} from "./persistent-terminal-worker-transport.js";
-import type { TerminalSession, TerminalStateSnapshotOptions } from "./terminal.js";
 import type {
-  TerminalWorkerRequest,
-  TerminalWorkerStateResult,
-  TerminalWorkerToParentMessage,
-  WorkerTerminalInfo,
+  TerminalExitInfo,
+  TerminalSession,
+  TerminalStateSnapshotOptions,
+} from "./terminal.js";
+import { attachFramedSocket, type FramedSocket } from "./terminal-worker-frames.js";
+import { createTerminalWorkerProcessInspector } from "./terminal-worker-processes.js";
+import {
+  TERMINAL_WORKER_MARKER_ARG,
+  terminalWorkerLogPath,
+  terminalWorkerRecordPath,
+  writeTerminalWorkerRecord,
+  type TerminalWorkerRecord,
+} from "./terminal-worker-record.js";
+import { resolveTerminalWorkerSocketPath } from "./terminal-worker-socket-path.js";
+import {
+  TERMINAL_WORKER_PROTOCOL_OVERRIDE_ENV,
+  TERMINAL_WORKER_PROTOCOL_VERSION,
+  type TerminalWorkerHello,
+  type TerminalWorkerHelloAck,
+  type TerminalWorkerListResult,
+  type TerminalWorkerRequest,
+  type TerminalWorkerStateResult,
+  type TerminalWorkerToParentMessage,
+  type WorkerTerminalInfo,
 } from "./terminal-worker-protocol.js";
 
-type TerminalCreateRequest = Extract<TerminalWorkerRequest, { type: "createTerminal" }>;
-const PERSISTENT_ATTACH_TIMEOUT_MS = 3000;
+// The terminal worker owns every PTY. It runs detached from the daemon (re-parented by the
+// launcher below) so a daemon restart, crash or forced kill of the daemon's process tree does
+// not take the terminals down, and it talks to whichever daemon controls it over an
+// owner-only socket authenticated by the secret in its record.
+//
+// `--launch` runs the launcher: it starts the real worker detached, waits for it to listen,
+// prints `{ pid, socketPath }` and exits, which leaves the worker parented to init.
 
-const manager = createTerminalManager();
-const unsubscribeByTerminalId = new Map<string, Array<() => void>>();
-const outputCoalescerByTerminalId = new Map<string, TerminalOutputCoalescer>();
-const terminalSessionsById = new Map<string, TerminalSession>();
-const activityTokenByTerminalId = new Map<string, string>();
+const LAUNCH_ARG = "--launch";
+const READY_TIMEOUT_MS = 15_000;
+const HELLO_TIMEOUT_MS = 5_000;
+// A freshly launched worker waits this long for its first controller before giving up.
+const FIRST_CONTROLLER_TIMEOUT_MS = 30_000;
+// While nobody controls it, the worker checks that its record still exists. A deleted record
+// (a removed $PASEO_HOME) means no daemon can ever find these terminals again.
+const ORPHAN_CHECK_INTERVAL_MS = 10_000;
+const READY_FD = 3;
 
-type WorkerMessageSender = (message: TerminalWorkerToParentMessage) => void;
-
-let legacyMessageSender: WorkerMessageSender | null = null;
-let legacyIpcClosing = false;
-let persistentServer: PersistentTerminalWorkerServer | null = null;
-const attachedPersistentConnections = new Set<
-  PersistentTerminalWorkerServerConnection<TerminalWorkerRequest, TerminalWorkerToParentMessage>
->();
-let persistentExitStarted = false;
-
-interface InFlightTerminalCreateRequest {
-  requestId: string;
-  errorReported: boolean;
-  sendResponse: WorkerMessageSender;
+interface WorkerArgs {
+  recordId: string;
+  paseoHome: string;
+  paseoVersion: string;
+  // The copy under terminal-worker/ this worker runs from; absent when it runs from source.
+  runtime: string | null;
 }
 
-let inFlightTerminalCreateRequest: InFlightTerminalCreateRequest | null = null;
-
-// The conpty failure signal is process-scoped, not request-scoped. Serializing
-// creates keeps an async spawn failure attributable to exactly one request.
-let createTerminalQueue: Promise<void> = Promise.resolve();
-
-// node-pty completes its Windows conpty spawn asynchronously on a separate
-// conout worker thread. When that spawn fails (bad cwd, missing command, etc.)
-// it throws an exception there that cannot be caught at the call site and would
-// otherwise crash this worker process and sever every existing terminal.
-process.on("uncaughtException", (error) => {
-  console.error("Terminal worker uncaught exception (kept alive):", error);
-  reportInFlightTerminalCreateFailure(error);
-});
-
-function createPersistentMessageSender(
-  connection: PersistentTerminalWorkerServerConnection<
-    TerminalWorkerRequest,
-    TerminalWorkerToParentMessage
-  >,
-): WorkerMessageSender {
-  return (message) => {
-    try {
-      connection.transport.send(message);
-    } catch (error) {
-      connection.transport.destroy(
-        error instanceof Error ? error : new Error("Terminal worker send failed"),
-      );
-    }
-  };
+function readArg(argv: string[], name: string): string {
+  const index = argv.indexOf(name);
+  const value = index === -1 ? undefined : argv[index + 1];
+  if (!value) {
+    throw new Error(`Terminal worker requires ${name}`);
+  }
+  return value;
 }
 
-function broadcastToParents(message: TerminalWorkerToParentMessage): void {
-  legacyMessageSender?.(message);
-  for (const connection of attachedPersistentConnections) {
-    createPersistentMessageSender(connection)(message);
-  }
-}
-
-function maybeExitPersistentWorker(): void {
-  if (
-    !isPersistentTerminalWorkerProcess() ||
-    terminalSessionsById.size > 0 ||
-    persistentExitStarted
-  ) {
-    return;
-  }
-  const server = persistentServer;
-  if (!server) {
-    setImmediate(maybeExitPersistentWorker);
-    return;
-  }
-  if (server.connectionCount > 0) {
-    return;
-  }
-  persistentExitStarted = true;
-  void server
-    .close()
-    .catch(() => undefined)
-    .finally(() => process.exit(0));
-}
-
-function buildTerminalStateResult(
-  session: TerminalSession | undefined,
-  options?: TerminalStateSnapshotOptions,
-): TerminalWorkerStateResult {
-  if (!session) {
-    return null;
-  }
-  return { ...session.getStateSnapshot(options), replayPreamble: session.getReplayPreamble() };
-}
-
-function toTerminalInfo(session: TerminalSession): WorkerTerminalInfo {
+function parseWorkerArgs(argv: string[], recordIdArg: string): WorkerArgs {
   return {
-    id: session.id,
-    name: session.name,
-    cwd: session.cwd,
-    workspaceId: session.workspaceId,
-    ...(session.linkedAgentId ? { linkedAgentId: session.linkedAgentId } : {}),
-    ...(session.getTitle() ? { title: session.getTitle() } : {}),
-    activity: session.getActivity(),
-    ...(activityTokenByTerminalId.get(session.id)
-      ? { activityToken: activityTokenByTerminalId.get(session.id) }
-      : {}),
+    recordId: readArg(argv, recordIdArg),
+    paseoHome: readArg(argv, "--paseo-home"),
+    paseoVersion: readArg(argv, "--paseo-version"),
+    runtime: argv.includes("--runtime") ? readArg(argv, "--runtime") : null,
   };
 }
 
-function createActivityToken(): string {
-  return randomBytes(32).toString("base64url");
-}
-
-function terminalWorkerErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Terminal worker request failed";
-}
-
-function reportInFlightTerminalCreateFailure(error: unknown): void {
-  if (!inFlightTerminalCreateRequest || inFlightTerminalCreateRequest.errorReported) {
-    return;
+// The protocol version this worker reports in its record and hello. Tests override it to stand
+// up older and newer workers from one build.
+function reportedProtocolVersion(): number {
+  const override = process.env[TERMINAL_WORKER_PROTOCOL_OVERRIDE_ENV];
+  if (override === undefined || override === "") return TERMINAL_WORKER_PROTOCOL_VERSION;
+  const parsed = Number(override);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${TERMINAL_WORKER_PROTOCOL_OVERRIDE_ENV} is not an integer: ${override}`);
   }
-  inFlightTerminalCreateRequest.errorReported = true;
-  inFlightTerminalCreateRequest.sendResponse({
-    type: "response",
-    requestId: inFlightTerminalCreateRequest.requestId,
-    ok: false,
-    error: terminalWorkerErrorMessage(error),
-  });
+  return parsed;
 }
 
-function clearTerminalSubscriptions(terminalId: string): void {
-  const subscriptions = unsubscribeByTerminalId.get(terminalId);
-  if (subscriptions) {
-    for (const unsubscribe of subscriptions) {
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Launcher
+// ---------------------------------------------------------------------------------------------
+
+function runLauncher(argv: string[]): void {
+  const args = parseWorkerArgs(argv, "--record-id");
+  const logFd = openSync(terminalWorkerLogPath(args.paseoHome), "a", PRIVATE_FILE_MODE);
+  const child = spawn(
+    process.execPath,
+    [
+      ...process.execArgv,
+      fileURLToPath(import.meta.url),
+      TERMINAL_WORKER_MARKER_ARG,
+      args.recordId,
+      "--paseo-home",
+      args.paseoHome,
+      "--paseo-version",
+      args.paseoVersion,
+      ...(args.runtime ? ["--runtime", args.runtime] : []),
+    ],
+    {
+      detached: true,
+      stdio: ["ignore", "ignore", logFd, "pipe"],
+      env: process.env,
+      windowsHide: true,
+    },
+  );
+  closeSync(logFd);
+
+  let settled = false;
+  let buffered = "";
+  const finish = (code: number, output: string) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    if (code !== 0 && child.exitCode === null && child.pid) {
+      // A worker that never reported ready must not be left behind.
       try {
-        unsubscribe();
+        process.kill(child.pid, "SIGKILL");
       } catch {
-        // no-op
+        // Already gone.
       }
     }
-  }
-  unsubscribeByTerminalId.delete(terminalId);
-  const coalescer = outputCoalescerByTerminalId.get(terminalId);
-  if (coalescer) {
-    coalescer.dispose();
-    outputCoalescerByTerminalId.delete(terminalId);
-  }
-}
-
-function watchTerminal(session: TerminalSession): void {
-  clearTerminalSubscriptions(session.id);
-  terminalSessionsById.set(session.id, session);
-
-  // Coalesce pty output chunks into a single IPC message per ~5ms window so a
-  // burst of small chunks no longer costs one process.send each. The batch
-  // carries the LAST chunk's revision (the highest) so downstream snapshot
-  // replay dedup stays correct.
-  let pendingOutputRevision: number | undefined;
-  const outputCoalescer = new TerminalOutputCoalescer({
-    timers: { setTimeout, clearTimeout },
-    onFlush: ({ payload }) => {
-      const revision = pendingOutputRevision;
-      pendingOutputRevision = undefined;
-      broadcastToParents({
-        type: "terminalMessage",
-        terminalId: session.id,
-        message: { type: "output", data: payload.toString("utf8"), revision },
-        replayPreamble: session.getReplayPreamble(),
-      });
-    },
-  });
-  outputCoalescerByTerminalId.set(session.id, outputCoalescer);
-
-  const unsubscribeMessage = session.subscribe(
-    (message) => {
-      if (message.type === "output") {
-        pendingOutputRevision = message.revision;
-        outputCoalescer.handle(message.data);
-        return;
-      }
-      // Non-output messages (snapshot/snapshotReady/titleChange) must not jump
-      // ahead of buffered output: flush the coalescer first, then forward.
-      outputCoalescer.flush();
-      broadcastToParents({
-        type: "terminalMessage",
-        terminalId: session.id,
-        message,
-        replayPreamble: session.getReplayPreamble(),
-      });
-    },
-    // Creation already sends an authoritative state in terminalCreated. A second
-    // asynchronous state snapshot can arrive after the create response and
-    // overwrite a resize issued immediately by the caller.
-    { initialSnapshot: "ready" },
-  );
-  const unsubscribeExit = session.onExit((info) => {
-    outputCoalescer.flush();
-    clearTerminalSubscriptions(session.id);
-    terminalSessionsById.delete(session.id);
-    activityTokenByTerminalId.delete(session.id);
-    broadcastToParents({
-      type: "terminalExit",
-      terminalId: session.id,
-      info,
-    });
-    maybeExitPersistentWorker();
-  });
-  const unsubscribeTitle = session.onTitleChange((title) => {
-    outputCoalescer.flush();
-    broadcastToParents({
-      type: "terminalTitleChange",
-      terminalId: session.id,
-      title,
-    });
-  });
-  const unsubscribeCommandFinished = session.onCommandFinished((info) => {
-    outputCoalescer.flush();
-    broadcastToParents({
-      type: "terminalCommandFinished",
-      terminalId: session.id,
-      info,
-    });
-  });
-  const unsubscribeActivity = session.onActivityChange((transition) => {
-    broadcastToParents({
-      type: "terminalActivityChange",
-      terminalId: session.id,
-      activity: transition.activity,
-      previous: transition.previous,
-    });
-  });
-
-  unsubscribeByTerminalId.set(session.id, [
-    unsubscribeMessage,
-    unsubscribeExit,
-    unsubscribeTitle,
-    unsubscribeCommandFinished,
-    unsubscribeActivity,
-  ]);
-}
-
-function enqueueCreateTerminalRequest(
-  message: TerminalCreateRequest,
-  sendResponse: WorkerMessageSender,
-): Promise<void> {
-  const nextRequest = createTerminalQueue.then(() =>
-    handleCreateTerminalRequest(message, sendResponse),
-  );
-  createTerminalQueue = nextRequest.catch(() => {});
-  return nextRequest;
-}
-
-async function handleCreateTerminalRequest(
-  message: TerminalCreateRequest,
-  sendResponse: WorkerMessageSender,
-): Promise<void> {
-  const request: InFlightTerminalCreateRequest = {
-    requestId: message.requestId,
-    errorReported: false,
-    sendResponse,
+    child.unref();
+    (child.stdio[READY_FD] as NodeJS.ReadableStream & { destroy(): void }).destroy();
+    // Exit from the write callback: a pipe write can still be pending when process.exit runs.
+    (code === 0 ? process.stdout : process.stderr).write(output, () => process.exit(code));
   };
-  inFlightTerminalCreateRequest = request;
-  try {
-    const { workspaceId } = message.options;
-    if (!workspaceId) {
-      throw new Error("workspaceId is required");
-    }
-    const activityToken = message.options.activityToken ?? createActivityToken();
-    const session = await manager.createTerminal({
-      ...message.options,
-      workspaceId,
-      activityToken,
-    });
-    if (request.errorReported) {
-      session.kill();
+  const timer = setTimeout(() => {
+    finish(1, `Terminal worker did not report ready within ${READY_TIMEOUT_MS}ms\n`);
+  }, READY_TIMEOUT_MS);
+
+  const readyStream = child.stdio[READY_FD] as NodeJS.ReadableStream;
+  readyStream.setEncoding("utf8");
+  readyStream.on("data", (chunk: string) => {
+    buffered += chunk;
+    const newline = buffered.indexOf("\n");
+    if (newline === -1) return;
+    const line = buffered.slice(0, newline);
+    if (line.startsWith("ready ")) {
+      finish(0, `${JSON.stringify({ pid: child.pid, socketPath: line.slice("ready ".length) })}\n`);
       return;
     }
-    activityTokenByTerminalId.set(session.id, activityToken);
-    watchTerminal(session);
-    const initialSnapshot = session.getStateSnapshot();
-    broadcastToParents({
-      type: "terminalCreated",
-      terminal: toTerminalInfo(session),
-      state: initialSnapshot.state,
-    });
-    sendResponse({
-      type: "response",
-      requestId: message.requestId,
-      ok: true,
-      result: {
-        terminal: toTerminalInfo(session),
-        state: initialSnapshot.state,
-      },
-    });
-  } catch (error) {
-    const terminalId = message.options.id;
-    if (terminalId) {
-      activityTokenByTerminalId.delete(terminalId);
-    }
+    finish(1, `${line.startsWith("error ") ? line.slice("error ".length) : line}\n`);
+  });
+  child.once("error", (error) => finish(1, `Cannot start terminal worker: ${error.message}\n`));
+  child.once("exit", (code, signal) => {
+    finish(1, `Terminal worker exited before it was ready (${signal ?? `code ${code}`})\n`);
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Worker
+// ---------------------------------------------------------------------------------------------
+
+type TerminalCreateRequest = Extract<TerminalWorkerRequest, { type: "createTerminal" }>;
+
+function runWorker(argv: string[]): void {
+  const args = parseWorkerArgs(argv, TERMINAL_WORKER_MARKER_ARG);
+  const protocolVersion = reportedProtocolVersion();
+  const manager = createTerminalManager();
+  const inspector = createTerminalWorkerProcessInspector();
+  const sessionsById = new Map<string, TerminalSession>();
+  const unsubscribeByTerminalId = new Map<string, Array<() => void>>();
+  const outputCoalescerByTerminalId = new Map<string, TerminalOutputCoalescer>();
+  // A terminal is published (terminalCreated) only once its program is recorded. An exit that
+  // arrives before then is held here and sent after the creation, so the controller never
+  // receives an exit for a terminal it does not know yet.
+  const exitsHeldDuringCreation = new Map<string, TerminalExitInfo | null>();
+  const secret = randomBytes(32).toString("base64url");
+  let record: TerminalWorkerRecord | null = null;
+  let server: Server | null = null;
+  const controllers = new Set<FramedSocket>();
+  let everControlled = false;
+  let exiting = false;
+
+  interface InFlightTerminalCreateRequest {
+    requestId: string;
+    errorReported: boolean;
+    requester: FramedSocket;
+  }
+
+  let inFlightTerminalCreateRequest: InFlightTerminalCreateRequest | null = null;
+
+  // The conpty failure signal is process-scoped, not request-scoped. Serializing
+  // creates keeps an async spawn failure attributable to exactly one request.
+  let createTerminalQueue: Promise<void> = Promise.resolve();
+
+  // node-pty completes its Windows conpty spawn asynchronously on a separate
+  // conout worker thread. When that spawn fails (bad cwd, missing command, etc.)
+  // it throws an exception there that cannot be caught at the call site and would
+  // otherwise crash this worker process and sever every existing terminal.
+  process.on("uncaughtException", (error) => {
+    console.error("Terminal worker uncaught exception (kept alive):", error);
     reportInFlightTerminalCreateFailure(error);
-  } finally {
-    if (inFlightTerminalCreateRequest === request) {
-      inFlightTerminalCreateRequest = null;
+  });
+
+  function sendToController(message: TerminalWorkerToParentMessage): void {
+    // With no controller the event is dropped; the headless terminal keeps the screen, and the
+    // next daemon reads it through listTerminals.
+    for (const controller of controllers) controller.send(message);
+  }
+
+  function persistRecord(): void {
+    if (!record || exiting) return;
+    record = {
+      ...record,
+      terminals: record.terminals.filter((entry) => sessionsById.has(entry.id)),
+    };
+    writeTerminalWorkerRecord(args.paseoHome, record);
+  }
+
+  function removeOwnFiles(): void {
+    rmSync(terminalWorkerRecordPath(args.paseoHome, process.pid), { force: true });
+    if (record && process.platform !== "win32") {
+      rmSync(record.socketPath, { force: true });
     }
   }
-}
 
-async function handleRequest(
-  message: TerminalWorkerRequest,
-  sendResponse: WorkerMessageSender,
-): Promise<void> {
-  switch (message.type) {
-    case "attach": {
-      for (const session of terminalSessionsById.values()) {
-        outputCoalescerByTerminalId.get(session.id)?.flush();
-        sendResponse({
-          type: "terminalCreated",
-          terminal: toTerminalInfo(session),
-          state: session.getStateSnapshot().state,
-        });
-      }
-      sendResponse({ type: "response", requestId: message.requestId, ok: true });
-      return;
-    }
+  function exitWorker(code: number): void {
+    if (exiting) return;
+    exiting = true;
+    removeOwnFiles();
+    server?.close();
+    process.exit(code);
+  }
 
-    case "createTerminal": {
-      await enqueueCreateTerminalRequest(message, sendResponse);
-      return;
-    }
+  async function killEveryTerminalAndExit(): Promise<void> {
+    const sessions = Array.from(sessionsById.values());
+    await Promise.all(
+      sessions.map((session) =>
+        session.killAndWait().catch((error: unknown) => {
+          console.error(`Terminal worker could not kill terminal ${session.id}:`, error);
+        }),
+      ),
+    );
+    exitWorker(0);
+  }
 
-    case "registerCwdEnv": {
-      manager.registerCwdEnv({ cwd: message.cwd, env: message.env });
-      sendResponse({ type: "response", requestId: message.requestId, ok: true });
-      return;
-    }
-
-    case "setActivity": {
-      await manager.setTerminalActivity(message.terminalId, message.state);
-      sendResponse({ type: "response", requestId: message.requestId, ok: true });
-      return;
-    }
-
-    case "clearAttention": {
-      await manager.clearTerminalAttention(message.terminalId);
-      sendResponse({ type: "response", requestId: message.requestId, ok: true });
-      return;
-    }
-
-    case "setTitle": {
-      manager.setTerminalTitle(message.terminalId, message.title);
-      sendResponse({ type: "response", requestId: message.requestId, ok: true });
-      return;
-    }
-
-    case "killTerminal": {
-      manager.killTerminal(message.terminalId);
-      // Removal is owned by session.onExit -> terminalExit; the parent mirror
-      // clears contribution and emits terminalsChanged from that single path.
-      sendResponse({ type: "response", requestId: message.requestId, ok: true });
-      return;
-    }
-
-    case "killTerminalAndWait": {
-      await manager.killTerminalAndWait(message.terminalId, message.options);
-      clearTerminalSubscriptions(message.terminalId);
-      sendResponse({ type: "response", requestId: message.requestId, ok: true });
-      return;
-    }
-
-    case "getTerminalState": {
-      // Flush buffered output before snapshotting: the headless state already includes it,
-      // so if the coalescer emitted it afterward (in a batch carrying a revision past the
-      // snapshot's) the controller's revision dedup wouldn't drop it and the client would
-      // see the bytes twice. Flushing first sends them with a revision <= the snapshot's.
-      outputCoalescerByTerminalId.get(message.terminalId)?.flush();
-      sendResponse({
-        type: "response",
-        requestId: message.requestId,
-        ok: true,
-        result: buildTerminalStateResult(manager.getTerminal(message.terminalId), message.options),
-      });
-      return;
-    }
-
-    case "captureTerminal": {
-      const session = manager.getTerminal(message.terminalId);
-      const result = session
-        ? captureTerminalLines(session, {
-            start: message.start,
-            end: message.end,
-            stripAnsi: message.stripAnsi,
-          })
-        : { lines: [], totalLines: 0 };
-      sendResponse({
-        type: "response",
-        requestId: message.requestId,
-        ok: true,
-        result,
-      });
-      return;
-    }
-
-    case "killAll": {
-      manager.killAll();
-      for (const terminalId of Array.from(unsubscribeByTerminalId.keys())) {
-        clearTerminalSubscriptions(terminalId);
-      }
-      terminalSessionsById.clear();
-      activityTokenByTerminalId.clear();
-      sendResponse({ type: "response", requestId: message.requestId, ok: true });
-      return;
-    }
-
-    case "send": {
-      const session = manager.getTerminal(message.terminalId);
-      session?.send(message.message);
-      sendResponse({ type: "response", requestId: message.requestId, ok: true });
-      return;
+  function exitIfIdle(): void {
+    if (controllers.size === 0 && everControlled && sessionsById.size === 0) {
+      exitWorker(0);
     }
   }
-}
 
-function handleRequestWithErrorResponse(
-  message: TerminalWorkerRequest,
-  sendResponse: WorkerMessageSender,
-): void {
-  void handleRequest(message, sendResponse).catch((error: unknown) => {
-    sendResponse({
+  function buildTerminalStateResult(
+    session: TerminalSession | undefined,
+    options?: TerminalStateSnapshotOptions,
+  ): TerminalWorkerStateResult {
+    if (!session) {
+      return null;
+    }
+    return { ...session.getStateSnapshot(options), replayPreamble: session.getReplayPreamble() };
+  }
+
+  function toTerminalInfo(session: TerminalSession): WorkerTerminalInfo {
+    return {
+      id: session.id,
+      name: session.name,
+      cwd: session.cwd,
+      workspaceId: session.workspaceId,
+      ...(session.linkedAgentId ? { linkedAgentId: session.linkedAgentId } : {}),
+      ...(session.getTitle() ? { title: session.getTitle() } : {}),
+      activity: session.getActivity(),
+    };
+  }
+
+  function terminalWorkerErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : "Terminal worker request failed";
+  }
+
+  function reportInFlightTerminalCreateFailure(error: unknown): void {
+    if (!inFlightTerminalCreateRequest || inFlightTerminalCreateRequest.errorReported) {
+      return;
+    }
+    inFlightTerminalCreateRequest.errorReported = true;
+    inFlightTerminalCreateRequest.requester.send({
       type: "response",
-      requestId: message.requestId,
+      requestId: inFlightTerminalCreateRequest.requestId,
       ok: false,
       error: terminalWorkerErrorMessage(error),
     });
-  });
-}
+  }
 
-function startLegacyIpcWorker(): void {
-  legacyMessageSender = (message) => {
-    if (legacyIpcClosing || !process.connected || !process.send) {
+  function clearTerminalSubscriptions(terminalId: string): void {
+    const subscriptions = unsubscribeByTerminalId.get(terminalId);
+    if (subscriptions) {
+      for (const unsubscribe of subscriptions) {
+        try {
+          unsubscribe();
+        } catch {
+          // no-op
+        }
+      }
+    }
+    unsubscribeByTerminalId.delete(terminalId);
+    const coalescer = outputCoalescerByTerminalId.get(terminalId);
+    if (coalescer) {
+      coalescer.dispose();
+      outputCoalescerByTerminalId.delete(terminalId);
+    }
+  }
+
+  function watchTerminal(session: TerminalSession): void {
+    clearTerminalSubscriptions(session.id);
+
+    // Coalesce pty output chunks into a single frame per ~5ms window so a burst of small
+    // chunks no longer costs one socket write each. The batch carries the LAST chunk's
+    // revision (the highest) so downstream snapshot replay dedup stays correct.
+    let pendingOutputRevision: number | undefined;
+    const outputCoalescer = new TerminalOutputCoalescer({
+      timers: { setTimeout, clearTimeout },
+      onFlush: ({ payload }) => {
+        const revision = pendingOutputRevision;
+        pendingOutputRevision = undefined;
+        sendToController({
+          type: "terminalMessage",
+          terminalId: session.id,
+          message: { type: "output", data: payload.toString("utf8"), revision },
+          replayPreamble: session.getReplayPreamble(),
+        });
+      },
+    });
+    outputCoalescerByTerminalId.set(session.id, outputCoalescer);
+
+    const unsubscribeMessage = session.subscribe(
+      (message) => {
+        if (message.type === "output") {
+          pendingOutputRevision = message.revision;
+          outputCoalescer.handle(message.data);
+          return;
+        }
+        // Non-output messages (snapshot/snapshotReady/titleChange) must not jump
+        // ahead of buffered output: flush the coalescer first, then forward.
+        outputCoalescer.flush();
+        sendToController({
+          type: "terminalMessage",
+          terminalId: session.id,
+          message,
+          replayPreamble: session.getReplayPreamble(),
+        });
+      },
+      // Creation already sends an authoritative state in terminalCreated. A second
+      // asynchronous state snapshot can arrive after the create response and
+      // overwrite a resize issued immediately by the caller.
+      { initialSnapshot: "ready" },
+    );
+    const unsubscribeExit = session.onExit((info) => {
+      outputCoalescer.flush();
+      clearTerminalSubscriptions(session.id);
+      sessionsById.delete(session.id);
+      persistRecord();
+      if (exitsHeldDuringCreation.has(session.id)) {
+        exitsHeldDuringCreation.set(session.id, info);
+        return;
+      }
+      sendToController({
+        type: "terminalExit",
+        terminalId: session.id,
+        info,
+      });
+      exitIfIdle();
+    });
+    const unsubscribeTitle = session.onTitleChange((title) => {
+      outputCoalescer.flush();
+      sendToController({
+        type: "terminalTitleChange",
+        terminalId: session.id,
+        title,
+      });
+    });
+    const unsubscribeCommandFinished = session.onCommandFinished((info) => {
+      outputCoalescer.flush();
+      sendToController({
+        type: "terminalCommandFinished",
+        terminalId: session.id,
+        info,
+      });
+    });
+    const unsubscribeActivity = session.onActivityChange((transition) => {
+      sendToController({
+        type: "terminalActivityChange",
+        terminalId: session.id,
+        activity: transition.activity,
+        previous: transition.previous,
+      });
+    });
+
+    unsubscribeByTerminalId.set(session.id, [
+      unsubscribeMessage,
+      unsubscribeExit,
+      unsubscribeTitle,
+      unsubscribeCommandFinished,
+      unsubscribeActivity,
+    ]);
+  }
+
+  // A terminal enters the record only with its program's birth time, so cleanup can always
+  // tell the program from a later process that reuses its pid. A program that already exited
+  // needs no entry; one whose birth time cannot be read is killed and the create fails.
+  async function recordTerminalProgram(session: TerminalSession): Promise<void> {
+    if (session.getExitInfo()) return;
+    // The manager drops a session as soon as its program exits, so only a live one has a pid.
+    const pid = manager.getTerminalProcessId(session.id);
+    if (pid === null) {
+      throw new Error(`Terminal ${session.id} has no program pid`);
+    }
+    const inspection = await inspector.inspect(pid);
+    if (inspection.status === "not-found" || session.getExitInfo()) {
       return;
     }
-    try {
-      process.send(message, (error) => {
-        if (error) {
-          legacyIpcClosing = true;
-        }
-      });
-    } catch {
-      legacyIpcClosing = true;
+    if (inspection.status === "error" || !inspection.snapshot.startedAt) {
+      const reason =
+        inspection.status === "error" ? errorMessage(inspection.error) : "no birth time reported";
+      throw new Error(`Cannot identify terminal program ${pid}: ${reason}`);
     }
-  };
-  process.on("message", (message: TerminalWorkerRequest) => {
-    if (legacyMessageSender) {
-      handleRequestWithErrorResponse(message, legacyMessageSender);
+    if (!record) {
+      throw new Error("Terminal worker record is not written yet");
     }
-  });
-  process.once("disconnect", () => {
-    legacyIpcClosing = true;
-    legacyMessageSender = null;
-    manager.killAll();
-  });
-}
-
-async function startPersistentWorker(): Promise<void> {
-  process.title = "Paseo Terminal Worker";
-  if (process.connected) {
-    await new Promise<void>((resolve) => process.once("disconnect", resolve));
+    record = {
+      ...record,
+      terminals: [
+        ...record.terminals.filter((entry) => entry.id !== session.id),
+        { id: session.id, pid, startedAt: inspection.snapshot.startedAt },
+      ],
+    };
+    persistRecord();
   }
-  const runtime = resolvePersistentTerminalWorkerRuntimeFromEnv();
-  persistentServer = await listenPersistentTerminalWorkerServer<
-    TerminalWorkerRequest,
-    TerminalWorkerToParentMessage
-  >({
-    runtime,
-    singleClient: false,
-    onConnectionCountChange: () => maybeExitPersistentWorker(),
-    onConnection: (connection) => {
-      let attached = false;
-      const sendResponse = createPersistentMessageSender(connection);
-      const attachTimeout = setTimeout(() => {
-        if (!attached) {
-          connection.transport.destroy(new Error("Timed out waiting for terminal worker attach"));
-        }
-      }, PERSISTENT_ATTACH_TIMEOUT_MS);
-      attachTimeout.unref();
-      connection.transport.onMessage((message) => {
-        if (!attached) {
-          if (message.type !== "attach") {
-            connection.transport.destroy(
-              new Error("The first terminal worker request must be attach"),
-            );
-            return;
-          }
-          attached = true;
-          clearTimeout(attachTimeout);
-          attachedPersistentConnections.add(connection);
-        }
-        handleRequestWithErrorResponse(message, sendResponse);
+
+  function enqueueCreateTerminalRequest(
+    message: TerminalCreateRequest,
+    requester: FramedSocket,
+  ): Promise<void> {
+    const nextRequest = createTerminalQueue.then(() =>
+      handleCreateTerminalRequest(message, requester),
+    );
+    createTerminalQueue = nextRequest.catch(() => {});
+    return nextRequest;
+  }
+
+  async function handleCreateTerminalRequest(
+    message: TerminalCreateRequest,
+    requester: FramedSocket,
+  ): Promise<void> {
+    const request: InFlightTerminalCreateRequest = {
+      requestId: message.requestId,
+      errorReported: false,
+      requester,
+    };
+    inFlightTerminalCreateRequest = request;
+    try {
+      const { workspaceId } = message.options;
+      if (!workspaceId) {
+        throw new Error("workspaceId is required");
+      }
+      const session = await manager.createTerminal({ ...message.options, workspaceId });
+      if (request.errorReported) {
+        session.kill();
+        return;
+      }
+      sessionsById.set(session.id, session);
+      exitsHeldDuringCreation.set(session.id, null);
+      watchTerminal(session);
+      try {
+        await recordTerminalProgram(session);
+      } catch (error) {
+        exitsHeldDuringCreation.delete(session.id);
+        clearTerminalSubscriptions(session.id);
+        sessionsById.delete(session.id);
+        await session.killAndWait().catch(() => undefined);
+        throw error;
+      }
+      const initialSnapshot = session.getStateSnapshot();
+      sendToController({
+        type: "terminalCreated",
+        terminal: toTerminalInfo(session),
+        state: initialSnapshot.state,
       });
-      connection.transport.onClose(() => {
-        clearTimeout(attachTimeout);
-        if (attached) {
-          attachedPersistentConnections.delete(connection);
-        }
-        maybeExitPersistentWorker();
+      requester.send({
+        type: "response",
+        requestId: message.requestId,
+        ok: true,
+        result: {
+          terminal: toTerminalInfo(session),
+          state: initialSnapshot.state,
+        },
       });
-    },
+      const heldExit = exitsHeldDuringCreation.get(session.id);
+      exitsHeldDuringCreation.delete(session.id);
+      if (heldExit) {
+        sendToController({ type: "terminalExit", terminalId: session.id, info: heldExit });
+        exitIfIdle();
+      }
+    } catch (error) {
+      reportInFlightTerminalCreateFailure(error);
+    } finally {
+      if (inFlightTerminalCreateRequest === request) {
+        inFlightTerminalCreateRequest = null;
+      }
+    }
+  }
+
+  function listTerminals(): TerminalWorkerListResult {
+    return Array.from(sessionsById.values()).map((session) => {
+      // Buffered output is already in the headless state; flushing first keeps a later
+      // batch from carrying bytes the snapshot already shows.
+      outputCoalescerByTerminalId.get(session.id)?.flush();
+      return {
+        terminal: toTerminalInfo(session),
+        state: session.getStateSnapshot().state,
+        activityToken: manager.getTerminalActivityToken(session.id),
+        replayPreamble: session.getReplayPreamble(),
+      };
+    });
+  }
+
+  async function handleRequest(
+    message: TerminalWorkerRequest,
+    requester: FramedSocket,
+  ): Promise<void> {
+    switch (message.type) {
+      case "createTerminal": {
+        await enqueueCreateTerminalRequest(message, requester);
+        return;
+      }
+
+      case "registerCwdEnv": {
+        manager.registerCwdEnv({ cwd: message.cwd, env: message.env });
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
+        return;
+      }
+
+      case "setActivity": {
+        await manager.setTerminalActivity(message.terminalId, message.state);
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
+        return;
+      }
+
+      case "clearAttention": {
+        await manager.clearTerminalAttention(message.terminalId);
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
+        return;
+      }
+
+      case "setTitle": {
+        manager.setTerminalTitle(message.terminalId, message.title);
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
+        return;
+      }
+
+      case "killTerminal": {
+        manager.killTerminal(message.terminalId);
+        // Removal is owned by session.onExit -> terminalExit; the parent mirror
+        // clears contribution and emits terminalsChanged from that single path.
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
+        return;
+      }
+
+      case "killTerminalAndWait": {
+        await manager.killTerminalAndWait(message.terminalId, message.options);
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
+        return;
+      }
+
+      case "getTerminalState": {
+        // Flush buffered output before snapshotting: the headless state already includes it,
+        // so if the coalescer emitted it afterward (in a batch carrying a revision past the
+        // snapshot's) the controller's revision dedup wouldn't drop it and the client would
+        // see the bytes twice. Flushing first sends them with a revision <= the snapshot's.
+        outputCoalescerByTerminalId.get(message.terminalId)?.flush();
+        requester.send({
+          type: "response",
+          requestId: message.requestId,
+          ok: true,
+          result: buildTerminalStateResult(
+            manager.getTerminal(message.terminalId),
+            message.options,
+          ),
+        });
+        return;
+      }
+
+      case "captureTerminal": {
+        const session = manager.getTerminal(message.terminalId);
+        const result = session
+          ? captureTerminalLines(session, {
+              start: message.start,
+              end: message.end,
+              stripAnsi: message.stripAnsi,
+            })
+          : { lines: [], totalLines: 0 };
+        requester.send({
+          type: "response",
+          requestId: message.requestId,
+          ok: true,
+          result,
+        });
+        return;
+      }
+
+      case "listTerminals": {
+        requester.send({
+          type: "response",
+          requestId: message.requestId,
+          ok: true,
+          result: listTerminals(),
+        });
+        return;
+      }
+
+      case "shutdown": {
+        const sessions = Array.from(sessionsById.values());
+        await Promise.all(sessions.map((session) => session.killAndWait().catch(() => undefined)));
+        // Exit once the response frame is flushed, so the requester sees the confirmation.
+        requester.send({ type: "response", requestId: message.requestId, ok: true }, () =>
+          exitWorker(0),
+        );
+        return;
+      }
+
+      case "send": {
+        const session = manager.getTerminal(message.terminalId);
+        session?.send(message.message);
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
+        return;
+      }
+    }
+  }
+
+  function isHello(message: unknown): message is TerminalWorkerHello {
+    return (
+      typeof message === "object" &&
+      message !== null &&
+      (message as { type?: unknown }).type === "hello" &&
+      typeof (message as { secret?: unknown }).secret === "string"
+    );
+  }
+
+  function secretMatches(candidate: string): boolean {
+    const expected = Buffer.from(secret, "utf8");
+    const actual = Buffer.from(candidate, "utf8");
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  }
+
+  function handleConnection(socket: Socket): void {
+    let authenticated = false;
+    socket.on("error", () => {
+      // `close` follows; a broken controller socket only means no controller.
+    });
+    const helloTimer = setTimeout(() => socket.destroy(), HELLO_TIMEOUT_MS);
+    const framed = attachFramedSocket(socket, (message) => {
+      if (!authenticated) {
+        clearTimeout(helloTimer);
+        if (!isHello(message) || !secretMatches(message.secret)) {
+          socket.destroy();
+          return;
+        }
+        authenticated = true;
+        // A failed replacement must not disconnect the daemon still serving clients.
+        controllers.add(framed);
+        everControlled = true;
+        const ack: TerminalWorkerHelloAck = {
+          type: "helloAck",
+          pid: process.pid,
+          protocolVersion,
+        };
+        framed.send(ack);
+        return;
+      }
+      const request = message as TerminalWorkerRequest;
+      void handleRequest(request, framed).catch((error: unknown) => {
+        framed.send({
+          type: "response",
+          requestId: request.requestId,
+          ok: false,
+          error: terminalWorkerErrorMessage(error),
+        });
+      });
+    });
+    socket.once("close", () => {
+      clearTimeout(helloTimer);
+      if (controllers.delete(framed)) {
+        exitIfIdle();
+      }
+    });
+  }
+
+  function reportReady(line: string): void {
+    try {
+      writeSync(READY_FD, `${line}\n`);
+      closeSync(READY_FD);
+    } catch {
+      // Started without a launcher pipe (tests that spawn the worker directly).
+    }
+  }
+
+  async function start(): Promise<void> {
+    const socketPath = resolveTerminalWorkerSocketPath({
+      paseoHome: args.paseoHome,
+      workerPid: process.pid,
+    });
+    if (process.platform !== "win32") {
+      rmSync(socketPath, { force: true });
+    }
+    const listening = createServer(handleConnection);
+    await new Promise<void>((resolve, reject) => {
+      listening.once("error", reject);
+      listening.listen(socketPath, () => {
+        listening.off("error", reject);
+        resolve();
+      });
+    });
+    server = listening;
+    if (process.platform !== "win32") {
+      chmodSync(socketPath, PRIVATE_FILE_MODE);
+    }
+
+    const self = await inspector.inspect(process.pid);
+    if (
+      self.status !== "alive" ||
+      !self.snapshot.startedAt ||
+      !self.snapshot.commandLine?.includes(args.recordId)
+    ) {
+      const reason = self.status === "error" ? errorMessage(self.error) : "no usable snapshot";
+      throw new Error(`Terminal worker cannot read its own process identity: ${reason}`);
+    }
+    record = {
+      recordId: args.recordId,
+      pid: process.pid,
+      bootId: currentBootId(),
+      createdAt: new Date().toISOString(),
+      identity: { startedAt: self.snapshot.startedAt, commandLine: self.snapshot.commandLine },
+      protocolVersion,
+      paseoVersion: args.paseoVersion,
+      socketPath,
+      secret,
+      runtime: args.runtime,
+      terminals: [],
+    };
+    writeTerminalWorkerRecord(args.paseoHome, record);
+    reportReady(`ready ${socketPath}`);
+
+    setTimeout(() => {
+      if (!everControlled && sessionsById.size === 0) exitWorker(0);
+    }, FIRST_CONTROLLER_TIMEOUT_MS).unref();
+    setInterval(() => {
+      if (
+        controllers.size === 0 &&
+        !existsSync(terminalWorkerRecordPath(args.paseoHome, process.pid))
+      ) {
+        void killEveryTerminalAndExit();
+      }
+    }, ORPHAN_CHECK_INTERVAL_MS);
+  }
+
+  process.on("SIGTERM", () => {
+    void killEveryTerminalAndExit();
+  });
+
+  start().catch((error: unknown) => {
+    const message = errorMessage(error).replace(/\n/g, " | ");
+    console.error(`Terminal worker failed to start: ${errorMessage(error)}`);
+    reportReady(`error ${message}`);
+    exitWorker(1);
   });
 }
 
-if (isPersistentTerminalWorkerLauncherProcess()) {
-  void launchPersistentTerminalWorkerFromLauncher()
-    .then(() => process.exit(0))
-    .catch((error: unknown) => {
-      console.error("Persistent terminal worker launcher failed:", error);
-      process.exit(1);
-    });
-} else if (isPersistentTerminalWorkerProcess()) {
-  void startPersistentWorker().catch((error: unknown) => {
-    console.error("Persistent terminal worker failed to start:", error);
-    process.exit(1);
-  });
+if (process.argv.includes(LAUNCH_ARG)) {
+  runLauncher(process.argv.slice(2));
 } else {
-  startLegacyIpcWorker();
+  runWorker(process.argv.slice(2));
 }

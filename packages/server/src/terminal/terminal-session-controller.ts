@@ -41,6 +41,7 @@ import {
 import type { TerminalSession } from "./terminal.js";
 import type { TerminalManager, TerminalsChangedEvent } from "./terminal-manager.js";
 import { applyTerminalSize } from "./terminal-size-ownership.js";
+import { TerminalWorkerIncompatibleError } from "./terminal-worker-pool.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import { terminalSubscriptionKey } from "@getpaseo/protocol/terminal-subscription-key";
 import {
@@ -520,6 +521,8 @@ export class TerminalSessionController {
     }
 
     try {
+      const unavailable = this.terminalManager.getUnavailableError?.();
+      if (unavailable) throw unavailable;
       let terminals: TerminalSession[];
       if (msg.workspaceId !== undefined) {
         terminals = (await this.getAllTerminalSessions()).filter(
@@ -542,6 +545,10 @@ export class TerminalSessionController {
       });
     } catch (error) {
       this.sessionLogger.error({ err: error, cwd: msg.cwd }, "Failed to list terminals");
+      if (error instanceof TerminalWorkerIncompatibleError) {
+        this.emitIncompatible(msg, error);
+        return;
+      }
       this.emit({
         type: "list_terminals_response",
         payload: {
@@ -551,6 +558,23 @@ export class TerminalSessionController {
         },
       });
     }
+  }
+
+  // An empty list or a generic failure would read as "no terminals"; the client needs to know
+  // they exist and why it cannot reach them.
+  private emitIncompatible(
+    msg: { type: string; requestId: string },
+    error: TerminalWorkerIncompatibleError,
+  ): void {
+    this.emit({
+      type: "rpc_error",
+      payload: {
+        requestId: msg.requestId,
+        requestType: msg.type,
+        error: error.message,
+        code: error.code,
+      },
+    });
   }
 
   private async getAllTerminalSessions(): Promise<TerminalSession[]> {
@@ -679,6 +703,10 @@ export class TerminalSessionController {
         }
       }
       this.sessionLogger.error({ err: error, cwd: msg.cwd }, "Failed to create terminal");
+      if (error instanceof TerminalWorkerIncompatibleError) {
+        this.emitIncompatible(msg, error);
+        return;
+      }
       this.emit({
         type: "create_terminal_response",
         payload: {

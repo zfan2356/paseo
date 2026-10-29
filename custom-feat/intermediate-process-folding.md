@@ -38,6 +38,13 @@ Upstream plugin timeline transforms run before intermediate-process folding;
 the folded result feeds the history window and render layout. Plugin-owned
 timeline items therefore keep their transforms instead of bypassing them.
 
+Full chat display remains the fork default and keeps intermediate-process
+folding. Selecting upstream's tool-call or completed-turn collapse modes gives
+that presentation sole ownership, so opening a whole turn reveals every row
+without a second nested process toggle. Shared tool-call expansion and reading
+position replacements remain upstream-owned. Existing saved display choices
+still win over the default.
+
 The projection sits on top of stream virtualization, so item identity and
 tail/live-head boundary handling in `agent-stream/view.tsx` are the sensitive
 merge seams (see the ledger for hotspots and focused tests).

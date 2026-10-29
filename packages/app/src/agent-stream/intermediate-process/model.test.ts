@@ -50,6 +50,21 @@ function compaction(id: string, seed: number): StreamItem {
 }
 
 describe("projectIntermediateProcess", () => {
+  it("leaves rows unchanged when another chat display mode owns folding", () => {
+    const tail = [user("user", 1), thought("thought", 2), tool("tool", 3)];
+    const head = [assistant("final", 4)];
+    const projection = projectIntermediateProcess({
+      tail,
+      head,
+      isTurnActive: false,
+      enabled: false,
+    });
+    expect(projection.tail).toBe(tail);
+    expect(projection.head).toBe(head);
+    expect(projection.groupsByHostId.size).toBe(0);
+    expect(projection.historyGroupUpdatesByHostId.size).toBe(0);
+  });
+
   it("collapses intermediate messages and steps while preserving the final answer", () => {
     const tail = [
       user("user", 1),
