@@ -1,6 +1,7 @@
 import { classifyAssistantFileLink } from "@/assistant-file-links";
 import { ASSISTANT_FILE_EXTENSIONS } from "@/assistant-file-links/extensions";
 import { normalizeMarkdownHtml } from "./html";
+import { omitUnresolvedCitations } from "./citation-source";
 import { gfmTable } from "micromark-extension-gfm-table";
 import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
 import type { AssistantFileLinkSource } from "@/assistant-file-links";
@@ -138,6 +139,7 @@ export function prepareMarkdownSource(
     !source.includes("![") &&
     !source.includes("||") &&
     !source.includes("&") &&
+    !source.includes("\uE200") &&
     // Match content, header, and delimiter lines; quote-only lines count as blank.
     !/^[\t >]*[^\t >\r\n][^\r\n]*(?:\r\n|\r|\n)[^\r\n]+(?:\r\n|\r|\n)(?=[\t >:|-]*\|)[\t >|]*:?-[-\t :|]*$/m.test(
       source,
@@ -253,8 +255,9 @@ export function prepareMarkdownSource(
         return;
       }
       if (node.type === "text") {
-        const text = source
-          .slice(start, end)
+        const text = omitUnresolvedCitations(source.slice(start, end), {
+          isTail: end === source.length,
+        })
           .replace(/(?<!\\)&(?:#(?:[xX][\da-fA-F]+|\d+)|[a-zA-Z][a-zA-Z\d]+);/g, (entity) =>
             decodeString(entity).replace(/[!-/:-@[-`{-~]/g, "\\$&"),
           )

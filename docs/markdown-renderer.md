@@ -30,6 +30,12 @@ Android measurements use a size-only, 512-entry LRU across view unmounts, matchi
 
 The library determines how incomplete Markdown appears during streaming. Completed text uses the same component and engine as history. Find and scroll-to-message address source message ids; selection-copy understands semantic HTML and the web code component's copy metadata.
 
+Provider web citation controls currently have no source-URL map in the timeline.
+The source adapter omits recognized unresolved controls in prose, including
+incomplete trailing controls during streaming, while preserving code and normal
+links. Stored messages remain unchanged. See the fork's
+[citation fallback](../custom-feat/unresolved-web-citations.md).
+
 ## Verification
 
 Follow [QA](qa.md) and [mobile testing](mobile-testing.md). Exercise chat, file preview, plan and PR content on all three platforms. Include cross-paragraph selection, progressive streaming, a file-link tap, code copy/highlighting, a table and a workspace image. On iPad, repeat preview selection after opening and closing Explorer and after rotation. Check web find, selection-copy and source-message navigation after DOM changes.

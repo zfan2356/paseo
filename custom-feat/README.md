@@ -35,6 +35,7 @@ stays authoritative for intent and design.
 | [terminal-color-isolation.md](terminal-color-isolation.md)                     | Daemon terminals advertise truecolor and ignore daemon-level color suppression        |
 | [terminal-font-isolation.md](terminal-font-isolation.md)                       | Interface fonts do not override terminal cell metrics                                 |
 | [latex-markdown-rendering.md](latex-markdown-rendering.md)                     | KaTeX MathML rendering for LaTeX in chat Markdown                                     |
+| [unresolved-web-citations.md](unresolved-web-citations.md)                     | Suppress unresolved provider citation controls in rendered prose                      |
 | [safe-local-macos-app-replacement.md](safe-local-macos-app-replacement.md)     | Installer that replaces the running Mac app safely with rollback                      |
 | [stable-local-macos-signing.md](stable-local-macos-signing.md)                 | Reusable `Paseo Local` signing identity so TCC grants survive rebuilds                |
 | [intermediate-process-folding.md](intermediate-process-folding.md)             | Fold reasoning/tool calls/todos into one collapsible group per turn                   |

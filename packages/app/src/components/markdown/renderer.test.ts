@@ -38,6 +38,44 @@ it("resolves authored root-relative links only when the target is a known comman
 });
 
 describe("shared Markdown source adaptation", () => {
+  it("omits unresolved web citation controls while preserving the answer and ordinary links", () => {
+    const source =
+      "- Install with `--no-deps`. \uE200cite\uE202turn947199search0\uE201\n" +
+      "- Keep the [dependency guide](https://example.com/dependencies). " +
+      "\uE200cite\uE202turn947199search1\uE202turn947199view0\uE201";
+    expect(prepareMarkdownSource(source).render()).toBe(
+      "- Install with `--no-deps`. \n" +
+        "- Keep the [dependency guide](https://example.com/dependencies). ",
+    );
+  });
+
+  it("does not expose a citation while its control sequence streams in", () => {
+    const marker = "\uE200cite\uE202turn947199search0\uE202turn947199search1\uE201";
+    for (let length = 1; length <= marker.length; length += 1) {
+      expect(prepareMarkdownSource(`Answer ${marker.slice(0, length)}`).render()).toBe("Answer ");
+    }
+    expect(prepareMarkdownSource(`Answer ${marker} continues.`).render()).toBe(
+      "Answer  continues.",
+    );
+  });
+
+  it("preserves literal citation examples in code and unrelated private-use text", () => {
+    const marker = "\uE200cite\uE202turn947199search0\uE201";
+    const source =
+      `Inline \`${marker}\`.\n\n\`\`\`text\n${marker}\n\`\`\`\n\n` +
+      "Private \uE300 text. \uE200unknown\uE202value\uE201 \uE200citation example.";
+    expect(prepareMarkdownSource(source).render()).toBe(source);
+  });
+
+  it("adapts citations without moving image and entity source replacements", () => {
+    const prepared = prepareMarkdownSource(
+      "A &amp; B \uE200cite\uE202turn1search0\uE201 ![image](photo.png)",
+    );
+    expect(prepared.render(new Map([["photo.png", "blob:photo"]]))).toBe(
+      "A \\& B  ![image](<blob:photo>)",
+    );
+  });
+
   it("keeps paragraphs, fences and quotes together for the library", () => {
     const source = "First paragraph.\n\nSecond paragraph.\n\n```ts\nconst n = 1;\n```\n\n> Quote";
     expect(prepareMarkdownSource(source).render()).toBe(source);
