@@ -1495,7 +1495,6 @@ describe("terminal MCP tools", () => {
         id: "term-1",
         name: "daemon",
         cwd: process.cwd(),
-        getState: vi.fn().mockReturnValue({ scrollback: [], grid: [[]] }),
       }),
       captureTerminal,
     });

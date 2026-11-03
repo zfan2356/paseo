@@ -635,6 +635,7 @@ export const ptBR: TranslationResources = {
     terminal: {
       hostDisconnected: "Host não está conectado",
       updateHost: "Atualize o host para usar o renderizador de terminal nativo.",
+      restoreRequiresUpdate: "Atualize o host para visualizar os terminais.",
       unableToSubscribe: "Não foi possível assinar o terminal",
       imagePaste: {
         uploading: "Uploading pasted image...",
@@ -2073,7 +2074,6 @@ export const ptBR: TranslationResources = {
   toolCallDetails: {
     error: "Erro",
     empty: "Nenhum detalhe adicional disponível",
-    subAgentActivity: "Atividade do subagente",
     input: "Entrada",
     output: "Saída",
   },
@@ -2157,6 +2157,11 @@ export const ptBR: TranslationResources = {
     },
   },
   providerUsage: {
+    checkUsage: "Consultar uso",
+    checkUsageHint: "Aplica-se a {{host}} em todos os dispositivos",
+    off: "O uso está desativado em {{host}}.",
+    turnOn: "Ativar",
+
     options: "Configurações",
     refreshFailed: "Não foi possível atualizar o uso",
     noHosts: "Nenhum host conectado",
@@ -2204,6 +2209,7 @@ export const ptBR: TranslationResources = {
       days: "{{value}} d",
       hours: "{{value}} h",
       minutes: "{{value}} min",
+      pair: "{{first}} {{second}}",
     },
     timing: {
       lastUpdated: "Última atualização {{relativeTime}}",
@@ -2211,6 +2217,8 @@ export const ptBR: TranslationResources = {
       resetTimePassed: "O horário de redefinição passou",
       resettingNow: "redefinindo agora",
       resetsIn: "redefine em {{duration}}",
+      resetsAtWeekday: "{{weekday}} {{time}}",
+      resetsAtDate: "{{date}}, {{time}}",
       runsOutNow: "esgota agora",
       runsOutIn: "esgota em {{duration}}",
       justNow: "agora mesmo",

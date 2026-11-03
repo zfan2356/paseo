@@ -1,4 +1,5 @@
 import { AGENT_CONVERSATION_TERMINAL_ENV } from "./agent-hooks/agent-hook-installer.js";
+import type { TerminalReplaySink, TerminalReplayMetadata } from "./terminal-replay.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -6,7 +7,7 @@ import type { Logger } from "pino";
 import { createExternalProcessEnv } from "../server/paseo-env.js";
 import { assertAbsolutePath, isSameOrDescendantPath } from "../server/path-utils.js";
 import { writtenDuringThisBoot } from "../server/pid-lock.js";
-import type { TerminalState } from "@getpaseo/protocol/messages";
+import type { WorkerTerminalState } from "./terminal-worker-protocol.js";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
 import { deriveTerminalActivityStatusBucket } from "@getpaseo/protocol/terminal-activity";
 import type {
@@ -16,7 +17,6 @@ import type {
   TerminalCommandFinishedInfo,
   TerminalExitInfo,
   TerminalSession,
-  TerminalStateSnapshot,
 } from "./terminal.js";
 import { resolvePaseoCliExecutablePath } from "./paseo-cli-path.js";
 import { connectLegacyWorker } from "./legacy-worker-connection.js";
@@ -61,7 +61,6 @@ import type {
   TerminalWorkerResponse,
   TerminalWorkerToParentMessage,
   WorkerCreateTerminalOptions,
-  TerminalWorkerStateResult,
   WorkerTerminalInfo,
 } from "./terminal-worker-protocol.js";
 
@@ -95,7 +94,7 @@ interface PendingRequest {
 
 interface WorkerTerminalRecord {
   info: RequiredWorkerTerminalInfo;
-  state: TerminalState;
+  state: WorkerTerminalState;
   activity: TerminalActivity | null;
   // Cached input-mode preamble from the worker (the authoritative tracker lives
   // in the worker process). Updated with streamed output and snapshot responses.
@@ -175,6 +174,7 @@ export function createWorkerTerminalManager(
   const requestTimeoutMs = managerOptions.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   const resolveCreateEnvironment =
     managerOptions.resolveCreateEnvironment ?? resolveDaemonTerminalCreateEnvironment;
+  const replaySinks = new Map<string, TerminalReplaySink>();
   const pendingRequests = new Map<string, PendingRequest>();
   const inFlight = new Set<Promise<void>>();
   const recordsById = new Map<string, WorkerTerminalRecord>();
@@ -247,7 +247,7 @@ export function createWorkerTerminalManager(
 
   function registerRecord(input: {
     info: RequiredWorkerTerminalInfo;
-    state: TerminalState;
+    state: WorkerTerminalState;
   }): TerminalSession {
     if (input.info.activityToken) {
       terminalActivityTokenById.set(input.info.id, input.info.activityToken);
@@ -299,18 +299,11 @@ export function createWorkerTerminalManager(
         }
         sendBestEffortRequest({ type: "send", terminalId: record.info.id, message });
       },
-      subscribe(
-        listener: (msg: ServerMessage) => void,
-        options?: { initialSnapshot?: "state" | "ready" },
-      ): () => void {
+      subscribe(listener: (msg: ServerMessage) => void): () => void {
         record.messageListeners.add(listener);
-        if (options?.initialSnapshot === "ready") {
-          queueMicrotask(() => {
-            if (record.messageListeners.has(listener)) {
-              listener({ type: "snapshotReady", revision: 0 });
-            }
-          });
-        }
+        queueMicrotask(() => {
+          if (record.messageListeners.has(listener)) listener({ type: "snapshotReady" });
+        });
         return () => {
           record.messageListeners.delete(listener);
         };
@@ -371,19 +364,8 @@ export function createWorkerTerminalManager(
           cols: record.state.cols,
         };
       },
-      getState(): TerminalState {
-        return record.state;
-      },
-      getStateSnapshot(options?: { scrollbackLines?: number }): TerminalStateSnapshot {
-        const scrollbackLines = options?.scrollbackLines;
-        const scrollback =
-          typeof scrollbackLines === "number"
-            ? record.state.scrollback.slice(-scrollbackLines)
-            : record.state.scrollback;
-        return {
-          state: { ...record.state, scrollback },
-          revision: 0,
-        };
+      hasOutput(): boolean {
+        return record.state.hasOutput;
       },
       getReplayPreamble(): string {
         return record.replayPreamble;
@@ -451,9 +433,7 @@ export function createWorkerTerminalManager(
     if (!record) {
       return;
     }
-    if (message.message.type === "snapshot") {
-      record.state = message.message.state;
-    }
+    if (message.message.type === "output") record.state.hasOutput = true;
     record.replayPreamble = message.replayPreamble;
     for (const listener of Array.from(record.messageListeners)) {
       listener(message.message);
@@ -622,7 +602,23 @@ export function createWorkerTerminalManager(
   }
 
   function attachWorker(): void {
-    worker.on("message", (message: TerminalWorkerToParentMessage) => {
+    const connection = worker;
+    connection.on("message", (message: TerminalWorkerToParentMessage) => {
+      if (message.type === "terminalReplay") {
+        // Consumption queues into the application's bounded transport synchronously.
+        // Never wait for app network delivery or accumulate a second replay queue here.
+        if (worker !== connection || !pendingRequests.has(message.requestId)) return;
+        try {
+          replaySinks.get(message.requestId)?.(message.event);
+        } catch (error) {
+          const pending = pendingRequests.get(message.requestId)!;
+          clearTimeout(pending.timeout);
+          pendingRequests.delete(message.requestId);
+          replaySinks.delete(message.requestId);
+          pending.reject(error instanceof Error ? error : new Error(String(error)));
+        }
+        return;
+      }
       if (isResponse(message)) {
         const pending = pendingRequests.get(message.requestId);
         if (!pending) {
@@ -640,14 +636,15 @@ export function createWorkerTerminalManager(
       handleWorkerEvent(message);
     });
 
-    worker.on("close", () => {
+    connection.on("close", () => {
+      if (worker !== connection) return;
       workerDisconnected = true;
       rejectPendingRequests(new Error("Terminal worker connection closed"));
       const reconnect = managerOptions.reconnect;
       if (!detached && reconnect) {
         reconnecting = (async () => {
-          const connection = await reconnect();
-          if (!connection) {
+          const recovered = await reconnect();
+          if (!recovered) {
             for (const terminalId of Array.from(recordsById.keys())) {
               handleTerminalExitEvent({
                 type: "terminalExit",
@@ -658,10 +655,10 @@ export function createWorkerTerminalManager(
             return;
           }
           if (detached) {
-            connection.disconnect();
+            recovered.disconnect();
             return;
           }
-          worker = connection;
+          worker = recovered;
           workerDisconnected = false;
           attachWorker();
           await adoptTerminals();
@@ -684,12 +681,18 @@ export function createWorkerTerminalManager(
   }
   attachWorker();
 
-  function sendRequest(input: TerminalWorkerRequestInput): Promise<unknown> {
-    if (reconnecting && workerDisconnected) return reconnecting.then(() => sendRequest(input));
+  function sendRequest(
+    input: TerminalWorkerRequestInput,
+    sink?: TerminalReplaySink,
+  ): Promise<unknown> {
+    if (reconnecting && workerDisconnected)
+      return reconnecting.then(() => sendRequest(input, sink));
     if (workerDisconnected || !worker.connected) {
       return Promise.reject(new Error("Terminal worker is not running"));
     }
+    const connection = worker;
     const requestId = randomUUID();
+    if (sink) replaySinks.set(requestId, sink);
     const message = { ...input, requestId } as TerminalWorkerRequest;
     const request = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -697,7 +700,7 @@ export function createWorkerTerminalManager(
         reject(new Error(`Terminal worker request timed out: ${input.type}`));
       }, requestTimeoutMs);
       pendingRequests.set(requestId, { resolve, reject, timeout });
-      worker.send(message, (error) => {
+      connection.send(message, (error) => {
         if (!error) {
           return;
         }
@@ -712,7 +715,10 @@ export function createWorkerTerminalManager(
       () => undefined,
     );
     inFlight.add(settled);
-    void settled.finally(() => inFlight.delete(settled));
+    void settled.finally(() => {
+      inFlight.delete(settled);
+      replaySinks.delete(requestId);
+    });
     return request;
   }
 
@@ -882,22 +888,12 @@ export function createWorkerTerminalManager(
       return recordsById.get(id)?.session;
     },
 
-    async getTerminalState(
-      id: string,
-      options?: { scrollbackLines?: number },
-    ): Promise<TerminalStateSnapshot | null> {
-      const snapshot = (await sendRequest({
-        type: "getTerminalState",
-        terminalId: id,
-        ...(options ? { options } : {}),
-      })) as TerminalWorkerStateResult;
-      if (snapshot && snapshot.replayPreamble !== undefined) {
-        const record = recordsById.get(id);
-        if (record) {
-          record.replayPreamble = snapshot.replayPreamble;
-        }
-      }
-      return snapshot;
+    async replayTerminal(id, options, sink): Promise<TerminalReplayMetadata | null> {
+      const metadata = (await sendRequest(
+        { type: "replayTerminal", terminalId: id, options },
+        sink,
+      )) as TerminalReplayMetadata | null;
+      return metadata;
     },
 
     setTerminalTitle(id: string, title: string): boolean {

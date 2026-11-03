@@ -40,7 +40,12 @@ titles survive adoption. Requests reply only to their originating connection;
 terminal events and their activity tokens reach every attached daemon.
 
 `legacy-worker-connection.ts` adapts an already-running fork NDJSON worker's
-attach response to upstream's listing contract. It never launches another
+attach response to upstream's listing contract and its grid snapshots to
+bounded ANSI replay events. Only this draining adapter uses the retained
+protocol snapshot serializer; current workers serialize xterm directly.
+Each authenticated daemon has its own upstream replay controller, preserving
+request routing and independent backpressure during overlapping attachments.
+The adapter never launches another
 legacy worker, replaces its PTYs or bypasses authentication. The old worker is
 a draining member of the upstream pool. New terminals use the current worker;
 closing the last old terminal releases its attachment without another daemon

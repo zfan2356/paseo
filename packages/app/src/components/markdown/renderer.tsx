@@ -6,6 +6,7 @@ import {
   useAssistantFileLinkEnvironment,
 } from "@/assistant-file-links";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { matchCommandLink, useAgentCommandHints, type CommandHints } from "@/agent-commands";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import type { Theme } from "@/styles/theme";
 import { prepareMathSource } from "./math-source";
@@ -51,6 +52,7 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
   onLinkPress?: (url: string) => unknown;
   /** Return true when a document-specific navigator handled the link. */
   onNavigateLink?: (url: string) => boolean;
+  agentCommands?: boolean;
 }
 
 /** All Markdown surfaces share the same engine and source adaptation. */
@@ -62,13 +64,19 @@ export const MarkdownRenderer = memo(function MarkdownRenderer(props: MarkdownRe
     () => splitStreamingMarkdown(completeLines, true).head.length,
     [completeLines],
   );
-  if (!streaming || boundary === 0) return <MarkdownPart {...props} />;
+  const Part = props.agentCommands ? CommandMarkdownPart : MarkdownPart;
+  if (!streaming || boundary === 0) return <Part {...props} />;
   return (
     <MarkdownBlockStack>
-      <MarkdownPart {...props} text={props.text.slice(0, boundary)} />
-      <MarkdownPart {...props} text={props.text.slice(boundary)} />
+      <Part {...props} text={props.text.slice(0, boundary)} />
+      <Part {...props} text={props.text.slice(boundary)} />
     </MarkdownBlockStack>
   );
+});
+
+const CommandMarkdownPart = memo(function CommandMarkdownPart(props: MarkdownRendererProps) {
+  const commandHints = useAgentCommandHints();
+  return <MarkdownPart {...props} commandHints={commandHints} />;
 });
 
 const MarkdownPart = memo(function MarkdownPart({
@@ -79,8 +87,10 @@ const MarkdownPart = memo(function MarkdownPart({
   streaming = false,
   onLinkPress,
   onNavigateLink,
+  agentCommands: _agentCommands,
+  commandHints = null,
   ...imageContext
-}: MarkdownRendererProps) {
+}: MarkdownRendererProps & { commandHints?: CommandHints | null }) {
   const environment = useAssistantFileLinkEnvironment();
   const actions = useAssistantFileLinkActions();
   const client =
@@ -89,14 +99,23 @@ const MarkdownPart = memo(function MarkdownPart({
       ? { readFile: environment.client.readFile.bind(environment.client) }
       : undefined);
   const mathSource = useMemo(() => (isWeb ? prepareMathSource(text) : text), [text]);
-  const { markdown, imageSources, linkRecognition, linkSource } = useMarkdownSource(mathSource, {
-    workspaceRoot: environment.workspaceRoot,
-    serverId: environment.serverId,
-    ...imageContext,
-    client,
-  });
+  const { markdown, imageSources, linkRecognition, linkSource } = useMarkdownSource(
+    mathSource,
+    {
+      workspaceRoot: environment.workspaceRoot,
+      serverId: environment.serverId,
+      ...imageContext,
+      client,
+    },
+    commandHints?.names,
+  );
   const [image, setImage] = useState<ImageLightboxSource | null>(null);
   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
+    const command = commandHints && matchCommandLink(url, sourceType, commandHints.names);
+    if (command) {
+      commandHints.insert(command);
+      return;
+    }
     if (sourceType === "markdown" && onNavigateLink?.(url)) return;
     const source = linkSource(url, sourceType);
     if (onLinkPress && !actions.canResolveFile(source)) onLinkPress(url);

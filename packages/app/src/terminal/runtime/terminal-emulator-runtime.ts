@@ -3,11 +3,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { ImageAddon } from "@xterm/addon-image";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
 import { Terminal, type ITheme, type IMarker } from "@xterm/xterm";
-import type { TerminalState } from "@getpaseo/protocol/messages";
+import type { TerminalCharacterWidths } from "../character-widths";
 import {
   type TerminalInputModeState,
   TerminalInputModeTracker,
@@ -24,7 +25,6 @@ import {
   resolveMacTerminalEditingShortcut,
   shouldInterceptDomTerminalKey,
 } from "@/utils/terminal-keys";
-import { renderTerminalSnapshotToAnsi } from "./terminal-snapshot";
 import { materializeDefaultInverseSgr } from "./inverse-sgr";
 import { isEmulatorGeneratedProtocolReply } from "./terminal-protocol-reply";
 import {
@@ -57,7 +57,6 @@ const FIND_HIGHLIGHT_LIMIT = 20_000;
 export interface TerminalEmulatorRuntimeMountInput {
   root: HTMLDivElement;
   host: HTMLDivElement;
-  initialSnapshot: TerminalState | null;
   scrollback: number;
   theme: ITheme;
   fontFamily?: string;
@@ -136,7 +135,7 @@ interface TerminalEmulatorRuntimeDisposables {
 }
 
 interface TerminalOutputOperation {
-  type: "write" | "clear" | "snapshot";
+  type: "write" | "clear" | "snapshot" | "fit";
   data: TerminalOutputData;
   rows?: number;
   cols?: number;
@@ -187,15 +186,26 @@ function withOverviewRulerBorderHidden(theme: ITheme): ITheme {
 }
 
 export interface TerminalClipboard {
+  /** Whether the async Clipboard API is usable. Browsers omit it outside secure contexts. */
+  isAvailable?(): boolean;
   readText(): Promise<string>;
   read(): Promise<readonly Pick<ClipboardItem, "types" | "getType">[]>;
   writeText(text: string): Promise<void>;
 }
 
+function getBrowserClipboard(): Clipboard | undefined {
+  return typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+}
+
+function rejectUnavailableClipboard(): Promise<never> {
+  return Promise.reject(new Error("Clipboard API is unavailable"));
+}
+
 const browserClipboard: TerminalClipboard = {
-  readText: () => navigator.clipboard.readText(),
-  read: () => navigator.clipboard.read(),
-  writeText: (text) => navigator.clipboard.writeText(text),
+  isAvailable: () => !!getBrowserClipboard(),
+  readText: () => getBrowserClipboard()?.readText() ?? rejectUnavailableClipboard(),
+  read: () => getBrowserClipboard()?.read() ?? rejectUnavailableClipboard(),
+  writeText: (text) => getBrowserClipboard()?.writeText(text) ?? rejectUnavailableClipboard(),
 };
 
 async function readClipboardImage(clipboard: TerminalClipboard): Promise<TerminalFile | null> {
@@ -226,6 +236,12 @@ function findFileOnlyPaste(transfer: DataTransfer | null): File | null {
   return null;
 }
 
+// Grapheme widths match the daemon and native buffers. Legacy hosts keep the
+// Unicode 11 table web used before. See docs/terminal-rendering.md.
+function applyCharacterWidths(terminal: Terminal, widths: TerminalCharacterWidths): void {
+  terminal.unicode.activeVersion = widths === "graphemes" ? "15-graphemes" : "11";
+}
+
 export class TerminalEmulatorRuntime {
   constructor(
     private readonly options: FindShortcutPlatform = { isMac: isMacUserAgent() },
@@ -238,6 +254,7 @@ export class TerminalEmulatorRuntime {
     shift: false,
     alt: false,
   };
+  private characterWidths: TerminalCharacterWidths = "graphemes";
   private terminal: Terminal | null = null;
   private fitAddon: FitAddon | null = null;
   private searchAddon: SearchAddon | null = null;
@@ -282,6 +299,7 @@ export class TerminalEmulatorRuntime {
     },
   };
 
+  private replayResize: TerminalResizeRequest | null = null;
   private fitAndEmitResize: ((input?: TerminalResizeRequest) => void) | null = null;
   private lastSize: { rows: number; cols: number } | null = null;
   private cleanup: (() => void) | null = null;
@@ -325,6 +343,16 @@ export class TerminalEmulatorRuntime {
 
   setPendingModifiers(input: { pendingModifiers: PendingTerminalModifiers }): void {
     this.pendingModifiers = input.pendingModifiers;
+  }
+
+  setCharacterWidths(input: { widths: TerminalCharacterWidths }): void {
+    this.characterWidths = input.widths;
+    const terminal = this.terminal;
+    if (!terminal) {
+      return;
+    }
+    applyCharacterWidths(terminal, input.widths);
+    this.refreshVisibleRows();
   }
 
   private loadSearchAddon(terminal: Terminal): void {
@@ -375,22 +403,7 @@ export class TerminalEmulatorRuntime {
         !event.altKey &&
         !event.metaKey
       ) {
-        const key = event.key.toLowerCase();
-
-        // Ctrl+C: copy selection to clipboard if text is selected, otherwise let xterm send SIGINT
-        if (key === "c" && terminal.hasSelection()) {
-          void this.clipboard.writeText(terminal.getSelection());
-          return false;
-        }
-
-        // Ctrl+V: paste clipboard text, or the clipboard image when there is no text
-        if (key === "v") {
-          event.preventDefault();
-          this.pasteClipboard(terminal);
-          return false;
-        }
-
-        return true;
+        return !this.handleCtrlClipboardShortcut(terminal, event);
       }
 
       if (this.maybeSendMacEditingShortcut(terminal, event)) {
@@ -437,6 +450,36 @@ export class TerminalEmulatorRuntime {
       event.stopPropagation();
       return false;
     });
+  }
+
+  /** Returns true when a non-Mac Ctrl+C / Ctrl+V clipboard shortcut was handled. */
+  private handleCtrlClipboardShortcut(
+    terminal: Pick<Terminal, "hasSelection" | "getSelection" | "paste">,
+    event: KeyboardEvent,
+  ): boolean {
+    const key = event.key.toLowerCase();
+    // Without the Clipboard API (e.g. plain http on a LAN address), the browser's native
+    // copy/paste events still fire and xterm handles them, so leave the default action.
+    const clipboardAvailable = this.clipboard.isAvailable?.() ?? true;
+
+    // Ctrl+C: copy selection to clipboard if text is selected, otherwise let xterm send SIGINT
+    if (key === "c" && terminal.hasSelection()) {
+      if (clipboardAvailable) {
+        void this.clipboard.writeText(terminal.getSelection());
+      }
+      return true;
+    }
+
+    // Ctrl+V: paste clipboard text, or the clipboard image when there is no text
+    if (key === "v") {
+      if (clipboardAvailable) {
+        event.preventDefault();
+        this.pasteClipboard(terminal);
+      }
+      return true;
+    }
+
+    return false;
   }
 
   private handleFindShortcut(event: KeyboardEvent): boolean {
@@ -543,11 +586,12 @@ export class TerminalEmulatorRuntime {
       theme: withOverviewRulerBorderHidden(input.theme),
     });
     const fitAddon = new FitAddon();
-    const unicode11Addon = new Unicode11Addon();
     let webglAddon: WebglAddon | null = null;
     let imageAddon: ImageAddon | null = null;
     terminal.loadAddon(fitAddon);
-    terminal.loadAddon(unicode11Addon);
+    terminal.loadAddon(new Unicode11Addon());
+    terminal.loadAddon(new UnicodeGraphemesAddon());
+    applyCharacterWidths(terminal, this.characterWidths);
     terminal.loadAddon(new WebLinksAddon(openExternalLink));
     const localFileLinkProvider = terminal.registerLinkProvider(
       createTerminalLocalFileLinkProvider(terminal, {
@@ -582,11 +626,6 @@ export class TerminalEmulatorRuntime {
     terminal.open(input.host);
     this.themeBackgroundElements = this.collectThemeBackgroundElements(input);
     this.applyThemeBackground(input.theme);
-    try {
-      terminal.unicode.activeVersion = "11";
-    } catch {
-      // Ignore if unicode API isn't available in this build/runtime.
-    }
 
     const disposeImageAddon = (): void => {
       try {
@@ -620,6 +659,7 @@ export class TerminalEmulatorRuntime {
       terminal.parser.registerCsiHandler({ final: "c" }, () => true);
       terminal.parser.registerCsiHandler({ prefix: ">", final: "c" }, () => true);
       terminal.parser.registerCsiHandler({ prefix: "=", final: "c" }, () => true);
+      terminal.parser.registerCsiHandler({ prefix: ">", final: "q" }, () => true);
       terminal.parser.registerCsiHandler({ final: "n" }, () => true);
       terminal.parser.registerCsiHandler({ prefix: "?", final: "n" }, () => true);
       terminal.parser.registerCsiHandler({ final: "R" }, () => true);
@@ -628,6 +668,7 @@ export class TerminalEmulatorRuntime {
         { prefix: "?", intermediates: "$", final: "p" },
         () => true,
       );
+      terminal.parser.registerDcsHandler({ intermediates: "$", final: "q" }, () => true);
       for (const code of [10, 11, 12]) {
         terminal.parser.registerOscHandler(code, (data) => data.trim() === "?");
       }
@@ -664,6 +705,7 @@ export class TerminalEmulatorRuntime {
     window.__paseoTerminal = terminal;
 
     const fitAndEmitResize = (resizeInput?: TerminalResizeRequest): void => {
+      if (this.deferReplayResize(resizeInput)) return;
       const forceRefresh = resizeInput?.forceRefresh ?? false;
       const shouldClaim = resizeInput?.shouldClaim ?? true;
       const forceClaim = resizeInput?.forceClaim ?? false;
@@ -796,10 +838,6 @@ export class TerminalEmulatorRuntime {
       fitAndEmitResize({ forceRefresh: true, shouldClaim: false });
     }, 0);
 
-    if (input.initialSnapshot) {
-      this.renderSnapshot({ state: input.initialSnapshot });
-    }
-
     this.processOutputQueue();
 
     const disposables: TerminalEmulatorRuntimeDisposables = {
@@ -917,26 +955,29 @@ export class TerminalEmulatorRuntime {
     onFilePaste?.(file);
   }
 
-  renderSnapshot(input: { state: TerminalState | null; onCommitted?: () => void }): void {
-    if (!input.state) {
-      this.clear(input);
-      return;
+  replay(event: import("@getpaseo/client").TerminalReplayEvent): void {
+    if (event.type === "begin") {
+      this.concealHostForRestore();
+      this.replayResize ??= { shouldClaim: false };
+      this.restoreOutput({ data: EMPTY_TERMINAL_OUTPUT, rows: event.rows, cols: event.cols });
+    } else if (event.type === "data") {
+      this.write({ data: event.data, suppressInput: true });
+    } else {
+      this.outputOperations.push({
+        type: "fit",
+        data: EMPTY_TERMINAL_OUTPUT,
+        onCommitted: () => this.revealHostAfterRestore(),
+      });
+      this.processOutputQueue();
     }
-    this.restoreOutput({
-      data: encodeTerminalOutput(renderTerminalSnapshotToAnsi(input.state)),
-      rows: input.state.rows,
-      cols: input.state.cols,
-      ...(input.onCommitted ? { onCommitted: input.onCommitted } : {}),
-    });
   }
 
-  restoreOutput(input: {
+  private restoreOutput(input: {
     data: TerminalOutputData;
     rows?: number;
     cols?: number;
     onCommitted?: () => void;
   }): void {
-    this.concealHostForRestore();
     this.outputOperations.push({
       type: "snapshot",
       data: prependTerminalOutput(RESET_TERMINAL_OUTPUT, input.data),
@@ -944,11 +985,20 @@ export class TerminalEmulatorRuntime {
       cols: input.cols,
       suppressInput: true,
       onCommitted: () => {
-        this.revealHostAfterRestore();
         input.onCommitted?.();
       },
     });
     this.processOutputQueue();
+  }
+
+  private deferReplayResize(input?: TerminalResizeRequest): boolean {
+    if (!this.replayResize) return false;
+    this.replayResize = {
+      forceRefresh: this.replayResize.forceRefresh || input?.forceRefresh,
+      shouldClaim: this.replayResize.shouldClaim || (input?.shouldClaim ?? true),
+      forceClaim: this.replayResize.forceClaim || input?.forceClaim,
+    };
+    return true;
   }
 
   resize(input?: TerminalResizeRequest): void {
@@ -1070,6 +1120,7 @@ export class TerminalEmulatorRuntime {
       commit();
     }
     this.hasUngatedWrites = false;
+    this.replayResize = null;
 
     this.cleanup?.();
     this.cleanup = null;
@@ -1206,16 +1257,40 @@ export class TerminalEmulatorRuntime {
       this.processOutputQueue();
     };
 
+    if (operation.type === "fit") {
+      // xterm resize flushes its write buffer synchronously. Leave the parser's
+      // commit callback before fitting, or that flush consumes the next write.
+      queueMicrotask(() => {
+        if (this.inFlightOutputOperation !== operation || this.terminal !== terminal) return;
+        const resize = this.replayResize ?? { shouldClaim: false };
+        this.replayResize = null;
+        this.fitAndEmitResize?.(resize);
+        finalizeOperation(operation);
+      });
+      return;
+    }
+
     if (operation.type === "clear") {
       this.inputModeDecoder.decode();
       this.inputModeTracker.reset();
       this.emitInputModeChange();
       terminal.reset();
-      finalizeOperation(operation);
+      if (!this.replayResize) {
+        finalizeOperation(operation);
+        return;
+      }
+      queueMicrotask(() => {
+        if (this.inFlightOutputOperation !== operation || this.terminal !== terminal) return;
+        const resize = this.replayResize ?? { shouldClaim: false };
+        this.replayResize = null;
+        this.fitAndEmitResize?.(resize);
+        finalizeOperation(operation);
+      });
       return;
     }
 
     if (operation.type === "snapshot") {
+      this.replayResize ??= { shouldClaim: false };
       this.inputModeDecoder.decode();
       this.inputModeTracker.reset();
       this.emitInputModeChange();

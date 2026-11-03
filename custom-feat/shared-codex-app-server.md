@@ -77,6 +77,12 @@ creating another writer for the same thread.
 
 ## Verification
 
+Shared resumes retain the native turn summary so joining an active conversation
+can report and interrupt its existing turn. Private resumes exclude turns and
+read history on demand through upstream's paginated reader. Side Chat forks
+are resumable immediately; fresh threads publish persistence only at their
+first turn.
+
 ```sh
 npx vitest run packages/server/src/server/agent/providers/codex/shared-app-server.test.ts --bail=1
 npx vitest run packages/server/src/server/agent/providers/codex/shared-app-server.local.e2e.test.ts --bail=1 --maxWorkers=1

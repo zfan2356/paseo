@@ -1,3 +1,18 @@
+import { readTerminalState } from "./test-utils/terminal-state.js";
+import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode";
+import { encodeTerminalKeyInput } from "@getpaseo/protocol/terminal-key-input";
+import type { SubscribeTerminalRequest } from "@getpaseo/protocol/messages";
+import { TerminalSessionController } from "./terminal-session-controller.js";
+import { SessionDelivery } from "../server/session/owned-subscriptions/index.js";
+import {
+  decodeTerminalStreamFrame,
+  TerminalStreamOpcode,
+  type TerminalStreamFrame,
+} from "@getpaseo/protocol/binary-frames/index";
+import type { SessionOutboundMessage } from "../server/messages.js";
+import { createConnection } from "node:net";
+import { attachFramedSocket } from "./terminal-worker-frames.js";
+import xterm from "@xterm/headless";
 import { afterEach, expect, it } from "vitest";
 import { isPlatform } from "../test-utils/platform.js";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -5,7 +20,9 @@ import { terminateWithTreeKill } from "../utils/tree-kill.js";
 import { AGENT_CONVERSATION_TERMINAL_ENV } from "./agent-hooks/agent-hook-installer.js";
 import { EventEmitter } from "node:events";
 import {
+  closeSync,
   existsSync,
+  openSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -34,8 +51,10 @@ import type { TerminalState } from "@getpaseo/protocol/messages";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type {
   TerminalWorkerRequest,
+  WorkerTerminalState,
   TerminalWorkerToParentMessage,
 } from "./terminal-worker-protocol.js";
+import { classifyTerminalProgramProcess } from "./terminal-worker-ownership.js";
 import { createTerminalWorkerProcessInspector } from "./terminal-worker-processes.js";
 import {
   readUnconfirmedTerminalCleanup,
@@ -46,6 +65,7 @@ import {
   listTerminalWorkerRecords,
   readTerminalWorkerRecord,
   terminalWorkerDirectory,
+  terminalWorkerRecordPath,
   type TerminalWorkerRecord,
 } from "./terminal-worker-record.js";
 import { TERMINAL_WORKER_PROTOCOL_OVERRIDE_ENV } from "./terminal-worker-protocol.js";
@@ -86,8 +106,35 @@ async function waitForCondition(
   throw new Error(`Timed out after ${timeoutMs}ms waiting for condition`);
 }
 
-function getVisibleText(session: TerminalSession): string {
-  return getVisibleTextFromState(session.getState());
+async function readReplay(manager: DaemonTerminalManager, id: string) {
+  const chunks: Uint8Array[] = [];
+  const metadata = await manager.replayTerminal(id, undefined, (event) => {
+    if (event.type === "data") chunks.push(event.data);
+  });
+  if (!metadata) return null;
+  const terminal = new xterm.Terminal({
+    rows: metadata.rows,
+    cols: metadata.cols,
+    scrollback: 1000,
+    allowProposedApi: true,
+  });
+  await new Promise<void>((resolve) => terminal.write(Buffer.concat(chunks), resolve));
+  const buffer = terminal.buffer.active;
+  const rows = Array.from({ length: buffer.length }, (_, i) => {
+    const line = buffer.getLine(i)!;
+    return Array.from({ length: metadata.cols }, (_cell, col) => ({
+      char: line.getCell(col)?.getChars() || " ",
+    }));
+  });
+  const state: TerminalState = {
+    rows: metadata.rows,
+    cols: metadata.cols,
+    scrollback: rows.slice(0, buffer.baseY),
+    grid: rows.slice(buffer.baseY),
+    cursor: { row: buffer.cursorY, col: buffer.cursorX },
+  };
+  terminal.dispose();
+  return { state, revision: metadata.revision };
 }
 
 function rowToText(row: TerminalRow): string {
@@ -116,15 +163,8 @@ function readRenderedTokenIndexesFromState(state: TerminalState): number[] {
   return indexes;
 }
 
-function createTerminalState(): TerminalState {
-  const blankCell = { char: " " };
-  return {
-    rows: 1,
-    cols: 1,
-    grid: [[blankCell]],
-    scrollback: [],
-    cursor: { row: 0, col: 0 },
-  };
+function createTerminalState(): WorkerTerminalState {
+  return { rows: 1, cols: 1, hasOutput: false };
 }
 
 class FakeTerminalWorker extends EventEmitter {
@@ -308,7 +348,7 @@ it("reconnects a live worker without replacing terminal sessions or processes", 
   connection.disconnect();
   await waitForCondition(async () => {
     try {
-      return (await manager!.getTerminalState(terminal.id)) !== null;
+      return (await readReplay(manager!, terminal.id)) !== null;
     } catch {
       return false;
     }
@@ -374,26 +414,36 @@ it.each(["current", "draining"] as const)(
   "keeps the peer usable when the %s worker dies",
   async (target) => {
     const paseoHome = createTemporaryHome();
-    const old = await leaveWorkerWithTerminal(paseoHome, 0);
+    const seeds = [
+      await launchDetachedWorkerWithTerminal(paseoHome),
+      await launchDetachedWorkerWithTerminal(paseoHome),
+    ];
+    // Exercise an existing seed adopted as current; launch age does not imply draining ownership.
+    const [firstAdopted] = await workerRecords(paseoHome);
+    const seed = seeds.find((candidate) => candidate.workerPid === firstAdopted!.pid)!;
     manager = await startRealWorkerManager({ paseoHome });
     const added = await manager.createTerminal({
       workspaceId: "ws-peer",
-      cwd: old.cwd,
+      cwd: seed.cwd,
       ...nodeTerminalCommand("setInterval(() => {}, 1000)"),
     });
-    const current = (await workerRecords(paseoHome)).find(
-      (record) => record.pid !== old.workerPid,
+    const records = await workerRecords(paseoHome);
+    const current = records.find((record) =>
+      record.terminals.some((terminal) => terminal.id === added.id),
     )!;
-    const deadId = target === "current" ? added.id : old.terminalId;
-    const healthyId = target === "current" ? old.terminalId : added.id;
+    const draining = records.find((record) => record.pid !== current.pid)!;
+    const drainingId = draining.terminals[0]!.id;
+    const deadId = target === "current" ? added.id : drainingId;
+    const healthyId = target === "current" ? drainingId : added.id;
     const healthy = manager.getTerminal(healthyId);
-    process.kill(target === "current" ? current.pid : old.workerPid, "SIGKILL");
+    expect(healthy).toBeDefined();
+    process.kill(target === "current" ? current.pid : draining.pid, "SIGKILL");
     await waitForCondition(() => !manager!.getTerminal(deadId), 10000);
     expect(manager.getTerminal(healthyId)).toBe(healthy);
-    expect(await manager.getTerminalState(healthyId)).not.toBeNull();
+    expect(await readReplay(manager, healthyId)).not.toBeNull();
     await manager.createTerminal({
       workspaceId: "ws-peer",
-      cwd: old.cwd,
+      cwd: seed.cwd,
       ...nodeTerminalCommand("setInterval(() => {}, 1000)"),
     });
     expect((await workerRecords(paseoHome)).length).toBeLessThanOrEqual(2);
@@ -418,31 +468,26 @@ it("creates a terminal through the worker and streams output", async () => {
     }),
   );
   const messages: string[] = [];
-  let snapshots = 0;
+  let readinessEvents = 0;
   const unsubscribe = session.subscribe((message) => {
     if (message.type === "output") {
       messages.push(message.data);
     }
-    if (message.type === "snapshot") {
-      snapshots += 1;
+    if (message.type === "snapshotReady") {
+      readinessEvents += 1;
     }
   });
   await new Promise((resolve) => setTimeout(resolve, 100));
-  const snapshotsBeforeOutput = snapshots;
+  expect(readinessEvents).toBe(1);
 
   session.send({ type: "input", data: "hello\r" });
 
-  await waitForCondition(
-    () =>
-      messages.join("").includes("worker-output:hello") ||
-      getVisibleText(session).includes("worker-output:hello"),
-    10000,
-  );
+  await waitForCondition(() => messages.join("").includes("worker-output:hello"), 10000);
   await new Promise((resolve) => setTimeout(resolve, 100));
   unsubscribe();
 
-  expect(messages.join("") + getVisibleText(session)).toContain("worker-output:hello");
-  expect(snapshots).toBe(snapshotsBeforeOutput);
+  expect(messages.join("")).toContain("worker-output:hello");
+  expect(readinessEvents).toBe(1);
 });
 
 it("delivers rapid small writes complete and in order through worker coalescing", async () => {
@@ -478,19 +523,19 @@ it("delivers rapid small writes complete and in order through worker coalescing"
   session.subscribe((message) => {
     if (message.type === "output") {
       events.push({ type: "output", data: message.data });
-    } else if (message.type === "snapshot" || message.type === "snapshotReady") {
+    } else if (message.type === "snapshotReady") {
       events.push({ type: message.type });
     }
   });
 
-  // Let the snapshot subscription settle, then trigger the burst.
+  // Let readiness settle, then trigger the burst.
   await new Promise((resolve) => setTimeout(resolve, 100));
   writeFileSync(burstGatePath, "go");
 
   const expected = Array.from({ length: 500 }, (_, index) => index);
   let received: number[] = [];
   await waitForCondition(async () => {
-    const snapshot = await manager!.getTerminalState(session.id);
+    const snapshot = await readReplay(manager!, session.id);
     received = snapshot ? readRenderedTokenIndexesFromState(snapshot.state) : [];
     return expected.every((value, index) => received[index] === value);
   }, 10000);
@@ -499,14 +544,13 @@ it("delivers rapid small writes complete and in order through worker coalescing"
 
   await waitForCondition(() => events.some((event) => event.type === "output"), 10000);
 
-  // No snapshot may land after output it should have preceded: every snapshot
-  // event must come before the first output event.
+  // Readiness precedes the ordered live stream.
   const firstOutputIndex = events.findIndex((event) => event.type === "output");
   expect(firstOutputIndex).toBeGreaterThanOrEqual(0);
-  const snapshotAfterOutput = events
+  const readinessAfterOutput = events
     .slice(firstOutputIndex + 1)
-    .find((event) => event.type === "snapshot" || event.type === "snapshotReady");
-  expect(snapshotAfterOutput).toBeUndefined();
+    .find((event) => event.type === "snapshotReady");
+  expect(readinessAfterOutput).toBeUndefined();
 });
 
 it("pulls fresh terminal state from the worker authority", async () => {
@@ -526,7 +570,7 @@ it("pulls fresh terminal state from the worker authority", async () => {
 
   let visibleText = "";
   await waitForCondition(async () => {
-    const snapshot = await manager!.getTerminalState(session.id);
+    const snapshot = await readReplay(manager!, session.id);
     visibleText = snapshot ? getVisibleTextFromState(snapshot.state) : "";
     return visibleText.includes("worker-state-ready");
   }, 10000);
@@ -539,7 +583,7 @@ it("pulls fresh terminal state from the worker authority", async () => {
 // preamble-caching contract is verified on Linux/macOS; the daemon's input-mode
 // handling runs identically on every platform once the escape is observed.
 it.skipIf(isPlatform("win32"))(
-  "caches the input-mode replay preamble from the worker after getTerminalState",
+  "caches input modes from worker output independently of replay capture",
   async () => {
     const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-preamble-"));
     temporaryDirs.push(cwd);
@@ -557,11 +601,10 @@ it.skipIf(isPlatform("win32"))(
       }),
     );
 
-    await waitForCondition(async () => {
-      const snapshot = await manager!.getTerminalState(session.id);
-      return snapshot !== null && session.getReplayPreamble() === "\x1b[=1;1u";
-    }, 10000);
-
+    await waitForCondition(() => session.getReplayPreamble() === "\x1b[=1;1u", 10000);
+    // Initial shared modes must be ready without a replay response repairing the cache.
+    expect(session.getReplayPreamble()).toBe("\x1b[=1;1u");
+    expect(await readReplay(manager!, session.id)).not.toBeNull();
     expect(session.getReplayPreamble()).toBe("\x1b[=1;1u");
   },
 );
@@ -583,7 +626,7 @@ it("refreshes cached terminal title after worker title changes", async () => {
 
   await waitForCondition(() => session.getTitle() === "Build Output", 10000);
 
-  expect(session.getState().title).toBe("Build Output");
+  expect(session.getTitle()).toBe("Build Output");
 });
 
 it("refreshes cached terminal size after worker resize", async () => {
@@ -593,12 +636,12 @@ it("refreshes cached terminal size after worker resize", async () => {
   const session = trackTerminal(await manager.createTerminal({ cwd, workspaceId: "ws-test" }));
 
   session.send({ type: "resize", rows: 10, cols: 40 });
-  const snapshot = await manager.getTerminalState(session.id);
+  const snapshot = await readReplay(manager, session.id);
 
   expect(snapshot?.state.rows).toBe(10);
   expect(snapshot?.state.cols).toBe(40);
-  expect(session.getState().rows).toBe(10);
-  expect(session.getState().cols).toBe(40);
+  expect(session.getSize().rows).toBe(10);
+  expect(session.getSize().cols).toBe(40);
 });
 
 it("captures terminal output from the worker authority", async () => {
@@ -796,58 +839,99 @@ async function recordedTerminalPids(paseoHome: string): Promise<Map<string, numb
   return pids;
 }
 
-it("never adopts a live worker's terminals after a kill cleanup it could not finish, even once the worker rewrites its record", async () => {
-  const paseoHome = createTemporaryHome();
-  const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-unfinished-kill-"));
-  temporaryDirs.push(cwd);
-  const first = await startRealWorkerManager({ paseoHome });
-  manager = first;
-  const ending = await first.createTerminal({
-    workspaceId: "ws-unfinished-kill",
-    cwd,
-    ...nodeTerminalCommand("setInterval(() => {}, 1000);"),
-  });
-  const remaining = await first.createTerminal({
-    workspaceId: "ws-unfinished-kill",
-    cwd,
-    ...nodeTerminalCommand("setInterval(() => {}, 1000);"),
-  });
-  const pids = await recordedTerminalPids(paseoHome);
-  const endingPid = pids.get(ending.id)!;
-  const remainingPid = pids.get(remaining.id)!;
+it.each([false, true])(
+  "never adopts a live worker's terminals after a kill cleanup it could not finish, even once the worker rewrites its record (held reader: %s)",
+  async (holdReader) => {
+    const paseoHome = createTemporaryHome();
+    const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-unfinished-kill-"));
+    temporaryDirs.push(cwd);
+    const first = await startRealWorkerManager({ paseoHome });
+    manager = first;
+    const exitRequestPath = join(cwd, "exit-requested");
+    const exitObservedPath = join(cwd, "exit-observed");
+    const ending = await first.createTerminal({
+      workspaceId: "ws-unfinished-kill",
+      cwd,
+      ...nodeTerminalCommand(`
+      const { existsSync, writeFileSync } = require("node:fs");
+      setInterval(() => {
+        if (existsSync(${JSON.stringify(exitRequestPath)})) {
+          writeFileSync(${JSON.stringify(exitObservedPath)}, "");
+          process.exit(0);
+        }
+      }, 25);
+    `),
+    });
+    const remaining = await first.createTerminal({
+      workspaceId: "ws-unfinished-kill",
+      cwd,
+      ...nodeTerminalCommand("setInterval(() => {}, 1000);"),
+    });
+    const pids = await recordedTerminalPids(paseoHome);
+    const endingPid = pids.get(ending.id)!;
+    const remainingPid = pids.get(remaining.id)!;
+    const [record] = await workerRecords(paseoHome);
 
-  // A kill cleanup whose process table read fails signals nothing and leaves the worker live.
-  const inspector = createTerminalWorkerProcessInspector();
-  await expect(
-    reapTerminalWorkers({
-      paseoHome,
-      inspector: { ...inspector, listProcesses: () => Promise.reject(new Error("ps timed out")) },
-    }),
-  ).rejects.toBeInstanceOf(TerminalCleanupNotConfirmedError);
-  await first.detach();
-  expect((await readUnconfirmedTerminalCleanup(paseoHome)).length).toBeGreaterThan(0);
+    // A kill cleanup whose process table read fails signals nothing and leaves the worker live.
+    const inspector = createTerminalWorkerProcessInspector();
+    await expect(
+      reapTerminalWorkers({
+        paseoHome,
+        inspector: {
+          ...inspector,
+          listProcesses: () => Promise.reject(new Error("ps timed out")),
+        },
+      }),
+    ).rejects.toBeInstanceOf(TerminalCleanupNotConfirmedError);
+    expect((await readUnconfirmedTerminalCleanup(paseoHome)).length).toBeGreaterThan(0);
 
-  // One terminal ends on its own: the live worker rewrites its record from memory.
-  process.kill(endingPid, "SIGKILL");
-  await waitForCondition(
-    async () => !(await recordedTerminalPids(paseoHome)).has(ending.id),
-    10000,
-  );
-  expect((await readUnconfirmedTerminalCleanup(paseoHome)).length).toBeGreaterThan(0);
+    // Keep an ordinary reader open until the worker delivers the terminal exit.
+    // Windows cannot replace the record while this handle is open. The exit must
+    // still reach the controller, and publication must recover after release.
+    const recordFd = holdReader
+      ? openSync(terminalWorkerRecordPath(paseoHome, record!.pid), "r")
+      : null;
+    try {
+      writeFileSync(exitRequestPath, "");
+      await waitForCondition(() => first.getTerminal(ending.id) === undefined, 10000);
+      expect(existsSync(exitObservedPath)).toBe(true);
+      expect(isProcessAlive(endingPid)).toBe(false);
+    } finally {
+      if (recordFd !== null) closeSync(recordFd);
+    }
+    await waitForCondition(
+      async () => !(await recordedTerminalPids(paseoHome)).has(ending.id),
+      10000,
+    );
+    expect((await readUnconfirmedTerminalCleanup(paseoHome)).length).toBeGreaterThan(0);
 
-  manager = await startRealWorkerManager({ paseoHome });
+    await first.detach();
+    manager = await startRealWorkerManager({ paseoHome });
 
-  expect(manager.getTerminal(remaining.id)).toBeUndefined();
-  expect(await manager.getTerminals(cwd)).toEqual([]);
-  await waitForCondition(() => !isProcessAlive(remainingPid), 10000);
-  expect(await readUnconfirmedTerminalCleanup(paseoHome)).toEqual([]);
-});
+    expect(manager.getTerminal(remaining.id)).toBeUndefined();
+    expect(await manager.getTerminals(cwd)).toEqual([]);
+    expect(await readUnconfirmedTerminalCleanup(paseoHome)).toEqual([]);
+    const original = record!.terminals.find((entry) => entry.id === remaining.id)!;
+    // Startup can launch a new worker after cleanup and Windows can reuse the old PID.
+    // Require the original process to be gone, not the numeric PID to remain unused.
+    await expect
+      .poll(
+        async () =>
+          !isProcessAlive(remainingPid) ||
+          classifyTerminalProgramProcess(original, await inspector.inspect(remainingPid)).status ===
+            "unrelated",
+        { timeout: 10000 },
+      )
+      .toBe(true);
+  },
+);
 
 // The worker's own `ps`, delayed: a program that exits while the worker reads its birth time
 // lands its exit in the middle of creation. Only the worker launched while this PATH is set sees
 // the shim; the PATH is restored as soon as it is up.
 async function startWorkerWithSlowProcessTable(
   delaySeconds: number,
+  options: { paseoHome?: string; requestTimeoutMs?: number } = {},
 ): Promise<DaemonTerminalManager> {
   const realPs = (process.env.PATH ?? "")
     .split(delimiter)
@@ -861,7 +945,7 @@ async function startWorkerWithSlowProcessTable(
   const originalPath = process.env.PATH;
   process.env.PATH = `${shimDir}${delimiter}${originalPath ?? ""}`;
   try {
-    return await startRealWorkerManager();
+    return await startRealWorkerManager(options);
   } finally {
     process.env.PATH = originalPath;
   }
@@ -885,7 +969,7 @@ async function expectCompletedShortCommand(
   expect(session.getExitInfo()?.exitCode).toBe(0);
   expect(terminalManager.getTerminal(session.id)).toBeUndefined();
   expect(await terminalManager.getTerminals(cwd)).toEqual([]);
-  expect(await terminalManager.getTerminalState(session.id)).toBeNull();
+  expect(await readReplay(terminalManager, session.id)).toBeNull();
 }
 
 it.skipIf(isPlatform("win32"))(
@@ -1562,63 +1646,47 @@ async function leaveWorkerWithTerminal(
   };
 }
 
-it("drains a worker one protocol older: it keeps its terminal, new ones open in a second worker, and it exits after its last", async () => {
-  const paseoHome = createTemporaryHome();
-  const old = await leaveWorkerWithTerminal(paseoHome, 0);
+it.each([1, 4])(
+  "hard cuts unreleased worker protocol %s, closing its terminals",
+  async (version) => {
+    const paseoHome = createTemporaryHome();
+    const old = await leaveWorkerWithTerminal(paseoHome, version);
+    const [record] = await workerRecords(paseoHome);
+    const program = record!.terminals.find((entry) => entry.id === old.terminalId)!;
+    const inspector = createTerminalWorkerProcessInspector();
 
-  manager = await startRealWorkerManager({ paseoHome });
+    manager = await startRealWorkerManager({ paseoHome });
 
-  expect(manager.getTerminal(old.terminalId)).toBeDefined();
-  const workers = await workerRecords(paseoHome);
-  expect(workers).toHaveLength(2);
-  const current = workers.find((record) => record.pid !== old.workerPid)!;
-  expect(current.protocolVersion).toBe(1);
-  const added = await manager.createTerminal({
-    workspaceId: "ws-protocol",
-    cwd: old.cwd,
-    ...nodeTerminalCommand("setInterval(() => {}, 1000);"),
-  });
-  trackTerminal(added);
-  const currentTerminals = (
-    await readTerminalWorkerRecord(join(terminalWorkerDirectory(paseoHome), `${current.pid}.json`))
-  ).terminals.map((entry) => entry.id);
-  expect(currentTerminals).toEqual([added.id]);
-  expect((await manager.getTerminals(old.cwd)).map((session) => session.id).sort()).toEqual(
-    [old.terminalId, added.id].sort(),
-  );
-
-  await manager.killTerminalAndWait(old.terminalId);
-
-  await waitForCondition(() => !isProcessAlive(old.workerPid), 10000);
-  expect((await workerRecords(paseoHome)).map((record) => record.pid)).toEqual([current.pid]);
-  expect(manager.getTerminal(added.id)).toBeDefined();
-});
-
-it("shuts down a worker two protocol versions old, closing its terminals", async () => {
-  const paseoHome = createTemporaryHome();
-  const old = await leaveWorkerWithTerminal(paseoHome, -1);
-
-  manager = await startRealWorkerManager({ paseoHome });
-
-  await waitForCondition(
-    () => !isProcessAlive(old.workerPid) && !isProcessAlive(old.programPid),
-    10000,
-  );
-  expect(manager.getTerminal(old.terminalId)).toBeUndefined();
-  const workers = await workerRecords(paseoHome);
-  expect(workers).toHaveLength(1);
-  expect(workers[0]!.protocolVersion).toBe(1);
-});
+    expect(await readUnconfirmedTerminalCleanup(paseoHome)).toEqual([]);
+    // Startup launches a replacement worker after cleanup. Either old PID may already
+    // belong to another process, so verify that the recorded birth identities are gone.
+    for (const original of [{ pid: record!.pid, ...record!.identity }, program]) {
+      await expect
+        .poll(
+          async () =>
+            !isProcessAlive(original.pid) ||
+            classifyTerminalProgramProcess(original, await inspector.inspect(original.pid))
+              .status === "unrelated",
+          { timeout: 10000 },
+        )
+        .toBe(true);
+    }
+    expect(manager.getTerminal(old.terminalId)).toBeUndefined();
+    const workers = await workerRecords(paseoHome);
+    expect(workers).toHaveLength(1);
+    expect(workers[0]!.protocolVersion).toBe(5);
+  },
+);
 
 it("leaves a worker from a newer Paseo running, reports it incompatible, and closes it on a kill stop", async () => {
   const paseoHome = createTemporaryHome();
-  const newer = await leaveWorkerWithTerminal(paseoHome, 2);
+  const newer = await leaveWorkerWithTerminal(paseoHome, 6);
 
   manager = await startRealWorkerManager({ paseoHome });
 
   const unavailable = manager.getUnavailableError?.();
   expect(unavailable).toBeInstanceOf(TerminalWorkerIncompatibleError);
-  expect(unavailable?.message).toContain("worker protocol 2");
+  expect(unavailable?.message).toContain("worker protocol 6");
   await expect(manager.getTerminals(newer.cwd)).rejects.toBeInstanceOf(
     TerminalWorkerIncompatibleError,
   );
@@ -1725,47 +1793,102 @@ it.skipIf(isPlatform("win32"))(
   },
 );
 
-it("opens new terminals in a new worker once one of two draining workers exits", async () => {
-  const paseoHome = createTemporaryHome();
-  const first = await launchDetachedWorkerWithTerminal(paseoHome, 0);
-  const second = await launchDetachedWorkerWithTerminal(paseoHome, 0);
-
-  manager = await startRealWorkerManager({ paseoHome });
-
-  expect(await liveWorkerPids(paseoHome)).toEqual([first.workerPid, second.workerPid].sort());
-  await expect(
-    manager.createTerminal({ workspaceId: "ws-detached", cwd: first.cwd }),
-  ).rejects.toBeInstanceOf(NoTerminalWorkerAvailableError);
-
-  await manager.killTerminalAndWait(first.terminalId);
-  await waitForCondition(() => !isProcessAlive(first.workerPid), 10000);
-
-  // Concurrent creates start one worker between them.
-  const created = await Promise.all(
-    [0, 1].map(() =>
-      manager!.createTerminal({
-        workspaceId: "ws-detached",
-        cwd: first.cwd,
-        ...nodeTerminalCommand("setInterval(() => {}, 1000);"),
-      }),
-    ),
+it("replays bounded ANSI chunks independently of live output and reconstructs the revision cut", async () => {
+  const cwd = createTemporaryHome();
+  const finishBefore = join(cwd, "finish-before");
+  manager = await startRealWorkerManager();
+  const session = trackTerminal(
+    await manager.createTerminal({
+      cwd,
+      workspaceId: "ws-replay",
+      rows: 8,
+      cols: 120,
+      ...nodeTerminalCommand(`
+      for (let i = 0; i < 800; i++) process.stdout.write("\\x1b[31m" + String(i).padStart(4, "0") + ":" + "x".repeat(100) + "\\x1b[0m\\r\\n");
+      require("node:readline").createInterface({ input: process.stdin }).on("line", line => {
+        if (line !== "before") { process.stdout.write("LIVE-AFTER-REPLAY\\r\\n"); return; }
+        process.stdout.write("PRE-CUT");
+        const finish = setInterval(() => {
+          if (!require("node:fs").existsSync(${JSON.stringify(finishBefore)})) return;
+          clearInterval(finish);
+          process.stdout.write("\\r\\n");
+        }, 5);
+      });
+      setInterval(() => {}, 1000);
+    `),
+    }),
   );
-  created.forEach(trackTerminal);
-  const workers = await workerRecords(paseoHome);
-  expect(workers.map((record) => record.pid).sort()).toEqual(await liveWorkerPids(paseoHome));
-  expect(workers).toHaveLength(2);
-  const started = workers.find((record) => record.pid !== second.workerPid)!;
-  expect(started.protocolVersion).toBe(1);
-  expect(
-    (
-      await readTerminalWorkerRecord(
-        join(terminalWorkerDirectory(paseoHome), `${started.pid}.json`),
-      )
-    ).terminals
-      .map((entry) => entry.id)
-      .sort(),
-  ).toEqual(created.map((session) => session.id).sort());
-  expect(manager.getTerminal(second.terminalId)).toBeDefined();
+  await waitForCondition(
+    async () =>
+      (await manager!.captureTerminal(session.id)).lines.some((line) => line.startsWith("0799:")),
+    10000,
+  );
+  const events: string[] = [];
+  const replayEvents: string[] = [];
+  const liveOutputs: Array<{ data: string; revision?: number }> = [];
+  const chunks: Uint8Array[] = [];
+  let live = "";
+  const unsubscribe = session.subscribe((event) => {
+    if (event.type === "output") {
+      events.push("live");
+      liveOutputs.push(event);
+      live += event.data;
+    }
+  });
+  session.send({ type: "input", data: "before\r" });
+  await waitForCondition(() => live.includes("PRE-CUT"), 10000);
+  // A PTY may deliver the marker and its trailing newline separately. Finish
+  // that output before replay, so the two captures must describe the same cut.
+  writeFileSync(finishBefore, "");
+  await waitForCondition(async () => {
+    const { lines } = await manager!.captureTerminal(session.id);
+    return lines.at(-2) === "PRE-CUT" && lines.at(-1) === "";
+  }, 10000);
+  const expected = await manager.captureTerminal(session.id);
+  const metadata = await manager.replayTerminal(session.id, undefined, (event) => {
+    events.push(event.type);
+    replayEvents.push(event.type);
+    if (event.type === "begin") session.send({ type: "input", data: "go\r" });
+    if (event.type === "data") chunks.push(event.data);
+  });
+  await waitForCondition(() => live.includes("LIVE-AFTER-REPLAY"), 10000);
+  unsubscribe();
+  // Existing live observers are independent of replay. Pre-cut output may also be
+  // flushed by capture before begin; only the replay events have begin/data/end order.
+  expect(events[0]).toBe("live");
+  expect(replayEvents[0]).toBe("begin");
+  expect(replayEvents.at(-1)).toBe("end");
+  expect(replayEvents.slice(1, -1)).toEqual(chunks.map(() => "data"));
+  const beforeCut = liveOutputs.filter((output) => output.data.includes("PRE-CUT"));
+  const afterCut = liveOutputs.filter((output) => output.data.includes("LIVE-AFTER-REPLAY"));
+  expect(beforeCut).toHaveLength(1);
+  expect(afterCut).toHaveLength(1);
+  expect(beforeCut[0]!.revision).toBeDefined();
+  expect(beforeCut[0]!.revision).toBeLessThanOrEqual(metadata!.revision);
+  expect(afterCut[0]!.revision).toBeGreaterThan(metadata!.revision);
+  expect(live.match(/LIVE-AFTER-REPLAY/g)).toHaveLength(1);
+  expect(chunks.length).toBeGreaterThan(1);
+  expect(chunks.every((chunk) => chunk.byteLength <= 64 * 1024)).toBe(true);
+  expect(metadata?.rows).toBe(8);
+  expect(metadata?.cols).toBe(120);
+  const terminal = new xterm.Terminal({
+    rows: 8,
+    cols: 120,
+    scrollback: 1000,
+    allowProposedApi: true,
+  });
+  try {
+    await new Promise<void>((resolve) => terminal.write(Buffer.concat(chunks), resolve));
+    const buffer = terminal.buffer.active;
+    expect(
+      Array.from({ length: buffer.length }, (_, i) => buffer.getLine(i)!.translateToString(true)),
+    ).toEqual(expected.lines);
+    expect(expected.lines.filter((line) => line.includes("PRE-CUT"))).toHaveLength(1);
+    expect(expected.lines.some((line) => line.includes("LIVE-AFTER-REPLAY"))).toBe(false);
+    expect(buffer.getLine(0)!.getCell(0)!.getFgColor()).toBe(1);
+  } finally {
+    terminal.dispose();
+  }
 });
 
 it("reattaches to a live terminal after the daemon-side manager disconnects", async () => {
@@ -1814,14 +1937,14 @@ it("reattaches to a live terminal after the daemon-side manager disconnects", as
 
     let beforeRestart = "";
     await waitForCondition(async () => {
-      const snapshot = await firstManager.getTerminalState(firstSession.id);
+      const snapshot = await readReplay(firstManager, firstSession.id);
       beforeRestart = snapshot ? getRenderedTextFromState(snapshot.state) : "";
       return beforeRestart.includes("READY:") && existsSync(tokenPath);
     }, 10000);
     const pid = beforeRestart.match(/READY:(\d+)/)?.[1];
     expect(pid).toEqual(expect.stringMatching(/^\d+$/));
     expect(firstManager.setTerminalTitle(firstSession.id, "Persistent shell")).toBe(true);
-    await firstManager.getTerminalState(firstSession.id);
+    await readReplay(firstManager, firstSession.id);
 
     await firstManager.detach();
     cleanupManager = null;
@@ -1842,14 +1965,14 @@ it("reattaches to a live terminal after the daemon-side manager disconnects", as
       secondManager.validateTerminalActivityToken(firstSession.id, readFileSync(tokenPath, "utf8")),
     ).toBe("valid");
 
-    const restoredSnapshot = await secondManager.getTerminalState(firstSession.id);
+    const restoredSnapshot = await readReplay(secondManager, firstSession.id);
     const restoredText = restoredSnapshot ? getRenderedTextFromState(restoredSnapshot.state) : "";
     expect(restoredText).toContain(`READY:${pid}`);
     expect(restoredText).toContain(`DURING:${pid}`);
 
     restored?.send({ type: "input", data: "a\r" });
     await waitForCondition(async () => {
-      const snapshot = await secondManager.getTerminalState(firstSession.id);
+      const snapshot = await readReplay(secondManager, firstSession.id);
       return snapshot ? getRenderedTextFromState(snapshot.state).includes(`AFTER:${pid}`) : false;
     }, 10000);
   } finally {
@@ -1888,7 +2011,7 @@ it("keeps the existing manager attached while a replacement manager starts", asy
     const secondManager = await startRealWorkerManager({ paseoHome });
     cleanupManager = secondManager;
     expect(secondManager.getTerminal(firstSession.id)).toBeDefined();
-    await expect(firstManager.getTerminalState(firstSession.id)).resolves.not.toBeNull();
+    await expect(readReplay(firstManager, firstSession.id)).resolves.not.toBeNull();
 
     const tokenPath = join(root, "second-controller-token");
     const [firstCreated, secondCreated] = await Promise.all([
@@ -1919,7 +2042,7 @@ it("keeps the existing manager attached while a replacement manager starts", asy
 
     await secondManager.detach();
     cleanupManager = firstManager;
-    await expect(firstManager.getTerminalState(firstSession.id)).resolves.not.toBeNull();
+    await expect(readReplay(firstManager, firstSession.id)).resolves.not.toBeNull();
 
     firstSession.send({ type: "input", data: "a\r" });
     await waitForCondition(() => existsSync(afterPath), 10000);
@@ -2053,7 +2176,7 @@ it("reattaches to a live terminal after the daemon process tree is force-stopped
   }
 }, 30000);
 
-it("reattaches a terminal whose serialized headless state exceeds 16 MiB", async () => {
+it("reattaches a large terminal without transferring its full cell grid", async () => {
   const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-large-state-"));
   const cwd = join(root, "workspace");
   const paseoHome = join(root, ".paseo");
@@ -2062,8 +2185,6 @@ it("reattaches a terminal whose serialized headless state exceeds 16 MiB", async
 
   const rows = 384;
   const cols = 512;
-  const minimumStateBytes = 16 * 1024 * 1024;
-  const maximumStateBytes = 64 * 1024 * 1024;
   let cleanupManager: DaemonTerminalManager | null = null;
   let terminalId: string | null = null;
   try {
@@ -2082,15 +2203,12 @@ it("reattaches a terminal whose serialized headless state exceeds 16 MiB", async
     terminalId = firstSession.id;
 
     firstSession.send({ type: "resize", rows, cols });
-    const beforeDetach = await firstManager.getTerminalState(firstSession.id);
+    const beforeDetach = await readReplay(firstManager, firstSession.id);
     if (!beforeDetach) {
       throw new Error("Persistent terminal state was unavailable before detach");
     }
-    const beforeDetachBytes = Buffer.byteLength(JSON.stringify(beforeDetach.state));
     expect(beforeDetach.state.rows).toBe(rows);
     expect(beforeDetach.state.cols).toBe(cols);
-    expect(beforeDetachBytes).toBeGreaterThan(minimumStateBytes);
-    expect(beforeDetachBytes).toBeLessThan(maximumStateBytes);
 
     await firstManager.detach();
     cleanupManager = null;
@@ -2104,12 +2222,10 @@ it("reattaches a terminal whose serialized headless state exceeds 16 MiB", async
     if (!restored) {
       throw new Error("Persistent terminal was not restored after reattach");
     }
-    const restoredState = restored.getState();
-    const restoredBytes = Buffer.byteLength(JSON.stringify(restoredState));
+    const restoredState = (await readReplay(secondManager, restored.id))!.state;
     expect(restoredState.rows).toBe(rows);
     expect(restoredState.cols).toBe(cols);
-    expect(restoredBytes).toBeGreaterThan(minimumStateBytes);
-    expect(restoredBytes).toBeLessThan(maximumStateBytes);
+    expect(restoredState).toEqual(beforeDetach.state);
   } finally {
     await cleanupPersistentTerminalWorker({
       root,
@@ -2187,12 +2303,16 @@ it("adopts a legacy fork worker without replacing its conversation PTY", async (
     workspaceId: "ws-legacy",
     linkedAgentId: "legacy-agent",
     title: "Legacy conversation",
-    ...nodeTerminalCommand("setInterval(() => {}, 1000)"),
+    ...nodeTerminalCommand('process.stdout.write("LEGACY 界\\r\\n"); setInterval(() => {}, 1000)'),
   });
+  await waitForCondition(
+    async () => (await local.captureTerminal(terminal.id)).lines.join("").includes("LEGACY 界"),
+    5000,
+  );
   const runtime = resolvePersistentTerminalWorkerRuntime(paseoHome);
   const server = await listenPersistentTerminalWorkerServer<
-    TerminalWorkerRequest | { type: "attach"; requestId: string },
-    TerminalWorkerToParentMessage
+    import("./legacy-worker-connection.js").LegacyRequest,
+    import("./legacy-worker-connection.js").LegacyMessage
   >({
     runtime,
     singleClient: false,
@@ -2214,7 +2334,12 @@ it("adopts a legacy fork worker without replacing its conversation PTY", async (
                   activity: terminal.getActivity(),
                   activityToken: local.getTerminalActivityToken(terminal.id) ?? undefined,
                 },
-                state: terminal.getState(),
+                state: await readTerminalState(terminal),
+              });
+              connection.transport.send({
+                type: "terminalMessage",
+                terminalId: terminal.id,
+                message: { type: "snapshot", state: await readTerminalState(terminal) },
               });
               break;
             case "getTerminalState":
@@ -2222,7 +2347,10 @@ it("adopts a legacy fork worker without replacing its conversation PTY", async (
                 type: "response",
                 requestId: request.requestId,
                 ok: true,
-                result: terminal.getStateSnapshot(),
+                result: {
+                  state: await readTerminalState(terminal),
+                  revision: terminal.serializeReplay().metadata.revision,
+                },
               });
               return;
             case "killTerminalAndWait":
@@ -2280,11 +2408,12 @@ it("adopts a legacy fork worker without replacing its conversation PTY", async (
     writeFileSync(runtime.tokenFile, runtime.authToken);
     await replacement.detach();
     replacement = null;
-    await expect(manager.getTerminalState(terminal.id)).resolves.not.toBeNull();
+    const legacyReplay = await readReplay(manager, terminal.id);
+    expect(getRenderedTextFromState(legacyReplay!.state)).toContain("LEGACY 界");
     await manager.killTerminalAndWait(terminal.id);
     await waitForCondition(() => server.connectionCount === 0, 5000);
     expect(manager.getTerminal(terminal.id)).toBeUndefined();
-    await expect(manager.getTerminalState(fresh.id)).resolves.not.toBeNull();
+    await expect(readReplay(manager, fresh.id)).resolves.not.toBeNull();
     await manager.closeTerminals();
     manager = null;
     expect(terminal.getExitInfo()).not.toBeNull();
@@ -2296,3 +2425,816 @@ it("adopts a legacy fork worker without replacing its conversation PTY", async (
     await server.close();
   }
 }, 30000);
+it("completes a replay larger than the socket budget while a sibling stays usable", async () => {
+  const paseoHome = createTemporaryHome();
+  const overflowProgress = join(paseoHome, "overflow-progress");
+  manager = await startRealWorkerManager({ paseoHome });
+  const terminal = trackTerminal(
+    await manager.createTerminal({
+      cwd: paseoHome,
+      workspaceId: "ws-wide",
+      rows: 4,
+      cols: 1024,
+      ...nodeTerminalCommand(`
+      const row = Array.from({length: 1000}, (_, i) => "\\x1b[" + (31 + i % 2) + "mX").join("");
+      for (let i = 0; i < 900; i++) process.stdout.write(row + "\\r\\n");
+      // Seeing the marker must mean no trailing newline can still add history.
+      process.stdout.write("READY-WIDE");
+      process.stdin.on("data", data => { if (data.toString().includes("small")) { process.stdout.write("SAME-TERMINAL-LIVE\\r\\n"); return; } process.stdout.write("q".repeat(8 * 1024 * 1024) + "\\r\\nRECOVERED-LIVE\\r\\n", () => require("node:fs").writeFileSync(${JSON.stringify(overflowProgress)}, "done")); });
+      setInterval(() => {}, 1000);
+    `),
+    }),
+  );
+  const siblingProgress = join(paseoHome, "sibling-progress");
+  const sibling = trackTerminal(
+    await manager.createTerminal({
+      cwd: paseoHome,
+      workspaceId: "ws-wide",
+      ...nodeTerminalCommand(`
+        let count = 0;
+        process.stdin.on("data", () => {
+          count++;
+          process.stdout.write((count > 1 ? "z".repeat(1024 * 1024) : "") + "SIBLING-ALIVE\\r\\n", () => require("node:fs").writeFileSync(${JSON.stringify(siblingProgress)}, String(count)));
+        });
+        setInterval(() => {}, 1000);
+      `),
+    }),
+  );
+  await waitForCondition(
+    async () =>
+      (await manager!.captureTerminal(terminal.id)).lines.some((line) =>
+        line.includes("READY-WIDE"),
+      ),
+    20000,
+  );
+  const seen: string[] = [];
+  const unsubscribe = sibling.subscribe((event) => {
+    if (event.type === "output") seen.push(event.data);
+  });
+  let bytes = 0;
+  const metadata = await manager.replayTerminal(terminal.id, undefined, (event) => {
+    if (event.type === "data") bytes += event.data.byteLength;
+    if (event.type === "begin") {
+      sibling.send({ type: "input", data: "go\r" });
+    }
+  });
+  expect(bytes).toBeGreaterThan(4 * 1024 * 1024);
+  expect(metadata?.cols).toBe(1024);
+  await waitForCondition(() => seen.join("").includes("SIBLING-ALIVE"), 10000);
+  unsubscribe();
+  expect(manager.getTerminal(sibling.id)).toBe(sibling);
+  const truncated = await manager.replayTerminal(terminal.id, { scrollbackLines: 200 }, () => {});
+  expect(metadata!.retainedHistoryLines).toBeGreaterThan(200);
+  expect(truncated!.retainedHistoryLines).toBe(metadata!.retainedHistoryLines);
+  const concurrent = await Promise.all(
+    [0, 1].map(() => manager!.replayTerminal(terminal.id, { scrollbackLines: 200 }, () => {})),
+  );
+  expect(concurrent.map((replay) => replay!.retainedHistoryLines)).toEqual([
+    metadata!.retainedHistoryLines,
+    metadata!.retainedHistoryLines,
+  ]);
+  await manager.detach();
+  const [record] = await workerRecords(paseoHome);
+  const socket = createConnection(record!.socketPath);
+  let began = false;
+  let ended = false;
+  let completed = false;
+  let resumedBytes = 0;
+  let cancelledReplayBegan = false;
+  let overlappingReplayEnded = false;
+  let existingLiveOutput = "";
+  const replayOrder: string[] = [];
+  const framed = attachFramedSocket(socket, (value) => {
+    const message = value as TerminalWorkerToParentMessage | { type: "helloAck" };
+    if (
+      message.type === "terminalMessage" &&
+      message.terminalId === terminal.id &&
+      message.message.type === "output"
+    ) {
+      existingLiveOutput += message.message.data;
+      replayOrder.push("live");
+    }
+    if (message.type === "helloAck") {
+      framed.send({ type: "replayTerminal", terminalId: terminal.id, requestId: "stalled-replay" });
+    } else if (message.type === "terminalReplay") {
+      if (message.requestId === "cancelled-replay") {
+        if (message.event.type === "end") overlappingReplayEnded = true;
+        if (message.event.type === "begin") {
+          cancelledReplayBegan = true;
+          socket.pause();
+        }
+        return;
+      }
+      if (message.event.type === "begin") {
+        began = true;
+        socket.pause();
+      }
+      if (message.event.type === "data") resumedBytes += message.event.data.byteLength;
+      if (message.event.type === "end") {
+        ended = true;
+        replayOrder.push("end");
+      }
+    } else if (message.type === "response" && message.requestId === "stalled-replay")
+      completed = message.ok;
+  });
+  try {
+    framed.send({ type: "hello", secret: record!.secret, protocolVersion: 5 });
+    await waitForCondition(() => began, 10000);
+    framed.send({
+      type: "send",
+      terminalId: terminal.id,
+      requestId: "same-terminal-input",
+      message: { type: "input", data: "small\r" },
+    });
+    framed.send({
+      type: "send",
+      terminalId: sibling.id,
+      requestId: "sibling-input",
+      message: { type: "input", data: "again\r" },
+    });
+    await waitForCondition(
+      () => existsSync(siblingProgress) && readFileSync(siblingProgress, "utf8") === "2",
+      10000,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(completed).toBe(false);
+    expect(socket.destroyed).toBe(false);
+    socket.resume();
+    await waitForCondition(() => completed, 10000);
+    expect(ended).toBe(true);
+    expect(resumedBytes).toBe(bytes);
+    await waitForCondition(() => existingLiveOutput.includes("SAME-TERMINAL-LIVE"), 10000);
+    expect(existingLiveOutput.match(/SAME-TERMINAL-LIVE/g)).toHaveLength(1);
+    expect(replayOrder.indexOf("live")).toBeLessThan(replayOrder.indexOf("end"));
+    framed.send({ type: "replayTerminal", terminalId: terminal.id, requestId: "cancelled-replay" });
+    await waitForCondition(() => cancelledReplayBegan, 10000);
+    // A new daemon must not cancel an already-attached daemon's replay.
+    manager = await startRealWorkerManager({ paseoHome });
+    socket.resume();
+    await waitForCondition(() => overlappingReplayEnded, 10000);
+    expect(socket.destroyed).toBe(false);
+    expect((await readReplay(manager, terminal.id))?.state.cols).toBe(1024);
+  } finally {
+    socket.destroy();
+  }
+  expect(
+    (await manager!.captureTerminal(terminal.id)).lines.some((line) => line.includes("READY-WIDE")),
+  ).toBe(true);
+  const exitingReplay = await manager.replayTerminal(
+    terminal.id,
+    { scrollbackLines: 200 },
+    (event) => {
+      if (event.type === "begin") manager!.killTerminal(terminal.id);
+    },
+  );
+  expect(exitingReplay!.cols).toBe(1024);
+  await waitForCondition(() => manager!.getTerminal(terminal.id) === undefined, 10000);
+  expect(manager.getTerminal(sibling.id)?.id).toBe(sibling.id);
+}, 60000);
+
+function terminalViewers(
+  terminalManager: DaemonTerminalManager,
+  terminalId: string,
+  chunked = true,
+  getClientBufferedAmount?: (source: object) => number | null,
+) {
+  const frames: Array<{ source: object; frame: TerminalStreamFrame }> = [];
+  const messages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+  let blockedSource: object | null = null;
+  let started = false;
+  let finish!: (error?: Error) => void;
+  const block = new Promise<void>((resolve, reject) => {
+    finish = (error) => (error ? reject(error) : resolve());
+  });
+  const delivery = new SessionDelivery(
+    (source, message) => {
+      messages.push({ source, message });
+    },
+    async (source, bytes) => {
+      const frame = decodeTerminalStreamFrame(bytes)!;
+      frames.push({ source, frame });
+      if (
+        source === blockedSource &&
+        frame.opcode === (chunked ? TerminalStreamOpcode.ReplayBegin : TerminalStreamOpcode.Restore)
+      ) {
+        started = true;
+        await block;
+      }
+    },
+  );
+  const controller = new TerminalSessionController({
+    terminalManager,
+    emit: (message) => {
+      delivery.reply(message);
+    },
+    hasBinaryChannel: () => true,
+    supportsChunkedReplay: () => chunked,
+    getClientBufferedAmount,
+    isPathWithinRoot: () => true,
+    sessionLogger: pino({ level: "silent" }),
+  });
+  return {
+    frames,
+    messages,
+    delivery,
+    controller,
+    block(source: object) {
+      blockedSource = source;
+    },
+    started: () => started,
+    finish,
+    async attach(
+      source: object,
+      requestId: string,
+      restore: NonNullable<SubscribeTerminalRequest["restore"]> = {
+        mode: "visible-snapshot",
+        scrollbackLines: 1000,
+      },
+    ) {
+      delivery.attach(source, true);
+      const request = {
+        type: "subscribe_terminal_request" as const,
+        terminalId,
+        requestId,
+        restore,
+      };
+      await delivery.request(source, request, () => controller.dispatch(request, delivery));
+    },
+    text(source: object) {
+      return frames
+        .filter((row) => row.source === source && row.frame.opcode === TerminalStreamOpcode.Output)
+        .map((row) => Buffer.from(row.frame.payload).toString("utf8"))
+        .join("");
+    },
+    ended(source: object) {
+      return messages.filter(
+        (row) => row.source === source && row.message.type === "terminal_stream_exit",
+      );
+    },
+    replayed(source: object) {
+      return frames.some(
+        (row) => row.source === source && row.frame.opcode === TerminalStreamOpcode.ReplayEnd,
+      );
+    },
+  };
+}
+
+it("isolates a failed app transport while another viewer of the same terminal stays live", async () => {
+  manager = await startRealWorkerManager();
+  const session = trackTerminal(
+    await manager.createTerminal({
+      cwd: createTemporaryHome(),
+      workspaceId: "two-viewers",
+      ...nodeTerminalCommand(
+        'process.stdout.write("READY\\r\\n"); process.stdin.on("data", data => process.stdout.write("ECHO:" + data)); setInterval(() => {}, 1000);',
+      ),
+    }),
+  );
+  await waitForCondition(
+    async () =>
+      (await manager!.captureTerminal(session.id)).lines.some((line) => line.includes("READY")),
+    10000,
+  );
+  const viewers = terminalViewers(manager, session.id);
+  const desktop = {},
+    phone = {},
+    fresh = {};
+  try {
+    await viewers.attach(desktop, "desktop");
+    await waitForCondition(() => viewers.replayed(desktop), 10000);
+    await expect(
+      manager.replayTerminal(session.id, undefined, () => {
+        throw new Error("Consumer cancelled replay");
+      }),
+    ).rejects.toThrow("Consumer cancelled replay");
+    viewers.block(phone);
+    await viewers.attach(phone, "phone");
+    await waitForCondition(viewers.started, 10000);
+    session.send({ type: "input", data: "BEFORE-FAILURE\r" });
+    await waitForCondition(() => viewers.text(desktop).includes("ECHO:BEFORE-FAILURE"), 1500);
+    expect(viewers.ended(desktop)).toHaveLength(0);
+    expect(viewers.ended(phone)).toHaveLength(0);
+    viewers.finish(new Error("Phone socket closed"));
+    await viewers.delivery.detach(phone);
+    expect(viewers.ended(desktop)).toHaveLength(0);
+    session.send({ type: "input", data: "AFTER-FAILURE\r" });
+    await waitForCondition(() => viewers.text(desktop).includes("ECHO:AFTER-FAILURE"), 10000);
+    expect(viewers.ended(desktop)).toHaveLength(0);
+    await viewers.attach(fresh, "fresh");
+    await waitForCondition(() => viewers.replayed(fresh), 10000);
+    expect(manager.getTerminal(session.id)).toBe(session);
+  } finally {
+    viewers.finish();
+    await viewers.delivery.close();
+  }
+}, 20000);
+
+it("keeps concurrent viewer replays and live output ordered behind slow app delivery", async () => {
+  manager = await startRealWorkerManager();
+  const session = trackTerminal(
+    await manager.createTerminal({
+      cwd: createTemporaryHome(),
+      workspaceId: "concurrent-delivery",
+      ...nodeTerminalCommand(
+        'process.stdout.write("READY\\r\\n"); process.stdin.on("data", data => process.stdout.write("ECHO:" + data)); setInterval(() => {}, 1000);',
+      ),
+    }),
+  );
+  await waitForCondition(
+    async () => (await manager!.captureTerminal(session.id)).lines.join("").includes("READY"),
+    10000,
+  );
+  const viewers = terminalViewers(manager, session.id);
+  const desktop = {},
+    phone = {},
+    concurrent = {};
+  try {
+    await viewers.attach(desktop, "desktop");
+    await waitForCondition(() => viewers.replayed(desktop), 10000);
+    viewers.block(phone);
+    await viewers.attach(phone, "phone");
+    await waitForCondition(viewers.started, 10000);
+    await viewers.attach(concurrent, "concurrent");
+    await waitForCondition(() => viewers.replayed(concurrent) && viewers.replayed(phone), 10000);
+    session.send({ type: "input", data: "DURING-DELIVERY\r" });
+    await waitForCondition(
+      () =>
+        viewers.text(phone).includes("ECHO:DURING-DELIVERY") &&
+        viewers.text(desktop).includes("ECHO:DURING-DELIVERY"),
+      3000,
+    );
+    expect(viewers.text(phone).match(/ECHO:DURING-DELIVERY/g)).toHaveLength(1);
+    const order = viewers.frames
+      .filter((row) => row.source === phone)
+      .map((row) => row.frame.opcode);
+    expect(order.indexOf(TerminalStreamOpcode.Output)).toBeGreaterThan(
+      order.indexOf(TerminalStreamOpcode.ReplayEnd),
+    );
+    expect(viewers.ended(phone)).toHaveLength(0);
+    expect(viewers.ended(desktop)).toHaveLength(0);
+  } finally {
+    viewers.finish();
+    await viewers.delivery.close();
+  }
+}, 20000);
+
+it.each([true, false])(
+  "queues replay independently of app delivery past the worker deadline (chunked=%s)",
+  async (chunked) => {
+    const paseoHome = createTemporaryHome();
+    // Slow program identification belongs to setup, not the replay request deadline.
+    // The POSIX shim deterministically exceeds 800 ms; Windows keeps its real OS path.
+    manager = isPlatform("win32")
+      ? await startRealWorkerManager({ paseoHome })
+      : await startWorkerWithSlowProcessTable(1, { paseoHome });
+    const created = await manager.createTerminal({
+      cwd: paseoHome,
+      workspaceId: "slow-delivery",
+      ...nodeTerminalCommand(
+        'process.stdout.write("READY\\r\\n"); process.stdin.on("data", data => process.stdout.write("ECHO:" + data)); setInterval(() => {}, 1000);',
+      ),
+    });
+    await waitForCondition(
+      async () => (await manager!.captureTerminal(created.id)).lines.join("").includes("READY"),
+      10000,
+    );
+    await manager.detach();
+    manager = await startRealWorkerManager({ paseoHome, requestTimeoutMs: 800 });
+    const session = manager.getTerminal(created.id);
+    if (!session) throw new Error("Replay fixture did not adopt its prepared terminal");
+    trackTerminal(session);
+    const viewers = terminalViewers(manager, session.id, chunked);
+    const phone = {};
+    viewers.block(phone);
+    try {
+      await viewers.attach(phone, "slow-phone");
+      await waitForCondition(viewers.started, 10000);
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect(viewers.ended(phone)).toHaveLength(0);
+      expect((await manager.captureTerminal(session.id)).lines.join("")).toContain("READY");
+      session.send({ type: "input", data: "AFTER-DEADLINE\r" });
+      await waitForCondition(() => viewers.text(phone).includes("ECHO:AFTER-DEADLINE"), 3000);
+    } finally {
+      viewers.finish();
+      await viewers.delivery.close();
+    }
+  },
+  20000,
+);
+
+it.each(["replacement", "socket-overflow"] as const)(
+  "recovers an attached restore viewer after worker %s",
+  async (loss) => {
+    const paseoHome = createTemporaryHome();
+    const drained = join(paseoHome, "burst-drained");
+    manager = await startRealWorkerManager({ paseoHome });
+    const session = trackTerminal(
+      await manager.createTerminal({
+        cwd: paseoHome,
+        workspaceId: "attached-reconnect",
+        ...nodeTerminalCommand(
+          `process.stdout.write("RETAINED\\r\\n"); process.stdin.on("data", data => {
+            if (data.toString().includes("BURST")) process.stdout.write("x".repeat(12 * 1024 * 1024) + "\\r\\nRETAINED-AFTER-LOSS\\r\\n", () => require("node:fs").writeFileSync(${JSON.stringify(drained)}, "done"));
+            else process.stdout.write("ECHO:" + data);
+          }); setInterval(() => {}, 1000);`,
+        ),
+      }),
+    );
+    await waitForCondition(
+      async () => (await manager!.captureTerminal(session.id)).lines.join("").includes("RETAINED"),
+      10000,
+    );
+    const viewers = terminalViewers(manager, session.id);
+    const desktop = {};
+    try {
+      await viewers.attach(desktop, "desktop");
+      await waitForCondition(() => viewers.replayed(desktop), 10000);
+      viewers.frames.length = 0;
+      const [record] = await workerRecords(paseoHome);
+      if (loss === "replacement") {
+        const competitor = await connectTerminalWorker({
+          socketPath: record!.socketPath,
+          secret: record!.secret,
+        });
+        expect(competitor.connected).toBe(true);
+        await viewers.delivery.detach(desktop);
+        await viewers.attach(desktop, "desktop");
+        competitor.disconnect();
+      } else {
+        session.send({ type: "input", data: "BURST\r" });
+        // Stall only the daemon event loop. The detached worker and PTY keep running,
+        // filling the bounded worker socket and forcing its disconnect/re-adoption path.
+        const stall = new Int32Array(new SharedArrayBuffer(4));
+        const deadline = Date.now() + 10000;
+        while (!existsSync(drained) && Date.now() < deadline) Atomics.wait(stall, 0, 0, 25);
+        expect(existsSync(drained)).toBe(true);
+      }
+      await waitForCondition(() => viewers.replayed(desktop), 10000);
+      const replay = viewers.frames
+        .filter((row) => row.frame.opcode === TerminalStreamOpcode.ReplayData)
+        .map((row) => Buffer.from(row.frame.payload).toString("utf8"))
+        .join("");
+      expect(replay).toContain("RETAINED");
+      if (loss === "socket-overflow") expect(replay).toContain("RETAINED-AFTER-LOSS");
+      expect((await workerRecords(paseoHome)).map((worker) => worker.pid)).toEqual([record!.pid]);
+      session.send({ type: "input", data: "RECOVERED\r" });
+      await waitForCondition(() => viewers.text(desktop).includes("ECHO:RECOVERED"), 3000);
+      expect(viewers.ended(desktop)).toHaveLength(0);
+      expect(manager.getTerminal(session.id)).toBe(session);
+    } finally {
+      await viewers.delivery.close();
+    }
+  },
+  30000,
+);
+
+it.each([true, false])(
+  "keeps live modes after a replay captured enabled=%s while restoring its own modes first",
+  async (enabled) => {
+    const on = "\x1b[?1h\x1b[?2004h";
+    const off = "\x1b[?1l\x1b[?2004l";
+    const captured = enabled ? on : "";
+    const latest = enabled ? "" : on;
+    const live = (enabled ? off : on) + "MODE-LIVE";
+    const worker = new FakeTerminalWorker();
+    manager = createWorkerTerminalManager({ worker, requestTimeoutMs: 1000 });
+    worker.emitWorkerMessage({
+      type: "terminalCreated",
+      terminal: {
+        id: "mode-terminal",
+        name: "Terminal",
+        cwd: "/tmp",
+        workspaceId: "modes",
+        activity: null,
+      },
+      state: createTerminalState(),
+    });
+    worker.emitWorkerMessage({
+      type: "terminalMessage",
+      terminalId: "mode-terminal",
+      replayPreamble: captured,
+      message: { type: "snapshotReady", revision: 1 },
+    });
+    const session = manager.getTerminal("mode-terminal")!;
+    const viewers = terminalViewers(manager, session.id);
+    const restoring = {},
+      following = {};
+    try {
+      await viewers.attach(restoring, "restoring");
+      await waitForCondition(
+        () => worker.sentMessages.some((message) => message.type === "replayTerminal"),
+        1000,
+      );
+      const request = worker.sentMessages.find((message) => message.type === "replayTerminal")!;
+      const metadata = {
+        rows: 30,
+        cols: 120,
+        retainedHistoryLines: 10,
+        revision: 1,
+        replayPreamble: captured,
+      };
+      worker.emitWorkerMessage({
+        type: "terminalReplay",
+        requestId: request.requestId,
+        event: { type: "begin", metadata },
+      });
+      worker.emitWorkerMessage({
+        type: "terminalReplay",
+        requestId: request.requestId,
+        event: { type: "data", data: Buffer.from("CAPTURE-A") },
+      });
+      worker.emitWorkerMessage({
+        type: "terminalMessage",
+        terminalId: session.id,
+        replayPreamble: latest,
+        message: { type: "output", data: live, revision: 2 },
+      });
+      expect(session.getReplayPreamble()).toBe(latest);
+      worker.emitWorkerMessage({
+        type: "terminalReplay",
+        requestId: request.requestId,
+        event: { type: "data", data: Buffer.from("CAPTURE-B") },
+      });
+      worker.emitWorkerMessage({
+        type: "terminalReplay",
+        requestId: request.requestId,
+        event: { type: "end" },
+      });
+      worker.emitWorkerMessage({
+        type: "response",
+        requestId: request.requestId,
+        ok: true,
+        result: metadata,
+      });
+      await waitForCondition(() => viewers.text(restoring).includes("MODE-LIVE"), 1000);
+      expect(session.getReplayPreamble()).toBe(latest);
+      expect(viewers.text(restoring)).toBe(captured + live);
+      const sequence = viewers.frames
+        .filter((row) => row.source === restoring)
+        .map((row) => row.frame.opcode);
+      expect(sequence.indexOf(TerminalStreamOpcode.Output)).toBeGreaterThan(
+        sequence.indexOf(TerminalStreamOpcode.ReplayEnd),
+      );
+      const modes = new TerminalInputModeTracker();
+      modes.feed(session.getReplayPreamble());
+      expect(encodeTerminalKeyInput({ key: "ArrowUp" }, { inputMode: modes.getState() })).toBe(
+        enabled ? "\x1b[A" : "\x1bOA",
+      );
+      expect(modes.getState().bracketedPaste).toBe(!enabled);
+      await viewers.attach(following, "live-following", { mode: "live" });
+      await waitForCondition(() => latest === "" || viewers.text(following).length > 0, 1000);
+      expect(viewers.text(following)).toBe(latest);
+      expect(
+        worker.sentMessages.filter((message) => message.type === "replayTerminal"),
+      ).toHaveLength(1);
+    } finally {
+      await viewers.delivery.close();
+    }
+  },
+);
+
+it.each([3000, 12050])(
+  "retains ten thousand history rows and restores exact demands after %s printed rows",
+  async (count) => {
+    manager = await startRealWorkerManager();
+    const gate = createTemporaryHome();
+    const releaseNewline = join(gate, "newline");
+    const session = trackTerminal(
+      await manager.createTerminal({
+        cwd: createTemporaryHome(),
+        workspaceId: "ten-thousand",
+        rows: 4,
+        cols: 80,
+        ...nodeTerminalCommand(
+          `const fs=require("node:fs");
+          const watcher=fs.watch(${JSON.stringify(gate)},()=>{
+            if(fs.existsSync(${JSON.stringify(releaseNewline)})){
+              watcher.close();process.stdout.write("\\r\\nROWS-COMPLETE");
+            }
+          });
+          for(let i=0;i<${count};i++) process.stdout.write("\\x1b[31mrow-"+String(i).padStart(5,"0")+" 界é🙂\\x1b[0m"+(i===${count}-1?"":"\\r\\n"));
+          setInterval(()=>{},1000)`,
+        ),
+      }),
+    );
+    await waitForCondition(
+      async () =>
+        (await manager!.captureTerminal(session.id, { start: -5 })).lines
+          .join("")
+          .includes("row-" + String(count - 1).padStart(5, "0")),
+      15000,
+    );
+    // A visible final label can precede its trailing CRLF. Hold that transition
+    // deliberately, then observe content on the following row before capture.
+    writeFileSync(releaseNewline, "release");
+    await waitForCondition(
+      async () =>
+        (await manager!.captureTerminal(session.id, { start: -1 })).lines[0] === "ROWS-COMPLETE",
+      15000,
+    );
+    for (const history of [0, 200, 1000, 10000]) {
+      const chunks: Uint8Array[] = [];
+      const metadata = await manager.replayTerminal(
+        session.id,
+        { scrollbackLines: history },
+        (event) => {
+          if (event.type === "data") chunks.push(event.data);
+        },
+      );
+      expect(metadata).toMatchObject({
+        rows: 4,
+        cols: 80,
+        retainedHistoryLines: Math.min(10000, count - 3),
+      });
+      expect(chunks.every((chunk) => chunk.byteLength <= 64 * 1024)).toBe(true);
+      const restored = new xterm.Terminal({
+        rows: 4,
+        cols: 80,
+        scrollback: 10000,
+        allowProposedApi: true,
+      });
+      try {
+        await new Promise<void>((resolve) => restored.write(Buffer.concat(chunks), resolve));
+        const buffer = restored.buffer.active;
+        const labels = Array.from({ length: buffer.length }, (_, i) =>
+          buffer.getLine(i)!.translateToString(true),
+        ).filter((line) => line.includes("row-"));
+        expect({ row: buffer.cursorY, col: buffer.cursorX }).toEqual({ row: 3, col: 13 });
+        expect(buffer.getLine(buffer.length - 1)!.translateToString(true)).toBe("ROWS-COMPLETE");
+        expect(labels).toHaveLength(Math.min(count, history + 3));
+        expect(labels[0]).toContain("row-" + String(count - labels.length).padStart(5, "0"));
+        expect(labels.at(-1)).toContain("row-" + String(count - 1).padStart(5, "0") + " 界é🙂");
+      } finally {
+        restored.dispose();
+      }
+    }
+  },
+  30000,
+);
+
+it.each([false, true])(
+  "shrinks real ten-thousand-row pressure recovery and preserves reattach (chunked=%s)",
+  async (chunked) => {
+    manager = await startRealWorkerManager();
+    const session = trackTerminal(
+      await manager.createTerminal({
+        cwd: createTemporaryHome(),
+        workspaceId: "pressure-history",
+        rows: 4,
+        cols: 120,
+        ...nodeTerminalCommand(`
+      process.stdin.setRawMode(true);
+      let row = 0;
+      function print(count) {
+        for(let i=0;i<count;i++,row++) process.stdout.write("\\x1b[31mrow-" + String(row).padStart(5,"0") + " 界é🙂 " + "log ".repeat(20) + "\\x1b[0m\\r\\n");
+      }
+      print(12050);
+      process.stdout.write("READY\\r\\n");
+      process.stdin.on("data", data => {
+        if(data.toString().includes("BURST")) { print(4000); process.stdout.write("BURST-DONE\\r\\n"); }
+        else process.stdout.write("ECHO:" + data.toString() + "\\r\\n");
+      });
+      setInterval(()=>{},1000);
+    `),
+      }),
+    );
+    await waitForCondition(
+      async () =>
+        (await manager!.captureTerminal(session.id, { start: -5 })).lines
+          .join("")
+          .includes("READY"),
+      15000,
+    );
+    const desktop = {},
+      phone = {},
+      fresh = {};
+    let pressure = false;
+    const viewers = terminalViewers(manager, session.id, chunked, (source) =>
+      source === phone && pressure ? 8 * 1024 * 1024 : 0,
+    );
+    const restore = { mode: "full-snapshot" as const, scrollbackLines: 10000 };
+    function payloads(source: object): Buffer[] {
+      const result: Buffer[] = [];
+      let chunks: Uint8Array[] = [];
+      for (const { source: owner, frame } of viewers.frames) {
+        if (owner !== source) continue;
+        if (frame.opcode === TerminalStreamOpcode.Restore) result.push(Buffer.from(frame.payload));
+        if (frame.opcode === TerminalStreamOpcode.ReplayBegin) chunks = [];
+        if (frame.opcode === TerminalStreamOpcode.ReplayData) chunks.push(frame.payload);
+        if (frame.opcode === TerminalStreamOpcode.ReplayEnd) result.push(Buffer.concat(chunks));
+      }
+      return result;
+    }
+    async function parse(payload: Uint8Array) {
+      const receiver = new xterm.Terminal({
+        rows: 4,
+        cols: 120,
+        scrollback: 10000,
+        allowProposedApi: true,
+      });
+      try {
+        await new Promise<void>((resolve) => receiver.write(payload, resolve));
+        const buffer = receiver.buffer.active;
+        return {
+          history: buffer.baseY,
+          text: Array.from({ length: buffer.length }, (_, i) =>
+            buffer.getLine(i)!.translateToString(true),
+          ).join("\n"),
+        };
+      } finally {
+        receiver.dispose();
+      }
+    }
+    try {
+      await viewers.attach(desktop, "healthy", restore);
+      await viewers.attach(phone, "pressured", restore);
+      await waitForCondition(
+        () => payloads(phone).length === 1 && payloads(desktop).length === 1,
+        15000,
+      );
+      const initial = payloads(phone)[0]!;
+      expect((await parse(initial)).history).toBe(10000);
+      pressure = true;
+      session.send({ type: "input", data: "BURST" });
+      await waitForCondition(() => payloads(phone).length >= 2, 15000);
+      pressure = false;
+      // The final burst marker may belong to the replay cut or to its live tail.
+      // Read the same replay/output exchange a renderer sees rather than assuming
+      // worker parsing and daemon request scheduling cut the burst at one point.
+      async function currentView(source: object) {
+        const frames = viewers.frames
+          .filter((row) => row.source === source)
+          .map((row) => row.frame);
+        const start = frames.findLastIndex(
+          (frame) =>
+            frame.opcode === TerminalStreamOpcode.Restore ||
+            frame.opcode === TerminalStreamOpcode.ReplayBegin,
+        );
+        return parse(
+          Buffer.concat(
+            frames
+              .slice(start)
+              .filter(
+                (frame) =>
+                  frame.opcode === TerminalStreamOpcode.Restore ||
+                  frame.opcode === TerminalStreamOpcode.ReplayData ||
+                  frame.opcode === TerminalStreamOpcode.Output,
+              )
+              .map((frame) => frame.payload),
+          ),
+        );
+      }
+      await waitForCondition(
+        async () =>
+          (await currentView(phone)).text.includes("BURST-DONE") &&
+          (await currentView(desktop)).text.includes("BURST-DONE"),
+        15000,
+      );
+      const recovery = payloads(phone)[1]!;
+      const recovered = await parse(recovery);
+      expect(recovered.history).toBe(500);
+      expect(recovered.text).toContain("界é🙂");
+      for (const source of [phone, desktop]) {
+        const indexes = [...(await currentView(source)).text.matchAll(/row-(\d+)/g)].map((match) =>
+          Number(match[1]),
+        );
+        expect(indexes.at(-1)).toBe(16049);
+        expect(indexes).toEqual(Array.from({ length: indexes.length }, (_, i) => indexes[0]! + i));
+      }
+      expect(recovery.byteLength).toBeLessThan(initial.byteLength / 10);
+      expect(recovery.byteLength).toBeLessThan(256 * 1024);
+      expect(payloads(desktop)).toHaveLength(1); // The healthy peer keeps its full replay and live stream.
+      session.send({ type: "input", data: "AFTER-CATCH-UP" });
+      await waitForCondition(
+        () =>
+          viewers.text(phone).includes("ECHO:AFTER-CATCH-UP") &&
+          viewers.text(desktop).includes("ECHO:AFTER-CATCH-UP"),
+        10000,
+      );
+      expect(viewers.text(phone).match(/ECHO:AFTER-CATCH-UP/g)).toHaveLength(1);
+      expect(viewers.text(desktop).match(/ECHO:AFTER-CATCH-UP/g)).toHaveLength(1);
+      await viewers.delivery.detach(phone);
+      await viewers.attach(fresh, "reattach", restore);
+      await waitForCondition(() => payloads(fresh).length === 1, 15000);
+      const reattached = await parse(payloads(fresh)[0]!);
+      expect(reattached.history).toBe(10000);
+      expect(reattached.text).toContain("row-16049");
+      expect(reattached.text).toContain("ECHO:AFTER-CATCH-UP");
+      expect(viewers.ended(desktop)).toHaveLength(0);
+      expect(viewers.ended(phone)).toHaveLength(0);
+      process.stdout.write(
+        JSON.stringify({
+          chunked,
+          initialBytes: initial.byteLength,
+          recoveryBytes: recovery.byteLength,
+          reattachBytes: payloads(fresh)[0]!.byteLength,
+          retainedHistory: reattached.history,
+          recoveryHistory: recovered.history,
+        }) + "\n",
+      );
+    } finally {
+      await viewers.delivery.close();
+    }
+  },
+  45000,
+);

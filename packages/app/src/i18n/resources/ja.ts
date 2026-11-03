@@ -636,6 +636,7 @@ export const ja: TranslationResources = {
     terminal: {
       hostDisconnected: "ホストが接続されていません",
       updateHost: "ネイティブターミナルを使用するにはホストを更新してください。",
+      restoreRequiresUpdate: "ターミナルを表示するにはホストを更新してください。",
       unableToSubscribe: "ターミナルに接続できません",
       imagePaste: {
         uploading: "Uploading pasted image...",
@@ -2060,7 +2061,6 @@ export const ja: TranslationResources = {
   toolCallDetails: {
     error: "エラー",
     empty: "追加の詳細はありません",
-    subAgentActivity: "サブエージェントアクティビティ",
     input: "入力",
     output: "出力",
   },
@@ -2145,6 +2145,11 @@ export const ja: TranslationResources = {
     },
   },
   providerUsage: {
+    checkUsage: "使用状況を確認",
+    checkUsageHint: "すべてのデバイスで {{host}} に適用",
+    off: "{{host}} の使用状況確認はオフです。",
+    turnOn: "オンにする",
+
     options: "設定",
     refreshFailed: "使用状況を更新できません",
     noHosts: "接続中のホストがありません",
@@ -2192,6 +2197,7 @@ export const ja: TranslationResources = {
       days: "{{value}}日",
       hours: "{{value}}時間",
       minutes: "{{value}}分",
+      pair: "{{first}}{{second}}",
     },
     timing: {
       lastUpdated: "最終更新: {{relativeTime}}",
@@ -2199,6 +2205,8 @@ export const ja: TranslationResources = {
       resetTimePassed: "リセット時刻を過ぎています",
       resettingNow: "まもなくリセット",
       resetsIn: "{{duration}}後にリセット",
+      resetsAtWeekday: "{{weekday}} {{time}}",
+      resetsAtDate: "{{date}} {{time}}",
       runsOutNow: "まもなく上限に到達",
       runsOutIn: "{{duration}}後に上限に到達",
       justNow: "たった今",
