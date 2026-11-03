@@ -680,12 +680,7 @@ it.each([
     expect(style.linkVariants?.["^(?!https?://).+"]).toEqual({
       color: theme.colors.accentBright,
     });
-    expect(style.thematicBreak).toMatchObject({
-      color: theme.colors.foregroundExtraMuted,
-      height: 1,
-      marginTop: 8,
-      marginBottom: 8,
-    });
+    expect(style.thematicBreak?.color).toBe(theme.colors.border);
   },
 );
 

@@ -102,12 +102,7 @@ export function createMarkdownStyles(
       },
       inlineImage: { size: paragraph.lineHeight },
       image: { ...block, height: 320, resizeMode: "contain", borderRadius: 8 },
-      thematicBreak: {
-        marginTop: 8,
-        marginBottom: 8,
-        color: theme.colors.foregroundExtraMuted,
-        height: 1,
-      },
+      thematicBreak: { ...block, color: theme.colors.border, height: 1 },
     },
   };
 }

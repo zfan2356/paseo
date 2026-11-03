@@ -1,6 +1,5 @@
 import { continuesTimelineTurn, isTimelineTurnTrigger } from "@getpaseo/protocol/timeline-turn";
 import type { AgentTimelineItem, ToolCallDetail } from "./agent-sdk-types.js";
-import { normalizeAssistantMessageBoundary } from "./assistant-message-boundary.js";
 import { timelineItemIdentity } from "@getpaseo/protocol/timeline-identity";
 
 import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
@@ -118,30 +117,11 @@ export function mergeToolCallItems(
   return merged;
 }
 
-function normalizeAssistantBoundary(item: AgentTimelineItem): AgentTimelineItem {
-  if (item.type !== "assistant_message") {
-    return item;
-  }
-  const text = normalizeAssistantMessageBoundary(item.text);
-  if (text === item.text) {
-    return item;
-  }
-  return {
-    ...item,
-    text,
-  };
-}
-
 function makeCanonicalEntries(rows: readonly AgentTimelineRow[]): WorkingEntry[] {
   return rows.map((row) => {
-    if ("seqStart" in row) {
-      return {
-        ...(row as ProjectedTimelineRow),
-        item: normalizeAssistantBoundary(row.item),
-      };
-    }
+    if ("seqStart" in row) return { ...(row as ProjectedTimelineRow) };
     return {
-      item: normalizeAssistantBoundary(row.item),
+      item: row.item,
       timestamp: row.timestamp,
       ...(row.turnId ? { turnId: row.turnId } : {}),
       ...(row.providerMessageId ? { providerMessageId: row.providerMessageId } : {}),
