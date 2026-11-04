@@ -49,6 +49,12 @@ const installDirectoryPlugin = vi.fn(async () => ({
   status: "running" as const,
 }));
 const previewPluginUpdates = vi.fn(async () => []);
+const invokePluginRpc = vi.fn(
+  async (_pluginId: string, _method: string, _input: unknown): Promise<unknown> => ({
+    state: "connected",
+    sessionId: "current-session",
+  }),
+);
 const close = vi.fn(async () => undefined);
 const features: {
   pluginManagement?: boolean;
@@ -66,6 +72,7 @@ vi.mock("../../utils/client.js", () => ({
     installDirectoryPlugin,
     installPluginSource,
     previewPluginUpdates,
+    invokePluginRpc,
     close,
   })),
 }));
@@ -77,7 +84,61 @@ import {
   runPluginUpdateCommand,
   runPluginListCommand,
   runPluginLogsCommand,
+  runPluginRpcCommand,
 } from "./index.js";
+import { connectToDaemon } from "../../utils/client.js";
+
+describe("plugin RPC commands", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("invokes the exact RPC and returns its raw JSON output, then closes", async () => {
+    const result = await runPluginRpcCommand(
+      "paseo-multica",
+      "session.connect",
+      { daemonTarget, inputJson: '{"agentId":"current-session"}' },
+      createPluginCommand(),
+    );
+    expect(invokePluginRpc).toHaveBeenCalledWith("paseo-multica", "session.connect", {
+      agentId: "current-session",
+    });
+    expect(JSON.parse(render(result, { format: "json" }))).toEqual({
+      state: "connected",
+      sessionId: "current-session",
+    });
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not connect or echo input when JSON is invalid", async () => {
+    await expect(
+      runPluginRpcCommand(
+        "test",
+        "method",
+        { daemonTarget, inputJson: "{secret" },
+        createPluginCommand(),
+      ),
+    ).rejects.toEqual({
+      code: "INPUT_INVALID",
+      message: "RPC input must be readable, valid JSON.",
+    });
+    expect(connectToDaemon).not.toHaveBeenCalled();
+  });
+
+  it("closes after a plugin rejects the RPC", async () => {
+    const failure = Object.assign(new Error("Plugin is not available"), { code: "handler_error" });
+    invokePluginRpc.mockRejectedValueOnce(failure);
+    await expect(
+      runPluginRpcCommand(
+        "absent",
+        "method",
+        { daemonTarget, inputJson: "{}" },
+        createPluginCommand(),
+      ),
+    ).rejects.toBe(failure);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("plugin management commands", () => {
   beforeEach(() => {
