@@ -13,13 +13,13 @@ import {
 import type { CommandOptions, ListResult, OutputSchema, SingleResult } from "../../output/index.js";
 import { withOutput } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions, addJsonOption } from "../../utils/command-options.js";
-import { connectToDaemon } from "../../utils/client.js";
 import { scaffoldPluginDirectory, type PluginScaffold } from "./scaffold.js";
 import {
   withPluginLogsClient,
   withPluginUpdateClient,
   withPluginManagementClient,
   withPluginSourceClient,
+  withPluginRpcClient,
 } from "./shared.js";
 
 interface PluginOptions extends CommandOptions {
@@ -53,20 +53,17 @@ export async function runPluginRpcCommand(
   } catch {
     throw { code: "INPUT_INVALID", message: "RPC input must be readable, valid JSON." };
   }
-  const client = await connectToDaemon({ target: options.daemonTarget });
-  try {
-    const data = await client.invokePluginRpc(pluginId, method, input);
-    return {
-      type: "single",
-      data,
-      schema: {
-        idField: (value) => JSON.stringify(value),
-        columns: [{ header: "OUTPUT", field: (value) => JSON.stringify(value) }],
-      },
-    };
-  } finally {
-    await client.close().catch(() => undefined);
-  }
+  const data = await withPluginRpcClient(options.daemonTarget, (client) =>
+    client.invokePluginRpc(pluginId, method, input),
+  );
+  return {
+    type: "single",
+    data,
+    schema: {
+      idField: (value) => JSON.stringify(value),
+      columns: [{ header: "OUTPUT", field: (value) => JSON.stringify(value) }],
+    },
+  };
 }
 
 const pluginSchema: OutputSchema<PluginListItem> = {

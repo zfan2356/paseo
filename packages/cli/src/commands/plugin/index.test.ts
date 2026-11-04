@@ -65,6 +65,7 @@ const invokePluginRpc = vi.fn(
 );
 const close = vi.fn(async () => undefined);
 const features: {
+  plugins?: boolean;
   pluginManagement?: boolean;
   pluginLogs?: boolean;
   pluginGitManagement?: boolean;
@@ -127,6 +128,7 @@ it("dispatches stdin input over the real SDK from a CLI process and closes the c
                 serverId: "srv_test_rpc",
                 hostname: null,
                 version: null,
+                features: { plugins: true },
               },
             },
           }),
@@ -209,6 +211,24 @@ it("dispatches stdin input over the real SDK from a CLI process and closes the c
 describe("plugin RPC commands", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    features.plugins = true;
+  });
+
+  it("requires plugin capability before sending an RPC and closes the client", async () => {
+    features.plugins = false;
+    await expect(
+      runPluginRpcCommand(
+        "test",
+        "method",
+        { daemonTarget, inputJson: "{}" },
+        createPluginCommand(),
+      ),
+    ).rejects.toMatchObject({
+      code: "DAEMON_UPDATE_REQUIRED",
+      message: "Update the host to invoke plugin RPCs.",
+    });
+    expect(invokePluginRpc).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("invokes the exact RPC and returns its raw JSON output, then closes", async () => {
