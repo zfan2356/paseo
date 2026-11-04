@@ -1,4 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { WebSocketServer } from "ws";
+import { z } from "zod";
 
 const daemonTarget = { kind: "endpoint" as const, host: "example.test:12345" };
 
@@ -87,6 +95,116 @@ import {
   runPluginRpcCommand,
 } from "./index.js";
 import { connectToDaemon } from "../../utils/client.js";
+
+it("dispatches stdin input over the real SDK from a CLI process and closes the connection", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "paseo-plugin-rpc-"));
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Missing test server address");
+  const requests: unknown[] = [];
+  const rpc = z.object({
+    type: z.literal("session"),
+    message: z.object({
+      type: z.literal("plugin.rpc.invoke.request"),
+      requestId: z.string(),
+      pluginId: z.string(),
+      method: z.string(),
+      input: z.unknown(),
+    }),
+  });
+  server.on("connection", (socket) => {
+    socket.on("message", (bytes) => {
+      const frame: unknown = JSON.parse(bytes.toString());
+      if (z.object({ type: z.literal("hello") }).safeParse(frame).success) {
+        socket.send(
+          JSON.stringify({
+            type: "session",
+            message: {
+              type: "status",
+              payload: {
+                status: "server_info",
+                serverId: "srv_test_rpc",
+                hostname: null,
+                version: null,
+              },
+            },
+          }),
+        );
+        return;
+      }
+      const parsed = rpc.parse(frame).message;
+      requests.push({ pluginId: parsed.pluginId, method: parsed.method, input: parsed.input });
+      socket.send(
+        JSON.stringify({
+          type: "session",
+          message: {
+            type: "plugin.rpc.invoke.response",
+            payload: {
+              requestId: parsed.requestId,
+              output: { state: "connected", sessionId: "current-session" },
+            },
+          },
+        }),
+      );
+    });
+  });
+  const entry = fileURLToPath(new URL("../../index.ts", import.meta.url));
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      entry,
+      "plugin",
+      "rpc",
+      "paseo-multica",
+      "session.connect",
+      "--host",
+      `127.0.0.1:${address.port}`,
+      "--input-json",
+      "-",
+      "--json",
+    ],
+    {
+      env: {
+        PATH: process.env.PATH,
+        HOME: home,
+        USERPROFILE: home,
+        PASEO_HOME: path.join(home, ".paseo"),
+        NODE_NO_WARNINGS: "1",
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk: Buffer) => {
+    stdout += chunk.toString();
+  });
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  child.stdin.end('{"agentId":"current-session"}');
+  try {
+    const [code] = await once(child, "close");
+    expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+    expect(JSON.parse(stdout)).toEqual({ state: "connected", sessionId: "current-session" });
+    expect(requests).toEqual([
+      {
+        pluginId: "paseo-multica",
+        method: "session.connect",
+        input: { agentId: "current-session" },
+      },
+    ]);
+    expect(server.clients.size).toBe(0);
+  } finally {
+    child.kill();
+    for (const socket of server.clients) socket.terminate();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(home, { recursive: true, force: true });
+  }
+}, 20000);
 
 describe("plugin RPC commands", () => {
   beforeEach(() => {

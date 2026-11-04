@@ -267,7 +267,14 @@ paseo plugin logs my-plugin
 paseo plugin disable my-plugin
 paseo plugin enable my-plugin
 paseo plugin remove my-plugin
+paseo plugin rpc my-plugin method.name --input-json '{"key":"value"}' --json
 ```
+
+`plugin rpc` invokes a method contributed by an enabled plugin on the selected
+daemon. `--json` prints the method's output directly. Supply `--input-json -`
+to read JSON from stdin when input contains secrets; command-line arguments
+may be visible to other local processes. Invalid JSON fails before connecting.
+RPC errors exit nonzero, and the command closes its client after the response.
 
 `paseo plugin reload <id>` reports the result of the reload itself: it waits while the daemon stops
 and starts the plugin, however long that takes, and it queues behind the daemon's other plugin work.
