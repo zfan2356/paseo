@@ -71,6 +71,12 @@ create a private `~/.config/magpie/runtime.json` containing
 starter applies this directory only to the Magpie child process; it does not copy
 credentials or change other Codex launchers. The directory must already exist.
 
+For the opt-in paired Auto speed policy, `runtime.json` may also contain
+`"tierCatalog":"/absolute/path/to/existing/catalog.json"`. Magpie updates only
+paired Auto entries' speed tiers in that file when its catalog changes. Configure
+the same catalog in the consuming Codex homes separately; see
+[Auto speed tiers](../../custom-feat/magpie-auto-speed.md).
+
 Connect Paseo to the daemon on the Magpie host to use it remotely. When Magpie is on
 an SSH host without a Paseo daemon, set these variables in the local daemon's environment:
 

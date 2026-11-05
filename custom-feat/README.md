@@ -59,4 +59,5 @@ stays authoritative for intent and design.
 | [magpie-private-provider.md](magpie-private-provider.md)                   | Direct provider access with host-local credentials and protocol compatibility         |
 | [magpie-subscription-first.md](magpie-subscription-first.md)               | Removed quota-only routing extension; retained as historical documentation            |
 | [magpie-codex-windows.md](magpie-codex-windows.md)                         | Align Codex member windows without changing the original routing behavior             |
+| [magpie-auto-speed.md](magpie-auto-speed.md)                               | Union Auto speed tiers and downgrade separately for each provider                     |
 | [dsh-model-routes.md](dsh-model-routes.md)                                 | Explicit Official, Unified and iChat model routes for DSH                             |

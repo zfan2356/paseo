@@ -27,12 +27,17 @@ def launch_environment():
     config_path = Path.home() / ".config/magpie/runtime.json"
     if config_path.exists():
         config = json.loads(config_path.read_text())
-        if not isinstance(config, dict) or set(config) - {"codexHome"}:
-            raise SystemExit("Invalid Magpie runtime.json; only codexHome is supported.")
+        if not isinstance(config, dict) or set(config) - {"codexHome", "tierCatalog"}:
+            raise SystemExit("Invalid Magpie runtime.json; only codexHome and tierCatalog are supported.")
         codex_home = config.get("codexHome")
         if not isinstance(codex_home, str) or not Path(codex_home).is_absolute() or not Path(codex_home).is_dir():
             raise SystemExit("Magpie codexHome must name an existing absolute directory.")
         env["CODEX_HOME"] = codex_home
+        tier_catalog = config.get("tierCatalog")
+        if tier_catalog is not None:
+            if not isinstance(tier_catalog, str) or not Path(tier_catalog).is_absolute() or not Path(tier_catalog).is_file():
+                raise SystemExit("Magpie tierCatalog must name an existing absolute file.")
+            env["PASEO_CODEX_SPEED_CATALOG"] = tier_catalog
     return env
 
 

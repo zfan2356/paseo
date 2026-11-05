@@ -27,6 +27,14 @@ authorized. This only aligns per-model windows; preserve group routing,
 affinity, fallback behavior, credentials, and the client's context settings.
 Do not restore the removed quota-only policy.
 
+## Paired Auto speed tiers
+
+Review `custom-feat/magpie-auto-speed.md`. An optional `tierCatalog` in the
+private `runtime.json` points to an existing absolute curated catalog; only
+paired Auto speed tiers are synchronized. Back up the runtime and both Codex
+configs before changing their selected catalog. Do not select a catalog that
+offers the new tiers before the patched gateway is running and verified.
+
 ## Connect Paseo
 
 Run `npm ci` and `npm run build:server` in the checkout, then `npm run typecheck --workspace=@getpaseo/builtin-plugins` before installing the source plugin. Confirm the target daemon's `pluginsEnabled` setting; enabling trusted unsandboxed plugins needs the user's authorization if it was not already given. Install with `paseo plugin install /absolute/checkout/plugins/magpie --id magpie`, or reload that ID if it already points here. Do not overwrite another installation without checking its path.

@@ -49,6 +49,14 @@ class RuntimeTest(unittest.TestCase):
             config.write_text(json.dumps({"codexHome": root}))
             self.assertEqual(starter.launch_environment()["CODEX_HOME"], root)
             self.assertEqual(starter.os.environ["CODEX_HOME"], "/inherited")
+            catalog = Path(root) / "models.json"
+            catalog.write_text('{"models":[]}')
+            config.write_text(json.dumps({"codexHome": root, "tierCatalog": str(catalog)}))
+            self.assertEqual(starter.launch_environment()["PASEO_CODEX_SPEED_CATALOG"], str(catalog))
+            for tier_catalog in ("relative", "/nonexistent-magpie-catalog-test", root, 42):
+                config.write_text(json.dumps({"codexHome": root, "tierCatalog": tier_catalog}))
+                with self.subTest(tier_catalog=tier_catalog), self.assertRaises(SystemExit):
+                    starter.launch_environment()
             for value in ({"codexHome": "relative"}, {"codexHome": "/nonexistent-magpie-test"}, {"MAGPIE_ADDR": "0.0.0.0"}, []):
                 config.write_text(json.dumps(value))
                 with self.subTest(value=value), self.assertRaises(SystemExit):
