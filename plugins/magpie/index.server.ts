@@ -35,7 +35,7 @@ export default function contribute(server: PluginServerContext) {
       await localRequest("/api/state");
       return await webUiLink();
     } catch {
-      throw new Error("无法打开 Magpie 原生页面，请在本机运行 magpie-start 后重试。");
+      throw new Error("无法打开 Magpie 原生页面，请检查管理地址、凭据与服务状态后重试。");
     }
   });
   server.handle(snapshotRpc, ({ refresh }) => bridge.snapshot(refresh));

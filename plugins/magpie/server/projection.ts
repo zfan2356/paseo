@@ -57,7 +57,9 @@ const quotaList = z.object({
             z.object({
               name: text,
               used: z.number(),
-              remaining: z.number(),
+              remaining: z.number().optional(),
+              text: z.boolean().optional(),
+              balance: z.number().nullish(),
               unlimited: z.boolean().optional(),
               resetsAt: text,
               display: text,
@@ -121,9 +123,18 @@ export function projectSnapshot(providers: unknown, groups: unknown, quotas: unk
       balance: q.balance,
       readAt: q.readAt,
       error: q.error ? "额度暂时无法读取，请稍后刷新。" : "",
-      windows: (q.windows ?? []).map((w) =>
-        Object.assign({}, w, { unlimited: w.unlimited === true }),
-      ),
+      // The management API reports used percentages; text/balance-only rows
+      // have no percentage and remain available in Magpie's own page.
+      windows: (q.windows ?? [])
+        .filter((w) => !w.text && w.balance == null)
+        .map((w) => ({
+          name: w.name,
+          used: w.used,
+          remaining: w.remaining ?? Math.max(0, 100 - w.used),
+          resetsAt: w.resetsAt,
+          display: w.display,
+          unlimited: w.unlimited === true,
+        })),
     })),
   });
 }

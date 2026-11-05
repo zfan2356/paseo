@@ -13,69 +13,64 @@ An explicit retry replaces only the failed host's page. Hidden pages keep their
 last viewport and do not intercept clicks or keyboard input; browser throttling
 remains enabled when the app window is hidden.
 
-Magpie source is included as the `third_party/magpie` submodule from
-[yetone/magpie](https://github.com/yetone/magpie), pinned to
-`9572a35761c2606257e8493ab47dedda38eb6b88`. The source keeps its upstream license.
-Build metadata lives in `third_party/magpie.lock.json`; use the
-[deployment skill](../../skills/deploy-magpie/SKILL.md) to build and install it.
-The CLI's `serve` workflow does not invoke the GUI application updater. Keep the
-versioned binary and avoid `magpie update` to retain this pin.
-
 ## Install
 
-From this repository, build dependencies with `npm ci && npm run build:server`,
-then typecheck with `npm run typecheck --workspace=@getpaseo/builtin-plugins`.
-On a daemon where trusted plugins are enabled:
+This plugin supports the official Magpie 0.1.3056 service and the older pinned
+installation. Keep an existing official binary and service: the repository's
+`third_party/magpie.lock.json` and deployment skill belong to the older patched
+build and must not be applied over an official installation.
+
+Build this checkout with `npm ci && npm run build:server`, then run
+`npm run typecheck --workspace=@getpaseo/builtin-plugins`.
+On the daemon host, create `~/.config/magpie/paseo-web.json` for an existing
+`magpie daemon install --web` service:
+
+```json
+{ "runtime": "daemon" }
+```
+
+The plugin reads `~/.local/bin/magpie daemon web` in memory to obtain the
+service's management origin and key. It never copies the key to a second file.
+Start uses `magpie daemon start`; opening the panel never starts another service.
+It leaves account discovery, agent defaults and subscription logins alone.
+
+With trusted plugins enabled, install this directory:
 
 ```sh
 paseo plugin install /absolute/checkout/plugins/magpie --id magpie
 paseo plugin ls
 ```
 
-The default backend runs beside Magpie on the daemon host. It reads the management
-key from `~/.local/state/magpie/web-key`, uses management at `127.0.0.1:3430` and
-the gateway at `127.0.0.1:3425`. The start action calls `~/.local/bin/magpie-start`.
-These paths match the deployment script. No keys or account stores belong in this
-repository. RPC responses project only display data and never raw provider records.
+The settings have separate responsibilities:
 
-The surface loads the original page from `127.0.0.1:3430`. On Electron it uses
-Paseo's existing sandboxed webview profile; browser previews use an iframe.
-`magpie.web.open` obtains the existing host-local management sign-in link only
-when opening the page. Magpie exchanges the key for its HTTP-only cookie and
-removes it from the page URL. The link is not part of quota snapshots or saved
-plugin configuration. No Magpie frontend assets are copied or restyled.
+| Field           | Purpose                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime`       | `daemon` reuses the official service; `legacy` uses the old key file and starter. Missing means `legacy`.                                               |
+| `managementUrl` | Optional daemon-side HTTP(S) origin for API and mobile resource requests; defaults to the service's origin, or legacy loopback `http://127.0.0.1:3430`. |
+| `url`           | Optional browser/Electron origin reachable from the client; defaults to the management origin.                                                          |
 
-By default the page targets Magpie on the same Mac as the client. For a remote
-Paseo daemon, forward its management port to the client and create
-`~/.config/magpie/paseo-web.json` on the daemon host:
+Origins must have no credentials, path, query or fragment. An existing
+`{ "url": "http://cvm-magpie.localhost:3431" }` remains a legacy configuration:
+the host still uses loopback3430 and `~/.local/state/magpie/web-key`, while
+the client uses its forwarded port. Legacy Start calls `~/.local/bin/magpie-start`.
+For remote browser clients, choose a reachable management address or forward its
+port to the client; distinct hostnames prevent local and remote cookies colliding.
+A daemon-side reverse proxy can be named by `managementUrl`; the official service's
+cookie name still uses its own listening port.
 
-```json
-{ "url": "http://cvm-magpie.localhost:3431" }
-```
+Browser/Electron obtains a sign-in link through the authenticated Paseo RPC.
+Magpie exchanges its key for an HTTP-only cookie and removes it from the URL.
+The key is absent from snapshots and plugin configuration. iOS instead receives
+Magpie's page and proxies GET/POST requests through its existing Paseo connection;
+the management key and cookies stay on the daemon. It needs no direct network
+route from the phone to Magpie. Static and lazy JavaScript modules use the same
+bridge; arbitrary external requests and path traversal are refused. Native
+WebView availability is checked by the existing client surface.
 
-This URL must be an HTTP(S) origin without credentials, path, query or fragment.
-For CVM, forward Mac `127.0.0.1:3431` to CVM `127.0.0.1:3430` with SSH. Chromium
-resolves `*.localhost` to loopback. Use this distinct hostname so the local and
-remote Magpie instances do not overwrite each other's identically named cookies.
-The key stays on its owning host and travels only through the authenticated
-Paseo RPC and the encrypted SSH tunnel. Keep both management listeners on
-loopback. Other client machines need the same forwarding setup or their own
-reachable management origin.
-
-This setting supports a plugin installed on the remote Paseo daemon. The
-separate SSH RPC bridge still refuses to return a client-loopback URL.
-
-If Magpie must use a different Codex account directory than the daemon or shell,
-create a private `~/.config/magpie/runtime.json` containing
-`{"codexHome":"/absolute/path/to/subscription-home"}` and restart Magpie. The
-starter applies this directory only to the Magpie child process; it does not copy
-credentials or change other Codex launchers. The directory must already exist.
-
-For the opt-in paired Auto speed policy, `runtime.json` may also contain
-`"tierCatalog":"/absolute/path/to/existing/catalog.json"`. Magpie updates only
-paired Auto entries' speed tiers in that file when its catalog changes. Configure
-the same catalog in the consuming Codex homes separately; see
-[Auto speed tiers](../../custom-feat/magpie-auto-speed.md).
+To roll back, remove/disable the plugin with `paseo plugin remove magpie` or
+`paseo plugin disable magpie`, then restore the previous `paseo-web.json` if one
+existed. This leaves the official Magpie service running. Source updates use
+`paseo plugin reload magpie`; do not restart the shared Paseo daemon.
 
 Connect Paseo to the daemon on the Magpie host to use it remotely. When Magpie is on
 an SSH host without a Paseo daemon, set these variables in the local daemon's environment:
@@ -99,8 +94,7 @@ Only two-member routes ordered as `codex/<model>, ichat/<model>` or
 `claude/<model>, ichat/<model>` are editable here. Other routes remain visible.
 Auto uses order routing; selecting an explicit source requires it to be ready.
 Ultra fast requires an explicit personal Codex capability and the optional
-`server/personal-speed.middleware.js`, installed via the deployment skill's
-`--with-middleware` flag. An existing middleware installation and its options are retained; migrate its path separately if needed.
+`server/personal-speed.middleware.js`, from the legacy deployment. Official installations without an enabled middleware show this control as unavailable. An existing middleware installation and its options are retained; migrate its path separately if needed.
 It does not promote an ichat fallback to the personal subscription tier.
 
 `server/sync-codex-catalog.mjs` is an optional Bun script for the existing custom

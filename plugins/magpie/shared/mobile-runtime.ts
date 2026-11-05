@@ -1,3 +1,5 @@
+import { bridgeModuleImports } from "./mobile-scripts.js";
+
 export const mobileRuntime = String.raw`(() => {
   const send = (message) => window.ReactNativeWebView.postMessage(JSON.stringify(message));
   const pending = new Map();
@@ -74,6 +76,25 @@ export const mobileRuntime = String.raw`(() => {
     const empty = [204, 205, 304].includes(response.status);
     const bytes = empty ? null : Uint8Array.from(atob(response.body), (c) => c.charCodeAt(0));
     return new Response(bytes, { status: response.status, headers });
+  };
+
+  const rewriteImports = ${bridgeModuleImports.toString()};
+  const modules = new Map();
+  window.__paseoMagpieImport = (value) => {
+    const url = new URL(value, base);
+    if (url.origin !== base.origin) return Promise.reject(new TypeError("External module unavailable"));
+    let loaded = modules.get(url.href);
+    if (!loaded) {
+      loaded = fetch(url.href).then(async (response) => {
+        if (!response.ok) throw new Error("Magpie module unavailable (HTTP " + response.status + ")");
+        const source = rewriteImports(await response.text(), url.href);
+        const blob = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+        try { return await import(blob); }
+        finally { URL.revokeObjectURL(blob); }
+      }).catch((error) => { modules.delete(url.href); throw error; });
+      modules.set(url.href, loaded);
+    }
+    return loaded;
   };
 
   window.open = (url) => {

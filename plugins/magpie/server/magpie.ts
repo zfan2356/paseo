@@ -1,75 +1,26 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { request } from "node:http";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type { Snapshot, SignIn } from "../shared/magpie.js";
 import { projectSnapshot, projectSignIn, validCallback } from "./projection.js";
 import { Controls } from "./controls.js";
+import { requestManagement, startManagement } from "./connection.js";
 
-const run = promisify(execFile);
-export type Transport = (path: string, body?: unknown, gateway?: boolean) => Promise<unknown>;
-
-export const localRequest: Transport = async (path, body, gateway = false) => {
-  if (!/^\/(?:api|v1)\//.test(path) || path.includes(".."))
-    throw new Error("不支持的 Magpie 操作。");
-  const key = gateway
-    ? ""
-    : (await readFile(join(homedir(), ".local/state/magpie/web-key"), "utf8")).trim();
-  if (!gateway && !/^[a-zA-Z0-9._~-]{16,}$/.test(key))
-    throw new Error("Magpie 管理凭据格式不正确。");
-  const payload = body === undefined ? undefined : JSON.stringify(body);
-  return new Promise((resolve, reject) => {
-    const req = request(
-      {
-        hostname: "127.0.0.1",
-        port: gateway ? 3425 : 3430,
-        path,
-        method: payload === undefined ? "GET" : "POST",
-        headers: {
-          ...(gateway
-            ? { Authorization: "Bearer magpie-paseo" }
-            : { Cookie: `magpie_web_3430=${key}` }),
-          ...(payload === undefined
-            ? {}
-            : { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) }),
-        },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        res.on("data", (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > 4 * 1024 * 1024) {
-            req.destroy(new Error("Magpie 返回的数据过大。"));
-            return;
-          }
-          chunks.push(chunk);
-        });
-        res.on("error", () => reject(new Error("Magpie 连接中断。")));
-        res.on("end", () => {
-          if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
-            reject(new Error(`Magpie 操作未成功（HTTP ${res.statusCode ?? 0}）。`));
-            return;
-          }
-          let parsed: unknown;
-          try {
-            parsed =
-              res.statusCode === 204 ? {} : JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          } catch {
-            reject(new Error("Magpie 返回了无法识别的数据。"));
-            return;
-          }
-          resolve(parsed);
-        });
-      },
-    );
-    const deadline = setTimeout(() => req.destroy(new Error("timeout")), 30000);
-    req.on("close", () => clearTimeout(deadline));
-    req.on("error", () => reject(new Error("无法连接 Magpie，请启动服务后重试。")));
-    req.end(payload);
+export type Transport = (path: string, body?: unknown) => Promise<unknown>;
+export const localRequest: Transport = async (path, body) => {
+  const response = await requestManagement({
+    path,
+    method: body === undefined ? "GET" : "POST",
+    body: body === undefined ? "" : Buffer.from(JSON.stringify(body)).toString("base64"),
+    contentType: "application/json",
   });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Magpie 操作未成功（HTTP ${response.status}）。`);
+  }
+  try {
+    return response.status === 204
+      ? {}
+      : JSON.parse(Buffer.from(response.body, "base64").toString("utf8"));
+  } catch {
+    throw new Error("Magpie 返回了无法识别的数据。");
+  }
 };
 
 export class MagpieBridge {
@@ -85,8 +36,8 @@ export class MagpieBridge {
 
   async snapshot(refresh = false): Promise<Snapshot> {
     try {
-      const quota = this.send(`/v1/magpie/quotas${refresh ? "" : "?kept=1"}`, undefined, true).then(
-        (data) => ({ data, failed: false }),
+      const quota = this.send(`/api/usage/quotas${refresh ? "?asked=1" : ""}`).then(
+        (data) => ({ data: { data }, failed: false }),
         () => ({ data: { data: [] }, failed: true }),
       );
       const [providers, groups, quotas] = await Promise.all([
@@ -114,14 +65,7 @@ export class MagpieBridge {
   }
 
   async start(): Promise<Snapshot> {
-    try {
-      await run(join(homedir(), ".local/bin/magpie-start"), [], {
-        timeout: 45000,
-        maxBuffer: 16384,
-      });
-    } catch {
-      throw new Error("Magpie 启动失败，请在服务器终端运行 magpie-start 检查。 ");
-    }
+    await startManagement();
     return this.snapshot();
   }
 

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { webUiLink } from "./web.js";
 import { managementPath, mobileDocument, readManagement, type ReadResource } from "./mobile.js";
+import { bridgeModuleImports } from "../shared/mobile-scripts.js";
 
 test("opens the upstream management server with its existing private sign-in key", async () => {
   const directory = await mkdtemp(join(tmpdir(), "magpie-web-"));
@@ -21,6 +22,15 @@ test("opens the upstream management server with its existing private sign-in key
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("lazy page modules resolve against their owning script through the native bridge", () => {
+  expect(
+    bridgeModuleImports('import("./settings.js")', "https://magpie.paseo.invalid/app.js"),
+  ).toBe('window.__paseoMagpieImport("https://magpie.paseo.invalid/settings.js")');
+  expect(
+    bridgeModuleImports("import('../shared.js')", "https://magpie.paseo.invalid/plugins/client.js"),
+  ).toBe('window.__paseoMagpieImport("https://magpie.paseo.invalid/shared.js")');
 });
 
 test("uses a forwarded host without sharing the local Magpie cookie hostname", async () => {
@@ -80,6 +90,8 @@ test("mobile requests stay within the fixed management service resource paths", 
     "/api/%00",
     "/api/%",
     "/api/state#key",
+    "/%2fexample.com/a.js",
+    "/api/%7f",
     "/private/config.json",
   ]) {
     expect(managementPath(path), path).toBe(false);

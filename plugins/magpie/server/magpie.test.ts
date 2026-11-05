@@ -176,3 +176,32 @@ test("quota failure keeps providers and routes available with an explicit warnin
   assert.equal(result.groups.length, 1);
   assert.match(result.issue!, /额度读取失败/);
 });
+
+test("official management quotas derive remaining percentages without a gateway key", async () => {
+  const paths: string[] = [];
+  const bridge = new MagpieBridge(async (path) => {
+    paths.push(path);
+    if (path === "/api/providers") return providers;
+    if (path === "/api/groups") return groups;
+    if (path === "/api/state") return { agents: [] };
+    assert.equal(path, "/api/usage/quotas?asked=1");
+    return [
+      {
+        provider: "codex",
+        windows: [
+          { name: "5h", used: 25 },
+          { name: "credits", used: 0, text: true, display: "10 credits" },
+          { name: "wallet", used: 0, balance: 10 },
+        ],
+      },
+    ];
+  });
+  const snapshot = await bridge.snapshot(true);
+  assert.equal(snapshot.available, true);
+  assert.equal(snapshot.quotas[0].windows.length, 1);
+  assert.equal(snapshot.quotas[0].windows[0].remaining, 75);
+  assert.equal(
+    paths.some((path) => path.startsWith("/v1/")),
+    false,
+  );
+});
