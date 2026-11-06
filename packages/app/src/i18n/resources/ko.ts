@@ -2060,6 +2060,12 @@ export const ko: TranslationResources = {
     showMore: "더 보기",
     showLess: "접기",
   },
+  agentReport: {
+    received: "{{name}}의 보고",
+    finished: "완료",
+    completion: "완료 알림",
+    copy: "보고 복사",
+  },
   toolCallGroup: {
     thought: "생각함",
     editedFiles: {

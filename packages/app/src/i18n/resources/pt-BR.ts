@@ -2083,6 +2083,12 @@ export const ptBR: TranslationResources = {
     showMore: "Mostrar mais",
     showLess: "Mostrar menos",
   },
+  agentReport: {
+    received: "Relatório de {{name}}",
+    finished: "Concluído",
+    completion: "Notificação de conclusão",
+    copy: "Copiar relatório",
+  },
   toolCallGroup: {
     thought: "Pensou",
     editedFiles: {

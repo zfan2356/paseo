@@ -266,9 +266,11 @@ remain a separate pre-turn registry and retire on canonical acknowledgement.
 
 Every canonical run owns a visible turn, including heartbeats and agent notifications.
 Notifications delivered during a run stay inside it; batched notifications share the run
-that starts or accepts them. Received messages retain sender attribution, while lifecycle
-notifications remain visible events. Collapse, timing and locally mounted history share
-these boundaries.
+that starts or accepts them. Received messages retain sender attribution in compact
+reports; adjacent successful completion notices can share that report. Other lifecycle
+notifications remain separate visible events. This client presentation is described in
+[internal agent messages](../custom-feat/internal-agent-messages.md). Collapse, timing
+and locally mounted history share these boundaries.
 
 Agent-message XML belongs to the daemon's `agent/agent-messages` boundary. Prompt delivery encodes
 provenance; acceptance, provider echoes, import, and replay share its projection. The delivery ID is

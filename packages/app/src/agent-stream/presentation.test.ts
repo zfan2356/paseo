@@ -661,7 +661,7 @@ it.each(["collapseToolCalls", "collapseTurns"] as const)(
   },
 );
 
-it("presents received agent messages as attributed bubbles with the original turn identity", () => {
+it("presents received agent messages as collapsible reports with the original turn identity", () => {
   const call = toolCall("received", "agent_message");
   if (call.payload.source !== "agent") throw new Error("Expected agent tool");
   call.turnId = "turn";
@@ -682,8 +682,42 @@ it("presents received agent messages as attributed bubbles with the original tur
     turnId: "turn",
     text: "Ready",
     sender: { id: "sender", title: "Reviewer" },
+    agentReport: {
+      entries: [{ id: call.id, message: call.payload.data.agentMessage }],
+    },
   });
 });
+
+it.each(["full", "collapseToolCalls", "collapseTurns", "collapseProcess"] as const)(
+  "keeps grouped report messages addressable in %s display",
+  (display) => {
+    const report = toolCall("report", "agent_message");
+    const completion = toolCall("completion", "agent_message");
+    for (const [item, event] of [
+      [report, "message"],
+      [completion, "finished"],
+    ] as const) {
+      if (item.payload.source !== "agent") throw new Error("Expected agent tool");
+      item.turnId = "report-turn";
+      item.payload.data.agentMessage = {
+        event,
+        sender: { id: "reviewer", title: "Reviewer" },
+        text: item.id,
+      };
+    }
+    const result = createStreamPresentation()({
+      ...presentationOptions,
+      display,
+      transform: undefined,
+      tail: [report, completion],
+      head: [],
+      isTurnActive: false,
+    });
+    expect(result.tail.map((item) => item.id)).toEqual([report.id]);
+    expect(result.reportHosts.get(completion.id)).toBe(report.id);
+    expect(result.readingRowReplacements.get(completion.id)).toBe(report.id);
+  },
+);
 
 it("does not reopen the previous turn while a new run waits for its first row", () => {
   const timestamp = new Date();

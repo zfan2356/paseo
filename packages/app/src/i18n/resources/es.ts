@@ -2098,6 +2098,12 @@ export const es: TranslationResources = {
     showMore: "Mostrar más",
     showLess: "Mostrar menos",
   },
+  agentReport: {
+    received: "Informe de {{name}}",
+    finished: "Finalizado",
+    completion: "Notificación de finalización",
+    copy: "Copiar informe",
+  },
   toolCallGroup: {
     thought: "Razonó",
     editedFiles: {

@@ -2028,6 +2028,12 @@ export const zhCN: TranslationResources = {
     showMore: "展开",
     showLess: "收起",
   },
+  agentReport: {
+    received: "收到 {{name}} 的报告",
+    finished: "已完成",
+    completion: "完成通知",
+    copy: "复制报告",
+  },
   toolCallGroup: {
     thought: "已思考",
     editedFiles: {

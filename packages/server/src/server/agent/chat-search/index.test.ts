@@ -42,6 +42,36 @@ it("finds code and literal punctuation without searching tools, reasoning, or ta
   ]);
 });
 
+it("finds report and completion text under their original source locations", async () => {
+  const report: AgentTimelineItem = {
+    type: "tool_call",
+    callId: "report",
+    name: "agent_message",
+    status: "completed",
+    error: null,
+    detail: { type: "plain_text", text: "report **needle**" },
+    agentMessage: {
+      event: "message",
+      sender: { id: "reviewer" },
+      text: "report **needle**",
+    },
+  };
+  const completion: AgentTimelineItem = {
+    ...report,
+    callId: "done",
+    agentMessage: {
+      event: "finished",
+      sender: { id: "reviewer" },
+      text: "completion needle",
+    },
+  };
+  const result = await searchTimeline({ rows: rows([report, completion]), query: "needle" });
+  expect(result.locations).toEqual([
+    { seq: 1, role: "user", count: 1 },
+    { seq: 2, role: "user", count: 1 },
+  ]);
+});
+
 it("bounds results and resumes without losing locations", async () => {
   const source = rows(
     Array.from({ length: 202 }, () => ({ type: "user_message", text: "target" })),

@@ -68,6 +68,7 @@ import {
 } from "@/tool-calls/expansion-context";
 import { ToolCallSheetProvider } from "@/components/tool-call-sheet";
 import { createStreamPresentation } from "./presentation";
+import { AgentReportView } from "./agent-reports/view";
 import { OverviewToolCallGroupView } from "@/tool-calls/detail-level/overview/view";
 import { IndentRail } from "@/components/indent-rail";
 import { TurnSummaryLine } from "./turn-collapse/summary-line";
@@ -620,12 +621,18 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       );
       return {
         has: (messageId: string) => {
-          const hostId = presentation.turns.hostIdByFoldedMessageId.get(messageId);
+          const reportHost = presentation.reportHosts.get(messageId) ?? messageId;
+          const hostId = presentation.turns.hostIdByFoldedMessageId.get(reportHost);
           if (hostId && !presentation.turns.turnsByHostId.get(hostId)?.expanded) return false;
-          return mountedHistoryMessageIds.has(messageId) || liveHeadMessageIds.has(messageId);
+          return mountedHistoryMessageIds.has(reportHost) || liveHeadMessageIds.has(reportHost);
         },
       };
-    }, [baseRenderModel.segments.liveHead, mountedHistoryMessageIds, presentation.turns]);
+    }, [
+      baseRenderModel.segments.liveHead,
+      mountedHistoryMessageIds,
+      presentation.turns,
+      presentation.reportHosts,
+    ]);
     const chatOutline = useChatOutline({
       agentId,
       serverId: resolvedServerId,
@@ -711,12 +718,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     });
     // Chat find reveals a match inside a collapsed turn by opening the turn first.
     const revealLoadedMessage = useStableEvent((messageId: string): boolean => {
-      const hostId = presentation.turns.hostIdByFoldedMessageId.get(messageId);
+      const reportHost = presentation.reportHosts.get(messageId) ?? messageId;
+      const hostId = presentation.turns.hostIdByFoldedMessageId.get(reportHost);
       if (hostId && !presentation.turns.turnsByHostId.get(hostId)?.expanded) {
         setTurnExpanded(hostId, true);
         return true;
       }
-      return revealLoadedHistory(messageId);
+      return revealLoadedHistory(reportHost);
     });
     // Read through stable events so a collapse rerun does not change the renderer identity;
     // rows whose turn state changed are revised through `historyRowRevision`.
@@ -731,13 +739,24 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       }
       return getCollapsedTurn(layoutItem.item.id)?.expanded ? "openedHost" : "none";
     });
+    const holdReportReadingPosition = useCallback(
+      () => viewportRef.current?.holdReadingPosition(),
+      [],
+    );
 
     const setToolCallGroupExpanded = toolCallExpansion.setGroupExpanded;
 
     const renderUserMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
         const collapsedTurn = getCollapsedTurn(item.id);
-        const message = (
+        const message = item.agentReport ? (
+          <AgentReportView
+            itemId={item.id}
+            report={item.agentReport}
+            serverId={resolvedServerId}
+            onToggle={holdReportReadingPosition}
+          />
+        ) : (
           <UserMessage
             serverId={resolvedServerId}
             agentId={agentId}
@@ -775,6 +794,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         pendingClientMessageIds,
         resolvedServerId,
         setTurnExpanded,
+        holdReportReadingPosition,
       ],
     );
 

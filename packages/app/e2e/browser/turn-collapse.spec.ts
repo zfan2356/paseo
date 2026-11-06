@@ -160,7 +160,9 @@ test.describe("Turn collapse", () => {
   });
 });
 
-test("received messages show their sender and open that agent", async ({ page }) => {
+test("received reports stay collapsed and open their sender on demand", async ({
+  page,
+}, testInfo) => {
   await page.addInitScript(() =>
     localStorage.setItem("@paseo:app-settings", JSON.stringify({ theme: "dark" })),
   );
@@ -182,18 +184,49 @@ test("received messages show their sender and open that agent", async ({ page })
       "I reviewed the turn-grouping changes. Heartbeats now keep their own timing footer, and the previous response stays visible.",
       { sourceAgentId: sender.id },
     );
+    await recipient.client.sendAgentMessage(
+      recipient.agentId,
+      "A second review note: cached-history-needle is preserved.",
+      { sourceAgentId: sender.id },
+    );
     await openAgentRoute(page, recipient);
     await expectComposerVisible(page);
+    const report = page.getByTestId("agent-report");
+    const toggle = report.getByRole("button", { name: "Report from Reviewer", exact: true });
+    const details = report.getByTestId("agent-report-details");
+    await expect(report).toBeVisible();
+    await expect(report).toHaveCount(1);
+    await expect(toggle).toBeVisible();
+    await expect(details).toHaveCount(0);
+    await expect(page.getByTestId("user-message")).toHaveCount(0);
+    await expect(
+      page.getByText("I reviewed the turn-grouping changes.", { exact: false }),
+    ).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("report-collapsed.png") });
+    await toggle.click();
+    await expect(report).toContainText("I reviewed the turn-grouping changes.");
+    await expect(report).toContainText("A second review note:");
     const attribution = page.getByRole("button", { name: "Sent by Reviewer", exact: true });
     await expect(attribution).toBeVisible();
-    await expect(page.getByTestId("user-message").filter({ has: attribution })).toContainText(
-      "I reviewed the turn-grouping changes.",
-    );
     const labelColor = await attribution
       .getByText("Sent by Reviewer", { exact: true })
       .evaluate((element) => getComputedStyle(element).color);
     await expect(attribution.locator("svg")).toHaveCSS("fill", labelColor);
-    await expectSenderAlignedWithBubble(attribution);
+    await page.screenshot({ path: testInfo.outputPath("report-expanded.png") });
+    await toggle.click();
+    await page.keyboard.press("ControlOrMeta+f");
+    await page
+      .getByRole("textbox", { name: "Find in pane", exact: true })
+      .fill("cached-history-needle");
+    await expect(details).toBeVisible();
+    await expect(page.getByRole("status", { name: "Find matches" })).toHaveText("1 of 1");
+    await page.keyboard.press("Escape");
+    await expect(details).toHaveCount(0);
+    await page.reload();
+    await expectComposerVisible(page);
+    await expect(toggle).toBeVisible();
+    await expect(details).toHaveCount(0);
+    await toggle.click();
     await attribution.scrollIntoViewIfNeeded();
     await page.screenshot({ path: "/tmp/sender-attribution.png" });
     await attribution.click();
@@ -229,15 +262,18 @@ test("long sender attribution stays on one line in compact chat", async ({ page 
     );
     await openAgentRoute(page, recipient);
     await expectComposerVisible(page);
+    const report = page.getByTestId("agent-report");
+    const toggle = report.getByRole("button", { name: `Report from ${title}`, exact: true });
+    await expect(toggle).toBeVisible();
+    await expect(report.getByTestId("agent-report-details")).toHaveCount(0);
+    await toggle.click();
     const attribution = page.getByRole("button", { name: `Sent by ${title}`, exact: true });
     await expect(attribution).toBeVisible();
     await expectSenderTruncatedWithinMessage(attribution, title);
-    await expectSenderAlignedWithBubble(attribution);
     await attribution.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath("sender-compact-390.png") });
     await page.setViewportSize({ width: 320, height: 740 });
     await expectSenderTruncatedWithinMessage(attribution, title);
-    await expectSenderAlignedWithBubble(attribution);
     await page.screenshot({ path: testInfo.outputPath("sender-compact-320.png") });
   } finally {
     await recipient.cleanup();
@@ -257,18 +293,10 @@ declare global {
   }
 }
 
-async function seedReceivedReviewWithToolTurn() {
+async function seedLongPromptWithToolTurn() {
   const recipient = await seedMockAgentWorkspace({
     repoPrefix: "preview-clip-",
     title: "Implementation",
-  });
-  const sender = await recipient.client.createAgent({
-    provider: "mock",
-    cwd: recipient.cwd,
-    workspaceId: recipient.workspaceId,
-    title: "Reviewer",
-    modeId: "load-test",
-    model: "e2e-fast-stream",
   });
   // Long enough to clip behind the preview fade; the instruction makes the recipient run tools.
   await recipient.client.sendAgentMessage(
@@ -276,7 +304,6 @@ async function seedReceivedReviewWithToolTurn() {
     "Review complete: the regression is red on the baseline and green with the fix.\n" +
       "Keep the previous response visible while the reader scrolls.\n".repeat(30) +
       "Now emit 7 tool agent stream updates",
-    { sourceAgentId: sender.id },
   );
   return recipient;
 }
@@ -328,24 +355,20 @@ async function expectReceivedMessagePreviewUndisturbed(page: Page): Promise<void
 
 // Opening a turn must not rebuild its host row: the preview above the summary loses its
 // measured height when remounted, which drops the fade and "Show more" for a frame.
-test("opening a turn keeps the received message above it clipped on every frame", async ({
-  page,
-}) => {
+test("opening a turn keeps the human message above it clipped on every frame", async ({ page }) => {
   await useChatDisplay(page, "collapseTurns");
-  const recipient = await seedReceivedReviewWithToolTurn();
+  const recipient = await seedLongPromptWithToolTurn();
   try {
     await openAgentRoute(page, recipient);
     await expectComposerVisible(page);
     await expect(page.getByText("Completed 7 commands", { exact: true })).toBeVisible({
       timeout: 30_000,
     });
-    const bubble = page
-      .getByTestId("user-message")
-      .filter({ has: page.getByRole("button", { name: "Sent by Reviewer", exact: true }) });
+    const bubble = page.getByTestId("user-message").filter({ hasText: "Review complete:" });
     await expect(bubble.getByRole("button", { name: "Show more", exact: true })).toBeVisible();
     await bubble.scrollIntoViewIfNeeded();
 
-    await watchReceivedMessagePreview(page, "Sent by Reviewer");
+    await watchReceivedMessagePreview(page, "Review complete:");
     await page
       .getByTestId("turn-summary")
       .getByRole("button", { name: "Ran 7 commands", exact: true })
@@ -369,22 +392,6 @@ async function expectSenderTruncatedWithinMessage(attribution: Locator, title: s
   }));
   expect(bounds.textWidth).toBeGreaterThan(bounds.visibleWidth);
   expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth);
-}
-
-async function expectSenderAlignedWithBubble(attribution: Locator) {
-  const edges = await attribution.evaluate((button) => {
-    const bubble = button.nextElementSibling;
-    const label = button.querySelector('[dir="auto"]');
-    if (!bubble || !label) throw new Error("Sender label or message bubble missing");
-    return {
-      labelRight: label.getBoundingClientRect().right,
-      bubbleRight: bubble.getBoundingClientRect().right,
-    };
-  });
-  expect(
-    Math.abs(edges.labelRight - edges.bubbleRight),
-    "sender and bubble share the right edge",
-  ).toBeLessThanOrEqual(1);
 }
 
 async function seedWholeTurnHistory() {

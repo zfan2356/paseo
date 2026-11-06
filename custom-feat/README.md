@@ -39,7 +39,7 @@ stays authoritative for intent and design.
 | [safe-local-macos-app-replacement.md](safe-local-macos-app-replacement.md) | Installer that replaces the running Mac app safely with rollback                      |
 | [stable-local-macos-signing.md](stable-local-macos-signing.md)             | Reusable `Paseo Local` signing identity so TCC grants survive rebuilds                |
 | [intermediate-process-folding.md](intermediate-process-folding.md)         | Fold reasoning/tool calls/todos into one collapsible group per turn                   |
-| [internal-agent-messages.md](internal-agent-messages.md)                   | Keep agent-to-agent context out of visible user messages                              |
+| [internal-agent-messages.md](internal-agent-messages.md)                   | Fold received agent reports and adjacent completion notices in chat                   |
 | [persistent-terminal-sessions.md](persistent-terminal-sessions.md)         | PTYs owned by a detached worker survive daemon restarts                               |
 | [viewport-only-terminal-restore.md](viewport-only-terminal-restore.md)     | Reopening a terminal paints the viewport, not replayed scrollback                     |
 | [agent-tui-conversation-switch.md](agent-tui-conversation-switch.md)       | Switch an agent conversation between Agent view and its real TUI                      |

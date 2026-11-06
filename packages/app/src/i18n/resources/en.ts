@@ -2075,6 +2075,12 @@ export const en = {
     showMore: "Show more",
     showLess: "Show less",
   },
+  agentReport: {
+    received: "Report from {{name}}",
+    finished: "Finished",
+    completion: "Completion notification",
+    copy: "Copy report",
+  },
   toolCallGroup: {
     thought: "Thought",
     editedFiles: {

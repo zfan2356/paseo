@@ -2083,6 +2083,12 @@ export const ru: TranslationResources = {
     showMore: "Показать больше",
     showLess: "Свернуть",
   },
+  agentReport: {
+    received: "Отчёт от {{name}}",
+    finished: "Завершено",
+    completion: "Уведомление о завершении",
+    copy: "Копировать отчёт",
+  },
   toolCallGroup: {
     thought: "Обдумал",
     editedFiles: {

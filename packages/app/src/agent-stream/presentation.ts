@@ -12,6 +12,7 @@ import {
 import type { StreamItem, UserMessageItem } from "@/types/stream";
 import { collapseTurns, type TurnCollapse, type ProcessExpansion } from "./turn-collapse/model";
 import type { ReadingRowReplacements } from "./reading-anchor";
+import { createAgentReportProjection } from "./agent-reports/model";
 
 interface PresentationInput {
   tail: StreamItem[];
@@ -29,6 +30,7 @@ interface PresentationInput {
 export interface StreamPresentation extends ToolCallDetailProjection {
   turns: Omit<TurnCollapse, "tail">;
   readingRowReplacements: ReadingRowReplacements;
+  reportHosts: ReadingRowReplacements;
 }
 
 function groupedRowHosts(
@@ -56,6 +58,7 @@ const NO_COLLAPSED_TURNS: StreamPresentation["turns"] = collapseTurns({
 /** Source messages reach plugins before display projection. */
 export function createStreamPresentation() {
   const userMessageCache = new WeakMap<UserMessageItem, UserMessageItem>();
+  const projectReports = createAgentReportProjection();
 
   function presentUserMessage(item: UserMessageItem): UserMessageItem {
     const cached = userMessageCache.get(item);
@@ -87,29 +90,13 @@ export function createStreamPresentation() {
   let processTail: StreamItem[] = [];
 
   function presentRows(item: StreamItem): StreamItem[] {
-    if (item.kind === "tool_call" && item.payload.source === "agent") {
-      const message = item.payload.data.agentMessage;
-      if (message?.event === "message") {
-        return [
-          {
-            kind: "user_message",
-            id: item.id,
-            turnId: item.turnId,
-            timelineCursor: item.timelineCursor,
-            timestamp: item.timestamp,
-            text: message.text,
-            sender: message.sender,
-          },
-        ];
-      }
-    }
     return [item.kind === "user_message" ? presentUserMessage(item) : item];
   }
 
   function collapse(
     projection: ToolCallDetailProjection,
     input: PresentationInput,
-  ): Omit<StreamPresentation, "readingRowReplacements"> {
+  ): Omit<StreamPresentation, "readingRowReplacements" | "reportHosts"> {
     if (input.display === "collapseProcess") {
       const result = collapseProcess(projection, input);
       if (!sameRows(processTail, result.tail)) processTail = result.tail;
@@ -179,23 +166,24 @@ export function createStreamPresentation() {
       const blocks = presentRows(item);
       head.push(...blocks);
     }
+    const reports = projectReports(historyRows, head);
     if (
-      preparedTail !== historyRows ||
+      preparedTail !== reports.tail ||
       preparedLevel !== level ||
       preparedAutoExpandReasoning !== input.autoExpandReasoning
     ) {
-      preparedHistory = prepareToolCallHistory(level, historyRows, input.autoExpandReasoning);
+      preparedHistory = prepareToolCallHistory(level, reports.tail, input.autoExpandReasoning);
       historyGroupHosts = preparedHistory
         ? groupedRowHosts(preparedHistory.grouped.tail, preparedHistory.grouped.groupsByHostId)
         : new Map();
-      preparedTail = historyRows;
+      preparedTail = reports.tail;
       preparedLevel = level;
       preparedAutoExpandReasoning = input.autoExpandReasoning;
     }
     const projection = projectToolCallDetailLevel({
       level,
-      tail: historyRows,
-      head,
+      tail: reports.tail,
+      head: reports.head,
       preparedHistory,
       isTurnActive: input.isTurnActive,
     });
@@ -210,12 +198,16 @@ export function createStreamPresentation() {
     const retainedGroupHosts = historyGroupHosts;
     return {
       ...result,
+      reportHosts: reports.hosts,
       readingRowReplacements: {
         get(id) {
-          if (result.turns.nestedItemIds.has(id)) return undefined;
-          const groupHost = liveGroupHosts.get(id) ?? retainedGroupHosts.get(id) ?? id;
+          const reportHost = reports.hosts.get(id) ?? id;
+          if (result.turns.nestedItemIds.has(reportHost))
+            return reportHost === id ? undefined : reportHost;
+          const groupHost =
+            liveGroupHosts.get(reportHost) ?? retainedGroupHosts.get(reportHost) ?? reportHost;
           return (
-            result.turns.hostIdByHiddenRowId.get(id) ??
+            result.turns.hostIdByHiddenRowId.get(reportHost) ??
             result.turns.hostIdByHiddenRowId.get(groupHost) ??
             (groupHost === id ? undefined : groupHost)
           );
@@ -232,7 +224,7 @@ function sameRows(previous: StreamItem[], next: StreamItem[]): boolean {
 function collapseProcess(
   projection: ToolCallDetailProjection,
   input: PresentationInput,
-): Omit<StreamPresentation, "readingRowReplacements"> {
+): Omit<StreamPresentation, "readingRowReplacements" | "reportHosts"> {
   const all = [...projection.tail, ...projection.head];
   const latestId = all.at(-1)?.turnId;
   const isLatestTurnOpen =

@@ -2070,6 +2070,12 @@ export const ja: TranslationResources = {
     showMore: "もっと見る",
     showLess: "折りたたむ",
   },
+  agentReport: {
+    received: "{{name}} からの報告",
+    finished: "完了",
+    completion: "完了通知",
+    copy: "報告をコピー",
+  },
   toolCallGroup: {
     thought: "思考",
     editedFiles: {

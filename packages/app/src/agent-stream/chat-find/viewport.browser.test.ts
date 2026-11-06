@@ -33,7 +33,7 @@ function viewport(root: HTMLElement, capture: Capture) {
     {
       viewportRef: { current: handle },
       revealLoadedMessage: () => false,
-      visibleMessageIds: new Set(["message-1"]),
+      visibleMessageIds: new Set(["message-1", "message-2"]),
     };
   return createFindViewport({
     getBindings: () => bindings,
@@ -57,6 +57,24 @@ it("counts occurrences across every block row of the message", async () => {
     new AbortController().signal,
   );
   expect(found).toEqual({ occurrence: 2, count: 3 });
+});
+
+it("retains a nested report entry as the scroll target", async () => {
+  const root = transcript("message-1", ["first report"]);
+  const entry = document.createElement("div");
+  entry.dataset.messageId = "message-2";
+  entry.innerHTML = '<div data-message-text="true">completion needle</div>';
+  root.firstElementChild!.append(entry);
+  const capture: Capture = {};
+  const found = await viewport(root, capture).reveal(
+    "message-2",
+    "needle",
+    0,
+    new AbortController().signal,
+  );
+  expect(found).toEqual({ occurrence: 0, count: 1 });
+  expect(capture.occurrence?.targetTop()).toBeTypeOf("number");
+  expect(highlightedText()).toEqual(["needle"]);
 });
 
 // The settle loop asks for the target position every frame while the viewport moves,

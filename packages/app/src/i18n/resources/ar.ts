@@ -2050,6 +2050,12 @@ export const ar: TranslationResources = {
     showMore: "عرض المزيد",
     showLess: "عرض أقل",
   },
+  agentReport: {
+    received: "تقرير من {{name}}",
+    finished: "اكتمل",
+    completion: "إشعار الإكمال",
+    copy: "نسخ التقرير",
+  },
   toolCallGroup: {
     thought: "فكّر",
     editedFiles: {
