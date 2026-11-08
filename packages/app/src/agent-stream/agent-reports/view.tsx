@@ -10,12 +10,12 @@ import { useSessionStore } from "@/stores/session-store";
 import { useToolCallExpanded } from "@/tool-calls/expansion-context";
 import { useChatFindSelectedMessageId } from "../chat-find";
 import type { AgentReport } from "./model";
+import { useDisclosureHold } from "../disclosure";
 
 interface AgentReportViewProps {
   itemId: string;
   report: AgentReport;
   serverId: string;
-  onToggle?: () => void;
 }
 
 const MESSAGE_TEXT_DATASET = { messageText: "true" };
@@ -24,9 +24,9 @@ export const AgentReportView = memo(function AgentReportView({
   itemId,
   report,
   serverId,
-  onToggle,
 }: AgentReportViewProps) {
   const { t } = useTranslation();
+  const hold = useDisclosureHold();
   const sender = report.entries[0]!.message.sender;
   const host = sender.serverId ?? serverId;
   const title = useSessionStore((state) => {
@@ -56,9 +56,8 @@ export const AgentReportView = memo(function AgentReportView({
     [report],
   );
   const handleToggle = useCallback(() => {
-    onToggle?.();
-    toggle();
-  }, [onToggle, toggle]);
+    hold(toggle);
+  }, [hold, toggle]);
   const renderDetails = useCallback(
     () => (
       <View style={styles.details} testID="agent-report-details">

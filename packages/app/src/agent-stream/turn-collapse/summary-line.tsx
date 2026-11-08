@@ -1,43 +1,45 @@
 import { memo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { ListTree, Summary } from "lucide-react-native";
+import { useDisclosureHold } from "@/agent-stream/disclosure";
 import { ExpandableBadge } from "@/components/message";
 import { useOverviewSummaryLabel } from "@/tool-calls/detail-level/overview/label";
-import type { CollapsedTurn } from "./model";
+import type { TurnSummaryItem } from "@/types/stream";
 
 /**
  * The row a collapsed turn leaves under its user message, styled like a tool-call group.
  * Pressing it opens the turn's rows beneath it.
  */
 export const TurnSummaryLine = memo(function TurnSummaryLine({
-  turn,
+  item,
   onExpandedChange,
 }: {
-  turn: CollapsedTurn;
+  item: TurnSummaryItem;
   onExpandedChange: (hostId: string, expanded: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const summaryLabel = useOverviewSummaryLabel(turn.summary.tools) || t("turnSummary.details");
-  const label = turn.process ? t("intermediateProcess.label") : summaryLabel;
+  const summaryLabel = useOverviewSummaryLabel(item.tools) || t("turnSummary.details");
+  const label = item.process ? t("intermediateProcess.label") : summaryLabel;
+  const hold = useDisclosureHold();
   const toggle = useCallback(
-    () => onExpandedChange(turn.hostId, !turn.expanded),
-    [onExpandedChange, turn.expanded, turn.hostId],
+    () => hold(() => onExpandedChange(item.hostId, !item.expanded)),
+    [hold, onExpandedChange, item.expanded, item.hostId],
   );
 
   let secondaryLabel: string | undefined;
-  if (turn.process)
-    secondaryLabel = turn.process.active
+  if (item.process)
+    secondaryLabel = item.process.active
       ? t("intermediateProcess.running")
-      : t("intermediateProcess.steps", { count: turn.process.stepCount });
+      : t("intermediateProcess.steps", { count: item.process.stepCount });
   return (
     <ExpandableBadge
-      testID={turn.process ? "intermediate-process-group" : "turn-summary"}
+      testID={item.process ? "intermediate-process-group" : "turn-summary"}
       label={label}
-      icon={turn.process ? ListTree : Summary}
+      icon={item.process ? ListTree : Summary}
       secondaryLabel={secondaryLabel}
-      isLoading={turn.process?.active}
-      isError={turn.process?.hasError}
-      isExpanded={turn.expanded}
+      isLoading={item.process?.active}
+      isError={item.process?.hasError}
+      isExpanded={item.expanded}
       onToggle={toggle}
       borderlessWhenExpanded
     />

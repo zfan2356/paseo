@@ -1,3 +1,4 @@
+import { CodexBackgroundInventory } from "./codex/background-inventory.js";
 import { validateProviderOptions } from "../provider-options.js";
 import {
   getAgentStreamEventTurnId,
@@ -58,11 +59,13 @@ import { CODEX_GOAL_CONTROL_INSTRUCTIONS } from "./codex/goal-control.js";
 import { CodexAsyncQuestions, codexAsyncQuestionToTimeline } from "./codex/async-questions.js";
 import { resolveIchatServiceTiers } from "./codex/ichat-service-tiers.js";
 import {
+  fileChangesToPreview,
   mapCodexToolCallEnvelope,
   mapCodexToolCallFromThreadItem,
   normalizeCommandExecutionCommand,
   splitCodexMcpToolResultImages,
 } from "./codex/tool-call-mapper.js";
+import { normalizeCodexFilePath } from "./codex/tool-call-detail-parser.js";
 import {
   checkProviderLaunchAvailable,
   createProviderEnv,
@@ -75,7 +78,7 @@ import {
   probeExecutable,
 } from "../../../executable-resolution/executable-resolution.js";
 import { createPathEquivalenceMatcher } from "../../../utils/path.js";
-import { spawnProcess } from "../../../utils/spawn.js";
+import { spawnProcess, type SpawnProcessOptions } from "../../../utils/spawn.js";
 import { extractCodexTerminalSessionId, nonEmptyString } from "./tool-call-mapper-utils.js";
 import {
   buildCodexFeatures,
@@ -100,6 +103,7 @@ import {
   resolveSharedCodexSocket,
   type SharedCodexFeatures,
 } from "./codex/shared-app-server.js";
+import { codexAppServerStartup } from "./codex/app-server-startup.js";
 import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
 import {
   buildCodexSideQuestionForkParams,
@@ -305,14 +309,31 @@ const CODEX_MODES: AgentMode[] = [
 const DEFAULT_CODEX_MODE_ID = "auto";
 
 interface CodexAppServerClientLike {
-  request(method: string, params?: unknown): Promise<unknown>;
+  request(method: string, params?: unknown, timeoutMs?: number): Promise<unknown>;
   forkThread?(params: CodexThreadForkParams): Promise<CodexThreadForkResponse>;
   rollbackThread?(params: CodexThreadRollbackParams): Promise<CodexThreadRollbackResponse>;
   notify(method: string, params?: unknown): void;
   dispose(): Promise<void>;
 }
 
+interface CodexAppServerLaunchPrefix {
+  command: string;
+  args: string[];
+}
+
+interface CodexAppServerProcessSpawnInput extends CodexAppServerLaunchPrefix {
+  options: SpawnProcessOptions;
+}
+
+interface CodexAppServerProcessPort {
+  resolvePrefix(options: {
+    runtimeSettings?: ProviderRuntimeSettings;
+  }): Promise<CodexAppServerLaunchPrefix>;
+  spawn(input: CodexAppServerProcessSpawnInput): ChildProcess;
+}
+
 interface CodexAppServerAgentDeps {
+  appServerProcess?: CodexAppServerProcessPort;
   environment?: Record<string, string>;
   workspaceGitService?: Pick<WorkspaceGitService, "resolveRepoRoot">;
   customProvider?: {
@@ -624,10 +645,9 @@ export async function findDefaultCodexBinary(): Promise<string | null> {
   return await findCodexMicrosoftStoreBinary();
 }
 
-async function resolveCodexLaunchPrefix(runtimeSettings?: ProviderRuntimeSettings): Promise<{
-  command: string;
-  args: string[];
-}> {
+async function resolveCodexLaunchPrefix(
+  runtimeSettings?: ProviderRuntimeSettings,
+): Promise<CodexAppServerLaunchPrefix> {
   const launch = await resolveCodexLaunch(runtimeSettings);
   const availability = await checkCodexLaunchAvailable(launch);
   if (!availability.available) {
@@ -641,6 +661,11 @@ async function resolveCodexLaunchPrefix(runtimeSettings?: ProviderRuntimeSetting
     args: launch.args,
   };
 }
+
+const defaultCodexAppServerProcess: CodexAppServerProcessPort = {
+  resolvePrefix: ({ runtimeSettings }) => resolveCodexLaunchPrefix(runtimeSettings),
+  spawn: ({ command, args, options }) => spawnProcess(command, args, options),
+};
 
 async function resolveCodexLaunch(
   runtimeSettings?: ProviderRuntimeSettings,
@@ -1419,6 +1444,15 @@ interface CodexPatchFileChange {
   path: string;
   kind?: string;
   content?: string;
+  movePath?: string;
+}
+
+function codexPatchMovePath(value: unknown): string | undefined {
+  const record = toObjectRecord(value);
+  if (!record) return undefined;
+  const kind = toObjectRecord(record.kind);
+  const destination = record.move_path ?? kind?.move_path;
+  return typeof destination === "string" ? destination : undefined;
 }
 
 function extractPatchLikeText(value: unknown): string | undefined {
@@ -1551,6 +1585,7 @@ function parseCodexPatchChanges(changes: unknown): CodexPatchFileChange[] {
             (typeof record.type === "string" && record.type) ||
             undefined,
           content: extractPatchLikeText(record),
+          movePath: codexPatchMovePath(record),
         };
       })
       .filter((entry): entry is CodexPatchFileChange => entry !== null);
@@ -1570,6 +1605,7 @@ function parseCodexPatchChanges(changes: unknown): CodexPatchFileChange[] {
           (typeof recordChanges.type === "string" && recordChanges.type) ||
           undefined,
         content: extractPatchLikeText(recordChanges),
+        movePath: codexPatchMovePath(recordChanges),
       },
     ];
   }
@@ -1589,6 +1625,7 @@ function parseCodexPatchChanges(changes: unknown): CodexPatchFileChange[] {
             ? ((value as { type?: string }).type ?? undefined)
             : undefined,
         content: extractPatchLikeText(value),
+        movePath: codexPatchMovePath(value),
       };
     })
     .filter((entry): entry is CodexPatchFileChange => entry !== null);
@@ -1697,6 +1734,31 @@ function mapCodexExecNotificationToToolCall(params: {
   return params.running ? toRunningToolCall(mapped) : mapped;
 }
 
+function codexPatchPreview(
+  files: CodexPatchFileChange[],
+  cwd?: string | null,
+): {
+  filePath: string | undefined;
+  patchText: string | undefined;
+} {
+  const preview =
+    files.length > 1
+      ? fileChangesToPreview(
+          files.map((file) => ({
+            path: normalizeCodexFilePath(file.path, cwd) ?? file.path,
+            kind: file.kind,
+            diff: file.content,
+            movePath: file.movePath ? normalizeCodexFilePath(file.movePath, cwd) : undefined,
+          })),
+        )
+      : undefined;
+  const firstPath = preview?.filePath ?? files[0]?.path;
+  const firstPatchText = files
+    .map((file) => file.content?.trim())
+    .find((value): value is string => typeof value === "string" && value.length > 0);
+  return { filePath: firstPath, patchText: preview?.unifiedDiff ?? firstPatchText };
+}
+
 export function mapCodexPatchNotificationToToolCall(params: {
   callId?: string | null;
   changes: unknown;
@@ -1707,11 +1769,7 @@ export function mapCodexPatchNotificationToToolCall(params: {
   running: boolean;
 }): ToolCallTimelineItem | null {
   const files = parseCodexPatchChanges(params.changes);
-  const firstPath = files[0]?.path;
-  const firstPatchText = files
-    .map((file) => file.content?.trim())
-    .find((value): value is string => typeof value === "string" && value.length > 0);
-  const patchText = firstPatchText;
+  const { filePath: firstPath, patchText } = codexPatchPreview(files, params.cwd);
   const patchFields = codexPatchTextFields(patchText);
   const mapped = mapCodexToolCallEnvelope({
     callId: params.callId ?? null,
@@ -3350,6 +3408,14 @@ export function buildCodexAppServerEnv(
   });
 }
 
+function codexStartupStateDirKey(environment: NodeJS.ProcessEnv): string {
+  const home =
+    process.platform === "win32"
+      ? environment.USERPROFILE || os.homedir()
+      : environment.HOME || os.homedir();
+  return path.resolve(environment.CODEX_HOME || path.join(home, ".codex"));
+}
+
 function buildCodexAppServerInitializeParams(): {
   clientInfo: { name: string; title: string; version: string };
   capabilities: { experimentalApi: true; mcpServerOpenaiFormElicitation: true };
@@ -3477,6 +3543,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   } | null = null;
   private pendingSideChatForkSourceId: string | null = null;
   private client: CodexAppServerClient | null = null;
+  private readonly background = new CodexBackgroundInventory((event) => this.emitEvent(event));
   private threadRollbackAvailable = true;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private startupEvents: AgentStreamEvent[] | null = null;
@@ -3550,6 +3617,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private sharedResumeTurnPending = false;
   private connectionState: "disconnected" | "history-ready" | "connected" = "disconnected";
   private connectionPromise: Promise<void> | null = null;
+  private readonly startupAbort = new AbortController();
   private closed = false;
   private collaborationModes: Array<{
     name: string;
@@ -3673,8 +3741,15 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.connectionState = "history-ready";
       return;
     }
-    const child = await this.spawnAppServer();
-    const client = new CodexAppServerClient(child, this.logger, () => this.traceContext());
+    const { client, initialized } = await codexAppServerStartup.start({
+      stateDirKey: codexStartupStateDirKey(this.harnessEnvironment),
+      spawn: this.spawnAppServer,
+      createClient: (child) =>
+        new CodexAppServerClient(child, this.logger, () => this.traceContext()),
+      initializeParams: buildCodexAppServerInitializeParams(),
+      logger: this.logger,
+      signal: this.startupAbort.signal,
+    });
     if (this.closed) {
       await client.dispose();
       throw this.createClosedError();
@@ -3687,11 +3762,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.registerRequestHandlers();
 
     try {
-      const initialized = toObjectRecord(
-        await client.request("initialize", buildCodexAppServerInitializeParams()),
+      this.threadRollbackAvailable = codexServerHasThreadRollback(
+        toObjectRecord(initialized)?.userAgent,
       );
-      this.threadRollbackAvailable = codexServerHasThreadRollback(initialized?.userAgent);
-      client.notify("initialized", {});
 
       this.speedModels =
         CodexModelListResponseSchema.parse(await client.request("model/list", {})).data ?? [];
@@ -3737,6 +3810,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         throw this.createClosedError();
       }
       this.connectionState = "connected";
+      this.background.start({ client, thread: this.currentThreadId });
     } catch (error) {
       try {
         if (this.client === client) {
@@ -3790,6 +3864,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.sharedThreadSubscribed = false;
     this.sharedResumeTurnPending = false;
     this.connectionState = "disconnected";
+    this.background.stop();
     const hasActiveRootTurn = this.activeForegroundTurnId !== null || this.currentTurnId !== null;
     this.clearPendingPermissions({ preservePlanApprovals: !hasActiveRootTurn });
     if (hasActiveRootTurn) {
@@ -4048,11 +4123,16 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private async readArchivedHistory(): Promise<CodexThreadHistory> {
-    const child = await this.spawnAppServer();
-    const client = new CodexAppServerClient(child, this.logger, () => this.traceContext());
+    const { client } = await codexAppServerStartup.start({
+      stateDirKey: codexStartupStateDirKey(this.harnessEnvironment),
+      spawn: this.spawnAppServer,
+      createClient: (child) =>
+        new CodexAppServerClient(child, this.logger, () => this.traceContext()),
+      initializeParams: buildCodexAppServerInitializeParams(),
+      logger: this.logger,
+      signal: this.startupAbort.signal,
+    });
     try {
-      await client.request("initialize", buildCodexAppServerInitializeParams());
-      client.notify("initialized", {});
       return await this.readThreadHistory(client);
     } finally {
       await client.dispose();
@@ -4690,6 +4770,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     const startupEvents = this.startupEvents;
     this.startupEvents = null;
     for (const event of startupEvents ?? []) this.notifySubscribers(event);
+    const background = this.background.snapshot();
+    if (background) callback(background);
     return () => {
       this.subscribers.delete(callback);
     };
@@ -5283,6 +5365,10 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
   }
 
+  stopBackgroundWork(id: string): Promise<void> {
+    return this.background.stopItem(id);
+  }
+
   async canStopRuntime(): Promise<boolean> {
     if (
       !this.client ||
@@ -5446,6 +5532,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.closed = true;
     // A shared approval belongs to the server; detaching must not answer it with cancel.
     if (this.client?.isShared) await this.disposeClient();
+    this.startupAbort.abort(this.createClosedError());
+    this.background.stop();
     this.clearPendingPermissions();
     this.pendingToolCallDetails.clear();
     this.pendingSubAgentNotificationsByThreadId.clear();
@@ -5476,6 +5564,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private async disposeClient(): Promise<void> {
+    this.background.stop();
     const client = this.client;
     this.sharedThreadSubscribed = false;
     this.sharedResumeTurnPending = false;
@@ -5704,6 +5793,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.config.model = model;
     this.reconcileServiceTier();
     this.config.thinkingOptionId = thinkingOptionId;
+    this.refreshResolvedCollaborationMode();
     return model;
   }
 
@@ -5893,6 +5983,14 @@ export class CodexAppServerAgentSession implements AgentSession {
       await this.dispatchSubAgentNotification(parsed, route.callId);
       return;
     }
+    if (
+      parsed.kind === "turn_completed" ||
+      parsed.kind === "exec_command_started" ||
+      parsed.kind === "exec_command_completed" ||
+      ((parsed.kind === "item_started" || parsed.kind === "item_completed") &&
+        normalizeCodexThreadItemType(parsed.item.type) === "commandExecution")
+    )
+      this.background.changed(this.currentThreadId);
     await this.dispatchParsedNotification(parsed);
   }
 
@@ -6532,6 +6630,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     parsed: Extract<ParsedCodexNotification, { kind: "thread_started" }>,
   ): void {
     this.currentThreadId = parsed.threadId;
+    this.background.changed(this.currentThreadId);
     this.emitEvent({
       type: "thread_started",
       provider: CODEX_PROVIDER,
@@ -7637,8 +7736,9 @@ export class CodexAppServerAgentClient implements AgentClient {
 
   private sharedFeatures(): Promise<SharedCodexFeatures> {
     this.sharedFeaturesPromise ??= (async () => {
-      const endpoint = await this.spawnAppServer();
-      const client = new CodexAppServerClient(endpoint, this.logger);
+      const environment = buildCodexAppServerEnv(this.runtimeSettings);
+      const spawn = await this.prepareAppServerSpawn({ environment });
+      const client = new CodexAppServerClient(await spawn(), this.logger);
       try {
         const initialized = toObjectRecord(
           await client.request("initialize", buildCodexAppServerInitializeParams()),
@@ -7729,32 +7829,59 @@ export class CodexAppServerAgentClient implements AgentClient {
     }
   }
 
-  private async spawnAppServer(
-    launchEnv?: Record<string, string>,
-    options?: { goalsEnabled?: boolean; agentId?: string; environment?: Record<string, string> },
-  ): Promise<CodexAppServerEndpoint> {
-    if (this.sharedSocketPath) return CodexAppServerSocket.connect(this.sharedSocketPath);
-    const launchPrefix = await resolveCodexLaunchPrefix(this.runtimeSettings);
+  private async prepareAppServerSpawn(options: {
+    environment: Record<string, string>;
+    goalsEnabled?: boolean;
+    agentId?: string;
+  }): Promise<() => CodexAppServerEndpoint | Promise<CodexAppServerEndpoint>> {
+    if (this.sharedSocketPath) {
+      const socketPath = this.sharedSocketPath;
+      return () => CodexAppServerSocket.connect(socketPath);
+    }
+    const processPort = this.deps.appServerProcess ?? defaultCodexAppServerProcess;
+    const launchPrefix = await processPort.resolvePrefix({ runtimeSettings: this.runtimeSettings });
     const args = [...launchPrefix.args, "app-server"];
-    if (options?.goalsEnabled) {
+    if (options.goalsEnabled) {
       args.push("--enable", "goals");
     }
-    this.logger.trace(
-      {
-        agentId: options?.agentId,
-        provider: CODEX_PROVIDER,
-        launchPrefix,
-        goalsEnabled: options?.goalsEnabled === true,
-      },
-      "provider.codex.spawn",
-    );
-    const child = spawnProcess(launchPrefix.command, args, {
-      detached: process.platform !== "win32",
-      stdio: ["pipe", "pipe", "pipe"],
-      baseEnv: options?.environment ?? buildCodexAppServerEnv(this.runtimeSettings, launchEnv),
+    return () => {
+      this.logger.trace(
+        {
+          agentId: options.agentId,
+          provider: CODEX_PROVIDER,
+          launchPrefix,
+          goalsEnabled: options.goalsEnabled === true,
+        },
+        "provider.codex.spawn",
+      );
+      const child = processPort.spawn({
+        command: launchPrefix.command,
+        args,
+        options: {
+          detached: process.platform !== "win32",
+          stdio: ["pipe", "pipe", "pipe"],
+          baseEnv: options.environment,
+        },
+      });
+      assertChildWithPipes(child);
+      return child;
+    };
+  }
+
+  private async startAppServer(
+    options: { signal?: AbortSignal } = {},
+  ): Promise<CodexAppServerClient> {
+    const environment = buildCodexAppServerEnv(this.runtimeSettings);
+    const spawn = await this.prepareAppServerSpawn({ environment });
+    const { client } = await codexAppServerStartup.start({
+      stateDirKey: codexStartupStateDirKey(environment),
+      spawn,
+      createClient: (child) => new CodexAppServerClient(child, this.logger),
+      initializeParams: buildCodexAppServerInitializeParams(),
+      logger: this.logger,
+      signal: options.signal,
     });
-    assertChildWithPipes(child);
-    return child;
+    return client;
   }
 
   async createSession(
@@ -7773,16 +7900,16 @@ export class CodexAppServerAgentClient implements AgentClient {
     const goalsEnabled = await this.resolveGoalsEnabled();
     const autoReviewEnabled = await this.resolveAutoReviewEnabled();
     const environment = buildCodexAppServerEnv(this.runtimeSettings, launchContext?.env);
+    const spawn = await this.prepareAppServerSpawn({
+      environment,
+      goalsEnabled,
+      agentId: launchContext?.agentId,
+    });
     const session = new CodexAppServerAgentSession(
       sessionConfig,
       null,
       this.logger,
-      () =>
-        this.spawnAppServer(launchContext?.env, {
-          goalsEnabled,
-          agentId: launchContext?.agentId,
-          environment,
-        }),
+      async () => spawn(),
       { ...this.sessionDeps(launchContext?.env), environment },
       options?.persistSession === false,
       goalsEnabled,
@@ -7810,18 +7937,18 @@ export class CodexAppServerAgentClient implements AgentClient {
     const goalsEnabled = await this.resolveGoalsEnabled();
     const autoReviewEnabled = await this.resolveAutoReviewEnabled();
     const environment = buildCodexAppServerEnv(this.runtimeSettings, launchContext?.env);
+    const spawn = await this.prepareAppServerSpawn({
+      environment,
+      goalsEnabled,
+      agentId: launchContext?.agentId,
+    });
     const session = new CodexAppServerAgentSession(
       merged,
       options?.sideChatForkFromThreadId
         ? { ...handle, sideChatForkFromThreadId: options.sideChatForkFromThreadId }
         : handle,
       this.logger,
-      () =>
-        this.spawnAppServer(launchContext?.env, {
-          goalsEnabled,
-          agentId: launchContext?.agentId,
-          environment,
-        }),
+      async () => spawn(),
       { ...this.sessionDeps(launchContext?.env), environment },
       false,
       goalsEnabled,
@@ -7836,16 +7963,20 @@ export class CodexAppServerAgentClient implements AgentClient {
   async listImportableSessions(
     options?: ListImportableSessionsOptions,
   ): Promise<ImportableProviderSession[]> {
-    const child = await this.spawnAppServer();
-    const client =
-      (!(child instanceof CodexAppServerSocket) &&
-        this.deps._createCodexClient?.(child, this.logger, () => ({}))) ||
-      new CodexAppServerClient(child, this.logger);
+    const environment = buildCodexAppServerEnv(this.runtimeSettings);
+    const spawn = await this.prepareAppServerSpawn({ environment });
+    const { client } = await codexAppServerStartup.start({
+      stateDirKey: codexStartupStateDirKey(environment),
+      spawn,
+      createClient: (child) =>
+        (!(child instanceof CodexAppServerSocket) &&
+          this.deps._createCodexClient?.(child, this.logger, () => ({}))) ||
+        new CodexAppServerClient(child, this.logger),
+      initializeParams: buildCodexAppServerInitializeParams(),
+      logger: this.logger,
+    });
 
     try {
-      await client.request("initialize", buildCodexAppServerInitializeParams());
-      client.notify("initialized", {});
-
       const limit = options?.limit ?? 20;
       const scanLimit = Math.min(options?.scanLimit ?? limit, 500);
       // thread/list returns the cheap `cwd` field. Fetch a wider window when
@@ -7948,15 +8079,10 @@ export class CodexAppServerAgentClient implements AgentClient {
 
     try {
       await runProviderRefreshActivity(context, "app-server.start", async () => {
-        const child = await this.spawnAppServer();
-        client = new CodexAppServerClient(child, this.logger);
+        client = await this.startAppServer({ signal: context?.signal });
         if (context?.signal.aborted) await dispose();
       });
       if (!client) throw new Error("Codex app-server did not start");
-      await runProviderRefreshActivity(context, "initialize", () =>
-        client!.request("initialize", buildCodexAppServerInitializeParams()),
-      );
-      client.notify("initialized", {});
 
       const rawResponse = await runProviderRefreshActivity(context, "model/list", () =>
         client!.request("model/list", {}),
@@ -8000,12 +8126,9 @@ export class CodexAppServerAgentClient implements AgentClient {
     const threadId = handle.nativeHandle ?? handle.sessionId;
     if (!threadId) return;
 
-    const child = await this.spawnAppServer();
-    const client = new CodexAppServerClient(child, this.logger);
+    const client = await this.startAppServer();
 
     try {
-      await client.request("initialize", buildCodexAppServerInitializeParams());
-      client.notify("initialized", {});
       if (state === "archive") {
         await client.request("thread/archive", { threadId });
         return;

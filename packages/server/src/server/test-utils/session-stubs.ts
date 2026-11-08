@@ -38,6 +38,7 @@ export function asAgentManager(stub: {
     assertAgentRuntimeAvailable: () => {},
     listProviderSubagentActivity: () => [],
     getRetiredInternalAgent: () => null,
+    getAgentBackgroundWorkSummary: () => undefined,
     ...stub,
   });
 }
@@ -46,6 +47,19 @@ export function asAgentStorage(stub: {
   [K in keyof SessionOptions["agentStorage"]]?: unknown;
 }): SessionOptions["agentStorage"] {
   return createStub<SessionOptions["agentStorage"]>({
+    listAll: async () => [],
+    listActive: async function (options) {
+      return (await this.listAll()).filter(
+        (record) => options?.includeArchived || !record.archivedAt,
+      );
+    },
+    listByWorkspaces: async function (ids, options) {
+      const selected = new Set(ids);
+      return (await this.listActive(options)).filter((record) =>
+        selected.has(record.workspaceId ?? ""),
+      );
+    },
+    lastUserMessageAtByWorkspace: async () => new Map<string, string>(),
     listByProviderSession: async () => [],
     listByWorkspace: async () => [],
     ...stub,

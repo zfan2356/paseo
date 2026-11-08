@@ -53,6 +53,7 @@ const NO_COLLAPSED_TURNS: StreamPresentation["turns"] = collapseTurns({
   isLatestTurnOpen: false,
   expandedHostIds: new Set(),
   getGroupedCalls: () => undefined,
+  previousSummaryRowsByHostId: new Map(),
 });
 
 /** Source messages reach plugins before display projection. */
@@ -87,7 +88,9 @@ export function createStreamPresentation() {
   let collapsedIsLatestTurnOpen = false;
   let collapsedExpandedHostIds: ReadonlySet<string> | undefined;
   let collapsed: TurnCollapse | undefined;
+  let summaryRowsByHostId = NO_COLLAPSED_TURNS.summaryRowsByHostId;
   let processTail: StreamItem[] = [];
+  let processSummaryRows = NO_COLLAPSED_TURNS.summaryRowsByHostId;
 
   function presentRows(item: StreamItem): StreamItem[] {
     return [item.kind === "user_message" ? presentUserMessage(item) : item];
@@ -98,7 +101,8 @@ export function createStreamPresentation() {
     input: PresentationInput,
   ): Omit<StreamPresentation, "readingRowReplacements" | "reportHosts"> {
     if (input.display === "collapseProcess") {
-      const result = collapseProcess(projection, input);
+      const result = collapseProcess(projection, input, processSummaryRows);
+      processSummaryRows = result.turns.summaryRowsByHostId;
       if (!sameRows(processTail, result.tail)) processTail = result.tail;
       return { ...result, tail: processTail };
     }
@@ -128,7 +132,9 @@ export function createStreamPresentation() {
         isLatestTurnOpen,
         expandedHostIds: input.expandedTurnHostIds,
         getGroupedCalls: (itemId) => projection.groupsByHostId.get(itemId)?.run.calls,
+        previousSummaryRowsByHostId: summaryRowsByHostId,
       });
+      summaryRowsByHostId = collapsed.summaryRowsByHostId;
       collapsedSource = projection.tail;
       collapsedIsLatestTurnOpen = isLatestTurnOpen;
       collapsedExpandedHostIds = input.expandedTurnHostIds;
@@ -224,6 +230,7 @@ function sameRows(previous: StreamItem[], next: StreamItem[]): boolean {
 function collapseProcess(
   projection: ToolCallDetailProjection,
   input: PresentationInput,
+  previousSummaryRowsByHostId: TurnCollapse["summaryRowsByHostId"],
 ): Omit<StreamPresentation, "readingRowReplacements" | "reportHosts"> {
   const all = [...projection.tail, ...projection.head];
   const latestId = all.at(-1)?.turnId;
@@ -236,6 +243,7 @@ function collapseProcess(
     getGroupedCalls: (id) => projection.groupsByHostId.get(id)?.run.calls,
     process: true,
     processExpansion: input.processExpansion,
+    previousSummaryRowsByHostId,
   });
   const headIds = new Set(projection.head.map((item) => item.id));
   return {

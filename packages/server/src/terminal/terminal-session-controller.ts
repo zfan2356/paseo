@@ -41,7 +41,6 @@ import type { TerminalSession } from "./terminal.js";
 import type { TerminalManager, TerminalsChangedEvent } from "./terminal-manager.js";
 import { applyTerminalSize } from "./terminal-size-ownership.js";
 import { TerminalWorkerIncompatibleError } from "./terminal-worker-pool.js";
-import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import { terminalSubscriptionKey } from "@getpaseo/protocol/terminal-subscription-key";
 import {
   buildAgentConversationTerminalName,
@@ -59,7 +58,7 @@ function getTerminalCapabilities(name: string): { imagePaste: true } | undefined
 }
 
 interface TerminalDirectorySubscription {
-  cwd: string;
+  cwd: string | undefined;
   workspaceId: string | undefined;
   owner: OwnedSubscription;
   refresh: Promise<void> | null;
@@ -107,6 +106,8 @@ export interface TerminalSessionControllerOptions {
   supportsChunkedReplay?: (source: object) => boolean;
   isPathWithinRoot: (rootPath: string, candidatePath: string) => boolean;
   sessionLogger: pino.Logger;
+  isScriptTerminal?: (terminal: TerminalSession) => boolean;
+  subscribeTerminalMetadata?: (listener: () => void) => () => void;
   listTerminalWorkspaceRefs?: () => Promise<readonly TerminalWorkspaceRef[]>;
   listTerminalWorkspaceRoots?: () => Promise<readonly string[]>;
   resolveAgentTerminalLaunch?: (input: {
@@ -218,9 +219,17 @@ export class TerminalSessionController {
 
   start(): void {
     if (!this.terminalManager || this.unsubscribeTerminalsChanged) return;
-    this.unsubscribeTerminalsChanged = this.terminalManager.subscribeTerminalsChanged((event) => {
+    const releaseManager = this.terminalManager.subscribeTerminalsChanged((event) => {
       void this.handleTerminalsChanged(event);
     });
+    const releaseMetadata = this.options.subscribeTerminalMetadata?.(() => {
+      for (const subscription of this.subscribedDirectories.values())
+        void this.emitTerminalsSnapshotForSubscription(subscription);
+    });
+    this.unsubscribeTerminalsChanged = () => {
+      releaseManager();
+      releaseMetadata?.();
+    };
   }
 
   getMetrics(): TerminalSessionControllerMetrics {
@@ -246,6 +255,7 @@ export class TerminalSessionController {
       ) {
         return false;
       }
+      if (subscription.cwd === undefined) return true;
       return this.terminalBelongsToRoot(subscription.cwd, input.cwd, workspaceRoots);
     });
   }
@@ -380,20 +390,7 @@ export class TerminalSessionController {
     }
   }
 
-  private toTerminalInfo(
-    terminal: Pick<
-      TerminalSession,
-      "id" | "name" | "workspaceId" | "linkedAgentId" | "getTitle" | "getActivity"
-    >,
-  ): {
-    id: string;
-    name: string;
-    workspaceId: string;
-    linkedAgentId?: string;
-    title?: string;
-    activity: TerminalActivity | null;
-    capabilities?: { imagePaste: true };
-  } {
+  private toTerminalInfo(terminal: TerminalSession) {
     const title = terminal.getTitle();
     const activity = terminal.getActivity();
     const terminalLink = parseAgentConversationTerminalLink(terminal.name);
@@ -412,6 +409,8 @@ export class TerminalSessionController {
       activity,
       ...(linkedAgentId ? { linkedAgentId } : {}),
       ...(capabilities ? { capabilities } : {}),
+      createdAt: terminal.createdAt ?? null,
+      isScript: this.options.isScriptTerminal?.(terminal) ?? false,
     };
   }
 
@@ -422,7 +421,8 @@ export class TerminalSessionController {
     // aggregated list — so the client's cache replacement doesn't drop the
     // terminals that live directly at the root.
     const matchingSubscriptions = Array.from(this.subscribedDirectories.values()).filter(
-      (subscription) => this.isPathWithinRoot(subscription.cwd, event.cwd),
+      (subscription) =>
+        subscription.cwd === undefined || this.isPathWithinRoot(subscription.cwd, event.cwd),
     );
     for (const subscription of matchingSubscriptions) {
       await this.emitTerminalsSnapshotForSubscription(subscription);
@@ -461,6 +461,10 @@ export class TerminalSessionController {
       await this.emitTerminalsSnapshotForSubscription(subscription, msg.requestId);
     } catch (error) {
       await owner.release();
+      if (error instanceof TerminalWorkerIncompatibleError) {
+        this.emitIncompatible(msg, error);
+        return;
+      }
       throw error;
     }
   }
@@ -476,17 +480,26 @@ export class TerminalSessionController {
     const refresh = (async () => {
       do {
         subscription.pending = false;
-        const terminals = await this.getTerminalsForWorkspaceRoot(
-          subscription.cwd,
-          subscription.workspaceId,
-        );
+        const terminals =
+          subscription.cwd === undefined
+            ? (await this.getAllTerminalSessions()).filter(
+                (terminal) =>
+                  subscription.workspaceId === undefined ||
+                  terminal.workspaceId === subscription.workspaceId,
+              )
+            : await this.getTerminalsForWorkspaceRoot(subscription.cwd, subscription.workspaceId);
         if (subscription.owner.signal.aborted) return;
         subscription.owner.emit({
           type: "terminals_changed",
           payload: {
             cwd: subscription.cwd,
             workspaceId: subscription.workspaceId,
-            terminals: terminals.map((terminal) => this.toTerminalInfo(terminal)),
+            terminals: terminals.map((terminal) =>
+              Object.assign(
+                this.toTerminalInfo(terminal),
+                subscription.cwd === undefined ? { cwd: terminal.cwd } : {},
+              ),
+            ),
             ...(requestId ? { requestId } : {}),
           },
         });
@@ -557,9 +570,13 @@ export class TerminalSessionController {
   // An empty list or a generic failure would read as "no terminals"; the client needs to know
   // they exist and why it cannot reach them.
   private emitIncompatible(
-    msg: { type: string; requestId: string },
+    msg: { type: string; requestId?: string },
     error: TerminalWorkerIncompatibleError,
   ): void {
+    if (msg.requestId === undefined) {
+      this.emit({ type: "status", payload: { status: "error", message: error.message } });
+      return;
+    }
     this.emit({
       type: "rpc_error",
       payload: {
@@ -575,6 +592,8 @@ export class TerminalSessionController {
     if (!this.terminalManager) {
       return [];
     }
+    const unavailable = this.terminalManager.getUnavailableError?.();
+    if (unavailable) throw unavailable;
     const directories = this.terminalManager.listDirectories();
     const manager = this.terminalManager;
     const terminalsByDirectory = await Promise.all(

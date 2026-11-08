@@ -47,6 +47,11 @@ reading-position replacements and virtualized rows in every collapse mode.
 Opening a process exposes ordinary rows rather than a second nested list.
 An automatic new turn cannot swallow the preceding turn's final answer.
 
+The November 8 upstream merge gives summaries their own virtualized rows.
+Process state travels on those rows, which reuse their identity while the
+work and expansion phase stay unchanged. Report badges use upstream's row
+disclosure hold so expanding them preserves the reader's position.
+
 The projection sits on top of stream virtualization, so item identity and
 tail/live-head boundary handling in `agent-stream/view.tsx` are the sensitive
 merge seams (see the ledger for hotspots and focused tests).
