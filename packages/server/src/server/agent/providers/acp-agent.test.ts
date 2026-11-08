@@ -4952,3 +4952,188 @@ describe("custom ACP provider with configured models", () => {
     expect((await created.getRuntimeInfo()).model).toBe("advertised-default");
   });
 });
+
+// Cursor CLI answers a failed turn with end_turn and the serialized error as
+// ordinary assistant text. Rendering that as the answer made a failed turn look
+// successful, so a manual retry replayed the error instead of the work.
+describe("ACPAgentSession serialized provider errors", () => {
+  test("does not emit a serialized error as assistant prose", () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+
+    const events = internals.translateSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+    });
+
+    expect(events).toEqual([]);
+  });
+
+  test("emits ordinary assistant prose unchanged", () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+
+    const events = internals.translateSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Here is the review." },
+    });
+
+    expect(events).toMatchObject([
+      { type: "timeline", item: { type: "assistant_message", text: "Here is the review." } },
+    ]);
+  });
+
+  test("releases held text once the message proves to be prose", () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+
+    expect(
+      internals.translateSessionUpdate({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error" },
+        messageId: "message-1",
+      }),
+    ).toEqual([]);
+
+    const events = internals.translateSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Error handling is covered below." },
+      messageId: "message-1",
+    });
+
+    expect(events).toMatchObject([
+      {
+        type: "timeline",
+        item: { type: "assistant_message", text: "Error handling is covered below." },
+      },
+    ]);
+  });
+});
+
+describe("ACPAgentSession serialized provider error recovery", () => {
+  interface RetryInternals extends ACPSessionInternals {
+    activeTurnPrompt: unknown;
+    serializedErrorRetries: number;
+    handlePromptResponse(response: PromptResponse, turnId: string): void;
+  }
+
+  const isTurnFailed = (event: AgentStreamEvent) => event.type === "turn_failed";
+  const isTurnStarted = (event: AgentStreamEvent) => event.type === "turn_started";
+
+  function createPromptCaptureSession() {
+    const prompts: Array<{ messageId: string; prompt: unknown }> = [];
+    const pending: Array<(response: PromptResponse) => void> = [];
+    const session = createSession();
+    const internals = asInternals<RetryInternals>(session);
+    internals.sessionId = "session-1";
+    internals.connection = {
+      // Hold the response so the test can stream the assistant chunk first, the
+      // way the agent does before it answers session/prompt.
+      prompt: (input: unknown) =>
+        new Promise<PromptResponse>((resolve) => {
+          prompts.push(input as { messageId: string; prompt: unknown });
+          pending.push(resolve);
+        }),
+    };
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    const respond = (stopReason = "end_turn") => {
+      const resolve = pending.shift();
+      resolve?.({ stopReason } as PromptResponse);
+    };
+    return { session, internals, prompts, events, respond };
+  }
+
+  test("turns a serialized retriable error into a failed turn instead of a completed one", async () => {
+    const { session, internals, events, respond } = createPromptCaptureSession();
+
+    await session.startTurn("Summarize the review");
+    internals.translateSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+      messageId: "message-1",
+    });
+    respond();
+    await vi.waitFor(() => expect(events.some(isTurnFailed)).toBe(true));
+
+    expect(events.some((event) => event.type === "turn_completed")).toBe(false);
+    const failed = events.find((event) => event.type === "turn_failed");
+    expect(failed).toMatchObject({ error: expect.stringContaining("resource_exhausted") });
+    // The error must never reach the conversation as assistant prose.
+    expect(
+      events.some(
+        (event) =>
+          event.type === "timeline" &&
+          event.item.type === "assistant_message" &&
+          event.item.text.includes("resource_exhausted"),
+      ),
+    ).toBe(false);
+  });
+
+  test("keeps a non-retriable serialized error as a failure with no replay", async () => {
+    vi.useFakeTimers();
+    try {
+      const { session, internals, prompts, events, respond } = createPromptCaptureSession();
+
+      await session.startTurn("Summarize the review");
+      internals.translateSessionUpdate({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error: NonRetriableError: provider is unavailable" },
+        messageId: "message-1",
+      });
+      respond();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(prompts).toHaveLength(1);
+      expect(events.filter(isTurnStarted)).toHaveLength(1);
+      expect(events.some(isTurnFailed)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("replays the same prompt after a retriable serialized error", async () => {
+    vi.useFakeTimers();
+    try {
+      const { session, internals, prompts, events, respond } = createPromptCaptureSession();
+
+      await session.startTurn("Summarize the review");
+      internals.translateSessionUpdate({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+        messageId: "message-1",
+      });
+      respond();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(prompts).toHaveLength(2);
+      expect(prompts[1]?.prompt).toEqual(prompts[0]?.prompt);
+      expect(events.filter(isTurnStarted)).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("stops replaying after the retry budget is spent", async () => {
+    vi.useFakeTimers();
+    try {
+      const { session, internals, prompts, respond } = createPromptCaptureSession();
+
+      await session.startTurn("Summarize the review");
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        internals.translateSessionUpdate({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+          messageId: `message-${attempt}`,
+        });
+        respond();
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+
+      // The original turn plus the bounded retries, then it must stop.
+      expect(prompts.length).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

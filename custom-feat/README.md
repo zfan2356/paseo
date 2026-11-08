@@ -53,6 +53,7 @@ stays authoritative for intent and design.
 | [codex-gpt6-fast-mode.md](codex-gpt6-fast-mode.md)                         | Expose Codex Fast for supported GPT-6 models                                          |
 | [codex-goal-control.md](codex-goal-control.md)                             | User-directed Codex goal control through the existing Paseo tool path                 |
 | [acp-stale-feature-fallback.md](acp-stale-feature-fallback.md)             | Start ACP sessions when a saved feature has been retired                              |
+| [acp-serialized-error.md](acp-serialized-error.md)                         | Treat a serialized provider error in assistant text as a failed, retried turn         |
 | [shared-codex-app-server.md](shared-codex-app-server.md)                   | Share Codex native conversations, live output, and interruption across clients        |
 | [magpie-sources.md](magpie-sources.md)                                     | Magpie account/API sources, native management pages and iOS access through plugin RPC |
 | [magpie-context-recovery.md](magpie-context-recovery.md)                   | Recover Codex conversations when subscription and iChat reasoning seals differ        |
