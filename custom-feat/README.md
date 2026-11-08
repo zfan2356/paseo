@@ -56,6 +56,7 @@ stays authoritative for intent and design.
 | [acp-serialized-error.md](acp-serialized-error.md)                         | Treat a serialized provider error in assistant text as a failed, retried turn         |
 | [shared-codex-app-server.md](shared-codex-app-server.md)                   | Share Codex native conversations, live output, and interruption across clients        |
 | [magpie-sources.md](magpie-sources.md)                                     | Magpie account/API sources, native management pages and iOS access through plugin RPC |
+| [codex-multi-account-usage.md](codex-multi-account-usage.md)               | Separate subscription usage cards for enabled Magpie Codex accounts                   |
 | [magpie-context-recovery.md](magpie-context-recovery.md)                   | Recover Codex conversations when subscription and iChat reasoning seals differ        |
 | [magpie-private-provider.md](magpie-private-provider.md)                   | Direct provider access with host-local credentials and protocol compatibility         |
 | [magpie-subscription-first.md](magpie-subscription-first.md)               | Removed quota-only routing extension; retained as historical documentation            |
