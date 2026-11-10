@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/yetone/magpie.git",
   "revision": "9572a35761c2606257e8493ab47dedda38eb6b88",
-  "version": "0.1.1319-paseo.9572a357.context7-windows-private1-speed1",
+  "version": "0.1.1319-paseo.9572a357.context7-windows-private1-speed1-zstd1",
   "go": "1.26.8",
   "patches": [
     {
@@ -19,6 +19,10 @@
     {
       "path": "patches/magpie/codex-auto-speed.patch",
       "sha256": "47446872885265852b2d60c84416be0a174cc89e24dfe07adba3cab0bde16c48"
+    },
+    {
+      "path": "patches/magpie/codex-zstd-compatibility.patch",
+      "sha256": "c2b441066b71639690ed2c5f51c558065125118da9d35f24a05eb725b71c5dc3"
     }
   ]
 }
