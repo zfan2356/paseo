@@ -1,6 +1,6 @@
 # Codex compressed request compatibility
 
-Status: source fix; production rollout pending
+Status: active on CVM since 2026-11-10
 
 ## Original requirement
 
@@ -54,3 +54,10 @@ large refusal bodies, cancellation and no replay of an SSE response.
 The deployment lock validates this patch after the existing patches. Build
 and verify a candidate before the consented Magpie restart. Installing a file
 alone does not update the running process; Paseo does not need restarting.
+
+The CVM rollout replayed the captured request through the updated production
+gateway: the original 99,327-byte encoding received 400, the compatible
+98,441-byte encoding completed with 200, and both decoded to the same JSON.
+The original failed Paseo conversation then completed a native recovery check
+without compaction or history edits. Its prior rollout prefix remained
+byte-identical, and the Paseo process was not restarted.
