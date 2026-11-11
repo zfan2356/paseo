@@ -553,6 +553,7 @@ class TestAgentSession implements AgentSession {
 
 class SideChatParentSession extends TestAgentSession {
   forkCalls = 0;
+  forkPending = false;
   readonly forkStarted = deferred<void>();
   forkGate: Promise<void> = Promise.resolve();
   disposeCalls = 0;
@@ -564,7 +565,8 @@ class SideChatParentSession extends TestAgentSession {
     await this.forkGate;
     return {
       provider: "codex",
-      sessionId: `side-fork-${randomUUID()}`,
+      sessionId: this.forkPending ? this.id : `side-fork-${randomUUID()}`,
+      ...(this.forkPending ? { sideChatForkPending: true } : {}),
     };
   }
 
@@ -611,6 +613,7 @@ class SideChatTestClient extends TestAgentClient {
   readonly forkSession: SideChatForkSession;
   readonly resumeStarted = deferred<void>();
   resumeGate: Promise<void> = Promise.resolve();
+  readonly resumeOptions: Array<AgentResumeSessionOptions | undefined> = [];
 
   constructor(workdir: string) {
     super();
@@ -623,12 +626,22 @@ class SideChatTestClient extends TestAgentClient {
     return this.parentSession;
   }
 
-  override async resumeSession(handle: AgentPersistenceHandle): Promise<AgentSession> {
+  override async resumeSession(
+    handle: AgentPersistenceHandle,
+    _config?: Partial<AgentSessionConfig>,
+    _launchContext?: AgentLaunchContext,
+    options?: AgentResumeSessionOptions,
+  ): Promise<AgentSession> {
+    this.resumeOptions.push(options);
     this.resumeStarted.resolve();
     await this.resumeGate;
+    if (handle.sideChatForkPending && options?.sideChatForkFromThreadId !== handle.sessionId) {
+      throw new Error(`thread ${handle.sessionId} already has an active writer`);
+    }
+    const sessionId = options?.sideChatForkFromThreadId ? this.forkSession.id : handle.sessionId;
     this.forkSession.describePersistence = () => ({
       provider: "codex",
-      sessionId: handle.sessionId,
+      sessionId,
     });
     return this.forkSession;
   }
@@ -734,19 +747,26 @@ test("pending side chat forks persist only their realized native session even be
     const parent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
       workspaceId: undefined,
     });
-    vi.spyOn(client.parentSession, "forkForSideChat").mockResolvedValue({
-      provider: "codex",
-      sessionId: "parent-native",
-      sideChatForkPending: true,
-    });
-    vi.spyOn(client, "resumeSession").mockResolvedValue(client.forkSession);
+    client.parentSession.forkPending = true;
+    const parentPersistence = client.parentSession.describePersistence();
     const nativeSideId = client.forkSession.describePersistence().sessionId;
     const side = await manager.openSideChat(parent.id);
+    expect(client.resumeOptions).toEqual([
+      { purpose: "interactive", sideChatForkFromThreadId: parentPersistence.sessionId },
+    ]);
     expect(manager.getAgent(side.id)?.persistence?.sessionId).toBe(nativeSideId);
+    expect(nativeSideId).not.toBe(parentPersistence.sessionId);
+    expect(client.parentSession.describePersistence()).toEqual(parentPersistence);
+    expect(client.parentSession.interrupted).toBe(false);
     await manager.closeSideChat(parent.id, side.id);
     await manager.flush();
     expect((await storage.get(side.id))?.persistence).toMatchObject({ sessionId: nativeSideId });
     expect((await storage.get(side.id))?.persistence?.sideChatForkPending).toBeUndefined();
+    const resumed = await manager.openSideChat(parent.id, side.id);
+    expect(resumed.persistence?.sessionId).toBe(nativeSideId);
+    expect(client.resumeOptions[1]).toEqual({ purpose: "interactive" });
+    expect(client.parentSession.forkCalls).toBe(1);
+    await manager.closeSideChat(parent.id, side.id);
     await manager.closeAgent(parent.id);
   } finally {
     rmSync(workdir, { recursive: true, force: true });

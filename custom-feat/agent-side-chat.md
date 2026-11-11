@@ -98,6 +98,10 @@ happens inside the side agent's own app-server process using
 `sideChatForkFromThreadId`, avoiding the native cross-process thread writer lock.
 `forkForSideChat` initially returns `sideChatForkPending`; after connect, the
 realized native ID replaces it in the live agent and persisted record.
+The manager must preserve the fork intent when resolving the resume purpose.
+Dropping it resumes the parent thread and conflicts with its active writer.
+The pending-fork regression uses a provider adapter that rejects that resume;
+reopening the saved side conversation must reuse its realized ID without forking again.
 
 Claude uses the Agent SDK `forkSession` and resumes the returned session.
 ACP agents use the experimental `session/fork` call: the fork is created inside
