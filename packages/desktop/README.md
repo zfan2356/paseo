@@ -74,3 +74,8 @@ Reports expire after 45 seconds without a renderer heartbeat. Navigation, render
 failure and system sleep clear reports instead of showing stale success. Multiple
 windows do not multiply counts. Menu titles are drawn from tasks, so task names
 and error summaries are visible to anyone who can open the board or menu.
+
+The menu-bar task board lists main sessions only. Delegated subagents, including
+children on another host or with a parent absent from the current directory,
+are excluded from both task rows and status counts. Detached sessions are
+independent tasks and remain visible.

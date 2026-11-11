@@ -1,3 +1,4 @@
+import { isDelegatedAgent } from "@getpaseo/protocol/agent-labels";
 import type { AgentDirectoryEntry } from "@/types/agent-directory";
 import type { HostRuntimeSnapshot } from "@/runtime/host-runtime";
 import type { MenuBarSnapshot, MenuBarTask } from "../../../../desktop/src/features/menu-bar/state";
@@ -17,6 +18,7 @@ export type MenuBarAgent = Pick<
   | "cwd"
   | "provider"
   | "lastActivityAt"
+  | "labels"
 >;
 export type MenuBarHost = Pick<
   HostRuntimeSnapshot,
@@ -60,7 +62,7 @@ export function deriveMenuBarSnapshot(
   );
   const seen = new Set<string>();
   for (const agent of agents) {
-    if (agent.archivedAt || !ready.has(agent.serverId)) continue;
+    if (agent.archivedAt || isDelegatedAgent(agent) || !ready.has(agent.serverId)) continue;
     const key = JSON.stringify([agent.serverId, agent.id]);
     if (seen.has(key)) continue;
     seen.add(key);
