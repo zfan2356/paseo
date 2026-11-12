@@ -398,20 +398,23 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
       const mr = await mrByNumber(project, input.number);
       const source = await get(`/projects/${mr.source_project_id}`, projectSchema);
       const owner = source.path_with_namespace.split("/").slice(0, -1).join("/");
+      const headRepositorySshUrl = `git@git.woa.com:${source.path_with_namespace}.git`;
+      const headRepositoryUrl = `https://git.woa.com/${source.path_with_namespace}.git`;
+      const remote = await resolveRemoteUrl(input.cwd);
+      const transport = remote ? parseGitRemoteLocation(remote)?.transport : undefined;
+      const useSsh = transport === "scp" || transport === "ssh";
+      const sourceRemote = useSsh ? headRepositorySshUrl : headRepositoryUrl;
+      const isCrossRepository = mr.source_project_id !== mr.target_project_id;
+      const checkoutRemote = isCrossRepository ? sourceRemote : "origin";
       return {
         number: mr.iid,
         baseRefName: mr.target_branch,
         headRefName: mr.source_branch,
         headOwnerLogin: owner,
-        headRepositorySshUrl: `git@git.woa.com:${source.path_with_namespace}.git`,
-        headRepositoryUrl: `https://git.woa.com/${source.path_with_namespace}.git`,
-        isCrossRepository: mr.source_project_id !== mr.target_project_id,
-        checkoutRefs: [
-          {
-            remoteName: `https://git.woa.com/${source.path_with_namespace}.git`,
-            remoteRef: `refs/heads/${mr.source_branch}`,
-          },
-        ],
+        headRepositorySshUrl,
+        headRepositoryUrl,
+        isCrossRepository,
+        checkoutRefs: [{ remoteName: checkoutRemote, remoteRef: `refs/heads/${mr.source_branch}` }],
       };
     },
     buildPrLocalBranchName({ headRef, checkoutTarget }) {
@@ -429,17 +432,10 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
         url: safeWebUrl(check.target_url),
         checkRunId: check.id,
       }));
-      normalized.push({
-        name: "TGit commit gate",
-        status: gateStatus(detail.commit_check_state, detail.commit_check_block),
-        url: mrUrl(project, detail.iid),
-      });
+      const gateStatuses = [gateStatus(detail.commit_check_state, detail.commit_check_block)];
       if (snapshot.aggregate)
-        normalized.push({
-          name: "TGit check aggregate",
-          status: gateStatus(snapshot.aggregate.state, snapshot.aggregate.block),
-          url: mrUrl(project, detail.iid),
-        });
+        gateStatuses.push(gateStatus(snapshot.aggregate.state, snapshot.aggregate.block));
+      appendBlockingGate({ checks: normalized, gateStatuses, url: mrUrl(project, detail.iid) });
       const review = await get(
         `${projectPath(project)}/merge_request/${detail.id}/review`,
         reviewSchema,
@@ -588,6 +584,24 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
     invalidate() {},
   };
   return service;
+}
+
+interface BlockingGateInput {
+  checks: PullRequestCheck[];
+  gateStatuses: PullRequestCheckStatus[];
+  url: string;
+}
+
+function appendBlockingGate({ checks, gateStatuses, url }: BlockingGateInput): void {
+  const visibleStatus = computeChecksStatus(checks);
+  if (visibleStatus === "failure") return;
+  if (gateStatuses.includes("failure")) {
+    checks.push({ name: "TGit CI gate", status: "failure", url });
+  } else if (gateStatuses.includes("pending") && visibleStatus !== "pending") {
+    // An additional gate row only explains a blocker absent from the concrete
+    // checks; mirrored aggregates must not inflate the check counts.
+    checks.push({ name: "TGit CI gate", status: "pending", url });
+  }
 }
 
 function gateStatus(state: string, blocked: boolean | null | undefined): PullRequestCheckStatus {

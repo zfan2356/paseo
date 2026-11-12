@@ -184,7 +184,7 @@ describe("TGit v3 adapter", () => {
       headRepositorySshUrl: "git@git.woa.com:contributor/repo.git",
       checkoutRefs: [
         {
-          remoteName: "https://git.woa.com/contributor/repo.git",
+          remoteName: "git@git.woa.com:contributor/repo.git",
           remoteRef: "refs/heads/feature/worker",
         },
       ],
@@ -195,6 +195,13 @@ describe("TGit v3 adapter", () => {
         checkoutTarget: target,
       }),
     ).toBe("contributor/feature/worker");
+    fake.setRemote("https://git.woa.com/example/repo.git");
+    expect((await fake.service.getPullRequestCheckoutTarget(mrOptions)).checkoutRefs).toEqual([
+      {
+        remoteName: "https://git.woa.com/contributor/repo.git",
+        remoteRef: "refs/heads/feature/worker",
+      },
+    ]);
   });
 
   it("maps current MR checks, CI gates, review and independently computed conflicts", async () => {
@@ -228,6 +235,23 @@ describe("TGit v3 adapter", () => {
     expect(await fake.service.getCurrentPullRequestStatus(statusOptions)).toMatchObject({
       mergeable: "UNKNOWN",
     });
+  });
+
+  it("does not count mirrored CI gates as additional concrete checks", async () => {
+    const fake = setup();
+    expect((await fake.service.getCurrentPullRequestStatus(statusOptions))?.checks).toHaveLength(1);
+    fake.routes.set(`${projectPath}/commits/abc123/status`, {
+      status: 200,
+      body: {
+        ...fixture.checks,
+        state: "failure",
+        block: true,
+        statuses: [{ ...fixture.checks.statuses[0], state: "failure" }],
+      },
+    });
+    const status = await fake.service.getCurrentPullRequestStatus(statusOptions);
+    expect(status?.checksStatus).toBe("failure");
+    expect(status?.checks).toHaveLength(1);
   });
 
   it("does not associate reused branches, forks, or stale terminal requests", async () => {
