@@ -113,6 +113,24 @@ host that is either a known cloud host or one the CLI is already authenticated
 to. Adapter probes must not make anonymous HTTP requests to remote-derived
 hosts, and adapters must not route credentials to an unauthenticated host.
 
+### 工蜂 (TGit)
+
+TGit at `git.woa.com` uses `/api/v3`, including singular
+`merge_request/iid/:iid` for MR lookup. It is not GitLab v4 compatible.
+Omit `state` when listing all MR states: TGit returns an empty list for
+`state=all`. Comment reads use `body` and nested `comments`, although the write
+API calls its input `note`.
+The adapter calls REST directly; you do not need `gw` installed. Set `TGIT_TOKEN`
+in the daemon's environment. Paseo does not store the token or offer a token
+input. A missing token reports an unauthenticated workspace.
+
+This adapter is read-only. Open 工蜂 to create or merge an MR, or change auto-merge.
+Commit checks link to their owning CI system; Paseo displays the status and
+summary without fetching external CI logs. The MR's CI gate, check aggregate,
+review aggregate, and merge conflicts are separate signals. Missing gate data
+stays pending, and conflict results apply only to their reported source/target
+commits. Lists and timelines are bounded to 1,000 records per read.
+
 ## App
 
 Each app forge splits into two modules so pure logic never imports the client
