@@ -84,7 +84,7 @@ const commentSchema = z.object({
   parent_id: idSchema.nullish(),
   created_at: textSchema,
   author: z.object({ username: z.string(), avatar_url: textSchema }),
-  get comments() {
+  get comments(): z.ZodDefault<z.ZodArray<typeof commentSchema>> {
     return z.array(commentSchema).default([]);
   },
 });
