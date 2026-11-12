@@ -61,6 +61,7 @@ const checkSchema = z.object({
   state: z.string(),
   target_url: textSchema,
   description: textSchema,
+  detail: textSchema,
   target_branches: z.array(z.string()).default([]),
 });
 const checksSchema = z.object({
@@ -79,9 +80,13 @@ const conflictSchema = z.object({
 const branchSchema = z.object({ commit: z.object({ id: z.string().min(1) }) });
 const commentSchema = z.object({
   id: idSchema,
-  note: z.string(),
+  body: z.string(),
+  parent_id: idSchema.nullish(),
   created_at: textSchema,
   author: z.object({ username: z.string(), avatar_url: textSchema }),
+  get comments() {
+    return z.array(commentSchema).default([]);
+  },
 });
 type TgitMr = z.infer<typeof mrSchema>;
 type TgitCheck = z.infer<typeof checkSchema>;
@@ -322,7 +327,6 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
     const target = await get(projectPath(project), projectSchema);
     const params = new URLSearchParams({
       source_branch: input.headRef,
-      state: "all",
       order_by: "updated_at",
       sort: "desc",
     });
@@ -489,16 +493,22 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
         PAGE_SIZE * MAX_PAGES,
       );
       const url = mrUrl(project, mr.iid);
-      const items: PullRequestTimelineItem[] = comments.map((comment) => ({
-        id: `tgit-comment-${comment.id}`,
-        kind: "comment",
-        author: comment.author.username,
-        authorUrl: `https://git.woa.com/${encodeURIComponent(comment.author.username)}`,
-        avatarUrl: safeWebUrl(comment.author.avatar_url),
-        body: comment.note,
-        createdAt: parseOptionalTime(comment.created_at),
-        url: `${url}#note_${comment.id}`,
-      }));
+      const items: PullRequestTimelineItem[] = [];
+      function appendComment(comment: z.infer<typeof commentSchema>, rootId: number): void {
+        items.push({
+          id: `tgit-comment-${comment.id}`,
+          kind: "comment",
+          author: comment.author.username,
+          authorUrl: `https://git.woa.com/${encodeURIComponent(comment.author.username)}`,
+          avatarUrl: safeWebUrl(comment.author.avatar_url),
+          body: comment.body,
+          createdAt: parseOptionalTime(comment.created_at),
+          url: `${url}#note_${comment.id}`,
+          threadId: `tgit-thread-${rootId}`,
+        });
+        for (const reply of comment.comments) appendComment(reply, rootId);
+      }
+      for (const comment of comments) appendComment(comment, comment.parent_id ?? comment.id);
       return {
         prNumber: mr.iid,
         repoOwner: input.repoOwner,
@@ -525,7 +535,7 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
         conclusion: check.state,
         url,
         detailsUrl: url,
-        output: { summary: check.description },
+        output: { summary: check.description, text: check.detail },
         annotations: [],
         failedJobs: [],
         truncated: false,

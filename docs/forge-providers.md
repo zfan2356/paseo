@@ -117,6 +117,9 @@ hosts, and adapters must not route credentials to an unauthenticated host.
 
 TGit at `git.woa.com` uses `/api/v3`, including singular
 `merge_request/iid/:iid` for MR lookup. It is not GitLab v4 compatible.
+Omit `state` when listing all MR states: TGit returns an empty list for
+`state=all`. Comment reads use `body` and nested `comments`, although the write
+API calls its input `note`.
 The adapter calls REST directly; you do not need `gw` installed. Set `TGIT_TOKEN`
 in the daemon's environment. Paseo does not store the token or offer a token
 input. A missing token reports an unauthenticated workspace.

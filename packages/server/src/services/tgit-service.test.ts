@@ -41,6 +41,7 @@ function setup() {
     [`${projectPath}/issues`, { status: 200, body: fixture.issues }],
   ]);
   let respond = (url: URL): FakeResponse => {
+    if (url.searchParams.get("state") === "all") return { status: 200, body: [] };
     const response = routes.get(url.pathname);
     if (!response) throw new Error(`Unexpected fixture request ${url.pathname}`);
     return response;
@@ -248,6 +249,22 @@ describe("TGit v3 adapter", () => {
     expect(await fake.service.getCurrentPullRequestStatus(statusOptions)).toBeNull();
   });
 
+  it("finds terminal MRs only for the same SHA and omits TGit's unsupported state=all", async () => {
+    const fake = setup();
+    const closed = { ...fixture.mr, state: "closed" };
+    fake.routes.set(`${projectPath}/merge_requests`, { status: 200, body: [closed] });
+    fake.routes.set(`${projectPath}/merge_request/iid/686`, { status: 200, body: closed });
+    expect(await fake.service.getCurrentPullRequestStatus(statusOptions)).toMatchObject({
+      state: "closed",
+      headSha: "abc123",
+      mergeable: "UNKNOWN",
+    });
+    const lookup = fake.requests.find((request) =>
+      request.url.pathname.endsWith("/merge_requests"),
+    );
+    expect(lookup?.url.searchParams.has("state")).toBe(false);
+  });
+
   it("rejects checks for the wrong SHA and incomplete pagination", async () => {
     const fake = setup();
     fake.routes.set(`${projectPath}/commits/abc123/status`, {
@@ -285,7 +302,7 @@ describe("TGit v3 adapter", () => {
     expect(await fake.service.getCheckDetails(checkOptions)).toMatchObject({
       checkRunId: 77,
       name: "unit",
-      output: { summary: "Tests passed" },
+      output: { summary: "Tests passed", text: "### Test report\n\nAll checks passed." },
     });
     await expect(
       fake.service.getCheckDetails({ ...checkOptions, checkRunId: 76 }),
@@ -298,6 +315,7 @@ describe("TGit v3 adapter", () => {
       items: [
         { id: "tgit-comment-1", body: "Please review" },
         { id: "tgit-comment-2", body: "Looks good" },
+        { id: "tgit-comment-3", body: "Reply in thread", threadId: "tgit-thread-1" },
       ],
       truncated: false,
     });

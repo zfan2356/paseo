@@ -16,7 +16,10 @@
     "commit_check_block": false,
     "labels": ["infra"]
   },
-  "project": { "id": 100, "path_with_namespace": "example/repo" },
+  "project": {
+    "id": 100,
+    "path_with_namespace": "example/repo"
+  },
   "checks": {
     "sha": "abc123",
     "state": "success",
@@ -29,28 +32,64 @@
         "state": "success",
         "target_url": "https://ci.example.test/runs/77",
         "description": "Tests passed",
-        "target_branches": ["main"]
+        "target_branches": ["main"],
+        "detail": "### Test report\n\nAll checks passed."
       }
     ]
   },
   "review": {
     "state": "approved",
-    "reviewers": [{ "username": "reviewer", "review_state": "approved" }]
+    "reviewers": [
+      {
+        "username": "reviewer",
+        "review_state": "approved"
+      }
+    ]
   },
-  "conflict": { "base_commit": "abc123", "target_commit": "target123", "has_conflicts": false },
-  "branch": { "commit": { "id": "target123" } },
+  "conflict": {
+    "base_commit": "abc123",
+    "target_commit": "target123",
+    "has_conflicts": false
+  },
+  "branch": {
+    "commit": {
+      "id": "target123"
+    }
+  },
   "comments": [
     {
       "id": 2,
-      "note": "Looks good",
       "created_at": "2026-11-12T12:01:00+0000",
-      "author": { "username": "reviewer", "avatar_url": "https://git.woa.com/avatar.png" }
+      "author": {
+        "username": "reviewer",
+        "avatar_url": "https://git.woa.com/avatar.png"
+      },
+      "body": "Looks good",
+      "comments": [],
+      "parent_id": null
     },
     {
       "id": 1,
-      "note": "Please review",
       "created_at": "2026-11-12T12:00:00+0000",
-      "author": { "username": "author", "avatar_url": null }
+      "author": {
+        "username": "author",
+        "avatar_url": null
+      },
+      "body": "Please review",
+      "comments": [
+        {
+          "id": 3,
+          "body": "Reply in thread",
+          "created_at": "2026-11-12T12:02:00+0000",
+          "author": {
+            "username": "reviewer",
+            "avatar_url": null
+          },
+          "parent_id": 1,
+          "comments": []
+        }
+      ],
+      "parent_id": null
     }
   ],
   "issues": [
