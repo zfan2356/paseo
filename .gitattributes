@@ -1,0 +1,2 @@
+# Unified diff context adds a space before Go indentation tabs.
+patches/magpie/*.patch whitespace=-space-before-tab

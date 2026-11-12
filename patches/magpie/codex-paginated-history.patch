@@ -1,0 +1,70 @@
+diff --git a/internal/sessions/codex_portable.go b/internal/sessions/codex_portable.go
+--- a/internal/sessions/codex_portable.go
++++ b/internal/sessions/codex_portable.go
+@@ -248,6 +248,20 @@
+ 		}
+ 		line, err := br.ReadBytes('\n')
+ 		if len(line) > 0 {
++			if n == 0 {
++				var header struct {
++					Type    string `json:"type"`
++					Payload struct {
++						HistoryMode string `json:"history_mode"`
++					} `json:"payload"`
++				}
++				if json.Unmarshal(line, &header) == nil && header.Type == "session_meta" &&
++					header.Payload.HistoryMode != "" && header.Payload.HistoryMode != "legacy" {
++					// Native paginated history stores byte offsets; writer locks do not
++					// make rewriting an idle rollout safe for its persisted index.
++					return false, nil
++				}
++			}
+ 			out, ok := portLine(line)
+ 			changed = changed || ok
+ 			if _, werr := bw.Write(out); werr != nil {
+diff --git a/internal/sessions/codex_portable_test.go b/internal/sessions/codex_portable_test.go
+--- a/internal/sessions/codex_portable_test.go
++++ b/internal/sessions/codex_portable_test.go
+@@ -173,6 +173,42 @@
+ 	}
+ }
+ 
++func TestPortCodexRolloutsPreservesPaginatedOffsets(t *testing.T) {
++	for _, zst := range []bool{false, true} {
++		t.Run(map[bool]string{false: "plain", true: "zst"}[zst], func(t *testing.T) {
++			lines := portRolloutLines(strings.Repeat("Retained context. ", 100))
++			for i, line := range lines {
++				entry := decode(t, line)
++				entry["ordinal"] = i
++				if i == 0 {
++					entry["payload"].(map[string]any)["history_mode"] = "paginated"
++				}
++				encoded, err := json.Marshal(entry)
++				if err != nil {
++					t.Fatal(err)
++				}
++				lines[i] = string(encoded)
++			}
++			home, path := portHome(t, lines, zst)
++			before, err := os.ReadFile(path)
++			if err != nil {
++				t.Fatal(err)
++			}
++			res, err := PortCodexRollouts(context.Background(), home)
++			if err != nil || !res.Done || len(res.Rewritten) != 0 || len(res.Held) != 0 {
++				t.Fatalf("paginated pass: %+v, %v", res, err)
++			}
++			after, err := os.ReadFile(path)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if !bytes.Equal(before, after) {
++				t.Fatal("rewrote indexed history: native SQLite byte offsets are now stale")
++			}
++		})
++	}
++}
++
+ // A rollout whose thread a Codex has open (its writer lock held) is never
+ // written under it: it is left as it was, kept for a later pass, and
+ // written once the Codex lets it go. A Codex home without
