@@ -145,6 +145,7 @@ describe("TGit v3 adapter", () => {
     expect(await service.listPullRequests({ cwd, query: "worker", limit: 2 })).toMatchObject([
       {
         number: 686,
+        state: "open",
         url: "https://git.woa.com/example/repo/-/merge_requests/686",
         baseRefName: "main",
       },
@@ -208,6 +209,7 @@ describe("TGit v3 adapter", () => {
     const fake = setup();
     expect(await fake.service.getCurrentPullRequestStatus(statusOptions)).toMatchObject({
       number: 686,
+      state: "open",
       checksStatus: "success",
       mergeable: "MERGEABLE",
       reviewDecision: "approved",

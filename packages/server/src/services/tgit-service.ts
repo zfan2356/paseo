@@ -152,8 +152,12 @@ function safeWebUrl(value: string): string | null {
   }
 }
 
+function normalizeState(state: string): string {
+  return state === "opened" || state === "reopened" ? "open" : state;
+}
+
 function isOpen(mr: TgitMr): boolean {
-  return mr.state === "opened" || mr.state === "reopened";
+  return normalizeState(mr.state) === "open";
 }
 
 function mrUrl(project: string, number: number): string {
@@ -165,7 +169,7 @@ function summary(mr: TgitMr, project: string): PullRequestSummary {
     number: mr.iid,
     title: mr.title,
     url: mrUrl(project, mr.iid),
-    state: mr.state,
+    state: normalizeState(mr.state),
     body: mr.description || null,
     projectPath: project,
     baseRefName: mr.target_branch,
@@ -303,7 +307,7 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
       number: issue.iid,
       title: issue.title,
       url: `https://git.woa.com/${project}/-/issues/${issue.iid}`,
-      state: issue.state,
+      state: normalizeState(issue.state),
       body: issue.description || null,
       labels: issue.labels,
       updatedAt: issue.updated_at,
@@ -562,7 +566,7 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
               number: issue.iid,
               title: issue.title,
               url: `https://git.woa.com/${project}/-/issues/${issue.iid}`,
-              state: issue.state,
+              state: normalizeState(issue.state),
               body: issue.description || null,
               labels: issue.labels,
               projectPath: project,
