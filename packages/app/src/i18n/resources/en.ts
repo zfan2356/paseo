@@ -1272,6 +1272,7 @@ export const en = {
         status: "Status",
         labels: "Labels",
       },
+      gitSource: { label: "Sidebar Git information source", session: "Session", path: "Path" },
       titleSource: {
         label: "Title",
         title: "Title",

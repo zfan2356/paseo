@@ -1,3 +1,10 @@
+import {
+  canObserveSessionGit,
+  sessionPrHint,
+  sidebarGitEntry,
+  uniqueWorkspaceAgents,
+} from "@/components/sidebar/session-git";
+import type { AgentChangeRequestsSnapshot } from "@getpaseo/client";
 import { describe, expect, it } from "vitest";
 import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import type { WorkspaceStructureProject } from "@/projects/workspace-structure";
@@ -995,4 +1002,105 @@ it("prepends newly discovered manual workspaces without dropping filtered saved 
   expect(
     computeSidebarOrderUpdates({ projects, persistedProjectOrder: ["p"] }).workspaceOrders,
   ).toEqual([]);
+});
+
+describe("sidebar session Git source", () => {
+  const changeRequest = (
+    number: number,
+    state: "open" | "closed",
+    addedAt: string,
+  ): AgentChangeRequestsSnapshot["items"][number] => ({
+    reference: {
+      key: String(number),
+      forge: "github",
+      host: "github.com",
+      projectPath: "a/b",
+      number,
+      url: `https://github.com/a/b/pull/${number}`,
+      source: "manual",
+      addedAt,
+    },
+    status: {
+      forge: "github",
+      url: `https://github.com/a/b/pull/${number}`,
+      title: "change",
+      state,
+      baseRefName: "main",
+      headRefName: "branch",
+      isMerged: false,
+      isDraft: false,
+      mergeable: "UNKNOWN",
+      checks: [],
+      checksStatus: "success",
+    },
+    availability: "available",
+    refreshedAt: null,
+    stale: false,
+  });
+  it("preserves path mode and suppresses path data without a session snapshot", () => {
+    const path = createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: workspaceWithForge("github", "https://github.com/a/b/pull/42"),
+    });
+    path.diffStat = { additions: 2, deletions: 1 };
+    expect(sidebarGitEntry(path, "path", undefined)).toBe(path);
+    expect(sidebarGitEntry(path, "session", undefined)).toMatchObject({
+      prHint: null,
+      diffStat: null,
+    });
+    expect(sessionPrHint({ agentId: "a", autoLink: true, items: [] })).toBeNull();
+  });
+  it("shows a single MR and prefers open before newest association", () => {
+    const snapshot: AgentChangeRequestsSnapshot = {
+      agentId: "a",
+      autoLink: true,
+      items: [
+        changeRequest(1, "open", "2026-01-01"),
+        changeRequest(2, "closed", "2026-03-01"),
+        changeRequest(3, "open", "2026-02-01"),
+      ],
+    };
+    expect(sessionPrHint({ ...snapshot, items: [snapshot.items[0]] })).toMatchObject({
+      number: 1,
+      state: "open",
+      checksStatus: "success",
+      additionalCount: 0,
+    });
+    expect(sessionPrHint(snapshot)).toMatchObject({ number: 3, additionalCount: 2 });
+  });
+  it("does not observe change requests on old or disconnected hosts", () => {
+    expect(canObserveSessionGit(true, { supportsAgentChangeRequests: () => false })).toBe(false);
+    expect(canObserveSessionGit(false, { supportsAgentChangeRequests: () => true })).toBe(false);
+    expect(canObserveSessionGit(true, { supportsAgentChangeRequests: () => true })).toBe(true);
+  });
+  it("uses only a unique active root agent for each workspace", () => {
+    const a = agent({ id: "a", workspaceId: "w", status: "idle" });
+    const b = agent({ id: "b", workspaceId: "w", status: "idle" });
+    const child = agent({ id: "child", workspaceId: "w", status: "idle", parentAgentId: "a" });
+    expect(uniqueWorkspaceAgents(new Map()).size).toBe(0);
+    expect(
+      uniqueWorkspaceAgents(
+        new Map([
+          [a.id, a],
+          [child.id, child],
+        ]),
+      ).get("w"),
+    ).toBe("a");
+    expect(
+      uniqueWorkspaceAgents(
+        new Map([
+          [a.id, a],
+          [b.id, b],
+        ]),
+      ).has("w"),
+    ).toBe(false);
+    expect(
+      uniqueWorkspaceAgents(
+        new Map([
+          [a.id, a],
+          [b.id, { ...b, archivedAt: new Date() }],
+        ]),
+      ).get("w"),
+    ).toBe("a");
+  });
 });

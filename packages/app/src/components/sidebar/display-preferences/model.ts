@@ -3,6 +3,7 @@ import { useCallback, useMemo } from "react";
 import {
   useAppSettings,
   type SidebarWorkspaceTrailing,
+  type SidebarGitSource,
   type WorkspaceTitleSource,
 } from "@/hooks/use-settings";
 import {
@@ -23,6 +24,8 @@ export interface SidebarDisplayPreferences {
   workspaceSort: WorkspaceSort;
   setWorkspaceSort: (sort: WorkspaceSort) => void;
   setGrouping: (mode: SidebarGroupMode) => void;
+  gitSource: SidebarGitSource;
+  setGitSource: (source: SidebarGitSource) => void;
   titleSource: WorkspaceTitleSource;
   setTitleSource: (source: WorkspaceTitleSource) => void;
   rowItems: SidebarRowItems;
@@ -72,12 +75,20 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
   const {
     settings: {
       workspaceTitleSource,
+      sidebarGitSource,
       sidebarWorkspaceTrailing,
       sidebarRowItems,
       sidebarChecksDisplay,
     },
     updateSettings,
   } = useAppSettings();
+
+  const setGitSource = useCallback(
+    (source: SidebarGitSource) => {
+      void updateSettings({ sidebarGitSource: source });
+    },
+    [updateSettings],
+  );
 
   const setTitleSource = useCallback(
     (source: WorkspaceTitleSource) => {
@@ -119,6 +130,8 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
       workspaceSort,
       setWorkspaceSort,
       setGrouping,
+      gitSource: sidebarGitSource,
+      setGitSource,
       titleSource: workspaceTitleSource,
       setTitleSource,
       rowItems: sidebarRowItems,
@@ -145,6 +158,8 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
       setWorkspaceSort,
       setGrouping,
       workspaceTitleSource,
+      sidebarGitSource,
+      setGitSource,
       setTitleSource,
       sidebarRowItems,
       toggleRowItem,

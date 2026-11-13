@@ -1247,6 +1247,7 @@ export const ko: TranslationResources = {
         status: "상태",
         labels: "레이블",
       },
+      gitSource: en.sidebar.display.gitSource,
       titleSource: {
         label: "제목",
         title: "제목",

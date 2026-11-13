@@ -1256,6 +1256,7 @@ export const zhCN: TranslationResources = {
         status: "状态",
         labels: "标签",
       },
+      gitSource: { label: "侧边栏 Git 信息来源", session: "会话", path: "路径" },
       titleSource: {
         label: "标题",
         title: "标题",

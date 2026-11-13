@@ -1266,6 +1266,7 @@ export const ptBR: TranslationResources = {
         status: "Status",
         labels: "Etiquetas",
       },
+      gitSource: en.sidebar.display.gitSource,
       titleSource: {
         label: "Título",
         title: "Título",

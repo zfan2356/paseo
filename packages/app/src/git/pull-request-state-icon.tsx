@@ -11,7 +11,10 @@ const successMapping = (theme: Theme) => ({ color: theme.colors.statusSuccess })
 const mergedMapping = (theme: Theme) => ({ color: theme.colors.statusMerged });
 const dangerMapping = (theme: Theme) => ({ color: theme.colors.statusDanger });
 
+const mutedMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+
 const PRESENTATION = {
+  unknown: { Icon: ThemedGitPullRequest, color: mutedMapping },
   open: { Icon: ThemedGitPullRequest, color: successMapping },
   merged: { Icon: ThemedGitMerge, color: mergedMapping },
   closed: { Icon: ThemedGitPullRequestClosed, color: dangerMapping },

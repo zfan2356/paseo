@@ -51,7 +51,7 @@ import {
   type SidebarGroupMode,
 } from "@/stores/sidebar-view-store";
 import { workspaceLabelKey, type WorkspaceLabelColor } from "@getpaseo/protocol/workspace-labels";
-import type { WorkspaceTitleSource } from "@/hooks/use-settings";
+import type { SidebarGitSource, WorkspaceTitleSource } from "@/hooks/use-settings";
 import { SIDEBAR_CHECKS_DISPLAYS, type SidebarChecksDisplay } from "./checks-display";
 import { useSidebarDisplayPreferences, type SidebarTrailingChoice } from "./model";
 import { SIDEBAR_ROW_ITEMS, type SidebarRowItem } from "./row-items";
@@ -121,6 +121,15 @@ const TRAILING_ICONS: Record<SidebarTrailingChoice, OptionIcon> = {
 };
 
 const GROUPING_MODES: readonly SidebarGroupMode[] = ["project", "status"];
+const GIT_SOURCES: readonly SidebarGitSource[] = ["session", "path"];
+const GIT_SOURCE_ICONS: Record<SidebarGitSource, OptionIcon> = {
+  session: withUnistyles(GitPullRequest),
+  path: withUnistyles(Folder),
+};
+const GIT_SOURCE_LABEL_KEYS: Record<SidebarGitSource, string> = {
+  session: "sidebar.display.gitSource.session",
+  path: "sidebar.display.gitSource.path",
+};
 const TITLE_SOURCES: readonly WorkspaceTitleSource[] = ["title", "branch"];
 const TRAILING_CHOICES: readonly SidebarTrailingChoice[] = ["diff", "timestamp"];
 
@@ -216,6 +225,20 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
             selectedValue={preferences.titleSource}
             onSelect={preferences.setTitleSource}
             testIDPrefix="sidebar-workspace-title-source"
+          />
+        ),
+      },
+      {
+        id: "gitSource",
+        title: t("sidebar.display.gitSource.label"),
+        content: (
+          <OptionList
+            values={GIT_SOURCES}
+            icons={GIT_SOURCE_ICONS}
+            labelKeys={GIT_SOURCE_LABEL_KEYS}
+            selectedValue={preferences.gitSource}
+            onSelect={preferences.setGitSource}
+            testIDPrefix="sidebar-git-source"
           />
         ),
       },
@@ -337,6 +360,13 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
             testID="sidebar-display-title-source"
           >
             {t("sidebar.display.titleSource.label")}
+          </MenuSubTrigger>
+          <MenuSubTrigger
+            id="gitSource"
+            value={t(GIT_SOURCE_LABEL_KEYS[preferences.gitSource])}
+            testID="sidebar-display-git-source"
+          >
+            {t("sidebar.display.gitSource.label")}
           </MenuSubTrigger>
           <MenuSubTrigger id="show" testID="sidebar-display-show">
             {t("sidebar.display.show.label")}

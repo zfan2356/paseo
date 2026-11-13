@@ -53,6 +53,7 @@ import {
   type ServiceUrlBehavior,
   type Settings,
   type SidebarWorkspaceTrailing,
+  type SidebarGitSource,
   type SettingsDeps,
   type WorkspaceTitleSource,
 } from "./storage";
@@ -99,6 +100,7 @@ export type {
   Settings,
   SettingsDeps,
   SidebarWorkspaceTrailing,
+  SidebarGitSource,
   WorkspaceTitleSource,
 };
 

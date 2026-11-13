@@ -1257,6 +1257,7 @@ export const ru: TranslationResources = {
         status: "Статус",
         labels: "Метки",
       },
+      gitSource: en.sidebar.display.gitSource,
       titleSource: {
         label: "Заголовок",
         title: "Заголовок",

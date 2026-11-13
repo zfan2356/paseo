@@ -1240,6 +1240,7 @@ export const ar: TranslationResources = {
         status: "الحالة",
         labels: "التسميات",
       },
+      gitSource: en.sidebar.display.gitSource,
       titleSource: {
         label: "العنوان",
         title: "العنوان",

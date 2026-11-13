@@ -4,7 +4,8 @@ import type { PresentableCheck } from "@/git/check-presentation";
 export interface PrHint {
   url: string;
   number: number;
-  state: "open" | "merged" | "closed";
+  state: "open" | "merged" | "closed" | "unknown";
+  additionalCount?: number;
   /** Forge backing this change request, so badges render the right brand mark. */
   forge: Forge;
   checks?: PrHintCheck[];

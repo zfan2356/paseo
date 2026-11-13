@@ -1253,6 +1253,7 @@ export const ja: TranslationResources = {
         status: "ステータス",
         labels: "ラベル",
       },
+      gitSource: en.sidebar.display.gitSource,
       titleSource: {
         label: "タイトル",
         title: "タイトル",

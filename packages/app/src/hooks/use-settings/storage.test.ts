@@ -206,6 +206,7 @@ describe("loadAppSettingsFromStorage", () => {
     const result = await loadAppSettingsFromStorage(deps);
 
     expect(result.workspaceTitleSource).toBe("title");
+    expect(result.sidebarGitSource).toBe("session");
   });
 
   it("enables the chat outline by default", async () => {

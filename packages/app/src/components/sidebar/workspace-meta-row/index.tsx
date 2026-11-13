@@ -224,7 +224,10 @@ function PullRequestItem({ hint }: { hint: PrHint }) {
         {hint.number}
         {/* An open change request is the unremarkable case and says nothing extra; a merged
             or closed one is why the row still looks like it has work in it. */}
-        {hint.state === "open" ? "" : ` ${t(PR_STATE_LABEL_KEYS[hint.state])}`}
+        {hint.state === "closed" || hint.state === "merged"
+          ? ` ${t(PR_STATE_LABEL_KEYS[hint.state])}`
+          : ""}
+        {hint.additionalCount ? ` +${hint.additionalCount}` : ""}
       </Text>
     </Pressable>
   );

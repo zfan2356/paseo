@@ -1,3 +1,5 @@
+import { useAppSettings } from "@/hooks/use-settings";
+import { useSidebarSessionGit } from "./use-session-git";
 import { useTranslation } from "react-i18next";
 import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import {
@@ -103,9 +105,17 @@ export function SidebarModelProvider({
   // for a filter that does not need it costs a retained-but-inactive sidebar real work.
   // Hardware keyboard navigation needs the same filtered targets while the sidebar is hidden.
   const needsWorkspaceEntries = groupMode !== "project" || hasActiveLabelFilter;
-  const workspaceEntriesByKey = useSidebarWorkspaceEntries(
+  const rawWorkspaceEntriesByKey = useSidebarWorkspaceEntries(
     list.workspacePlacements,
     modelActive || needsWorkspaceEntries,
+  );
+  const {
+    settings: { sidebarGitSource },
+  } = useAppSettings();
+  const workspaceEntriesByKey = useSidebarSessionGit(
+    rawWorkspaceEntriesByKey,
+    sidebarGitSource,
+    modelActive,
   );
   const filteredWorkspaceEntriesByKey = useMemo(() => {
     const byProject = filterWorkspacesByProjects({

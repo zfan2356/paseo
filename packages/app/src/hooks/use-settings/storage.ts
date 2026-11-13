@@ -39,6 +39,7 @@ export type SendBehavior = ActiveTurnBehavior | "queue";
 export type ReleaseChannel = "stable" | "beta";
 export type ServiceUrlBehavior = "ask" | "in-app" | "external";
 export type WorkspaceTitleSource = "title" | "branch";
+export type SidebarGitSource = "session" | "path";
 export type PullRequestOpenLocation = "main" | "side" | "explorer";
 /** What a sidebar workspace row shows in the space to the right of its title. */
 export type SidebarWorkspaceTrailing = "diff" | "timestamp" | "none";
@@ -93,6 +94,7 @@ export interface AppSettings {
   contentMaxWidth: number | null;
   syntaxTheme: SyntaxThemeId; // default "one"
   workspaceTitleSource: WorkspaceTitleSource;
+  sidebarGitSource: SidebarGitSource;
   sidebarWorkspaceTrailing: SidebarWorkspaceTrailing;
   sidebarRowItems: SidebarRowItems;
   sidebarChecksDisplay: SidebarChecksDisplay;
@@ -153,6 +155,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   contentMaxWidth: null,
   syntaxTheme: "one",
   workspaceTitleSource: "title",
+  sidebarGitSource: "session",
   sidebarWorkspaceTrailing: "timestamp",
   sidebarRowItems: DEFAULT_SIDEBAR_ROW_ITEMS,
   sidebarChecksDisplay: DEFAULT_SIDEBAR_CHECKS_DISPLAY,
@@ -247,6 +250,7 @@ const StoredAppSettingsSchema = z
       .catch(null),
     syntaxTheme: z.string().refine(isSyntaxThemeId).catch("one"),
     workspaceTitleSource: z.enum(["title", "branch"]).catch("title"),
+    sidebarGitSource: z.enum(["session", "path"]).catch("session"),
     sidebarWorkspaceTrailing: z.enum(["diff", "timestamp", "none"]).catch("timestamp"),
     sidebarRowItems: SidebarRowItemsSchema,
     sidebarChecksDisplay: z

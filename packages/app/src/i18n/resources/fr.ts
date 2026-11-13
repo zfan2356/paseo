@@ -1270,6 +1270,7 @@ export const fr: TranslationResources = {
         status: "Statut",
         labels: "Libellés",
       },
+      gitSource: en.sidebar.display.gitSource,
       titleSource: {
         label: "Titre",
         title: "Titre",
