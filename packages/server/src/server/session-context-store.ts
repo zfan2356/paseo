@@ -88,8 +88,13 @@ export class SessionContextStore {
   }
 
   publish(context: SessionContext): void {
-    for (const listener of this.listeners.get(context.agentId) ?? [])
-      listener(structuredClone(context));
+    for (const listener of this.listeners.get(context.agentId) ?? []) {
+      try {
+        listener(structuredClone(context));
+      } catch {
+        /* Durable mutations must not fail because an observer disconnected. */
+      }
+    }
   }
 
   subscribe(

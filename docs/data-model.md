@@ -53,6 +53,8 @@ $PASEO_HOME/
 ├── agents/
 │   └── {sanitized-cwd}/
 │       └── {agentId}.json               # One file per agent
+├── agent-contexts/
+│   └── {agentId}.json                 # Independent session grouping and directory links
 ├── schedules/
 │   └── {scheduleId}.json                # One file per schedule
 ├── projects/
@@ -74,6 +76,22 @@ $PASEO_HOME/
 ```
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
+
+---
+
+## Session context
+
+Each agent has an independent side file under `agent-contexts/`. Older daemons rewrite agent records through a stripping schema, so session metadata must stay outside those records. The file also serves as the one-time import marker: only a missing file permits initialization. Malformed, inaccessible, or inconsistent files fail explicitly and remain untouched.
+
+The startup directory comes from the recorded agent cwd; project membership starts from its owning workspace. Existing visible root sessions inherit workspace pins and label names once. Later workspace edits do not reapply those values. Missing historical cwd information is not reconstructed. New and imported sessions use the same lazy initialization. Archived/internal sessions and same-workspace children do not inherit sidebar pins or labels.
+
+Session project membership can point at an existing active project or be explicitly ungrouped. It does not change workspace membership, workspace identity, execution cwd, or agent titles. Orphaned project references remain readable for a client to repair. The launch directory is immutable; directory links neither own files nor retain worktrees. Directory identities use lexical absolute paths, never realpath or Git identity. See the [target navigation design](session-context.md).
+
+A daemon-owned serialization boundary protects reads, initialization and mutations, including shared label catalog commits. All context reads go through that boundary. The shared catalog journal includes context before-images when assignments change; a prepared journal rolls back catalog, workspace and context values together. A committed marker is cleanup only and never replays stale values. An uncertain outcome blocks both workspace and context writes until restart. Session assignment selects an existing catalog label; label creation, rename and deletion retain the existing host catalog API.
+
+Contexts survive daemon downgrade because old versions never read or write their directory. New-daemon deletion removes the side file after deleting the agent. An old-daemon deletion can leave an orphan side file; it is not a new session and reads still require the agent to exist. No speculative orphan cleanup runs during startup.
+
+`server_info.features.sessionContext` gates the SDK once per operation and reconnect. `agent.context.get.request` optionally opens a source-owned subscription; `agent.context.mutate.request` changes one context. Only subscribed sources receive `agent.context.update`; a normal legacy connection receives its existing messages. Release/disconnect drops demand, and reconnect obtains a fresh snapshot.
 
 ---
 

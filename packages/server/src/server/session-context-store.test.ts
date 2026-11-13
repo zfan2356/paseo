@@ -226,3 +226,178 @@ describe("session context", () => {
     expect((await contexts.get("one")).sidebarLabelNames).toEqual(["Ready"]);
   });
 });
+
+describe("session label crash recovery", () => {
+  test("a prepared journal restores context before-images on restart", async () => {
+    const home = await mkdtemp(path.join(tmpdir(), "paseo-context-recovery-"));
+    try {
+      const directory = path.join(home, "agent-contexts");
+      const context = {
+        agentId: "one",
+        launchDirectory: home,
+        projectId: null,
+        pinnedAt: null,
+        sidebarLabelNames: ["Review"],
+        linkedDirectories: [],
+        autoLinkDirectories: true,
+        excludedDirectoryPaths: [],
+      };
+      const file = path.join(directory, "one.json");
+      await writeJsonFileAtomic(file, { ...context, sidebarLabelNames: ["Ready"] });
+      await writeJsonFileAtomic(path.join(home, "projects", "workspace-labels.json"), [
+        { name: "Ready", color: "sky" },
+      ]);
+      await writeJsonFileAtomic(path.join(home, "projects", "workspace-labels.transaction.json"), {
+        phase: "prepared",
+        beforeLabels: [{ name: "Review", color: "sky" }],
+        afterLabels: [{ name: "Ready", color: "sky" }],
+        beforeWorkspaces: [],
+        afterWorkspaces: [],
+        beforeContexts: [context],
+      });
+      const registry = new FileBackedWorkspaceRegistry(
+        path.join(home, "projects", "workspaces.json"),
+        createTestLogger(),
+      );
+      const contexts = new SessionContextStore({
+        directory,
+        getAgent: async (id) =>
+          parseStoredAgentRecord({
+            id,
+            cwd: home,
+            provider: "codex",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          }),
+        getWorkspace: async () => null,
+        isVisibleRoot: async () => true,
+        projectExists: async () => false,
+      });
+      const labels = createWorkspaceLabelService({
+        paseoHome: home,
+        workspaceRegistry: registry,
+        sessionContexts: contexts,
+      });
+      await labels.initialize();
+      expect(await contexts.get("one")).toEqual(context);
+      expect((await labels.list()).labels).toEqual([{ name: "Review", color: "sky" }]);
+      await expect(
+        readFile(path.join(home, "projects", "workspace-labels.transaction.json")),
+      ).rejects.toThrow();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+});
+
+test("a lost committed-marker acknowledgement blocks contexts until restart without replaying stale values", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "paseo-context-committed-"));
+  try {
+    const registryPath = path.join(home, "projects", "workspaces.json");
+    let registry = new FileBackedWorkspaceRegistry(registryPath, createTestLogger());
+    await registry.upsert(
+      createPersistedWorkspaceRecord({
+        workspaceId: "workspace",
+        projectId: "project",
+        cwd: home,
+        kind: "directory",
+        displayName: "Workspace",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    );
+    function makeContexts() {
+      return new SessionContextStore({
+        directory: path.join(home, "agent-contexts"),
+        getAgent: async (id) =>
+          parseStoredAgentRecord({
+            id,
+            cwd: home,
+            workspaceId: "workspace",
+            provider: "codex",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          }),
+        getWorkspace: (id) => registry.get(id),
+        isVisibleRoot: async () => true,
+        projectExists: async () => false,
+      });
+    }
+    let contexts = makeContexts();
+    let loseAck = false;
+    const labels = createWorkspaceLabelService({
+      paseoHome: home,
+      workspaceRegistry: registry,
+      sessionContexts: contexts,
+      writeTransaction: async (file, value) => {
+        await writeJsonFileAtomic(file, value);
+        if (
+          loseAck &&
+          typeof value === "object" &&
+          value !== null &&
+          "phase" in value &&
+          value.phase === "committed"
+        )
+          throw new Error("lost acknowledgement");
+      },
+    });
+    await labels.setAssignment({
+      workspaceId: "workspace",
+      label: { name: "Review", color: "sky" },
+      assigned: true,
+    });
+    await contexts.get("one");
+    loseAck = true;
+    await expect(labels.update({ name: "Review", newName: "Ready" })).rejects.toThrow("uncertain");
+    await expect(contexts.mutate("one", { kind: "pin", pinned: true })).rejects.toThrow(
+      "uncertain",
+    );
+    registry = new FileBackedWorkspaceRegistry(registryPath, createTestLogger());
+    contexts = makeContexts();
+    const recovered = createWorkspaceLabelService({
+      paseoHome: home,
+      workspaceRegistry: registry,
+      sessionContexts: contexts,
+    });
+    await recovered.initialize();
+    expect((await contexts.get("one")).sidebarLabelNames).toEqual(["Ready"]);
+    const saved = await contexts.mutate("one", { kind: "pin", pinned: true });
+    await createWorkspaceLabelService({
+      paseoHome: home,
+      workspaceRegistry: registry,
+      sessionContexts: makeContexts(),
+    }).initialize();
+    expect(await contexts.get("one")).toEqual(saved);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("a throwing observer cannot turn a durable context mutation into a failure", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "paseo-context-observer-"));
+  try {
+    const contexts = new SessionContextStore({
+      directory: home,
+      getAgent: async (id) =>
+        parseStoredAgentRecord({
+          id,
+          cwd: home,
+          provider: "codex",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }),
+      getWorkspace: async () => null,
+      isVisibleRoot: async () => true,
+      projectExists: async () => false,
+    });
+    await contexts.subscribe("one", () => {
+      throw new Error("Disconnected");
+    });
+    await expect(contexts.mutate("one", { kind: "pin", pinned: true })).resolves.toMatchObject({
+      pinnedAt: expect.any(String),
+    });
+    expect((await contexts.get("one")).pinnedAt).toEqual(expect.any(String));
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
