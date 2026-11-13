@@ -33,11 +33,16 @@ export function uniqueWorkspaceAgents(agents: ReadonlyMap<string, Agent>): Map<s
 export function sessionPrHint(snapshot: AgentChangeRequestsSnapshot | undefined): PrHint | null {
   if (!snapshot?.items.length) return null;
   const items = [...snapshot.items].sort((a, b) => {
-    const closed = (item: typeof a) =>
-      item.status?.isMerged || item.status?.state === "merged" || item.status?.state === "closed";
-    const rank = Number(Boolean(closed(a))) - Number(Boolean(closed(b)));
+    const rank = (item: typeof a) => {
+      if (!item.status) return 1;
+      return item.status.isMerged ||
+        item.status.state === "merged" ||
+        item.status.state === "closed"
+        ? 2
+        : 0;
+    };
     return (
-      rank ||
+      rank(a) - rank(b) ||
       b.reference.addedAt.localeCompare(a.reference.addedAt) ||
       a.reference.key.localeCompare(b.reference.key)
     );
@@ -66,4 +71,37 @@ export function canObserveSessionGit(
   client: { supportsAgentChangeRequests(): boolean } | null,
 ): boolean {
   return connected && client !== null && client.supportsAgentChangeRequests();
+}
+
+export interface SidebarGitProjectionItem {
+  entry: SidebarWorkspaceEntry;
+  snapshot: AgentChangeRequestsSnapshot | undefined;
+  projected: SidebarWorkspaceEntry;
+}
+
+export function projectSidebarSessionGit(
+  entries: ReadonlyMap<string, SidebarWorkspaceEntry>,
+  snapshots: ReadonlyMap<string, AgentChangeRequestsSnapshot>,
+  agents: ReadonlyMap<string, string>,
+  online: (serverId: string) => boolean,
+  previous: ReadonlyMap<string, SidebarGitProjectionItem>,
+): Map<string, SidebarGitProjectionItem> {
+  const result = new Map<string, SidebarGitProjectionItem>();
+  for (const [key, entry] of entries) {
+    const candidate = snapshots.get(key);
+    const snapshot =
+      online(entry.serverId) && candidate?.agentId === agents.get(key) ? candidate : undefined;
+    const old = previous.get(key);
+    result.set(
+      key,
+      old && old.entry === entry && old.snapshot === snapshot
+        ? old
+        : {
+            entry,
+            snapshot,
+            projected: sidebarGitEntry(entry, "session", snapshot),
+          },
+    );
+  }
+  return result;
 }

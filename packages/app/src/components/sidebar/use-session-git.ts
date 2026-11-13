@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { createPaseoApi, type AgentChangeRequestsSnapshot } from "@getpaseo/client";
 import { useSessionStore } from "@/stores/session-store";
-import { getHostRuntimeStore, useHostRuntimeConnectionStatuses } from "@/runtime/host-runtime";
+import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
+import { createSessionGitObserver } from "./session-git-observer";
 import { normalizeWorkspaceOpaqueId } from "@/utils/workspace-identity";
-import { canObserveSessionGit, sidebarGitEntry, uniqueWorkspaceAgents } from "./session-git";
+import {
+  canObserveSessionGit,
+  projectSidebarSessionGit,
+  uniqueWorkspaceAgents,
+  type SidebarGitProjectionItem,
+} from "./session-git";
 
 export function useSidebarSessionGit(
   entries: ReadonlyMap<string, SidebarWorkspaceEntry>,
@@ -18,9 +23,33 @@ export function useSidebarSessionGit(
   );
   const serverIds = useMemo<string[]>(() => JSON.parse(serverIdKey), [serverIdKey]);
   const sessions = useSessionStore(
-    useShallow((state) => serverIds.map((id) => state.sessions[id]?.agents)),
+    useShallow((state) =>
+      serverIds.map((id) =>
+        state.sessions[id]?.hasHydratedAgents ? state.sessions[id]?.agents : undefined,
+      ),
+    ),
   );
-  const statuses = useHostRuntimeConnectionStatuses(serverIds);
+  const runtime = getHostRuntimeStore();
+  const readinessKey = useSyncExternalStore(
+    (listener) => runtime.subscribeAll(listener),
+    () =>
+      JSON.stringify(
+        serverIds.map((id) => {
+          const snapshot = runtime.getSnapshot(id);
+          return (
+            snapshot?.connectionStatus === "online" &&
+            snapshot.agentDirectoryStatus === "ready" &&
+            snapshot.client?.supportsAgentChangeRequests() === true
+          );
+        }),
+      ),
+    () => "[]",
+  );
+  const readiness = useMemo<boolean[]>(() => JSON.parse(readinessKey), [readinessKey]);
+  const readyHosts = useMemo(
+    () => new Set(serverIds.filter((_, i) => readiness[i])),
+    [serverIds, readiness],
+  );
   const targetKey = useMemo(() => {
     const ids = new Map<string, string>();
     for (let i = 0; i < serverIds.length; i++) {
@@ -47,107 +76,70 @@ export function useSidebarSessionGit(
     [targetKey],
   );
   const [snapshots, setSnapshots] = useState<Map<string, AgentChangeRequestsSnapshot>>(new Map());
-  const subscriptions = useRef(
-    new Map<
-      string,
-      { agentId: string; client: DaemonClient; stop: () => void; dispose: () => void }
-    >(),
-  );
+  const observer = useRef<ReturnType<typeof createSessionGitObserver> | null>(null);
   useEffect(() => {
-    const runtime = getHostRuntimeStore();
-    const desired = new Map(targets.map((target) => [target.workspaceKey, target]));
-    for (const [key, subscription] of subscriptions.current) {
-      const target = desired.get(key);
-      const client = target && runtime.getClient(target.serverId);
-      if (
-        active &&
-        source === "session" &&
-        target &&
-        target.agentId === subscription.agentId &&
-        client === subscription.client &&
-        statuses.get(target.serverId) === "online" &&
-        client.supportsAgentChangeRequests()
-      )
-        continue;
-      subscription.stop();
-      subscription.dispose();
-      subscriptions.current.delete(key);
-      setSnapshots((previous) => {
-        const next = new Map(previous);
-        next.delete(key);
-        return next;
-      });
-    }
-    if (!active || source !== "session") return;
-    for (const target of targets) {
-      const client = runtime.getClient(target.serverId);
-      if (
-        subscriptions.current.has(target.workspaceKey) ||
-        !client ||
-        !canObserveSessionGit(statuses.get(target.serverId) === "online", client)
-      )
-        continue;
-      const api = createPaseoApi(client);
-      let live = true;
-      const stop = api.agents.ref(target.agentId).changeRequests.subscribe(
-        (snapshot) => {
-          if (live)
-            setSnapshots((previous) => new Map(previous).set(target.workspaceKey, snapshot));
+    const current = createSessionGitObserver(
+      {
+        observe(target, update, error) {
+          const client = runtime.getClient(target.serverId);
+          if (!client || !canObserveSessionGit(true, client)) {
+            error();
+            return () => {};
+          }
+          const api = createPaseoApi(client);
+          const stop = api.agents
+            .ref(target.agentId)
+            .changeRequests.subscribe(update, { onError: error });
+          return () => {
+            stop();
+            void api
+              .dispose()
+              .catch((cause) => console.error("Change request API cleanup failed", cause));
+          };
         },
-        {
-          onError: () => {
-            if (live)
-              setSnapshots((previous) => {
-                const next = new Map(previous);
-                next.delete(target.workspaceKey);
-                return next;
-              });
-          },
+        schedule(callback) {
+          const timer = setTimeout(callback, 1000);
+          return () => clearTimeout(timer);
         },
-      );
-      subscriptions.current.set(target.workspaceKey, {
-        agentId: target.agentId,
-        client,
-        stop: () => {
-          live = false;
-          stop();
-        },
-        dispose: () => {
-          void api.dispose();
-        },
-      });
-    }
-  }, [active, source, targets, statuses]);
-  useEffect(
-    () => () => {
-      for (const subscription of subscriptions.current.values()) {
-        subscription.stop();
-        subscription.dispose();
-      }
-      subscriptions.current.clear();
-    },
-    [],
-  );
+      },
+      (key, snapshot) =>
+        setSnapshots((previous) => {
+          const next = new Map(previous);
+          if (snapshot) next.set(key, snapshot);
+          else next.delete(key);
+          return next;
+        }),
+    );
+    observer.current = current;
+    return () => {
+      current.close();
+      observer.current = null;
+    };
+  }, [runtime]);
+  useEffect(() => {
+    observer.current?.setTargets(
+      active && source === "session"
+        ? targets.filter((target) => readyHosts.has(target.serverId))
+        : [],
+    );
+  }, [active, source, targets, readyHosts]);
+  const previousProjection = useRef(new Map<string, SidebarGitProjectionItem>());
   return useMemo(() => {
-    if (source === "path") return entries;
+    if (source === "path") {
+      previousProjection.current.clear();
+      return entries;
+    }
     const agentsByWorkspace = new Map(
       targets.map((target) => [target.workspaceKey, target.agentId]),
     );
-    return new Map(
-      [...entries].map(([key, workspace]) => {
-        const snapshot = snapshots.get(key);
-        const agentId = agentsByWorkspace.get(key);
-        return [
-          key,
-          sidebarGitEntry(
-            workspace,
-            source,
-            active && statuses.get(workspace.serverId) === "online" && snapshot?.agentId === agentId
-              ? snapshot
-              : undefined,
-          ),
-        ];
-      }),
+    const projection = projectSidebarSessionGit(
+      entries,
+      snapshots,
+      agentsByWorkspace,
+      (serverId) => active && readyHosts.has(serverId),
+      previousProjection.current,
     );
-  }, [active, entries, source, snapshots, targets, statuses]);
+    previousProjection.current = projection;
+    return new Map([...projection].map(([key, value]) => [key, value.projected]));
+  }, [active, entries, source, snapshots, targets, readyHosts]);
 }

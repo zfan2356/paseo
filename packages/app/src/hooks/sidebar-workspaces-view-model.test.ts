@@ -1,5 +1,7 @@
+import { createSessionGitObserver } from "@/components/sidebar/session-git-observer";
 import {
   canObserveSessionGit,
+  projectSidebarSessionGit,
   sessionPrHint,
   sidebarGitEntry,
   uniqueWorkspaceAgents,
@@ -1068,10 +1070,94 @@ describe("sidebar session Git source", () => {
     });
     expect(sessionPrHint(snapshot)).toMatchObject({ number: 3, additionalCount: 2 });
   });
+  it("retains unaffected rows when one session snapshot changes", () => {
+    const a = createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: workspaceWithForge("github", "https://github.com/a/b/pull/42"),
+    });
+    const b = { ...a, workspaceKey: "srv:other", workspaceId: "other" };
+    const entries = new Map([
+      [a.workspaceKey, a],
+      [b.workspaceKey, b],
+    ]);
+    const agents = new Map([
+      [a.workspaceKey, "a"],
+      [b.workspaceKey, "b"],
+    ]);
+    const first = { agentId: "a", autoLink: true, items: [changeRequest(1, "open", "2026-01-01")] };
+    const other = { agentId: "b", autoLink: true, items: [changeRequest(2, "open", "2026-01-01")] };
+    const before = projectSidebarSessionGit(
+      entries,
+      new Map([
+        [a.workspaceKey, first],
+        [b.workspaceKey, other],
+      ]),
+      agents,
+      () => true,
+      new Map(),
+    );
+    const after = projectSidebarSessionGit(
+      entries,
+      new Map([
+        [a.workspaceKey, { ...first, items: [] }],
+        [b.workspaceKey, other],
+      ]),
+      agents,
+      () => true,
+      before,
+    );
+    expect(after.get(a.workspaceKey)?.projected).not.toBe(before.get(a.workspaceKey)?.projected);
+    expect(after.get(b.workspaceKey)?.projected).toBe(before.get(b.workspaceKey)?.projected);
+  });
   it("does not observe change requests on old or disconnected hosts", () => {
     expect(canObserveSessionGit(true, { supportsAgentChangeRequests: () => false })).toBe(false);
     expect(canObserveSessionGit(false, { supportsAgentChangeRequests: () => true })).toBe(false);
     expect(canObserveSessionGit(true, { supportsAgentChangeRequests: () => true })).toBe(true);
+  });
+  it("retries a failed observation once scheduled and releases it on removal", async () => {
+    const target = { workspaceKey: "srv:w", serverId: "srv", agentId: "a" };
+    let fail = () => {};
+    let retry = () => {};
+    let starts = 0;
+    let stops = 0;
+    const published: (string | undefined)[] = [];
+    const observer = createSessionGitObserver(
+      {
+        observe(_target, update, onError) {
+          starts++;
+          fail = onError;
+          if (starts === 2) update({ agentId: "a", autoLink: true, items: [] });
+          return () => {
+            stops++;
+          };
+        },
+        schedule(callback) {
+          retry = callback;
+          return () => {};
+        },
+      },
+      (_key, snapshot) => published.push(snapshot?.agentId),
+    );
+    observer.setTargets([target]);
+    fail();
+    await Promise.resolve();
+    expect(stops).toBe(1);
+    retry();
+    expect(starts).toBe(2);
+    expect(published).toEqual([undefined, "a"]);
+    observer.setTargets([]);
+    expect(stops).toBe(2);
+    observer.close();
+  });
+  it("prefers a known open request over a newer unknown one", () => {
+    const unknown = { ...changeRequest(2, "open", "2026-03-01"), status: null };
+    expect(
+      sessionPrHint({
+        agentId: "a",
+        autoLink: true,
+        items: [changeRequest(1, "open", "2026-01-01"), unknown],
+      }),
+    ).toMatchObject({ number: 1 });
   });
   it("uses only a unique active root agent for each workspace", () => {
     const a = agent({ id: "a", workspaceId: "w", status: "idle" });
