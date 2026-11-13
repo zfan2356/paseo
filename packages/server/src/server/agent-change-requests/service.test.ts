@@ -113,6 +113,7 @@ describe("session linked change requests", () => {
     await Promise.all([
       service.update("a", { addUrl: url }),
       service.update("a", { addUrl: url.replace("/merge_requests", "/-/merge_requests") }),
+      service.update("a", { addUrl: url + "?tab=changes#note_9" }),
     ]);
     const snapshot = await service.list("a");
     expect(snapshot.items).toHaveLength(1);

@@ -37,7 +37,6 @@ describe("session change request identities", () => {
     "https://github.com/a/b/pull/0",
     "https://github.com/a/b/pull/9007199254740992",
     "https://github.com/a/b/issues/1",
-    "https://github.com/a/b/pull/1?x=1",
   ])("rejects unsafe/noncanonical URL %s", (url) => expect(parseChangeRequestUrl(url)).toBeNull());
 });
 
@@ -177,4 +176,16 @@ it("recognizes gw's final JSON after its automatic push, but never a URL in push
       remote,
     ),
   ).toBeNull();
+});
+
+it("normalizes browser query parameters and comment anchors out of MR identity", () => {
+  const clean = parseChangeRequestUrl("https://git.woa.com/group/repo/merge_requests/686");
+  expect(
+    parseChangeRequestUrl(
+      "https://git.woa.com/group/repo/-/merge_requests/686?tab=changes&path=a%2Fb#note_9",
+    ),
+  ).toEqual(clean);
+  expect(parseChangeRequestUrl("https://github.com/a/b/pull/7?tab=files#discussion_r1")?.url).toBe(
+    "https://github.com/a/b/pull/7",
+  );
 });

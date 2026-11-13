@@ -19,16 +19,10 @@ ROUTES.codeberg = ROUTES.gitea;
 function safeUrl(value: string): URL | null {
   try {
     const url = new URL(value);
-    if (
-      url.protocol !== "https:" ||
-      !/^https:\/\/[^/?#@]+\//i.test(value) ||
-      url.port ||
-      url.search ||
-      url.hash
-    )
-      return null;
+    if (url.protocol !== "https:" || !/^https:\/\/[^/?#@]+\//i.test(value) || url.port) return null;
     // URL normalizes dot segments. Reject them in the original input as well.
-    if (/%|\\/.test(value) || value.split("/").some((part) => part === "." || part === ".."))
+    const address = value.split(/[?#]/, 1)[0];
+    if (/%|\\/.test(address) || address.split("/").some((part) => part === "." || part === ".."))
       return null;
     return url;
   } catch {

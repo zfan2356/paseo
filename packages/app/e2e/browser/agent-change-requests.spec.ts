@@ -17,7 +17,7 @@ for (const width of [1200, 390]) {
       await openAgentRoute(page, agent);
       await page.getByTestId("agent-change-requests-toggle").click();
       const input = page.getByRole("textbox", { name: "PR/MR URL" });
-      await input.fill("https://git.woa.com/team/first/merge_requests/7");
+      await input.fill("https://git.woa.com/team/first/merge_requests/7?tab=changes#note_9");
       await page.getByTestId("agent-change-requests-add").click();
       await expect(page.getByRole("button", { name: "team/first !7", exact: true })).toBeVisible();
       await input.fill("https://git.woa.com/another/second/merge_requests/8");
