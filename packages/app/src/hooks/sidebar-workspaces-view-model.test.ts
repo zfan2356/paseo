@@ -1,6 +1,8 @@
 import {
   createSessionGitObserver,
   validateSessionDirectories,
+  sessionGitConnection,
+  eligibleSessionGitTargets,
 } from "@/components/sidebar/session-git-observer";
 import {
   canObserveSessionGit,
@@ -1116,6 +1118,42 @@ describe("sidebar session Git source", () => {
     expect(canObserveSessionGit(true, { supportsAgentChangeRequests: () => false })).toBe(false);
     expect(canObserveSessionGit(false, { supportsAgentChangeRequests: () => true })).toBe(false);
     expect(canObserveSessionGit(true, { supportsAgentChangeRequests: () => true })).toBe(true);
+  });
+  it("does not subscribe or show path data when the online host lacks the feature", () => {
+    const connection = sessionGitConnection({
+      connectionStatus: "online",
+      clientGeneration: 1,
+      connectionEpoch: 1,
+      client: { supportsAgentChangeRequests: () => false },
+    });
+    const hosts = new Set<string>();
+    if (connection) hosts.add("srv");
+    let requests = 0;
+    const observer = createSessionGitObserver(
+      {
+        observe: () => {
+          requests++;
+          return () => {};
+        },
+        schedule: () => () => {},
+      },
+      () => {},
+    );
+    observer.setTargets(
+      eligibleSessionGitTargets(
+        [{ serverId: "srv", workspaceKey: "srv:ws-1", agentId: "a" }],
+        true,
+        "session",
+        hosts,
+      ),
+    );
+    expect(requests).toBe(0);
+    const row = createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: workspaceWithForge("github", "https://github.com/a/b/pull/42"),
+    });
+    expect(sidebarGitEntry(row, "session", undefined).prHint).toBeNull();
+    observer.close();
   });
   it("retries a failed observation once scheduled and releases it on removal", async () => {
     const target = { workspaceKey: "srv:w", serverId: "srv", agentId: "a" };

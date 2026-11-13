@@ -4,7 +4,12 @@ import { createPaseoApi, type AgentChangeRequestsSnapshot } from "@getpaseo/clie
 import { useSessionStore } from "@/stores/session-store";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
-import { createSessionGitObserver, validateSessionDirectories } from "./session-git-observer";
+import {
+  createSessionGitObserver,
+  validateSessionDirectories,
+  sessionGitConnection,
+  eligibleSessionGitTargets,
+} from "./session-git-observer";
 import { normalizeWorkspaceOpaqueId } from "@/utils/workspace-identity";
 import {
   canObserveSessionGit,
@@ -35,11 +40,7 @@ export function useSidebarSessionGit(
     () =>
       JSON.stringify(
         serverIds.map((id) => {
-          const snapshot = runtime.getSnapshot(id);
-          return snapshot?.connectionStatus === "online" &&
-            snapshot.client?.supportsAgentChangeRequests() === true
-            ? `${snapshot.clientGeneration}:${snapshot.connectionEpoch}`
-            : null;
+          return sessionGitConnection(runtime.getSnapshot(id));
         }),
       ),
     () => "[]",
@@ -164,11 +165,7 @@ export function useSidebarSessionGit(
     };
   }, [runtime]);
   useEffect(() => {
-    observer.current?.setTargets(
-      active && source === "session"
-        ? targets.filter((target) => readyHosts.has(target.serverId))
-        : [],
-    );
+    observer.current?.setTargets(eligibleSessionGitTargets(targets, active, source, readyHosts));
   }, [active, source, targets, readyHosts]);
   const previousProjection = useRef(new Map<string, SidebarGitProjectionItem>());
   return useMemo(() => {

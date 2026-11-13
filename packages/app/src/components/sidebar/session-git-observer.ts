@@ -147,3 +147,26 @@ export function validateSessionDirectories(
     cancel?.();
   };
 }
+
+export function sessionGitConnection(
+  snapshot: {
+    connectionStatus: string;
+    clientGeneration: number;
+    connectionEpoch: number;
+    client: { supportsAgentChangeRequests(): boolean } | null;
+  } | null,
+): string | null {
+  if (snapshot?.connectionStatus !== "online" || !snapshot.client?.supportsAgentChangeRequests())
+    return null;
+  return `${snapshot.clientGeneration}:${snapshot.connectionEpoch}`;
+}
+
+export function eligibleSessionGitTargets(
+  targets: readonly SessionGitTarget[],
+  active: boolean,
+  source: "path" | "session",
+  readyHosts: ReadonlySet<string>,
+): SessionGitTarget[] {
+  if (!active || source !== "session") return [];
+  return targets.filter((target) => readyHosts.has(target.serverId));
+}
