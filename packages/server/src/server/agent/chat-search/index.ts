@@ -64,9 +64,20 @@ export async function searchTimeline({ rows, query, cursor = 0 }: SearchInput) {
   for (const entry of projectTimelineRows({ rows, mode: "projected" })) {
     if (entry.seqEnd <= cursor) continue;
     const item = entry.item;
-    if (item.type !== "user_message" && item.type !== "assistant_message") continue;
-    const raw = item.text.replace(/\r/g, "");
-    const blocks = item.type === "assistant_message" ? searchableBlocks(raw) : [raw];
+    const report = item.type === "tool_call" ? item.agentMessage : undefined;
+    let text: string;
+    let role: SearchLocation["role"];
+    if (item.type === "user_message" || item.type === "assistant_message") {
+      text = item.text;
+      role = item.type === "user_message" ? "user" : "assistant";
+    } else if (report?.event === "message" || report?.event === "finished") {
+      text = report.text;
+      role = "user";
+    } else {
+      continue;
+    }
+    const raw = text.replace(/\r/g, "");
+    const blocks = role === "assistant" || report ? searchableBlocks(raw) : [raw];
     const count = blocks.reduce((sum, block) => sum + countMatches(block, pattern), 0);
     if (count) {
       if (locations.length === PAGE_SIZE) {
@@ -74,7 +85,7 @@ export async function searchTimeline({ rows, query, cursor = 0 }: SearchInput) {
       }
       locations.push({
         seq: entry.seqEnd,
-        role: item.type === "user_message" ? "user" : "assistant",
+        role,
         count,
       });
     }

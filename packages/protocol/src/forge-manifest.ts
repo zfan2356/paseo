@@ -79,6 +79,17 @@ export const FORGE_DEFINITIONS: ForgeDefinition[] = [
     cloudHosts: ["gitlab.com"],
   },
   {
+    id: "tgit",
+    displayName: "工蜂 (TGit)",
+    changeRequestAbbrev: "MR",
+    changeRequestNoun: "merge request",
+    changeRequestNumberPrefix: "!",
+    issueNumberPrefix: "#",
+    iconKind: "tgit",
+    signIn: null,
+    cloudHosts: ["git.woa.com"],
+  },
+  {
     id: "gitea",
     displayName: "Gitea",
     changeRequestAbbrev: "PR",
