@@ -8277,3 +8277,98 @@ test("closes before admission when a protected-capable daemon is reached in lega
   expect(daemonReceived).toHaveLength(1);
   expect(JSON.parse(daemonReceived[0] as string)).toMatchObject({ type: "hello" });
 });
+
+test("session context gates old hosts before sending and restores owned observations", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "context",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: {} });
+  await connecting;
+  expect(() => client.getSessionContext("one")).toThrow("Update the host");
+  expect(() => client.mutateSessionContext("one", { kind: "pin", pinned: true })).toThrow(
+    "Update the host",
+  );
+  expect(() => client.observeSessionContext("one")).toThrow("Update the host");
+  expect(transport.sent).toEqual([]);
+  transport.triggerClose();
+  const reconnect = client.connect();
+  transport.triggerOpen({ features: { sessionContext: true, ownedSubscriptions: true } });
+  await reconnect;
+  const context = {
+    agentId: "one",
+    launchDirectory: "/repo",
+    projectId: null,
+    pinnedAt: null,
+    sidebarLabelNames: [],
+    linkedDirectories: [],
+    autoLinkDirectories: true,
+    excludedDirectoryPaths: [],
+  };
+  const observation = client.observeSessionContext("one");
+  const request = parseSentFrame(transport.sent.at(-1));
+  expect(request).toMatchObject({
+    type: "agent.context.get.request",
+    agentId: "one",
+    subscribe: {},
+  });
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.context.get.response",
+      payload: { requestId: request.requestId, subscriptionId: "context-1", context },
+    }),
+  );
+  await expect(observation.ready).resolves.toMatchObject({ context });
+  const updates: unknown[] = [];
+  observation.subscribe({ snapshot: () => {}, update: (message) => updates.push(message) });
+  const update = {
+    type: "agent.context.update",
+    payload: { subscriptionId: "context-1", context: { ...context, projectId: "other" } },
+  };
+  transport.triggerMessage(wrapSessionMessage(update));
+  expect(updates).toEqual([update]);
+  let restoredSnapshot!: () => void;
+  const restoration = new Promise<void>((resolve) => {
+    restoredSnapshot = resolve;
+  });
+  observation.subscribe({
+    snapshot: (snapshot) => {
+      if (snapshot.subscriptionId === "context-2") restoredSnapshot();
+    },
+    update: () => {},
+  });
+  transport.triggerClose();
+  const again = client.connect();
+  transport.triggerOpen({ features: { sessionContext: true, ownedSubscriptions: true } });
+  await again;
+  const restored = parseSentFrame(transport.sent.at(-1));
+  expect(restored.type).toBe("agent.context.get.request");
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.context.get.response",
+      payload: { requestId: restored.requestId, subscriptionId: "context-2", context },
+    }),
+  );
+  await restoration;
+  const release = observation.release();
+  await vi.waitFor(() =>
+    expect(parseSentFrame(transport.sent.at(-1)).type).toBe("subscription.release.request"),
+  );
+  const releasing = parseSentFrame(transport.sent.at(-1));
+  expect(releasing).toMatchObject({
+    type: "subscription.release.request",
+    subscriptionId: "context-2",
+  });
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "subscription.release.response",
+      payload: { requestId: releasing.requestId, subscriptionId: "context-2", released: true },
+    }),
+  );
+  await release;
+});

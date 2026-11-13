@@ -1,3 +1,5 @@
+import { SessionContextStore } from "./session-context-store.js";
+import { getParentAgentIdFromLabels } from "@getpaseo/protocol/agent-labels";
 import { createWorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { PluginRegistries } from "@getpaseo/protocol/plugin-registry";
 import { describeHookWorkspace } from "./plugins/lifecycle/index.js";
@@ -904,9 +906,28 @@ export async function createPaseoDaemon(
     path.join(config.paseoHome, "projects", "workspaces.json"),
     logger,
   );
+  const sessionContexts = new SessionContextStore({
+    directory: path.join(config.paseoHome, "agent-contexts"),
+    getAgent: (id) => agentStorage.get(id),
+    getWorkspace: (id) => workspaceRegistry!.get(id),
+    projectExists: async (id) => {
+      const project = await projectRegistry.get(id);
+      return !!project && !project.archivedAt;
+    },
+    isVisibleRoot: async (agent) => {
+      if (agent.internal || agent.archivedAt) return false;
+      const parentId = getParentAgentIdFromLabels(agent.labels);
+      if (!parentId) return true;
+      const parent = await agentStorage.get(parentId);
+      return (
+        !!agent.workspaceId && !!parent?.workspaceId && agent.workspaceId !== parent.workspaceId
+      );
+    },
+  });
   const workspaceLabelService = createWorkspaceLabelService({
     paseoHome: config.paseoHome,
     workspaceRegistry,
+    sessionContexts,
   });
   const github = createGitHubService();
   const workspaceGitService = new WorkspaceGitServiceImpl({
@@ -1788,6 +1809,7 @@ export async function createPaseoDaemon(
               pluginRuntime,
               orchestrationSkills,
               workspaceLabelService,
+              sessionContexts,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();

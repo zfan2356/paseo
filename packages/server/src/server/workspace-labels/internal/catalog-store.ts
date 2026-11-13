@@ -1,3 +1,5 @@
+import { SessionContextSchema, type SessionContext } from "@getpaseo/protocol/session-context";
+import type { SessionContextStore } from "../../session-context-store.js";
 import { promises as fs } from "node:fs";
 import { z } from "zod";
 import type { WorkspaceLabelDefinition } from "@getpaseo/protocol/workspace-labels";
@@ -23,6 +25,8 @@ interface WorkspaceLabelCompoundRegistry {
 interface WorkspaceLabelMutation<TResult> {
   labels: WorkspaceLabelDefinition[];
   workspaceUpdates: PersistedWorkspaceRecord[];
+  contextUpdates?: SessionContext[];
+  labelRewrite?: { from: string; to?: string };
   result: TResult;
 }
 
@@ -33,6 +37,7 @@ const WorkspaceLabelWorkspaceStateSchema = z.object({
 });
 const WorkspaceLabelTransactionSchema = z.object({
   phase: z.enum(["prepared", "committed"]),
+  beforeContexts: z.array(SessionContextSchema).optional(),
   beforeLabels: z.array(WorkspaceLabelDefinitionSchema),
   afterLabels: z.array(WorkspaceLabelDefinitionSchema),
   beforeWorkspaces: z.array(WorkspaceLabelWorkspaceStateSchema),
@@ -69,6 +74,7 @@ export class WorkspaceLabelCatalogStore {
       transaction: unknown,
     ) => Promise<void> = writeJsonFileAtomic,
     private readonly removeTransaction: (filePath: string) => Promise<void> = fs.rm,
+    private readonly contexts?: SessionContextStore,
   ) {}
 
   async initialize(): Promise<void> {
@@ -90,45 +96,65 @@ export class WorkspaceLabelCatalogStore {
     planner: (
       labels: readonly WorkspaceLabelDefinition[],
       workspaces: ReadonlyMap<string, PersistedWorkspaceRecord>,
+      contexts: readonly SessionContext[],
     ) => WorkspaceLabelMutation<TResult>,
   ): Promise<TResult> {
     await this.initialize();
     if (this.blocked) throw new WorkspaceLabelStorageUncertainError();
 
-    let mutation!: WorkspaceLabelMutation<TResult>;
-    let transaction: WorkspaceLabelTransaction | null = null;
-    const result = await this.workspaces
-      .commitWorkspaceLabelMutation({
-        stage: (workspaces) => {
-          mutation = planner(this.labels, workspaces);
-          transaction = transactionFor(this.labels, mutation, workspaces);
-          return {
-            updates: mutation.workspaceUpdates,
-            result: mutation.result,
-            forcePersist:
-              mutation.workspaceUpdates.length > 0 || !catalogsEqual(this.labels, mutation.labels),
-          };
-        },
-        beforeWorkspaceWrite: async () => {
-          if (!transaction) throw new Error("Workspace label transaction was not staged");
-          await this.writeTransaction(this.transactionPath, transaction);
-          await this.writeCatalog(this.filePath, transaction.afterLabels);
-        },
-        afterWorkspaceWrite: async () => {
-          if (!transaction) throw new Error("Workspace label transaction was not staged");
-          transaction = { ...transaction, phase: "committed" };
-          await this.writeTransaction(this.transactionPath, transaction);
-        },
-        afterCommit: () => {
-          this.labels = [...mutation.labels];
-        },
-      })
-      .catch(async (error: unknown) => {
-        await this.resolveFailedCommit(error);
-      });
+    const operation = async () => {
+      const contexts = (await this.contexts?.listStoredUnlocked()) ?? [];
+      let mutation!: WorkspaceLabelMutation<TResult>;
+      let transaction: WorkspaceLabelTransaction | null = null;
+      const result = await this.workspaces
+        .commitWorkspaceLabelMutation({
+          stage: (workspaces) => {
+            mutation = planner(this.labels, workspaces, contexts);
+            if (mutation.labelRewrite && this.contexts)
+              mutation.contextUpdates = this.contexts.rewriteLabels(
+                contexts,
+                mutation.labelRewrite.from,
+                mutation.labelRewrite.to,
+              );
+            transaction = transactionFor(this.labels, mutation, workspaces);
+            if (mutation.contextUpdates?.length)
+              transaction.beforeContexts = contexts.filter((context) =>
+                mutation.contextUpdates?.some((update) => update.agentId === context.agentId),
+              );
+            return {
+              updates: mutation.workspaceUpdates,
+              result: mutation.result,
+              forcePersist:
+                (mutation.contextUpdates?.length ?? 0) > 0 ||
+                mutation.workspaceUpdates.length > 0 ||
+                !catalogsEqual(this.labels, mutation.labels),
+            };
+          },
+          beforeWorkspaceWrite: async () => {
+            if (!transaction) throw new Error("Workspace label transaction was not staged");
+            await this.writeTransaction(this.transactionPath, transaction);
+            await this.writeCatalog(this.filePath, transaction.afterLabels);
+            for (const context of mutation.contextUpdates ?? [])
+              await this.contexts!.writeUnlocked(context);
+          },
+          afterWorkspaceWrite: async () => {
+            if (!transaction) throw new Error("Workspace label transaction was not staged");
+            transaction = { ...transaction, phase: "committed" };
+            await this.writeTransaction(this.transactionPath, transaction);
+          },
+          afterCommit: () => {
+            this.labels = [...mutation.labels];
+          },
+        })
+        .catch(async (error: unknown) => {
+          await this.resolveFailedCommit(error);
+        });
 
-    await this.removeTransaction(this.transactionPath).catch(() => undefined);
-    return result as TResult;
+      await this.removeTransaction(this.transactionPath).catch(() => undefined);
+      for (const context of mutation.contextUpdates ?? []) this.contexts!.publish(context);
+      return result as TResult;
+    };
+    return this.contexts ? this.contexts.exclusive(operation) : operation();
   }
 
   private async resolveFailedCommit(error: unknown): Promise<never> {
@@ -152,6 +178,7 @@ export class WorkspaceLabelCatalogStore {
 
   private blockUntilRestart(): never {
     this.blocked = true;
+    this.contexts?.blockUntilRestart();
     this.workspaces.blockAllMutationsUntilRestart();
     throw new WorkspaceLabelStorageUncertainError();
   }
@@ -210,7 +237,14 @@ export class WorkspaceLabelCatalogStore {
         result: undefined,
         forcePersist: true,
       }),
-      beforeWorkspaceWrite: () => this.writeCatalog(this.filePath, labels),
+      beforeWorkspaceWrite: async () => {
+        await this.writeCatalog(this.filePath, labels);
+        for (const context of transaction.beforeContexts ?? []) {
+          if (!this.contexts)
+            throw new Error("Session contexts required to recover label transaction");
+          await this.contexts.writeUnlocked(context);
+        }
+      },
       afterWorkspaceWrite: () => this.removeTransaction(this.transactionPath),
       afterCommit: () => {
         this.labels = [...labels];
