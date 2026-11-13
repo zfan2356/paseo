@@ -4,7 +4,7 @@ import { createPaseoApi, type AgentChangeRequestsSnapshot } from "@getpaseo/clie
 import { useSessionStore } from "@/stores/session-store";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
-import { createSessionGitObserver } from "./session-git-observer";
+import { createSessionGitObserver, validateSessionDirectories } from "./session-git-observer";
 import { normalizeWorkspaceOpaqueId } from "@/utils/workspace-identity";
 import {
   canObserveSessionGit,
@@ -30,25 +30,72 @@ export function useSidebarSessionGit(
     ),
   );
   const runtime = getHostRuntimeStore();
-  const readinessKey = useSyncExternalStore(
+  const connectionKey = useSyncExternalStore(
     (listener) => runtime.subscribeAll(listener),
     () =>
       JSON.stringify(
         serverIds.map((id) => {
           const snapshot = runtime.getSnapshot(id);
-          return (
-            snapshot?.connectionStatus === "online" &&
-            snapshot.agentDirectoryStatus === "ready" &&
+          return snapshot?.connectionStatus === "online" &&
             snapshot.client?.supportsAgentChangeRequests() === true
-          );
+            ? `${snapshot.clientGeneration}:${snapshot.connectionEpoch}`
+            : null;
         }),
       ),
     () => "[]",
   );
-  const readiness = useMemo<boolean[]>(() => JSON.parse(readinessKey), [readinessKey]);
+  const connections = useMemo<(string | null)[]>(() => JSON.parse(connectionKey), [connectionKey]);
+  const validationRun = useMemo(
+    () => ({ active, source, serverIds, connections }),
+    [active, source, serverIds, connections],
+  );
+  const [verified, setVerified] = useState<{ run: object; epochs: Map<string, string> } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!active || source !== "session") return;
+    const pending = new Map<string, string>();
+    serverIds.forEach((id, index) => {
+      const epoch = connections[index];
+      if (epoch) pending.set(id, epoch);
+    });
+    return validateSessionDirectories(
+      pending,
+      {
+        async refresh(serverId, epoch) {
+          await runtime.refreshDirectories(serverId);
+          const snapshot = runtime.getSnapshot(serverId);
+          const current = snapshot && `${snapshot.clientGeneration}:${snapshot.connectionEpoch}`;
+          return (
+            snapshot?.connectionStatus === "online" &&
+            snapshot.agentDirectoryStatus === "ready" &&
+            current === epoch
+          );
+        },
+        schedule(callback, delay) {
+          const timer = setTimeout(callback, delay);
+          return () => clearTimeout(timer);
+        },
+      },
+      (completed) =>
+        setVerified((previous) => {
+          const epochs = new Map(previous?.run === validationRun ? previous.epochs : []);
+          for (const [serverId, epoch] of completed) epochs.set(serverId, epoch);
+          return { run: validationRun, epochs };
+        }),
+    );
+  }, [active, source, serverIds, connections, runtime, validationRun]);
   const readyHosts = useMemo(
-    () => new Set(serverIds.filter((_, i) => readiness[i])),
-    [serverIds, readiness],
+    () =>
+      new Set(
+        serverIds.filter(
+          (id, index) =>
+            connections[index] &&
+            verified?.run === validationRun &&
+            verified.epochs.get(id) === connections[index],
+        ),
+      ),
+    [serverIds, connections, verified, validationRun],
   );
   const targetKey = useMemo(() => {
     const ids = new Map<string, string>();
@@ -97,8 +144,8 @@ export function useSidebarSessionGit(
               .catch((cause) => console.error("Change request API cleanup failed", cause));
           };
         },
-        schedule(callback) {
-          const timer = setTimeout(callback, 1000);
+        schedule(callback, delay) {
+          const timer = setTimeout(callback, delay);
           return () => clearTimeout(timer);
         },
       },

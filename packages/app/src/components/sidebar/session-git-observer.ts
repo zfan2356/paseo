@@ -11,7 +11,7 @@ export interface SessionGitPort {
     update: (snapshot: AgentChangeRequestsSnapshot) => void,
     error: () => void,
   ): () => void;
-  schedule(callback: () => void): () => void;
+  schedule(callback: () => void, delay: number): () => void;
 }
 
 export function createSessionGitObserver(
@@ -39,7 +39,7 @@ export function createSessionGitObserver(
       publish(key, undefined);
     }
     for (const [key, target] of desired) {
-      if (running.has(key) || (attempts.get(key) ?? 0) >= 3) continue;
+      if (running.has(key) || (attempts.has(key) && cancelRetry)) continue;
       let live = true;
       const stop = port.observe(
         target,
@@ -57,13 +57,17 @@ export function createSessionGitObserver(
             if (!held || held.target !== target || closed) return;
             held.stop();
             running.delete(key);
-            attempts.set(key, (attempts.get(key) ?? 0) + 1);
+            const count = Math.min((attempts.get(key) ?? 0) + 1, 6);
+            attempts.set(key, count);
             publish(key, undefined);
             if (!cancelRetry)
-              cancelRetry = port.schedule(() => {
-                cancelRetry = undefined;
-                reconcile();
-              });
+              cancelRetry = port.schedule(
+                () => {
+                  cancelRetry = undefined;
+                  reconcile();
+                },
+                Math.min(1000 * 2 ** (count - 1), 30000),
+              );
           });
         },
       );
@@ -94,5 +98,52 @@ export function createSessionGitObserver(
       for (const item of running.values()) item.stop();
       running.clear();
     },
+  };
+}
+
+export interface DirectoryValidationPort {
+  refresh(serverId: string, epoch: string): Promise<boolean>;
+  schedule(callback: () => void, delay: number): () => void;
+}
+
+export function validateSessionDirectories(
+  targets: ReadonlyMap<string, string>,
+  port: DirectoryValidationPort,
+  publish: (completed: ReadonlyMap<string, string>) => void,
+): () => void {
+  const pending = new Map(targets);
+  let live = true;
+  let cancel: (() => void) | undefined;
+  let attempt = 0;
+  async function refresh() {
+    const results = await Promise.all(
+      [...pending].map(async ([serverId, epoch]) => {
+        try {
+          return { serverId, epoch, ready: await port.refresh(serverId, epoch) };
+        } catch {
+          return { serverId, epoch, ready: false };
+        }
+      }),
+    );
+    if (!live) return;
+    const completed = new Map<string, string>();
+    for (const result of results) {
+      if (!result.ready) continue;
+      pending.delete(result.serverId);
+      completed.set(result.serverId, result.epoch);
+    }
+    if (completed.size) publish(completed);
+    if (pending.size) {
+      const delay = Math.min(1000 * 2 ** attempt, 30000);
+      attempt = Math.min(attempt + 1, 5);
+      cancel = port.schedule(() => {
+        void refresh();
+      }, delay);
+    }
+  }
+  void refresh();
+  return () => {
+    live = false;
+    cancel?.();
   };
 }

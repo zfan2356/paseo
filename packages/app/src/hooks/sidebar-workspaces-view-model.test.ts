@@ -1,4 +1,7 @@
-import { createSessionGitObserver } from "@/components/sidebar/session-git-observer";
+import {
+  createSessionGitObserver,
+  validateSessionDirectories,
+} from "@/components/sidebar/session-git-observer";
 import {
   canObserveSessionGit,
   projectSidebarSessionGit,
@@ -1126,7 +1129,7 @@ describe("sidebar session Git source", () => {
         observe(_target, update, onError) {
           starts++;
           fail = onError;
-          if (starts === 2) update({ agentId: "a", autoLink: true, items: [] });
+          if (starts === 5) update({ agentId: "a", autoLink: true, items: [] });
           return () => {
             stops++;
           };
@@ -1139,15 +1142,58 @@ describe("sidebar session Git source", () => {
       (_key, snapshot) => published.push(snapshot?.agentId),
     );
     observer.setTargets([target]);
-    fail();
-    await Promise.resolve();
-    expect(stops).toBe(1);
-    retry();
-    expect(starts).toBe(2);
-    expect(published).toEqual([undefined, "a"]);
+    for (let i = 0; i < 4; i++) {
+      fail();
+      await Promise.resolve();
+      retry();
+    }
+    expect(starts).toBe(5);
+    expect(published).toEqual([undefined, undefined, undefined, undefined, "a"]);
     observer.setTargets([]);
-    expect(stops).toBe(2);
+    expect(stops).toBe(5);
     observer.close();
+  });
+  it("retries directory validation and ignores a completed old activation", async () => {
+    let retry = () => {};
+    let calls = 0;
+    let finishOld: (ready: boolean) => void = () => {};
+    const completed: string[] = [];
+    const old = validateSessionDirectories(
+      new Map([["srv", "old"]]),
+      {
+        refresh: () =>
+          new Promise((resolve) => {
+            finishOld = resolve;
+          }),
+        schedule: () => () => {},
+      },
+      (values) => completed.push(...values.values()),
+    );
+    old();
+    finishOld(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(completed).toEqual([]);
+    const current = validateSessionDirectories(
+      new Map([["srv", "new"]]),
+      {
+        refresh: async () => {
+          calls++;
+          if (calls === 1) throw new Error("offline");
+          return true;
+        },
+        schedule: (callback) => {
+          retry = callback;
+          return () => {};
+        },
+      },
+      (values) => completed.push(...values.values()),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(completed).toEqual([]);
+    retry();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(completed).toEqual(["new"]);
+    current();
   });
   it("prefers a known open request over a newer unknown one", () => {
     const unknown = { ...changeRequest(2, "open", "2026-03-01"), status: null };
