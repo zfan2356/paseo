@@ -16,6 +16,8 @@ import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useWorkingDiffComparison } from "@/git/working-diff-comparison";
 
 interface UseWorkingDiffOptions {
+  sessionAgentId?: string;
+  directory?: string;
   serverId: string;
   workspaceId?: string;
   cwd: string;
@@ -26,6 +28,8 @@ interface UseWorkingDiffOptions {
 }
 
 export function useWorkingDiff({
+  sessionAgentId,
+  directory,
   serverId,
   workspaceId,
   cwd,
@@ -57,6 +61,8 @@ export function useWorkingDiff({
   const { comparison: diffMode, selectComparison } = useWorkingDiffComparison({
     serverId,
     workspaceId,
+    sessionAgentId,
+    directory,
     cwd,
   });
   const selectUncommitted = useCallback(() => selectComparison("uncommitted"), [selectComparison]);
@@ -84,12 +90,14 @@ export function useWorkingDiff({
       buildReviewDraftKey({
         serverId,
         workspaceId,
+        sessionAgentId,
+        directory,
         cwd,
         mode: diffMode,
         baseRef,
         ignoreWhitespace,
       }),
-    [baseRef, cwd, diffMode, ignoreWhitespace, serverId, workspaceId],
+    [baseRef, cwd, diffMode, ignoreWhitespace, serverId, workspaceId, sessionAgentId, directory],
   );
   const reviewActions = useInlineReviewController({ reviewDraftKey, presentation });
   const reviewAttachment = useReviewAttachmentSnapshot({
@@ -131,6 +139,8 @@ export function useWorkingDiff({
 }
 
 export function usePublishWorkingDiffAttachment({
+  directory,
+  sessionAgentId,
   serverId,
   workspaceId,
   cwd,
@@ -140,12 +150,15 @@ export function usePublishWorkingDiffAttachment({
   serverId: string;
   workspaceId?: string;
   cwd: string;
+  sessionAgentId?: string;
+  directory?: string;
   attachment: ReturnType<typeof useWorkingDiff>["reviewAttachment"];
   enabled: boolean;
 }) {
   const scopeKey = useMemo(
-    () => buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd }),
-    [cwd, serverId, workspaceId],
+    () =>
+      buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd, sessionAgentId, directory }),
+    [cwd, serverId, workspaceId, sessionAgentId, directory],
   );
   const setWorkspaceAttachments = useWorkspaceAttachmentsStore(
     (state) => state.setWorkspaceAttachments,

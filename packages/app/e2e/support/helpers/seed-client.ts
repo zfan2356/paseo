@@ -28,6 +28,10 @@ interface SeedProjectDescriptor {
  * prefer those wrappers over reaching for this client directly.
  */
 export interface SeedDaemonClient {
+  mutateSessionContext(
+    agentId: string,
+    mutation: import("@getpaseo/protocol/session-context").SessionContextMutation,
+  ): Promise<{ context: import("@getpaseo/protocol/session-context").SessionContext }>;
   patchDaemonConfig(
     config: import("@getpaseo/protocol/messages").MutableDaemonConfigPatch,
   ): Promise<{ config: import("@getpaseo/protocol/messages").MutableDaemonConfig }>;

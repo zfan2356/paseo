@@ -1221,3 +1221,26 @@ describe("git-actions-policy", () => {
     ]);
   });
 });
+
+it("removes container archive actions from explicit directory surfaces", async () => {
+  const { withoutWorkspaceActions } = await import("./policy");
+  const archive = {
+    id: "archive-workspace",
+    label: "Archive",
+    pendingLabel: "Archiving",
+    successLabel: "Archived",
+    disabled: false,
+    status: "idle",
+    startsGroup: false,
+    handler: () => {},
+  } as const;
+  const commit = { ...archive, id: "commit" } as const;
+  const actions = withoutWorkspaceActions({
+    primary: archive,
+    secondary: [archive, commit],
+    menu: [archive, commit],
+  });
+  expect(actions.primary).toBeNull();
+  expect(actions.secondary.map((action) => action.id)).toEqual(["commit"]);
+  expect(actions.menu.map((action) => action.id)).toEqual(["commit"]);
+});

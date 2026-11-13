@@ -47,3 +47,9 @@ describe("buildAbsoluteExplorerPath", () => {
     ).toBe("/tmp/another/location.txt");
   });
 });
+
+it("keeps root-directory attachments absolute", () => {
+  expect(buildAbsoluteExplorerPath({ workspaceRoot: "/", entryPath: "README.md" })).toBe(
+    "/README.md",
+  );
+});

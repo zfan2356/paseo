@@ -1,3 +1,4 @@
+import { openDirectoryResources } from "./workspace-ui";
 import { expect, type Page } from "@playwright/test";
 import { identityForeground, type IdentityColorName } from "@/styles/identity-colors";
 import { openSettings } from "./app";
@@ -138,6 +139,7 @@ export async function waitForConnectedHost(
 }
 
 export async function openSidebarDisplayPreferences(page: Page): Promise<void> {
+  await openDirectoryResources(page);
   await page.getByTestId("sidebar-display-preferences-menu").click();
   await expect(page.getByTestId("sidebar-display-preferences-content")).toBeVisible({
     timeout: 10_000,

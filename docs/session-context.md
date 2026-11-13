@@ -2,7 +2,7 @@
 
 状态：WORK-365 的统一设计已确认。会话是唯一主行；项目沿用现有根目录项目，允许会话手动换项目；删除全局会话/路径开关；执行目录切换另立项；绑定不保活 worktree；PR #10 不原样合入。
 
-本文描述目标设计，界面线框和后续切片尚未全部实现。WORK-366 只交付 daemon 存储、协议、SDK、目录手动绑定与初始化；不改界面、执行 cwd、workspaceId 或工作区项目外键，不做 worktree 自动绑定。持久化约束以 [data-model.md](data-model.md#session-context) 为准，协议约束以 [protocol-compatibility.md](protocol-compatibility.md) 为准。
+本文描述统一设计；WORK-366 交付 daemon 上下文基础，WORK-372 接入逐会话导航、目录绑定与浏览、会话展示设置和执行目录提示。PR/MR 子项与远端浏览仍属后续切片。目录绑定不改执行 cwd、workspaceId 或工作区项目外键，也不解析命令行输出来自动绑定。持久化约束以 [data-model.md](data-model.md#session-context) 为准，协议约束以 [protocol-compatibility.md](protocol-compatibility.md) 为准。
 
 设计依据：WORK-365（已验收），承接 WORK-328、WORK-362、WORK-364 的调研；代码证据描述设计时的现状，目标行为见各节。
 

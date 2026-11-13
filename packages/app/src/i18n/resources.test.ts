@@ -842,3 +842,9 @@ describe("translation resources", () => {
     expect(en.startup.logs.loadFailed).toBe("Unable to load daemon logs: {{message}}");
   });
 });
+
+it("includes session directory navigation and execution-context copy", () => {
+  expect(en.sessionNavigation.execution).toBe("Execution: {{path}}");
+  expect(zhCN.sessionNavigation.execution).toBe("执行：{{path}}");
+  expect(zhCN.sessionNavigation.launchExecution).toBe("启动 · 执行 · ");
+});

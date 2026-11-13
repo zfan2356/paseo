@@ -26,6 +26,24 @@ close-gesture lifetime. Platform adapters own resizing and inset geometry.
 The host keeps three recently used tabs plus modified tabs; unmodified tabs beyond that budget
 can remount. Native retained content stays live, while web chat uses its existing deferred Freeze.
 
+## Session directory targets
+
+Keep explicit directory targets fixed when the session or workspace changes. Propagate the session
+and directory through file opens, side opens, working diffs and commit diffs. Explorer navigation,
+expanded paths, comparison choices and review drafts use that same scope; content and Git facts
+keep their shared directory keys. Directory attachments and drag payloads carry absolute paths.
+Files use the bound path. Git file paths are relative to the parsed checkout root, including when
+the binding points into a subdirectory. Keep the source binding in navigation and draft identity,
+and use the checkout root for Git file opens, attachments and writes. Legacy targets without a
+directory retain the workspace default.
+
+Close the left sidebar before revealing a directory target. On compact layouts its dismiss action
+selects the chat surface, so calling it after Explorer navigation hides the requested destination.
+Directory tabs retain the owning workspace for layout and chat placement. A binding grants no
+container-management authority: workspace archive and base-branch changes stay in the explicit
+resource entry. A directory Changes link opens its actual PR URL; it must not select a PR through
+the owning session’s checkout.
+
 ## Sheets
 
 On compact layouts, files and subagents open in a sheet over the workspace, so the tab switcher

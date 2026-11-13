@@ -61,7 +61,7 @@ import { ContextMenu, ContextMenuTrigger, useContextMenu } from "@/components/ui
 import { useFileDownload } from "@/hooks/use-file-download";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
-import { buildWorkspaceExplorerStateKey } from "@/hooks/use-file-explorer-actions";
+import { buildWorkspaceExplorerStateKey } from "@/file-explorer/scope";
 import { usePanelStore, type ExpandedPathsUpdate, type SortOption } from "@/stores/panel-store";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import {
@@ -109,6 +109,7 @@ function DirectoryChevronIcon({ loading, expanded }: { loading: boolean; expande
 }
 
 interface TreeRowItemProps {
+  workspaceRoot: string;
   serverId: string;
   workspaceId?: string | null;
   entry: ExplorerEntry;
@@ -235,6 +236,7 @@ function EntryNameInputRow({
 }
 
 function TreeRowItem({
+  workspaceRoot,
   serverId,
   workspaceId,
   entry,
@@ -268,7 +270,7 @@ function TreeRowItem({
     enabled: !isDirectory,
     serverId,
     workspaceId,
-    path: entry.path,
+    path: buildAbsoluteExplorerPath({ workspaceRoot, entryPath: entry.path }),
   });
 
   const handlePress = useCallback(() => {
@@ -403,6 +405,7 @@ function TreeRowItem({
 }
 
 interface FileExplorerPaneProps {
+  sessionAgentId?: string;
   serverId: string;
   workspaceId?: string | null;
   workspaceRoot: string;
@@ -412,6 +415,7 @@ interface FileExplorerPaneProps {
 }
 
 export function FileExplorerPane({
+  sessionAgentId,
   serverId,
   workspaceId,
   workspaceRoot,
@@ -426,10 +430,12 @@ export function FileExplorerPane({
   const workspaceStateKey = useMemo(
     () =>
       buildWorkspaceExplorerStateKey({
+        serverId,
         workspaceId,
+        sessionAgentId,
         workspaceRoot: normalizedWorkspaceRoot,
       }),
-    [normalizedWorkspaceRoot, workspaceId],
+    [serverId, normalizedWorkspaceRoot, workspaceId, sessionAgentId],
   );
   const hasWorkspaceScope = Boolean(workspaceStateKey && normalizedWorkspaceRoot);
   const explorerState = useSessionStore((state) =>
@@ -448,6 +454,7 @@ export function FileExplorerPane({
     selectExplorerEntry,
   } = useFileExplorerActions({
     serverId,
+    sessionAgentId,
     workspaceId,
     workspaceRoot: normalizedWorkspaceRoot,
   });
@@ -983,6 +990,7 @@ export function FileExplorerPane({
       }
       return (
         <TreeRowDispatcher
+          workspaceRoot={workspaceRoot}
           serverId={serverId}
           workspaceId={workspaceId}
           row={info.item.row}
@@ -1036,6 +1044,7 @@ export function FileExplorerPane({
       onOpenFileToSide,
       serverId,
       workspaceId,
+      workspaceRoot,
     ],
   );
 
@@ -1455,6 +1464,7 @@ function toggleDirectory({
 }
 
 function TreeRowDispatcher({
+  workspaceRoot,
   serverId,
   workspaceId,
   row,
@@ -1481,6 +1491,7 @@ function TreeRowDispatcher({
 }: {
   serverId: string;
   workspaceId?: string | null;
+  workspaceRoot: string;
   row: ExplorerTreeRow;
   index: number;
   expandedPaths: Set<string>;
@@ -1512,6 +1523,7 @@ function TreeRowDispatcher({
 
   return (
     <TreeRowItem
+      workspaceRoot={workspaceRoot}
       serverId={serverId}
       workspaceId={workspaceId}
       entry={entry}

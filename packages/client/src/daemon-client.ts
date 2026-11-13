@@ -2963,7 +2963,7 @@ export class DaemonClient {
 
   getSessionContext(agentId: string) {
     this.requireSessionContext();
-    return this.sendNamespacedCorrelatedSessionRequest({
+    return this.sendNamespacedCorrelatedSessionRequest<"agent.context.get.response">({
       message: { type: "agent.context.get.request", agentId },
     });
   }
@@ -2979,7 +2979,7 @@ export class DaemonClient {
 
   mutateSessionContext(agentId: string, mutation: SessionContextMutation) {
     this.requireSessionContext();
-    return this.sendNamespacedCorrelatedSessionRequest({
+    return this.sendNamespacedCorrelatedSessionRequest<"agent.context.mutate.response">({
       message: { type: "agent.context.mutate.request", agentId, mutation },
     });
   }

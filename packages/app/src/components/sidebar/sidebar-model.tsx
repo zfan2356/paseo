@@ -1,3 +1,4 @@
+import { useSessionNavigationCollection } from "@/session-navigation/collection";
 import { useTranslation } from "react-i18next";
 import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import {
@@ -26,6 +27,7 @@ import {
 } from "@/workspace-labels";
 
 interface SidebarModel extends SidebarWorkspacesListResult {
+  sessionNavigation: ReturnType<typeof useSessionNavigationCollection>;
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   /**
    * Every project the sidebar could show, before any filter narrows it.
@@ -46,6 +48,8 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   shortcutModel: SidebarShortcutModel;
 }
 
+const EMPTY_RESOURCE_SHORTCUT_INDEX = new Map<string, number>();
+
 const SidebarModelContext = createContext<SidebarModel | null>(null);
 
 export function SidebarModelProvider({
@@ -60,6 +64,10 @@ export function SidebarModelProvider({
   const { t } = useTranslation();
   const modelActive = active !== false || keyboardNavigationActive;
   const list = useSidebarWorkspacesList({ enabled: modelActive });
+  const sessionNavigation = useSessionNavigationCollection({
+    projects: list.projects,
+    enabled: modelActive,
+  });
   const showBackground = useSidebarViewStore((state) => state.showBackground);
   const groupMode = useSidebarViewStore((state) => state.groupMode);
   const labelFilter = useSidebarViewStore((state) => state.labelFilter);
@@ -182,6 +190,7 @@ export function SidebarModelProvider({
   const value = useMemo(
     () => ({
       ...list,
+      sessionNavigation,
       projects: filteredProjects,
       allProjects: list.projects,
       resolvedProjectFilters,
@@ -193,10 +202,14 @@ export function SidebarModelProvider({
       pinnedGroups: projection.pinnedGroups,
       collapsedProjectKeys,
       toggleProjectCollapsed,
-      shortcutModel: projection.shortcutModel,
+      shortcutModel: {
+        shortcutIndexByWorkspaceKey: EMPTY_RESOURCE_SHORTCUT_INDEX,
+        shortcutTargets: sessionNavigation.shortcutTargets,
+      },
     }),
     [
       resolvedProjectFilters,
+      sessionNavigation,
       collapsedProjectKeys,
       groupMode,
       list,

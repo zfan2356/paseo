@@ -859,3 +859,11 @@ function isPullRequestMergeMethodAllowed(
   }
   return capability.allowedMethods.includes(method);
 }
+
+export function withoutWorkspaceActions(actions: GitActions): GitActions {
+  return {
+    primary: actions.primary?.id === "archive-workspace" ? null : actions.primary,
+    secondary: actions.secondary.filter((action) => action.id !== "archive-workspace"),
+    menu: actions.menu.filter((action) => action.id !== "archive-workspace"),
+  };
+}
