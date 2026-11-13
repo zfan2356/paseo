@@ -1,3 +1,4 @@
+import { contextSnapshotForHost } from "./model";
 import { useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useReplicaQueries } from "@/data/query";
@@ -14,6 +15,7 @@ export interface ContextTarget {
   agentId: string;
   client: DaemonClient | null;
   enabled: boolean;
+  supported: boolean;
 }
 export function useSessionContexts(targets: ContextTarget[]) {
   const cache = useQueryClient();
@@ -65,7 +67,7 @@ export function useSessionContexts(targets: ContextTarget[]) {
       new Map(
         targets.map((target, index) => [
           `${target.serverId}:${target.agentId}`,
-          queries[index].data,
+          contextSnapshotForHost({ supported: target.supported, snapshot: queries[index].data }),
         ]),
       ),
     [targets, queries],

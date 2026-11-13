@@ -375,3 +375,18 @@ it("separates review drafts for explicit directories of sessions sharing a works
   );
   expect(buildReviewDraftKey(base)).not.toBe(buildReviewDraftKey({ ...base, cwd: "/other" }));
 });
+
+it("keeps drafts separate for distinct binding paths sharing a checkout root", () => {
+  const input = {
+    serverId: "s",
+    sessionAgentId: "a",
+    cwd: "/repo",
+    directory: "/repo/sub",
+    mode: "uncommitted",
+    baseRef: null,
+    ignoreWhitespace: false,
+  } as const;
+  expect(buildReviewDraftKey(input)).not.toBe(
+    buildReviewDraftKey({ ...input, directory: "/repo/other" }),
+  );
+});

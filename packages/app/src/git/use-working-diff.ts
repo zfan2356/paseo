@@ -17,6 +17,7 @@ import { useWorkingDiffComparison } from "@/git/working-diff-comparison";
 
 interface UseWorkingDiffOptions {
   sessionAgentId?: string;
+  directory?: string;
   serverId: string;
   workspaceId?: string;
   cwd: string;
@@ -28,6 +29,7 @@ interface UseWorkingDiffOptions {
 
 export function useWorkingDiff({
   sessionAgentId,
+  directory,
   serverId,
   workspaceId,
   cwd,
@@ -60,6 +62,7 @@ export function useWorkingDiff({
     serverId,
     workspaceId,
     sessionAgentId,
+    directory,
     cwd,
   });
   const selectUncommitted = useCallback(() => selectComparison("uncommitted"), [selectComparison]);
@@ -88,12 +91,13 @@ export function useWorkingDiff({
         serverId,
         workspaceId,
         sessionAgentId,
+        directory,
         cwd,
         mode: diffMode,
         baseRef,
         ignoreWhitespace,
       }),
-    [baseRef, cwd, diffMode, ignoreWhitespace, serverId, workspaceId, sessionAgentId],
+    [baseRef, cwd, diffMode, ignoreWhitespace, serverId, workspaceId, sessionAgentId, directory],
   );
   const reviewActions = useInlineReviewController({ reviewDraftKey, presentation });
   const reviewAttachment = useReviewAttachmentSnapshot({
@@ -135,6 +139,7 @@ export function useWorkingDiff({
 }
 
 export function usePublishWorkingDiffAttachment({
+  directory,
   sessionAgentId,
   serverId,
   workspaceId,
@@ -146,12 +151,14 @@ export function usePublishWorkingDiffAttachment({
   workspaceId?: string;
   cwd: string;
   sessionAgentId?: string;
+  directory?: string;
   attachment: ReturnType<typeof useWorkingDiff>["reviewAttachment"];
   enabled: boolean;
 }) {
   const scopeKey = useMemo(
-    () => buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd, sessionAgentId }),
-    [cwd, serverId, workspaceId, sessionAgentId],
+    () =>
+      buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd, sessionAgentId, directory }),
+    [cwd, serverId, workspaceId, sessionAgentId, directory],
   );
   const setWorkspaceAttachments = useWorkspaceAttachmentsStore(
     (state) => state.setWorkspaceAttachments,

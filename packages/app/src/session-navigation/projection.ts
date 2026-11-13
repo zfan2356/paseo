@@ -1,3 +1,4 @@
+import { i18n } from "@/i18n/i18next";
 import type { Agent } from "@/stores/session-store";
 import type { SidebarProjectEntry } from "@/hooks/sidebar-workspaces-view-model";
 import type { ContextSnapshot } from "./contexts";
@@ -87,7 +88,11 @@ export function projectSessions(input: SessionProjectionInput): SessionGroup[] {
       : undefined;
     if (!matchesFilters(input, agent, project)) continue;
     let key = project?.viewKey ?? "ungrouped";
-    let name = project?.projectName ?? (context?.projectId ? "Project unavailable" : "Ungrouped");
+    let name =
+      project?.projectName ??
+      (context?.projectId
+        ? i18n.t("sessionNavigation.projectUnavailable")
+        : i18n.t("sessionNavigation.ungrouped"));
     if (input.preferences.group === "status") {
       key = sessionStatus(agent);
       name = key.replaceAll("_", " ");

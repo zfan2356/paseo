@@ -6,12 +6,9 @@ import { seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { getServerId } from "../support/helpers/server-id";
 import { projectEquivalenceViewKey } from "../support/helpers/project-view-key";
 import { selectSidebarStatusGrouping } from "../support/helpers/sidebar";
-import { waitForSidebarHydration } from "../support/helpers/workspace-ui";
+import { openDirectoryResources, waitForSidebarHydration } from "../support/helpers/workspace-ui";
 
-// Model B sidebar shape: every project — git or non-git, single- or
-// multi-workspace — renders as the same expandable parent, the deepest sidebar
-// level is the workspace row, and tabs/agents/terminals NEVER appear in the
-// sidebar. These specs prove all three invariants end to end.
+// Directory resources retain the workspace projection; the default tree owns sessions.
 
 function workspaceRow(page: Page, workspaceId: string) {
   return page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspaceId}`);
@@ -104,9 +101,12 @@ test.describe("Model B sidebar shape", () => {
         page.locator('[data-testid^="workspace-tab-terminal_"]').filter({ visible: true }).first(),
       ).toBeVisible({ timeout: 30_000 });
 
-      // The deepest level inside the sidebar is the workspace row: no tab,
-      // agent, or terminal element appears as a sidebar descendant.
-      const sidebar = page.getByTestId("sidebar-sessions").filter({ visible: true }).first();
+      // Resource rows remain containers; the default tree separately lists sessions.
+      await openDirectoryResources(page);
+      const sidebar = page
+        .getByTestId("directory-terminal-resource-list")
+        .filter({ visible: true })
+        .first();
       await expect(workspaceRow(page, mock.workspaceId).first()).toBeVisible({ timeout: 30_000 });
       await expect(sidebar.locator('[data-testid^="workspace-tab-"]')).toHaveCount(0);
       await expect(sidebar.locator('[data-testid^="sidebar-agent-row-"]')).toHaveCount(0);
@@ -325,5 +325,51 @@ test("session tree retains a terminal workspace with no root session", async ({ 
   } finally {
     await resource.client.killTerminal(terminalId);
     await resource.cleanup();
+  }
+});
+
+test("session tree resolves nested directory changes against the checkout root", async ({
+  page,
+}) => {
+  const { createTempGitRepo } = await import("../support/helpers/workspace");
+  const { openAgentRoute } = await import("../support/helpers/mock-agent");
+  const { writeFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const mock = await seedMockAgentWorkspace({
+    repoPrefix: "session-nested-owner-",
+    title: "Nested directory review",
+  });
+  const repo = await createTempGitRepo("session-nested-bound-", {
+    files: [{ path: "sub/nested.txt", content: "original\n" }],
+  });
+  const binding = path.join(repo.path, "sub");
+  try {
+    await writeFile(path.join(binding, "nested.txt"), "updated\n");
+    await mock.client.mutateSessionContext(mock.agentId, { kind: "link", path: binding });
+    await openAgentRoute(page, mock);
+    const composer = page
+      .locator("textarea[data-composer-input]")
+      .filter({ visible: true })
+      .first();
+    await expect(composer).toBeEditable();
+    await composer.fill("Keep the execution directory");
+    const row = page.getByTestId(`session-row-${mock.agentId}`).filter({ visible: true });
+    await row.getByRole("button", { name: "Expand session directories" }).click();
+    await row.getByRole("button", { name: `Directory actions ${binding}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Local changes", exact: true }).click();
+    await expect(page.getByText(`Checkout: ${repo.path}`, { exact: true })).toBeVisible();
+    const file = page.getByTestId("diff-tree-file-0-toggle").filter({ visible: true });
+    await expect(file).toContainText("nested.txt");
+    await file.click({ button: "right" });
+    await page.getByTestId("diff-tree-file-0-add-to-chat").click();
+    const attachment = page
+      .getByTestId("composer-workspace-file-attachment-pill")
+      .filter({ visible: true });
+    await expect(attachment).toContainText(path.join(repo.path, "sub/nested.txt"));
+    await expect(composer).toHaveValue("Keep the execution directory");
+    await expect(page.getByTestId("composer-execution-directory").first()).toContainText(mock.cwd);
+  } finally {
+    await mock.cleanup();
+    await repo.cleanup();
   }
 });

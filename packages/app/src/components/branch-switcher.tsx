@@ -15,7 +15,6 @@ import { ToolbarLabelSelectTrigger } from "@/components/ui/toolbar-label-trigger
 interface BranchSwitcherProps {
   currentBranchName: string | null;
   serverId: string;
-  workspaceId: string;
   workspaceDirectory: string | null;
   isGitCheckout: boolean;
   testID?: string;
@@ -29,7 +28,6 @@ const ThemedGitBranch = withUnistyles(GitBranch);
 export function BranchSwitcher({
   currentBranchName,
   serverId,
-  workspaceId,
   workspaceDirectory,
   isGitCheckout,
   testID = "workspace-header-branch-switcher",
@@ -52,7 +50,6 @@ export function BranchSwitcher({
   } = useBranchSwitcher({
     client,
     normalizedServerId: serverId,
-    normalizedWorkspaceId: workspaceId,
     workspaceDirectory,
     currentBranchName,
     isGitCheckout,

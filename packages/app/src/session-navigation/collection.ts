@@ -25,6 +25,7 @@ interface HostSource {
   workspaces: Map<string, WorkspaceDescriptor>;
   supported: boolean | null;
   hydrated: boolean;
+  focusedAgentId: string | null;
 }
 const EMPTY_AGENTS = new Map<string, Agent>();
 const EMPTY_WORKSPACES = new Map<string, WorkspaceDescriptor>();
@@ -38,7 +39,8 @@ function sourcesEqual(a: HostSource[], b: HostSource[]) {
         source.agents === other.agents &&
         source.workspaces === other.workspaces &&
         source.supported === other.supported &&
-        source.hydrated === other.hydrated
+        source.hydrated === other.hydrated &&
+        source.focusedAgentId === other.focusedAgentId
       );
     })
   );
@@ -84,6 +86,7 @@ export function useSessionNavigationCollection({
             ? session.serverInfo.features?.sessionContext === true
             : null,
           hydrated: session?.hasHydratedAgents === true,
+          focusedAgentId: session?.focusedAgentId ?? null,
         };
       }),
     sourcesEqual,
@@ -114,6 +117,7 @@ export function useSessionNavigationCollection({
       host.ids.map((agentId) => ({
         serverId: host.serverId,
         agentId,
+        supported: host.supported === true,
         client: getHostRuntimeStore().getClient(host.serverId),
         enabled: enabled && host.supported === true && statuses.get(host.serverId) === "online",
       })),
@@ -165,7 +169,14 @@ export function useSessionNavigationCollection({
       );
       migratePins(
         source.serverId,
-        ordered.map((agent) => `${source.serverId}:${agent.id}`),
+        ordered.map((agent) => {
+          const rank = oldPinnedOrder.indexOf(`${source.serverId}:${agent.workspaceId}`);
+          return {
+            key: `${source.serverId}:${agent.id}`,
+            workspaceRank: rank < 0 ? Number.MAX_SAFE_INTEGER : rank,
+            createdAt: agent.createdAt.getTime(),
+          };
+        }),
       );
     }
   }, [roots, snapshots, oldPinnedOrder, migratePins, pinsHydrated, orderHydrated]);

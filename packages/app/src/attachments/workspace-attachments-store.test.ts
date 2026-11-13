@@ -200,3 +200,26 @@ it("isolates explicit directory review context from another session and checkout
   expect(key).not.toBe(buildWorkspaceAttachmentScopeKey({ ...input, sessionAgentId: "two" }));
   expect(key).not.toBe(buildWorkspaceAttachmentScopeKey({ ...input, cwd: "/other" }));
 });
+
+it("matches the composer binding scope while a nested-directory diff uses the checkout root", () => {
+  const composer = buildWorkspaceAttachmentScopeKey({
+    serverId: "s",
+    sessionAgentId: "a",
+    cwd: "/repo/sub",
+  });
+  const diff = buildWorkspaceAttachmentScopeKey({
+    serverId: "s",
+    sessionAgentId: "a",
+    cwd: "/repo",
+    directory: "/repo/sub",
+  });
+  expect(diff).toBe(composer);
+  expect(diff).not.toBe(
+    buildWorkspaceAttachmentScopeKey({
+      serverId: "s",
+      sessionAgentId: "a",
+      cwd: "/repo",
+      directory: "/repo/other",
+    }),
+  );
+});

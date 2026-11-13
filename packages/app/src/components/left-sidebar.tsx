@@ -650,6 +650,7 @@ function MobileSidebar({
           ) : (
             <SessionSidebar dismiss={closeSidebar} header={workspacesSectionHeaderElement}>
               <SidebarWorkspaceList
+                listHeaderComponent={resourceSectionHeaderElement}
                 collapsedProjectKeys={collapsedProjectKeys}
                 onToggleProjectCollapsed={toggleProjectCollapsed}
                 shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
@@ -849,6 +850,7 @@ function DesktopSidebar({
             ) : (
               <SessionSidebar dismiss={closeSidebar} header={workspacesSectionHeaderElement}>
                 <SidebarWorkspaceList
+                  listHeaderComponent={resourceSectionHeaderElement}
                   collapsedProjectKeys={collapsedProjectKeys}
                   onToggleProjectCollapsed={toggleProjectCollapsed}
                   shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
@@ -897,13 +899,16 @@ function DesktopSidebar({
   );
 }
 
-function WorkspacesSectionHeader() {
+function WorkspacesSectionHeader({ sessions = false }: { sessions?: boolean }) {
+  const { t } = useTranslation();
   return (
-    <SidebarSectionHeader title="Sessions">
+    <SidebarSectionHeader
+      title={t(sessions ? "sessionNavigation.sessions" : "sessionNavigation.resources")}
+    >
       <Tooltip delayDuration={300}>
         <TooltipTrigger asChild>
           <View>
-            <SidebarDisplayPreferencesMenu sessions />
+            <SidebarDisplayPreferencesMenu sessions={sessions} />
           </View>
         </TooltipTrigger>
         <TooltipContent side="bottom" align="center" offset={8}>
@@ -916,7 +921,8 @@ function WorkspacesSectionHeader() {
 
 // Stable element so the sidebar list's listHeaderComponent prop keeps identity across
 // renders (WorkspacesSectionHeader takes no props).
-const workspacesSectionHeaderElement = <WorkspacesSectionHeader />;
+const workspacesSectionHeaderElement = <WorkspacesSectionHeader sessions />;
+const resourceSectionHeaderElement = <WorkspacesSectionHeader />;
 
 // Static styles for Animated.Views — must NOT use Unistyles dynamic theme to
 // avoid the "Unable to find node on an unmounted component" crash when Unistyles

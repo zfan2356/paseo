@@ -32,11 +32,17 @@ Keep explicit directory targets fixed when the session or workspace changes. Pro
 and directory through file opens, side opens, working diffs and commit diffs. Explorer navigation,
 expanded paths, comparison choices and review drafts use that same scope; content and Git facts
 keep their shared directory keys. Directory attachments and drag payloads carry absolute paths.
-Legacy targets without a directory retain the workspace default.
+Files use the bound path. Git file paths are relative to the parsed checkout root, including when
+the binding points into a subdirectory. Keep the source binding in navigation and draft identity,
+and use the checkout root for Git file opens, attachments and writes. Legacy targets without a
+directory retain the workspace default.
 
 Close the left sidebar before revealing a directory target. On compact layouts its dismiss action
 selects the chat surface, so calling it after Explorer navigation hides the requested destination.
-Directory target tabs keep the owning workspace for terminal and resource operations.
+Directory tabs retain the owning workspace for layout and chat placement. A binding grants no
+container-management authority: workspace archive and base-branch changes stay in the explicit
+resource entry. A directory Changes link opens its actual PR URL; it must not select a PR through
+the owning session’s checkout.
 
 ## Sheets
 

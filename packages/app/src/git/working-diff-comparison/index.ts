@@ -25,15 +25,21 @@ export function useWorkingDiffComparison(input: WorkingDiffCheckoutIdentity): {
   comparison: WorkingDiffComparison;
   selectComparison: (comparison: WorkingDiffComparison) => void;
 } {
-  const { serverId, workspaceId, cwd, sessionAgentId } = input;
+  const { serverId, workspaceId, cwd, sessionAgentId, directory } = input;
   const comparison = useWorkingDiffComparisonStore((state) =>
-    resolveWorkingDiffComparisonFromState(state, { serverId, workspaceId, cwd, sessionAgentId }),
+    resolveWorkingDiffComparisonFromState(state, {
+      serverId,
+      workspaceId,
+      cwd,
+      sessionAgentId,
+      directory,
+    }),
   );
   const select = useWorkingDiffComparisonStore((state) => state.select);
   const selectComparison = useCallback(
     (next: WorkingDiffComparison) =>
-      select({ serverId, workspaceId, cwd, sessionAgentId, comparison: next }),
-    [cwd, select, serverId, workspaceId, sessionAgentId],
+      select({ serverId, workspaceId, cwd, sessionAgentId, directory, comparison: next }),
+    [cwd, select, serverId, workspaceId, sessionAgentId, directory],
   );
   return { comparison, selectComparison };
 }

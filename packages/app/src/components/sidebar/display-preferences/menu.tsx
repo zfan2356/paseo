@@ -311,8 +311,12 @@ export function SidebarDisplayPreferencesMenu({
         <MenuTrigger
           style={triggerStyle}
           accessibilityRole={isWeb ? undefined : "button"}
-          accessibilityLabel={t("sidebar.display.trigger")}
-          testID="sidebar-display-preferences-menu"
+          accessibilityLabel={
+            sessions ? t("sessionNavigation.displayPreferences") : t("sidebar.display.trigger")
+          }
+          testID={
+            sessions ? "session-display-preferences-menu" : "sidebar-display-preferences-menu"
+          }
         >
           <ThemedSettings2 size={14} uniProps={mutedIconMapping} />
         </MenuTrigger>

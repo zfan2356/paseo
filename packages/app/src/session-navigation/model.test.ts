@@ -105,3 +105,76 @@ it("moves pinned sessions without reordering unrelated sessions", async () => {
   const { movePinnedSession } = await import("./model");
   expect(movePinnedSession(["a", "other", "b"], "b", "a")).toEqual(["b", "other", "a"]);
 });
+
+it("preserves global legacy pin order when hosts become ready in reverse order", async () => {
+  const { mergeLegacySessionPins } = await import("./model");
+  const a = mergeLegacySessionPins({
+    order: [],
+    ranks: {},
+    edited: false,
+    entries: [{ key: "A:one", workspaceRank: 1, createdAt: 0 }],
+  });
+  const b = mergeLegacySessionPins({
+    order: a.order,
+    ranks: a.ranks,
+    edited: false,
+    entries: [{ key: "B:two", workspaceRank: 0, createdAt: 0 }],
+  });
+  expect(b.order).toEqual(["B:two", "A:one"]);
+  expect(
+    mergeLegacySessionPins({
+      order: a.order,
+      ranks: a.ranks,
+      edited: true,
+      entries: [{ key: "B:two", workspaceRank: 0, createdAt: 0 }],
+    }).order,
+  ).toEqual(["A:one", "B:two"]);
+});
+it("hides cached context after the same host downgrades", async () => {
+  const { contextSnapshotForHost } = await import("./model");
+  expect(contextSnapshotForHost({ supported: true, snapshot: context })).toEqual(context);
+  expect(contextSnapshotForHost({ supported: false, snapshot: context })).toBeUndefined();
+});
+it("surfaces a failed refresh without reading an old Git snapshot", async () => {
+  const { readDirectoryFacts } = await import("./model");
+  const reads: string[] = [];
+  const client = {
+    listDirectory: async () => {},
+    checkoutRefresh: async () => ({
+      success: false,
+      error: { message: "Cannot read Git metadata" },
+    }),
+    getCheckoutStatus: async (path: string) => {
+      reads.push(path);
+      return "stale";
+    },
+  };
+  await expect(
+    readDirectoryFacts({ client, path: "/repo", refreshError: "Refresh failed" }),
+  ).rejects.toThrow("Cannot read Git metadata");
+  expect(reads).toEqual([]);
+});
+it("opens a bound directory PR using its actual URL without selecting the owning checkout", async () => {
+  const { openChangesPullRequest } = await import("./model");
+  const calls: string[] = [];
+  openChangesPullRequest({
+    directory: "/B",
+    url: "https://github.com/B/repo/pull/7",
+    openExternal: (url) => {
+      calls.push(url);
+    },
+    openWorkspace: () => {
+      calls.push("A");
+    },
+  });
+  expect(calls).toEqual(["https://github.com/B/repo/pull/7"]);
+});
+it("uses checkout-root paths for nested directory changes and preserves non-Git roots", async () => {
+  const { checkoutDirectory } = await import("./model");
+  expect(
+    checkoutDirectory({ directory: "/repo/sub", status: { isGit: true, repoRoot: "/repo" } }),
+  ).toBe("/repo");
+  expect(checkoutDirectory({ directory: "/notes", status: { isGit: false, repoRoot: null } })).toBe(
+    "/notes",
+  );
+});

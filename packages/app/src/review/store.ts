@@ -35,6 +35,7 @@ type ReviewComposerAttachment = Extract<ComposerAttachment, { kind: "review" }>;
 
 export interface BuildReviewDraftKeyInput {
   sessionAgentId?: string;
+  directory?: string;
   serverId: string;
   workspaceId?: string | null;
   cwd: string;
@@ -91,7 +92,7 @@ function buildReviewDraftScopeParts(input: BuildReviewDraftScopeKeyInput): strin
   const workspaceId = input.workspaceId?.trim();
   // workspaceId is opaque; do not parse this key back into a path.
   const explicitSession = input.sessionAgentId
-    ? `session=${JSON.stringify([input.sessionAgentId, input.cwd])}`
+    ? `session=${JSON.stringify([input.sessionAgentId, input.directory ?? input.cwd])}`
     : null;
   const workspacePart =
     explicitSession ??

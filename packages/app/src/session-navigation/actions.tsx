@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { movePinnedSession } from "./model";
 import { useSessionNavigationPreferences } from "./preferences";
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
@@ -55,6 +56,7 @@ export function SessionSettings({
   cwd: string;
   onClose(): void;
 }) {
+  const { t } = useTranslation();
   const mutation = useContextMutation(client, serverId, context.agentId);
   const { sessionNavigation } = useSidebarModel();
   const pinnedGroup = sessionNavigation.groups.find((group) =>
@@ -76,10 +78,15 @@ export function SessionSettings({
   );
   const projectName =
     availableProjects.find((project) => project.id === context.projectId)?.name ??
-    (context.projectId ? "Project unavailable — choose a project" : "Ungrouped");
+    (context.projectId
+      ? t("sessionNavigation.projectUnavailable")
+      : t("sessionNavigation.ungrouped"));
   const settingsHeader = useMemo(
-    () => ({ title: "Session settings", subtitle: <Text style={styles.muted}>{serverId}</Text> }),
-    [serverId],
+    () => ({
+      title: t("sessionNavigation.settings"),
+      subtitle: <Text style={styles.muted}>{serverId}</Text>,
+    }),
+    [serverId, t],
   );
   const clearProject = useCallback(
     () => mutation.mutate({ kind: "project", projectId: null }),
@@ -97,13 +104,15 @@ export function SessionSettings({
             {mutation.error.message}
           </Text>
         ) : null}
-        <Field label="Project">
+        <Field label={t("sessionNavigation.project")}>
           <DropdownMenu compactMode="sheet">
             <DropdownMenuTrigger disabled={mutation.isPending}>
               <Text style={styles.text}>{projectName} ▾</Text>
             </DropdownMenuTrigger>
-            <DropdownMenuContent sheetTitle="Project">
-              <DropdownMenuItem onSelect={clearProject}>Ungrouped</DropdownMenuItem>
+            <DropdownMenuContent sheetTitle={t("sessionNavigation.project")}>
+              <DropdownMenuItem onSelect={clearProject}>
+                {t("sessionNavigation.ungrouped")}
+              </DropdownMenuItem>
               {availableProjects.map((project) => (
                 <ProjectChoice
                   key={project.id}
@@ -116,12 +125,12 @@ export function SessionSettings({
           </DropdownMenu>
         </Field>
         <Button variant="outline" disabled={mutation.isPending} onPress={togglePinned}>
-          {context.pinnedAt ? "Unpin session" : "Pin session"}
+          {context.pinnedAt ? t("sessionNavigation.unpin") : t("sessionNavigation.pin")}
         </Button>
         {context.pinnedAt ? (
           <PinnedSessionOrder serverId={serverId} agentId={context.agentId} peers={pinnedPeers} />
         ) : null}
-        <Field label="Labels">
+        <Field label={t("sessionNavigation.labels")}>
           <View style={styles.body}>
             {labels.map((label) => (
               <LabelChoice
@@ -133,16 +142,15 @@ export function SessionSettings({
             ))}
           </View>
         </Field>
-        <Field label="Execution directory (read only)">
+        <Field label={t("sessionNavigation.executionReadOnly")}>
           <Text selectable style={styles.text}>
             {cwd}
           </Text>
         </Field>
-        <Text style={styles.muted}>
-          Binding a directory does not change where this session executes. A binding does not keep a
-          worktree alive.
-        </Text>
-        {mutation.isPending ? <Text style={styles.muted}>Saving…</Text> : null}
+        <Text style={styles.muted}>{t("sessionNavigation.bindingHint")}</Text>
+        {mutation.isPending ? (
+          <Text style={styles.muted}>{t("sessionNavigation.saving")}</Text>
+        ) : null}
       </View>
     </AdaptiveModalSheet>
   );
@@ -164,6 +172,7 @@ export function BindDirectory({
   serverId: string;
   onClose(): void;
 }) {
+  const { t } = useTranslation();
   const cache = useQueryClient();
   const { model, state } = useDirectoryForm({
     link: async (path) => {
@@ -187,21 +196,28 @@ export function BindDirectory({
         limit: 10,
       }),
     enabled: deferredPath.length > 1,
-    staleTimeMs: 10_000,
+    staleTimeMs: 10000,
   });
   const header = useMemo(
-    () => ({ title: "Bind directory", subtitle: <Text style={styles.muted}>{serverId}</Text> }),
-    [serverId],
+    () => ({
+      title: t("sessionNavigation.bind"),
+      subtitle: <Text style={styles.muted}>{serverId}</Text>,
+    }),
+    [serverId, t],
   );
   return (
     <AdaptiveModalSheet visible onClose={onClose} header={header} testID="bind-session-directory">
       <View style={styles.body}>
-        <Field label="Directory" error={state.error} testID="session-directory-field">
+        <Field
+          label={t("sessionNavigation.directory")}
+          error={state.error}
+          testID="session-directory-field"
+        >
           <FormTextInput
             initialValue={state.input}
             resetKey={state.inputRevision}
             onChangeText={model.setInput}
-            placeholder="Absolute directory path"
+            placeholder={t("sessionNavigation.pathPlaceholder")}
             testID="session-directory-path"
             editable={state.status !== "pending"}
           />
@@ -216,16 +232,15 @@ export function BindDirectory({
           .map((entry) => (
             <PathSuggestion key={entry.path} path={entry.path} select={model.choosePath} />
           ))}
-        <Text style={styles.muted}>
-          Binding does not change execution or keep a worktree alive. Removing a binding does not
-          delete files.
-        </Text>
+        <Text style={styles.muted}>{t("sessionNavigation.bindingHint")}</Text>
         <Button
           disabled={state.status === "pending" || !state.input.trim()}
           testID="bind-session-directory-submit"
           onPress={model.submit}
         >
-          {state.status === "pending" ? "Binding…" : "Bind directory"}
+          {state.status === "pending"
+            ? t("sessionNavigation.binding")
+            : t("sessionNavigation.bind")}
         </Button>
       </View>
     </AdaptiveModalSheet>
@@ -244,6 +259,7 @@ export function CreateSessionWorktree({
   repository: string;
   onClose(): void;
 }) {
+  const { t } = useTranslation();
   const cache = useQueryClient();
   const { model, state } = useDirectoryForm({
     create: async (name) => {
@@ -253,7 +269,7 @@ export function CreateSessionWorktree({
         action: "branch-off",
       });
       if (result.error || !result.workspace)
-        throw new Error(result.error ?? "Worktree creation failed");
+        throw new Error(result.error ?? t("sessionNavigation.worktreeFailed"));
       return result.workspace.workspaceDirectory;
     },
     link: async (path) => {
@@ -266,13 +282,16 @@ export function CreateSessionWorktree({
     success: onClose,
   });
   const header = useMemo(
-    () => ({ title: "New worktree", subtitle: <Text style={styles.muted}>{repository}</Text> }),
-    [repository],
+    () => ({
+      title: t("sessionNavigation.newWorktree"),
+      subtitle: <Text style={styles.muted}>{repository}</Text>,
+    }),
+    [repository, t],
   );
   return (
     <AdaptiveModalSheet visible onClose={onClose} header={header}>
       <View style={styles.body}>
-        <Field label="Worktree name" error={state.error}>
+        <Field label={t("sessionNavigation.worktreeName")} error={state.error}>
           <FormTextInput
             initialValue={state.input}
             onChangeText={model.setInput}
@@ -281,15 +300,14 @@ export function CreateSessionWorktree({
         </Field>
         {state.createdPath ? (
           <Text selectable style={styles.muted}>
-            Created: {state.createdPath}. Retry to bind it to this session.
+            {t("sessionNavigation.worktreeCreated", { path: state.createdPath })}
           </Text>
         ) : null}
-        <Text style={styles.muted}>
-          Execution stays in the session’s original directory. Binding does not prevent worktree
-          cleanup.
-        </Text>
+        <Text style={styles.muted}>{t("sessionNavigation.worktreeHint")}</Text>
         <Button disabled={state.status === "pending" || !state.input.trim()} onPress={model.submit}>
-          {state.status === "pending" ? "Creating and binding…" : "Create and bind"}
+          {state.status === "pending"
+            ? t("sessionNavigation.creating")
+            : t("sessionNavigation.createAndBind")}
         </Button>
       </View>
     </AdaptiveModalSheet>
@@ -301,11 +319,17 @@ const styles = StyleSheet.create((theme) => ({
   muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
   error: { color: theme.colors.destructive, fontSize: theme.fontSize.sm },
 }));
-
 interface ChoiceMutationProps {
   mutation: ReturnType<typeof useContextMutation>;
 }
-function ProjectChoice({ id, name, mutation }: ChoiceMutationProps & { id: string; name: string }) {
+function ProjectChoice({
+  id,
+  name,
+  mutation,
+}: ChoiceMutationProps & {
+  id: string;
+  name: string;
+}) {
   const select = useCallback(
     () => mutation.mutate({ kind: "project", projectId: id }),
     [mutation, id],
@@ -320,7 +344,10 @@ function LabelChoice({
   name,
   assigned,
   mutation,
-}: ChoiceMutationProps & { name: string; assigned: boolean }) {
+}: ChoiceMutationProps & {
+  name: string;
+  assigned: boolean;
+}) {
   const toggle = useCallback(
     () => mutation.mutate({ kind: "label", name, assigned: !assigned }),
     [mutation, name, assigned],
@@ -340,7 +367,6 @@ function PathSuggestion({ path, select }: { path: string; select(path: string): 
     </Button>
   );
 }
-
 function PinnedSessionOrder({
   serverId,
   agentId,
@@ -350,6 +376,7 @@ function PinnedSessionOrder({
   agentId: string;
   peers: string[];
 }) {
+  const { t } = useTranslation();
   const key = serverId + ":" + agentId;
   const index = peers.indexOf(key);
   const move = useCallback(
@@ -366,10 +393,10 @@ function PinnedSessionOrder({
   return (
     <View>
       <Button variant="ghost" onPress={up} disabled={index <= 0}>
-        Move pinned session up
+        {t("sessionNavigation.moveUp")}
       </Button>
       <Button variant="ghost" onPress={down} disabled={index < 0 || index >= peers.length - 1}>
-        Move pinned session down
+        {t("sessionNavigation.moveDown")}
       </Button>
     </View>
   );

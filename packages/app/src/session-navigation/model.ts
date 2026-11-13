@@ -63,3 +63,86 @@ export function movePinnedSession(
   next[to] = sessionKey;
   return next;
 }
+
+export function contextSnapshotForHost<T>(input: {
+  supported: boolean;
+  snapshot: T | undefined;
+}): T | undefined {
+  return input.supported ? input.snapshot : undefined;
+}
+interface DirectoryFactsPort<T> {
+  listDirectory(cwd: string, path: string): Promise<unknown>;
+  checkoutRefresh(cwd: string): Promise<{ success: boolean; error: { message: string } | null }>;
+  getCheckoutStatus(cwd: string): Promise<T>;
+}
+export async function readDirectoryFacts<T>(input: {
+  client: DirectoryFactsPort<T>;
+  path: string;
+  refreshError: string;
+}): Promise<T> {
+  await input.client.listDirectory(input.path, input.path);
+  const refresh = await input.client.checkoutRefresh(input.path);
+  if (!refresh.success) throw new Error(refresh.error?.message ?? input.refreshError);
+  return input.client.getCheckoutStatus(input.path);
+}
+export function openChangesPullRequest(input: {
+  directory?: string;
+  url: string;
+  openExternal(url: string): void;
+  openWorkspace(): void;
+}): void {
+  if (input.directory) input.openExternal(input.url);
+  else input.openWorkspace();
+}
+export interface LegacySessionPin {
+  key: string;
+  workspaceRank: number;
+  createdAt: number;
+}
+export function mergeLegacySessionPins(input: {
+  order: readonly string[];
+  ranks: Record<string, Omit<LegacySessionPin, "key">>;
+  entries: LegacySessionPin[];
+  edited: boolean;
+}) {
+  const ranks = { ...input.ranks };
+  const order = [...input.order];
+  for (const { key, workspaceRank, createdAt } of input.entries) {
+    ranks[key] = { workspaceRank, createdAt };
+    if (!order.includes(key)) order.push(key);
+  }
+  if (!input.edited)
+    order.sort((a, b) => {
+      const left = ranks[a];
+      const right = ranks[b];
+      if (!left || !right) return 0;
+      return (
+        left.workspaceRank - right.workspaceRank ||
+        left.createdAt - right.createdAt ||
+        a.localeCompare(b)
+      );
+    });
+  return { order, ranks };
+}
+
+type CheckoutRootStatus =
+  | Pick<
+      Extract<
+        import("@getpaseo/protocol/messages").CheckoutStatusResponse["payload"],
+        { isGit: true }
+      >,
+      "isGit" | "repoRoot"
+    >
+  | Pick<
+      Extract<
+        import("@getpaseo/protocol/messages").CheckoutStatusResponse["payload"],
+        { isGit: false }
+      >,
+      "isGit" | "repoRoot"
+    >;
+export function checkoutDirectory(input: {
+  directory: string;
+  status: CheckoutRootStatus | null;
+}): string {
+  return input.status?.isGit ? input.status.repoRoot : input.directory;
+}

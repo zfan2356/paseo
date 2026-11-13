@@ -2475,7 +2475,7 @@ function ComposerContentImpl({
               style={styles.executionDirectory}
               testID="composer-execution-directory"
             >
-              Execution: {cwd}
+              {t("sessionNavigation.execution", { path: cwd })}
             </Text>
 
             <ComposerAutocompleteBinding
