@@ -1,23 +1,10 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { TerminalState } from "@getpaseo/protocol/messages";
+import { createHeadlessTerminal } from "../../terminal/headless-terminal.js";
 import { expect, test } from "vitest";
-import { resolvePersistentTerminalWorkerRuntime } from "../../terminal/persistent-terminal-worker-transport.js";
+import { listTerminalWorkerRecords } from "../../terminal/terminal-worker-record.js";
 import { createDaemonTestContext, type DaemonTestContext } from "../test-utils/index.js";
-
-function extractStateText(state: Pick<TerminalState, "grid" | "scrollback">): string {
-  return [...state.scrollback, ...state.grid]
-    .map((row) =>
-      row
-        .map((cell) => cell.char)
-        .join("")
-        .trimEnd(),
-    )
-    .filter((line) => line.length > 0)
-    .join("\n");
-}
 
 async function waitForCondition(
   predicate: () => boolean | Promise<boolean>,
@@ -34,25 +21,49 @@ async function waitForCondition(
   throw new Error(`Timed out after ${timeoutMs}ms waiting for condition`);
 }
 
-function waitForTerminalSnapshot(
-  ctx: DaemonTestContext,
-  terminalId: string,
-  timeoutMs = 10_000,
-): Promise<TerminalState> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      unsubscribe();
-      reject(new Error(`Timed out waiting for terminal snapshot after ${timeoutMs}ms`));
-    }, timeoutMs);
-    const unsubscribe = ctx.client.onTerminalStreamEvent((event) => {
-      if (event.terminalId !== terminalId || event.type !== "snapshot") {
-        return;
-      }
-      clearTimeout(timeout);
-      unsubscribe();
-      resolve(event.state);
-    });
+async function subscribeTerminalReplay(ctx: DaemonTestContext, terminalId: string) {
+  const terminal = createHeadlessTerminal({ rows: 30, cols: 120, scrollback: 10000 });
+  let complete!: (text: string) => void;
+  let fail!: (error: Error) => void;
+  const replay = new Promise<string>((resolve, reject) => {
+    complete = resolve;
+    fail = reject;
   });
+  const timeout = setTimeout(() => fail(new Error("Terminal replay timed out")), 10000);
+  const subscription = ctx.client.observeTerminal(
+    terminalId,
+    (event) => {
+      if (event.type !== "replay") return;
+      const frame = event.replay;
+      if (frame.type === "begin") {
+        terminal.reset();
+        if (frame.cols && frame.rows) terminal.resize(frame.cols, frame.rows);
+      } else if (frame.type === "data") {
+        terminal.write(frame.data);
+      } else {
+        terminal.write("", () => {
+          const buffer = terminal.buffer.active;
+          complete(
+            Array.from({ length: buffer.length }, (_, row) =>
+              buffer.getLine(row)!.translateToString(true),
+            ).join("\n"),
+          );
+        });
+      }
+    },
+    { restore: { mode: "full-snapshot" } },
+  );
+  try {
+    const ready = await subscription.ready;
+    expect(ready.error).toBeNull();
+    return { text: await replay, subscription };
+  } catch (error) {
+    await subscription.release();
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    terminal.dispose();
+  }
 }
 
 function waitForTerminalOutput(
@@ -97,20 +108,6 @@ async function waitForCapturedText(
   return text;
 }
 
-async function canConnectToEndpoint(endpoint: string): Promise<boolean> {
-  const socket = net.createConnection(endpoint);
-  const connected = await Promise.race([
-    new Promise<boolean>((resolve) => socket.once("connect", () => resolve(true))),
-    new Promise<boolean>((resolve) => socket.once("error", () => resolve(false))),
-    new Promise<boolean>((resolve) => {
-      const timeout = setTimeout(() => resolve(true), 250);
-      timeout.unref();
-    }),
-  ]);
-  socket.destroy();
-  return connected;
-}
-
 test("terminal stays alive and captures output across daemon restart", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "daemon-terminal-restart-"));
   const cwd = path.join(root, "workspace");
@@ -118,9 +115,6 @@ test("terminal stays alive and captures output across daemon restart", async () 
   const staticDir = path.join(root, "static");
   const gatePath = path.join(root, "emit-while-daemon-stopped");
   const ackPath = path.join(root, "detached-output-ack");
-  const workerEndpoint = resolvePersistentTerminalWorkerRuntime(
-    path.join(paseoHomeRoot, ".paseo"),
-  ).endpoint;
   let ctx: DaemonTestContext | null = null;
   let terminalId: string | null = null;
 
@@ -164,10 +158,8 @@ test("terminal stays alive and captures output across daemon restart", async () 
     }
 
     await waitForCapturedText(ctx, terminalId, (text) => text.includes("READY:"));
-    const initialSnapshotPromise = waitForTerminalSnapshot(ctx, terminalId);
-    const initialSubscription = await ctx.client.subscribeTerminal(terminalId);
-    expect(initialSubscription.error).toBeNull();
-    const initialText = extractStateText(await initialSnapshotPromise);
+    const initialSubscription = await subscribeTerminalReplay(ctx, terminalId);
+    const initialText = initialSubscription.text;
     const pid = initialText.match(/READY:(\d+)/)?.[1];
     expect(pid).toEqual(expect.stringMatching(/^\d+$/));
 
@@ -187,10 +179,8 @@ test("terminal stays alive and captures output across daemon restart", async () 
       terminalId,
       (text) => text.includes(`READY:${pid}`) && text.includes(`DURING:${pid}`),
     );
-    const restoredSnapshotPromise = waitForTerminalSnapshot(ctx, terminalId);
-    const restoredSubscription = await ctx.client.subscribeTerminal(terminalId);
-    expect(restoredSubscription.error).toBeNull();
-    const restoredText = extractStateText(await restoredSnapshotPromise);
+    const restoredSubscription = await subscribeTerminalReplay(ctx, terminalId);
+    const restoredText = restoredSubscription.text;
     expect(restoredText).toContain(`READY:${pid}`);
     expect(restoredText).toContain(`DURING:${pid}`);
 
@@ -212,7 +202,7 @@ test("terminal stays alive and captures output across daemon restart", async () 
       expect((await ctx.client.listTerminals(cwd)).terminals).toEqual([]);
     }
     await ctx?.cleanup();
-    await waitForCondition(async () => !(await canConnectToEndpoint(workerEndpoint)), 5_000);
+    expect(await listTerminalWorkerRecords(path.join(paseoHomeRoot, ".paseo"))).toEqual([]);
     rmSync(root, { recursive: true, force: true });
   }
 }, 60_000);

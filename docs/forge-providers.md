@@ -97,25 +97,80 @@ Register the adapter in `defaultForgeRegistry` with:
 - `matchesHost` from manifest `cloudHosts`
 - `probeHost` when self-hosted/Enterprise detection is supported
 
-Current change-request lookup uses two identities deliberately:
+Current change-request lookup matches the branch and repository for both open and
+terminal requests. Prefer an open request, then a terminal request at the local
+HEAD, then the most recently updated terminal request. A reused branch can show
+its previous request until a new one opens. Auto-archive separately requires an
+observed open-to-merged transition and a fresh exact match between checkout HEAD
+and the PR head, along with the existing workspace safety checks.
 
-- An open PR/MR belongs to the checkout when its head branch and head repository
-  match. Its remote head SHA may differ because the checkout can be ahead,
-  behind, or contain commits that have not been pushed yet.
-- A merged or closed PR/MR belongs to the checkout only when its recorded head
-  SHA exactly matches the checkout's current `HEAD`. Branch names are reusable;
-  selecting the newest terminal request by branch alone can silently attach an
-  old promotion or feature request to new work.
-
-Thread the checkout head SHA through adapter cache and poll identities as well
-as the lookup itself. Otherwise a commit made on the same branch can inherit the
-previous commit's cached terminal status until the cache expires.
+Keep checkout HEAD in adapter cache and poll identities so checkout changes
+refresh the facts used by archive eligibility.
 
 Cloud hosts in the manifest are a bounded public-host list, not a self-host
 allowlist. Self-hosted detection is a trust gate: Paseo only talks to a forge
 host that is either a known cloud host or one the CLI is already authenticated
 to. Adapter probes must not make anonymous HTTP requests to remote-derived
 hosts, and adapters must not route credentials to an unauthenticated host.
+
+### 工蜂 (TGit)
+
+TGit at `git.woa.com` uses `/api/v3`, including singular
+`merge_request/iid/:iid` for MR lookup. It is not GitLab v4 compatible.
+Omit `state` when listing all MR states: TGit returns an empty list for
+`state=all`. Comment reads use `body` and nested `comments`, although the write
+API calls its input `note`.
+The adapter calls REST directly; you do not need `gw` installed. Set `TGIT_TOKEN`
+in the daemon's environment. Paseo does not store the token or offer a token
+input. A missing token reports an unauthenticated workspace.
+
+This adapter is read-only. Open 工蜂 to create or merge an MR, or change auto-merge.
+Commit checks link to their owning CI system; Paseo displays the status and
+summary without fetching external CI logs. The MR's CI gate, check aggregate,
+review aggregate, and merge conflicts are separate signals. Missing gate data
+stays pending, and conflict results apply only to their reported source/target
+commits. Lists and timelines are bounded to 1,000 records per read.
+
+## Session PR/MR links
+
+A session can link change requests from several repositories independently of its
+workspace branch. The workspace's current-branch PR/MR stays a separate surface.
+Session links persist with the agent; live forge status is a daemon cache.
+
+Removing a link also excludes that identity from automatic collection. Manual
+addition clears the exclusion. Turning off automatic addition affects future
+submissions and tool completions; enabling it never scans earlier conversation
+history. This prevents a removed link from reappearing during provider replay.
+
+Automatic collection accepts submitted `forge_change_request` attachments whose
+metadata matches the URL, and completed shell calls with exit code zero. The
+first supported commands are standalone `gh pr create`, `glab mr create`, and
+`gw mr create --json`. The command's repository (an explicit CLI repository
+argument, or the tool cwd's origin) must match the returned URL. Shell wrappers,
+compound commands, assistant prose, ordinary view commands, and ambiguous output
+are excluded. For `gw`, use `--json`: its top-level `iid` and `web_url` must agree;
+project identity comes from that URL. Its automatic Git push can precede the
+final JSON record with progress output, so that final record is parsed separately.
+Plain text output is not collected.
+The JSON must include `web_url`. Older `gw` builds pass the API payload through
+without filling that field; upgrade `gw` if the API omits it, or add the link
+manually. Paseo never constructs a missing evidence URL from the command.
+
+Claude Code's native Bash tool has no numeric exit code on ordinary success.
+Paseo accepts its structured SDK result only for a finished, non-error Bash
+call; interrupted, backgrounded, timed-out, and specially interpreted nonzero
+results are excluded. Generic completed tools and unstructured output do not
+establish success. A fork's default upstream target can differ from the tool
+cwd's origin; pass an explicit repository argument or add that link manually.
+
+Linked status reads address the forge host, complete project path, and number.
+They never select a request using the checkout branch. Self-hosted URLs pass the
+same authenticated-host trust gate as workspace forge resolution. Only active
+subscriptions retain polling; identical identities share one poll across
+sessions. GitHub numbered targets participate in the account-wide batch budget
+described above. Errors retain the last successful snapshot and mark it stale.
+
+The plugin's read-only session view is documented in [Plugins](plugins.md#session-change-requests).
 
 ## App
 
@@ -125,7 +180,8 @@ rendering stack:
 `acme.ts` exports a `ClientForgeLogicModule`:
 
 - `id`
-- optional `urlGrammar` (including `referencePaths` for composer auto-attachment)
+- optional `urlGrammar` (including `referencePaths` for composer auto-attachment
+  and Markdown shorthand references)
 - optional `facts` registration (schema, merge-capability, native-check fallbacks)
 
 `acme.view.tsx` exports a `ClientForgeViewModule`:
@@ -212,6 +268,12 @@ are stale, run `npm run build:server`.
   neutral extractor matches the pasted host and full repository path against
   the current remote before it invokes cwd-routed forge search. Do not add a
   central forge switch or guess a self-hosted Gitea-family brand from URL shape.
+- Shorthand references in rendered Markdown (`#12`, GitLab and Gitea `!12`,
+  cross-repository `owner/repo#12`) come from the `sigil` on each
+  `referencePaths` entry. Leave `sigil` off a kind the forge does not link in
+  prose: GitHub has no `!`, and its `#` targets `/issues/`, which GitHub
+  redirects to the pull request. `packages/app/src/git/forge-shorthand` builds
+  the recognition pattern from the workspace descriptor's forge and remote.
 - GitLab pipeline status constants belong to the GitLab adapter/client module,
   not protocol.
 - GitLab `manual` jobs need `allow_failure` to distinguish optional gray jobs

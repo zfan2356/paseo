@@ -1,3 +1,8 @@
+import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
+export type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
+export type { LinkedChangeRequest } from "@getpaseo/protocol/agent-change-requests";
+import { workspaceLabelKey } from "@getpaseo/protocol/workspace-labels";
+export type { TerminalReplayEvent, TerminalStreamEvent } from "./terminal-stream-router.js";
 import type { AgentAddress } from "@getpaseo/protocol/addresses";
 import { parentAddressLabels } from "@getpaseo/protocol/agent-labels";
 export type { AgentAddress } from "@getpaseo/protocol/addresses";
@@ -53,6 +58,7 @@ export type {
 } from "./terminals/index.js";
 import type { PluginTimelineItem } from "@getpaseo/protocol/agent-types";
 import type {
+  AgentBackgroundWorkItem,
   FetchAgentsEntry,
   FetchAgentsOptions,
   FetchAgentsPageInfo,
@@ -61,6 +67,7 @@ import type {
   FetchAgentTimelinePayload,
   FetchAgentTimelineProjection,
   SendMessageOptions,
+  SendMessageIfIdleOptions,
   WaitForFinishResult,
 } from "./daemon-client.js";
 
@@ -188,6 +195,12 @@ export interface PaseoWorkspaceHandle {
   current(): PaseoWorkspace | null;
   refresh(options?: { requestId?: string }): Promise<PaseoWorkspace | null>;
   setTitle(title: string | null, requestId?: string): Promise<{ title: string | null }>;
+  setPinned(pinned: boolean): Promise<{ pinnedAt: string | null }>;
+  setLabel(name: string, options: { assigned: boolean }): Promise<{ labels: string[] }>;
+  setBaseBranch(options: {
+    baseRef: string;
+    requestId?: string;
+  }): Promise<{ baseRef: string | null }>;
   archive(requestId?: string): Promise<PaseoWorkspaceArchiveResult>;
   /**
    * Subscribes to already-emitted daemon workspace_update events for this id.
@@ -263,7 +276,11 @@ export interface PaseoAgentCreateOptions {
   git?: CreateAgentRequestMessage["git"];
   worktree?: CreateAgentRequestMessage["worktree"];
   autoArchive?: CreateAgentRequestMessage["autoArchive"];
-  /** Visibility intent for a NEW workspace. Existing targets reject this option. */
+  /**
+   * Creates a background agent: hidden from default lists, tabs, the parent's subagent track
+   * and notifications, and still addressable by id. A workspace this call creates is
+   * background too. With a parent and no value, the parent's own background applies.
+   */
   background?: CreateAgentRequestMessage["background"];
   requestId?: string;
   labels?: Record<string, string>;
@@ -285,6 +302,7 @@ export interface PaseoAgentTimelineRefetchOptions {
 }
 
 export type PaseoAgentSendOptions = SendMessageOptions;
+export type PaseoAgentSendIfIdleOptions = SendMessageIfIdleOptions;
 
 export interface PaseoAgentRunOptions extends PaseoAgentSendOptions {
   timeoutMs?: number;
@@ -344,6 +362,44 @@ export interface PaseoAgentTimelineHandle {
   subscribe(handler: (event: PaseoAgentTimelineEvent) => void): PaseoAgentTimelineSubscription;
 }
 
+export type PaseoAgentBackgroundWorkItem = AgentBackgroundWorkItem;
+
+export interface PaseoAgentBackgroundWorkHandle {
+  /** Stop one item and wait for provider confirmation. */
+  stop(
+    item: PaseoAgentBackgroundWorkItem,
+    options?: { requestId?: string; timeout?: number },
+  ): Promise<void>;
+  /** Reads the agent's current background work once. */
+  list(options?: { requestId?: string; timeout?: number }): Promise<PaseoAgentBackgroundWorkItem[]>;
+  /**
+   * Calls `listener` with the agent's current list once the subscription is established, again
+   * after each reconnect, then with the full list each time it changes. Returns the unsubscribe
+   * function.
+   *
+   * When reading the current list fails, `options.onError` receives the error and `listener` is
+   * not called; without `onError` the error is logged. The read is not retried: the next
+   * reconnect reads the list again.
+   */
+  subscribe(
+    listener: (items: PaseoAgentBackgroundWorkItem[]) => void,
+    options?: PaseoAgentBackgroundWorkSubscribeOptions,
+  ): () => void;
+}
+
+export interface PaseoAgentBackgroundWorkSubscribeOptions {
+  /** Receives the error when reading the agent's current list fails. */
+  onError?: (error: unknown) => void;
+}
+
+export interface PaseoAgentChangeRequestsHandle {
+  list(): Promise<AgentChangeRequestsSnapshot>;
+  subscribe(
+    listener: (snapshot: AgentChangeRequestsSnapshot) => void,
+    options?: { onError?: (error: unknown) => void },
+  ): () => void;
+}
+
 export interface PaseoAgentHandle {
   readonly id: string;
   readonly address: AgentAddress;
@@ -367,8 +423,15 @@ export interface PaseoAgentHandle {
   readonly runtimeInfo: NonNullable<PaseoAgent["runtimeInfo"]> | null;
   readonly archivedAt: NonNullable<PaseoAgent["archivedAt"]> | null;
   readonly timeline: PaseoAgentTimelineHandle;
+  readonly backgroundWork: PaseoAgentBackgroundWorkHandle;
+  readonly changeRequests: PaseoAgentChangeRequestsHandle;
   current(): PaseoAgent | null;
   refresh(requestId?: string): Promise<PaseoAgentRefetchResult | null>;
+  /**
+   * Reopens the provider session with current configuration, rerunning session-open hooks.
+   * Interrupts a running turn and returns the refreshed snapshot.
+   */
+  reload(options?: { requestId?: string }): Promise<PaseoAgentRefetchResult | null>;
   send(text: string, options?: PaseoAgentSendOptions): Promise<void>;
   respondToPermission(options: PaseoAgentRespondToPermissionOptions): Promise<void>;
   /** Sends a prompt and resolves when that turn finishes or needs attention. */
@@ -598,17 +661,22 @@ export function createPaseoApi(
     daemonClient,
     listenAgents,
     (agentId, handler) => own(() => daemonClient.subscribeAgentTimeline(agentId, handler)),
+    () => own(() => daemonClient.observeAgentBackgroundWork()),
+    (agentId) => own(() => daemonClient.observeAgentChangeRequests(agentId)),
+    lifetime.signal,
   );
   const createAgent = async (
     options: PaseoAgentCreateOptions,
     placement?: { workspaceId: string; cwd: string },
   ) => {
+    const serverId = daemonClient.getLastServerInfoMessage()?.serverId;
+    const foreignParent =
+      options.background === undefined ? foreignParentHandle(options.parent, serverId) : null;
+    const resolved = foreignParent
+      ? await inheritParentBackground(options, foreignParent)
+      : options;
     const agent = await daemonClient.createAgent(
-      toDaemonAgentCreateOptions(
-        options,
-        placement,
-        daemonClient.getLastServerInfoMessage()?.serverId,
-      ),
+      toDaemonAgentCreateOptions(resolved, placement, serverId),
     );
     return createAgentHandle(agent);
   };
@@ -813,25 +881,7 @@ function createWorkspaceHandleFactory(
     let current = typeof workspace === "string" ? null : workspace;
 
     const refresh = async (options?: { requestId?: string }) => {
-      let cursor: string | undefined;
-      let requestId = options?.requestId;
-      // A ref addresses one workspace by id, so a background one resolves too.
-      const filter = daemonClient.supportsBackgroundWorkspaces() ? { includeBackground: true } : {};
-      do {
-        const result = await daemonClient.fetchWorkspaces({
-          requestId,
-          filter,
-          page: { limit: 200, ...(cursor ? { cursor } : {}) },
-        });
-        const match = result.entries.find((entry) => entry.id === id);
-        if (match) {
-          current = match;
-          return current;
-        }
-        cursor = result.pageInfo.nextCursor ?? undefined;
-        requestId = undefined;
-      } while (cursor);
-      current = null;
+      current = await daemonClient.findWorkspace(id, options);
       return current;
     };
 
@@ -868,6 +918,16 @@ function createWorkspaceHandleFactory(
       current: () => current,
       refresh,
       setTitle: (title, requestId) => daemonClient.setWorkspaceTitle(id, title, requestId),
+      setPinned: (pinned) => daemonClient.setWorkspacePinned(id, pinned),
+      setLabel: (name, options) =>
+        assignWorkspaceLabel({
+          client: daemonClient,
+          workspaceId: id,
+          name,
+          assigned: options.assigned,
+        }),
+      setBaseBranch: (options) =>
+        daemonClient.setWorkspaceBaseBranch({ ...options, workspaceId: id }),
       archive: async (requestId) => {
         const result = await daemonClient.archiveWorkspace(id, requestId);
         if (current) {
@@ -893,6 +953,11 @@ function createAgentHandleFactory(
   daemonClient: DaemonClient,
   listen: (handler: PaseoAgentUpdateHandler) => () => void,
   subscribeTimeline: DaemonClient["subscribeAgentTimeline"],
+  observeBackgroundWork: () => ReturnType<DaemonClient["observeAgentBackgroundWork"]>,
+  observeChangeRequests: (
+    agentId: string,
+  ) => ReturnType<DaemonClient["observeAgentChangeRequests"]>,
+  scopeSignal: AbortSignal,
 ): AgentHandleFactory {
   return (agent) => {
     const id = typeof agent === "string" ? agent : agent.id;
@@ -939,6 +1004,88 @@ function createAgentHandleFactory(
             }
           }),
       },
+      changeRequests: {
+        list: () => daemonClient.listAgentChangeRequests(id),
+        subscribe: (listener, options) => {
+          const observation = observeChangeRequests(id);
+          let active = true,
+            sequence = 0;
+          const onError = (error: unknown) => {
+            if (active && !scopeSignal.aborted) options?.onError?.(error);
+          };
+          observation.subscribe({
+            snapshot: () => {
+              const listed = ++sequence;
+              void daemonClient
+                .listAgentChangeRequests(id)
+                .then((snapshot) => {
+                  if (active && !scopeSignal.aborted && sequence === listed) listener(snapshot);
+                  return undefined;
+                })
+                .catch(onError);
+            },
+            update: (message) => {
+              if (
+                message.type !== "agent.change_requests.update" ||
+                message.payload.snapshot.agentId !== id
+              )
+                return;
+              sequence++;
+              if (active && !scopeSignal.aborted) listener(message.payload.snapshot);
+            },
+            error: onError,
+          });
+          void observation.ready.catch(onError);
+          return () => {
+            active = false;
+            void observation
+              .release()
+              .catch((error) => console.error("Change request subscription cleanup failed", error));
+          };
+        },
+      },
+      backgroundWork: {
+        stop: (item, options) => daemonClient.stopAgentBackgroundWork(id, item, options),
+        list: (options) => daemonClient.listAgentBackgroundWork(id, options),
+        subscribe: (listener, options) => {
+          const observation = observeBackgroundWork();
+          // Bumped by every delivery so a list answered after a newer update is dropped.
+          let sequence = 0;
+          let released = false;
+          const reportError = (error: unknown) => {
+            if (released) return;
+            if (options?.onError) options.onError(error);
+            else console.error("Background work subscription failed", error);
+          };
+          observation.subscribe({
+            error: reportError,
+            snapshot: () => {
+              const listed = ++sequence;
+              void daemonClient
+                .listAgentBackgroundWork(id)
+                .then((items) => {
+                  if (!released && listed === sequence) listener(items);
+                  return undefined;
+                })
+                .catch(reportError);
+            },
+            update: (message) => {
+              if (message.type !== "agent.background_work.update") return;
+              if (message.payload.agentId !== id) return;
+              sequence++;
+              listener(message.payload.items);
+            },
+          });
+          return () => {
+            released = true;
+            void observation
+              .release()
+              .catch((error) =>
+                console.error("Background work subscription cleanup failed", error),
+              );
+          };
+        },
+      },
       get workspaceId() {
         return current?.workspaceId ?? null;
       },
@@ -978,6 +1125,12 @@ function createAgentHandleFactory(
       current: () => current,
       refresh: async (requestId) => {
         const result = await daemonClient.fetchAgent({ agentId: id, requestId });
+        current = result?.agent ?? null;
+        return result;
+      },
+      reload: async (options) => {
+        await daemonClient.refreshAgent(id, options?.requestId);
+        const result = await daemonClient.fetchAgent({ agentId: id });
         current = result?.agent ?? null;
         return result;
       },
@@ -1052,6 +1205,24 @@ async function openWorkspace(
 
 function resolveWorkspaceId(workspace: string | PaseoWorkspaceHandle): string {
   return typeof workspace === "string" ? workspace : workspace.id;
+}
+
+function foreignParentHandle(
+  parent: PaseoAgentCreateOptions["parent"],
+  serverId: string | undefined,
+): PaseoAgentHandle | null {
+  if (!parent || typeof parent === "string" || !("address" in parent)) return null;
+  return parent.address.serverId === serverId ? null : parent;
+}
+
+// A host inherits background from a caller it can see. A parent on another host is invisible to
+// it, so a handle passes its own value on. A bare foreign address can't; pass background then.
+async function inheritParentBackground(
+  options: PaseoAgentCreateOptions,
+  parent: PaseoAgentHandle,
+): Promise<PaseoAgentCreateOptions> {
+  const snapshot = parent.current() ?? (await parent.refresh())?.agent;
+  return snapshot?.background ? { ...options, background: true } : options;
 }
 
 function encodeParent(
@@ -1187,4 +1358,31 @@ function createGeneratedClientId(): string {
       ? globalThis.crypto.randomUUID()
       : Math.random().toString(36).slice(2);
   return `paseo-sdk-${randomId}`;
+}
+
+export type { DiffCompare, DiffState, DiffEntry, ResolvedShas } from "./diff/index.js";
+
+interface WorkspaceLabelAssignment {
+  client: DaemonClient;
+  workspaceId: string;
+  name: string;
+  assigned: boolean;
+}
+async function assignWorkspaceLabel(
+  input: WorkspaceLabelAssignment,
+): Promise<{ labels: string[] }> {
+  input.client.ensureConnected();
+  // COMPAT(workspaceLabels): added in v0.5.0, remove gate after 2027-08-14.
+  if (input.client.getLastServerInfoMessage()?.features?.workspaceLabels !== true)
+    throw new Error("Update the host to assign workspace labels.");
+  const catalog = await input.client.listWorkspaceLabels();
+  const key = workspaceLabelKey(input.name);
+  const existing = catalog.labels.find((label) => workspaceLabelKey(label.name) === key);
+  const label = existing ?? { name: input.name, color: "violet" as const };
+  const result = await input.client.setWorkspaceLabel({
+    workspaceId: input.workspaceId,
+    label,
+    assigned: input.assigned,
+  });
+  return { labels: result.workspaceLabels };
 }
