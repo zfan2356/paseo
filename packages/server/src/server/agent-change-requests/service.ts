@@ -43,13 +43,18 @@ export class AgentChangeRequests {
   private readonly pending = new Set<Promise<unknown>>();
   private readonly stops: (() => void)[] = [];
   private disposed = false;
+  private readonly remoteUrl: typeof defaultResolveRemoteUrl;
+  private readonly executionCwd: string;
 
   constructor(
     private readonly storage: AgentStorage,
     private readonly resolver: ForgeResolver,
     private readonly logger: Logger,
-    private readonly remoteUrl = defaultResolveRemoteUrl,
-  ) {}
+    options: { resolveRemoteUrl?: typeof defaultResolveRemoteUrl; cwd?: string } = {},
+  ) {
+    this.remoteUrl = options.resolveRemoteUrl ?? defaultResolveRemoteUrl;
+    this.executionCwd = options.cwd ?? process.cwd();
+  }
 
   attach(manager: Pick<AgentManager, "subscribe" | "subscribeSubmittedPrompts">): void {
     this.stops.push(
@@ -260,7 +265,8 @@ export class AgentChangeRequests {
     for (const reference of references) {
       if (observation.releases.has(reference.key)) continue;
       const notify = () => this.track(this.publish(observation));
-      observation.releases.set(reference.key, this.retain(reference, record.cwd, notify));
+      // Shared polls outlive any one checkout, so execute from a daemon-owned directory.
+      observation.releases.set(reference.key, this.retain(reference, this.executionCwd, notify));
     }
     await this.publish(observation);
   }

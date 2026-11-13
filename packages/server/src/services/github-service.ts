@@ -2651,8 +2651,10 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         pollTargets.set(key, target);
         // Warm the host and slug caches so the first poll flush can already
         // batch this target instead of taking the legacy per-target path.
-        void resolveRepoHostCached(input.cwd).catch(() => {});
-        void resolveRepoSlugCached(input.cwd);
+        if (!input.repository) {
+          void resolveRepoHostCached(input.cwd).catch(() => {});
+          void resolveRepoSlugCached(input.cwd);
+        }
       }
 
       const isNewlyRetained = target.retainCount === 0;

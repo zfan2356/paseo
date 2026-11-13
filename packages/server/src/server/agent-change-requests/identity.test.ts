@@ -97,6 +97,14 @@ describe("strict create evidence", () => {
       }),
     },
     { ...detail, output: "null" },
+    { ...detail, output: JSON.stringify({ iid: 686, target_project_id: 100 }) },
+    {
+      ...detail,
+      output: JSON.stringify({
+        iid: "686",
+        web_url: "https://git.woa.com/group/repo/merge_requests/686",
+      }),
+    },
   ])("rejects ambiguous or unsuccessful evidence %#", (input) =>
     expect(createdChangeRequest(input, remote)).toBeNull(),
   );

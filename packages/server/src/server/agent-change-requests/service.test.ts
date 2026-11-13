@@ -52,7 +52,7 @@ beforeEach(async () => {
     storage,
     createForgeResolver({ createService: () => adapter, probeForge: async () => null }),
     createTestLogger(),
-    async () => "git@git.woa.com:example/repo.git",
+    { resolveRemoteUrl: async () => "git@git.woa.com:example/repo.git", cwd: dir },
   );
   const manager: Pick<AgentManager, "subscribe" | "subscribeSubmittedPrompts"> = {
     subscribe: (handler) => {
@@ -161,7 +161,7 @@ describe("session linked change requests", () => {
     const b = await service.subscribe("b", () => {});
     await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
     expect(read.mock.calls[0]).toEqual([
-      { cwd: "/another/checkout", host: "git.woa.com", projectPath: "example/repo", number: 686 },
+      { cwd: dir, host: "git.woa.com", projectPath: "example/repo", number: 686 },
     ]);
     await vi.waitFor(() => expect(snapshots.at(-1)?.items[0].availability).toBe("available"));
     a();

@@ -152,6 +152,9 @@ are excluded. For `gw`, use `--json`: its top-level `iid` and `web_url` must agr
 project identity comes from that URL. Its automatic Git push can precede the
 final JSON record with progress output, so that final record is parsed separately.
 Plain text output is not collected.
+The JSON must include `web_url`. Older `gw` builds pass the API payload through
+without filling that field; upgrade `gw` if the API omits it, or add the link
+manually. Paseo never constructs a missing evidence URL from the command.
 
 Linked status reads address the forge host, complete project path, and number.
 They never select a request using the checkout branch. Self-hosted URLs pass the

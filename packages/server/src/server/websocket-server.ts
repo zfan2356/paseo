@@ -775,6 +775,7 @@ export class VoiceAssistantWebSocketServer {
         createService: (forge) => (forge === "github" ? this.github : createForgeService(forge)),
       }),
       this.logger,
+      { cwd: paseoHome },
     );
     this.agentChangeRequests.attach(agentManager);
     this.workspaceGitService = workspaceGitService ?? createFallbackWorkspaceGitService();
