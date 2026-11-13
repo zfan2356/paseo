@@ -4542,3 +4542,114 @@ describe("Claude import descriptor scheduling", () => {
     await expect(later).resolves.toEqual(["later descriptor"]);
   });
 });
+
+describe("Claude Bash create evidence", () => {
+  async function mappedBash(
+    result: Record<string, unknown> | undefined,
+    isError = false,
+    name = "Bash",
+  ) {
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      resolveBinary: async () => "/test/claude/bin",
+    });
+    const session = (await client.createSession({
+      provider: "claude",
+      cwd: process.cwd(),
+    })) as unknown as TestClaudeSession;
+    try {
+      await session.translateMessageToEvents({
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", id: "create-mr", name, input: { command: "gw mr create --json" } },
+          ],
+        },
+      } as unknown as SDKMessage);
+      return await session.translateMessageToEvents({
+        type: "user",
+        message: {
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "create-mr",
+              content: "model-facing output",
+              is_error: isError,
+            },
+          ],
+        },
+        tool_use_result: result,
+      } as unknown as SDKMessage);
+    } finally {
+      await session.close();
+    }
+  }
+  const stdout = JSON.stringify({
+    iid: 7,
+    web_url: "https://git.woa.com/team/repo/merge_requests/7",
+  });
+  test("uses a settled native Bash success to recognize an actual create result", async () => {
+    const events = await mappedBash({ stdout, stderr: "git push progress", interrupted: false });
+    const item = events.find(
+      (event) => event.type === "timeline" && event.item.type === "tool_call",
+    );
+    expect(item).toMatchObject({
+      type: "timeline",
+      item: {
+        status: "completed",
+        detail: {
+          type: "shell",
+          command: "gw mr create --json",
+          output: "git push progress\n" + stdout,
+          exitCode: 0,
+        },
+      },
+    });
+    if (
+      item?.type !== "timeline" ||
+      item.item.type !== "tool_call" ||
+      item.item.detail.type !== "shell"
+    )
+      throw new Error("Missing Bash result");
+    const { createdChangeRequest } =
+      await import("../../../../server/agent-change-requests/identity.js");
+    expect(createdChangeRequest(item.item.detail, "git@git.woa.com:team/repo.git")?.number).toBe(7);
+  });
+  test("retains only actual structured output as create evidence", async () => {
+    const events = await mappedBash({ stdout: "", stderr: "", interrupted: false });
+    const calls = events.flatMap((event) =>
+      event.type === "timeline" && event.item.type === "tool_call" ? [event.item] : [],
+    );
+    expect(calls[0].detail).toMatchObject({ output: "", exitCode: 0 });
+  });
+  test.each([
+    undefined,
+    { stdout, stderr: "", interrupted: true },
+    { stdout, stderr: "", interrupted: false, backgroundTaskId: "task-1" },
+    { stdout, stderr: "", interrupted: false, backgroundedByUser: true },
+    { stdout, stderr: "", interrupted: false, timedOutAfterMs: 1000 },
+    { stdout, stderr: "", interrupted: false, returnCodeInterpretation: "No matches (exit 1)" },
+    { stdout, stderr: "", interrupted: false, exitCode: 1 },
+    { stdout, stderr: "", interrupted: false, exitCode: null },
+    { stdout, stderr: "", interrupted: false, exitCode: 0, exit_code: 1 },
+  ])("does not infer zero from ambiguous Bash result %#", async (result) => {
+    const events = await mappedBash(result);
+    const calls = events.flatMap((event) =>
+      event.type === "timeline" && event.item.type === "tool_call" ? [event.item] : [],
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].detail).not.toHaveProperty("exitCode");
+  });
+  test("does not turn failed or custom tool output into native Bash success", async () => {
+    for (const [isError, name] of [
+      [true, "Bash"],
+      [false, "mcp__shell__Bash"],
+    ] as const) {
+      const events = await mappedBash({ stdout, stderr: "", interrupted: false }, isError, name);
+      const calls = events.flatMap((event) =>
+        event.type === "timeline" && event.item.type === "tool_call" ? [event.item] : [],
+      );
+      expect(calls[0].detail).not.toHaveProperty("exitCode");
+    }
+  });
+});

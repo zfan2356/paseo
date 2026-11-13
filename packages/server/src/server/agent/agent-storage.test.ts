@@ -692,3 +692,57 @@ describe("AgentStorage", () => {
     expect(after.some((r) => r.id === agentId)).toBe(false);
   });
 });
+
+test("preserves linked change requests and opt-out keys across live snapshots and reload", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-linked-storage-"));
+  try {
+    const storage = new AgentStorage(dir, createTestLogger());
+    const agent = createManagedAgent({ id: "linked-agent" });
+    await storage.applySnapshot(agent);
+    const reference = {
+      key: "key",
+      forge: "tgit",
+      host: "git.woa.com",
+      projectPath: "group/repo",
+      number: 12,
+      url: "https://git.woa.com/group/repo/merge_requests/12",
+      source: "manual" as const,
+      addedAt: "2026-11-13T00:00:00Z",
+    };
+    const stale = (await storage.get(agent.id))!;
+    await storage.mutateChangeRequests(agent.id, () => ({
+      linkedChangeRequests: [reference],
+      autoLinkChangeRequests: false,
+      excludedChangeRequestKeys: ["removed"],
+    }));
+    await storage.upsert({ ...stale, title: "changed concurrently" });
+    await storage.applySnapshot(agent);
+    const restored = new AgentStorage(dir, createTestLogger());
+    expect(await restored.get(agent.id)).toMatchObject({
+      linkedChangeRequests: [reference],
+      autoLinkChangeRequests: false,
+      excludedChangeRequestKeys: ["removed"],
+    });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a failed link mutation does not discard the runtime snapshot queued behind it", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-linked-write-failure-"));
+  try {
+    const storage = new AgentStorage(dir, createTestLogger());
+    const agent = createManagedAgent({ id: "write-after-failure" });
+    await storage.applySnapshot(agent);
+    const record = (await storage.get(agent.id))!;
+    const failed = storage.mutateChangeRequests(agent.id, () => {
+      throw new Error("Link limit");
+    });
+    const next = storage.upsert({ ...record, title: "Later snapshot" });
+    await expect(failed).rejects.toThrow("Link limit");
+    await next;
+    expect((await storage.get(agent.id))?.title).toBe("Later snapshot");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

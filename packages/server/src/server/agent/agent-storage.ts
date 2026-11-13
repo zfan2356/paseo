@@ -1,3 +1,7 @@
+import {
+  AgentChangeRequestSettingsSchema,
+  type AgentChangeRequestSettings,
+} from "@getpaseo/protocol/agent-change-requests";
 import { promises as fs, type Dirent } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -44,6 +48,7 @@ const PERSISTENCE_HANDLE_SCHEMA = z
   .optional();
 
 const STORED_AGENT_SCHEMA = z.object({
+  ...AgentChangeRequestSettingsSchema.shape,
   id: z.string(),
   provider: z.string(),
   cwd: z.string(),
@@ -96,6 +101,15 @@ export type SerializableAgentConfig = Pick<
 export type StoredAgentRecord = z.infer<typeof STORED_AGENT_SCHEMA>;
 export function parseStoredAgentRecord(value: unknown): StoredAgentRecord {
   return STORED_AGENT_SCHEMA.parse(value);
+}
+
+function changeRequestSettings(record: StoredAgentRecord | null): AgentChangeRequestSettings {
+  if (!record) return {};
+  return {
+    linkedChangeRequests: record.linkedChangeRequests,
+    autoLinkChangeRequests: record.autoLinkChangeRequests,
+    excludedChangeRequestKeys: record.excludedChangeRequestKeys,
+  };
 }
 
 export class AgentStorage {
@@ -272,7 +286,11 @@ export class AgentStorage {
   }
 
   private queueRecordWrite(record: StoredAgentRecord): Promise<void> {
-    return this.queueRecordMutation(record.id, () => record);
+    // Association settings belong to mutateChangeRequests, not runtime snapshots.
+    return this.queueRecordMutation(record.id, (existing) => ({
+      ...record,
+      ...changeRequestSettings(existing ?? record),
+    }));
   }
 
   private queueRecordMutation(
@@ -280,15 +298,18 @@ export class AgentStorage {
     mutate: (existing: StoredAgentRecord | null) => StoredAgentRecord,
   ): Promise<void> {
     const prev = this.pendingWrites.get(agentId) ?? Promise.resolve();
-    const next = prev.then(async () => {
-      if (this.deleting.has(agentId)) {
-        return undefined;
-      }
+    // A failed mutation belongs to its caller; it must not cancel later queued snapshots.
+    const next = prev
+      .catch(() => undefined)
+      .then(async () => {
+        if (this.deleting.has(agentId)) {
+          return undefined;
+        }
 
-      const record = mutate(this.cache.get(agentId) ?? null);
-      await this.writeRecord(record);
-      return undefined;
-    });
+        const record = mutate(this.cache.get(agentId) ?? null);
+        await this.writeRecord(record);
+        return undefined;
+      });
 
     const tracked = next.finally(() => {
       if (this.pendingWrites.get(agentId) === tracked) {
@@ -390,11 +411,23 @@ export class AgentStorage {
       if (existing && existing.archivedAt !== undefined) {
         record.archivedAt = existing.archivedAt;
       }
+      Object.assign(record, changeRequestSettings(existing));
       // Background is fixed at creation; a runtime opened without it cannot clear it.
       if (existing?.background) record.background = true;
       record.resumeOnStartup =
         existing?.resumeOnStartup && agent.lifecycle !== "idle" && agent.lifecycle !== "error";
       return record;
+    });
+  }
+
+  async mutateChangeRequests(
+    agentId: string,
+    mutate: (settings: AgentChangeRequestSettings) => AgentChangeRequestSettings,
+  ): Promise<void> {
+    await this.load();
+    await this.queueRecordMutation(agentId, (existing) => {
+      if (!existing) throw new Error("Agent not found");
+      return { ...existing, ...mutate(existing) };
     });
   }
 

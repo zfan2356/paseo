@@ -1,3 +1,6 @@
+import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
+export type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
+export type { LinkedChangeRequest } from "@getpaseo/protocol/agent-change-requests";
 import { workspaceLabelKey } from "@getpaseo/protocol/workspace-labels";
 export type { TerminalReplayEvent, TerminalStreamEvent } from "./terminal-stream-router.js";
 import type { AgentAddress } from "@getpaseo/protocol/addresses";
@@ -389,6 +392,14 @@ export interface PaseoAgentBackgroundWorkSubscribeOptions {
   onError?: (error: unknown) => void;
 }
 
+export interface PaseoAgentChangeRequestsHandle {
+  list(): Promise<AgentChangeRequestsSnapshot>;
+  subscribe(
+    listener: (snapshot: AgentChangeRequestsSnapshot) => void,
+    options?: { onError?: (error: unknown) => void },
+  ): () => void;
+}
+
 export interface PaseoAgentHandle {
   readonly id: string;
   readonly address: AgentAddress;
@@ -413,6 +424,7 @@ export interface PaseoAgentHandle {
   readonly archivedAt: NonNullable<PaseoAgent["archivedAt"]> | null;
   readonly timeline: PaseoAgentTimelineHandle;
   readonly backgroundWork: PaseoAgentBackgroundWorkHandle;
+  readonly changeRequests: PaseoAgentChangeRequestsHandle;
   current(): PaseoAgent | null;
   refresh(requestId?: string): Promise<PaseoAgentRefetchResult | null>;
   /**
@@ -650,6 +662,8 @@ export function createPaseoApi(
     listenAgents,
     (agentId, handler) => own(() => daemonClient.subscribeAgentTimeline(agentId, handler)),
     () => own(() => daemonClient.observeAgentBackgroundWork()),
+    (agentId) => own(() => daemonClient.observeAgentChangeRequests(agentId)),
+    lifetime.signal,
   );
   const createAgent = async (
     options: PaseoAgentCreateOptions,
@@ -940,6 +954,10 @@ function createAgentHandleFactory(
   listen: (handler: PaseoAgentUpdateHandler) => () => void,
   subscribeTimeline: DaemonClient["subscribeAgentTimeline"],
   observeBackgroundWork: () => ReturnType<DaemonClient["observeAgentBackgroundWork"]>,
+  observeChangeRequests: (
+    agentId: string,
+  ) => ReturnType<DaemonClient["observeAgentChangeRequests"]>,
+  scopeSignal: AbortSignal,
 ): AgentHandleFactory {
   return (agent) => {
     const id = typeof agent === "string" ? agent : agent.id;
@@ -985,6 +1003,46 @@ function createAgentHandleFactory(
                 });
             }
           }),
+      },
+      changeRequests: {
+        list: () => daemonClient.listAgentChangeRequests(id),
+        subscribe: (listener, options) => {
+          const observation = observeChangeRequests(id);
+          let active = true,
+            sequence = 0;
+          const onError = (error: unknown) => {
+            if (active && !scopeSignal.aborted) options?.onError?.(error);
+          };
+          observation.subscribe({
+            snapshot: () => {
+              const listed = ++sequence;
+              void daemonClient
+                .listAgentChangeRequests(id)
+                .then((snapshot) => {
+                  if (active && !scopeSignal.aborted && sequence === listed) listener(snapshot);
+                  return undefined;
+                })
+                .catch(onError);
+            },
+            update: (message) => {
+              if (
+                message.type !== "agent.change_requests.update" ||
+                message.payload.snapshot.agentId !== id
+              )
+                return;
+              sequence++;
+              if (active && !scopeSignal.aborted) listener(message.payload.snapshot);
+            },
+            error: onError,
+          });
+          void observation.ready.catch(onError);
+          return () => {
+            active = false;
+            void observation
+              .release()
+              .catch((error) => console.error("Change request subscription cleanup failed", error));
+          };
+        },
       },
       backgroundWork: {
         stop: (item, options) => daemonClient.stopAgentBackgroundWork(id, item, options),

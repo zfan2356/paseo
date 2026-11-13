@@ -1,3 +1,4 @@
+import { applyClaudeBashResult } from "./bash-result.js";
 import { setImmediate } from "node:timers/promises";
 import { ClaudeRuntimeSafety } from "./runtime-safety.js";
 import { validateProviderOptions } from "../../provider-options.js";
@@ -5013,7 +5014,7 @@ class ClaudeAgentSession implements AgentSession {
       return;
     }
     if (Array.isArray(content)) {
-      await this.appendUserContentArrayEvents(content, messageId, events);
+      await this.appendUserContentArrayEvents(content, messageId, events, message.tool_use_result);
     }
   }
 
@@ -5043,10 +5044,12 @@ class ClaudeAgentSession implements AgentSession {
     content: ReadonlyArray<unknown>,
     messageId: string | undefined,
     events: AgentStreamEvent[],
+    toolResult?: unknown,
   ): Promise<void> {
-    const timelineItems = await this.mapBlocksToTimeline(content, {
+    const mapped = await this.mapBlocksToTimeline(content, {
       textMessageType: "user_message",
     });
+    const timelineItems = applyClaudeBashResult(mapped, content, toolResult);
     for (const item of timelineItems) {
       if (item.type === "user_message" && messageId && !item.messageId) {
         events.push({

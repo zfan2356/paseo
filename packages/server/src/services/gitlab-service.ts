@@ -1151,6 +1151,49 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
       }
     },
 
+    async getPullRequestStatus(input) {
+      const repo = `https://${input.host}/${input.projectPath}`;
+      const mr = await runJson(
+        ["mr", "view", String(input.number), "--repo", repo, "-F", "json"],
+        { cwd: input.cwd },
+        GitLabMergeRequestSchema,
+      );
+      const approvals = await runJson(
+        [
+          "api",
+          "--hostname",
+          input.host,
+          `projects/${encodeURIComponent(input.projectPath)}/merge_requests/${input.number}/approvals`,
+        ],
+        { cwd: input.cwd },
+        GitLabApprovalsSchema,
+      ).catch(() => null);
+      const pipeline =
+        mr.head_pipeline?.id === undefined
+          ? null
+          : await runJson(
+              [
+                "ci",
+                "get",
+                "--repo",
+                repo,
+                "--merge-request",
+                String(input.number),
+                "--with-job-details",
+                "-F",
+                "json",
+              ],
+              { cwd: input.cwd },
+              GitLabPipelineDetailsSchema,
+            );
+      return toCurrentPullRequestStatus(
+        mr,
+        approvals,
+        pipeline ? toPullRequestChecks(pipeline) : [],
+        pipeline?.status ?? null,
+      );
+    },
+
     async getCurrentPullRequestStatus(input): Promise<CurrentPullRequestStatus | null> {
       try {
         const mr = await resolveCurrentMergeRequest(input.cwd, input.headRef, input.headSha);

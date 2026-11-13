@@ -120,6 +120,7 @@ export class TeaCommandError extends ForgeCommandError {
 }
 
 export interface TeaCommandRunnerOptions {
+  login?: string;
   cwd: string;
   envOverlay?: Record<string, string>;
 }
@@ -1403,6 +1404,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
     if (!teaPath) {
       throw new TeaCliMissingError();
     }
+    if (runOptions.login) args = [args[0], "--login", runOptions.login, ...args.slice(1)];
     try {
       const result = await runner(args, runOptions);
       return result.stdout.trim();
@@ -1735,6 +1737,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
 
   async function loadCombinedCommitStatusBestEffort(input: {
     cwd: string;
+    login?: string;
     repoOwner: string;
     repoName: string;
     sha: string;
@@ -1749,6 +1752,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
 
   async function loadCombinedCommitStatus(input: {
     cwd: string;
+    login?: string;
     repoOwner: string;
     repoName: string;
     sha: string;
@@ -1758,7 +1762,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
     const sha = encodeURIComponent(input.sha);
     return runJson(
       ["api", `repos/${owner}/${repo}/commits/${sha}/status`],
-      { cwd: input.cwd },
+      { cwd: input.cwd, login: input.login },
       GiteaCombinedCommitStatusSchema,
     );
   }
@@ -1768,7 +1772,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
   // (waiting run, no tasks, pending shadows). Skipping the fetch otherwise keeps
   // the common running/finished path at two requests.
   async function loadActionRequiredRunIdsBestEffort(
-    input: { cwd: string; repoOwner: string; repoName: string; sha: string },
+    input: { login?: string; cwd: string; repoOwner: string; repoName: string; sha: string },
     combined: GiteaCombinedCommitStatus,
     actionTasks: GiteaActionTask[],
   ): Promise<ReadonlySet<number>> {
@@ -1798,6 +1802,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
 
   async function loadActionTasksBestEffort(input: {
     cwd: string;
+    login?: string;
     repoOwner: string;
     repoName: string;
     sha: string;
@@ -1814,7 +1819,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
   }
 
   async function enrichActionTaskApprovalsBestEffort(
-    input: { cwd: string; repoOwner: string; repoName: string; sha: string },
+    input: { login?: string; cwd: string; repoOwner: string; repoName: string; sha: string },
     tasks: GiteaActionTask[],
   ): Promise<GiteaActionTask[]> {
     if (!tasks.some((task) => task.status.toLowerCase() === "blocked")) return tasks;
@@ -1850,7 +1855,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
   // until total_count is exhausted, a page comes back empty, or the bounded
   // max-pages cap is hit. SHA matches need not be contiguous across pages.
   async function loadGiteaActionPages(
-    input: { cwd: string; repoOwner: string; repoName: string },
+    input: { login?: string; cwd: string; repoOwner: string; repoName: string },
     endpoint: "tasks" | "runs",
     query?: string,
   ): Promise<unknown[]> {
@@ -1865,7 +1870,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
           "api",
           `repos/${owner}/${repo}/actions/${endpoint}?${queryPrefix}limit=${GITEA_ACTION_PAGE_LIMIT}&page=${page}`,
         ],
-        { cwd: input.cwd },
+        { cwd: input.cwd, login: input.login },
         GiteaActionsListResponseSchema,
       );
       if (response.workflow_runs.length === 0) break;
@@ -1878,6 +1883,7 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
 
   async function loadActionTasks(input: {
     cwd: string;
+    login?: string;
     repoOwner: string;
     repoName: string;
   }): Promise<GiteaActionTask[]> {
@@ -2013,6 +2019,30 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
         headRef: input.headRef,
         headSha: input.headSha,
       });
+    },
+
+    async getPullRequestStatus(input) {
+      const logins = await run(["login", "list", "-o", "json"], { cwd: input.cwd });
+      const login = findTeaLoginNameForHost(logins, input.host);
+      if (!login)
+        throw new TeaAuthenticationError({ stderr: "Sign in to the selected forge host" });
+      const [repoOwner, repoName] = input.projectPath.split("/");
+      const pr = await runJson(
+        [
+          "api",
+          `repos/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}/pulls/${input.number}`,
+        ],
+        { cwd: input.cwd, login },
+        GiteaCurrentPullRequestApiSchema,
+      );
+      const status = toCurrentPullRequestStatus(currentPullRequestApiToListItem(pr));
+      const target = { cwd: input.cwd, repoOwner, repoName, sha: pr.head.sha, login };
+      const [combined, tasks] = await Promise.all([
+        loadCombinedCommitStatusBestEffort(target),
+        loadActionTasksBestEffort(target),
+      ]);
+      const required = await loadActionRequiredRunIdsBestEffort(target, combined, tasks);
+      return applyGiteaChecks({ ...status, headSha: pr.head.sha }, combined, tasks, required);
     },
 
     async getPullRequest(input: GetPullRequestOptions): Promise<PullRequestSummary> {

@@ -1,3 +1,6 @@
+import { AgentChangeRequests } from "./agent-change-requests/service.js";
+import { createForgeResolver } from "../services/forge-resolver.js";
+import { createForgeService } from "../services/forge-registry.js";
 import {
   ChunkedTransport,
   ChunkedTransportProtocolError,
@@ -570,6 +573,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly daemonRuntimeConfig: DaemonRuntimeConfig | undefined;
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
+  private readonly agentChangeRequests: AgentChangeRequests;
   private readonly messageReceipts: MessageReceipts;
   readonly agentMessages: AgentMessageDelivery;
   private readonly creationService: CreationService;
@@ -765,6 +769,15 @@ export class VoiceAssistantWebSocketServer {
     this.scheduleService = requiredServices.scheduleService;
     this.checkoutDiffManager = requiredServices.checkoutDiffManager;
     this.github = github ?? createGitHubService();
+    this.agentChangeRequests = new AgentChangeRequests(
+      agentStorage,
+      createForgeResolver({
+        createService: (forge) => (forge === "github" ? this.github : createForgeService(forge)),
+      }),
+      this.logger,
+      { cwd: paseoHome },
+    );
+    this.agentChangeRequests.attach(agentManager);
     this.workspaceGitService = workspaceGitService ?? createFallbackWorkspaceGitService();
     this.worktreesRoot = daemonRuntimeConfig?.worktreesRoot;
     this.workspaceBaseBranch = createWorkspaceBaseBranchService({
@@ -1241,6 +1254,7 @@ export class VoiceAssistantWebSocketServer {
 
     await Promise.all(cleanupPromises);
     this.providerSnapshotManager.destroy();
+    await this.agentChangeRequests.dispose();
     await this.checkoutDiffManager.dispose();
     await this.workspaceGitService.dispose();
     this.pendingConnections.clear();
@@ -1685,6 +1699,7 @@ export class VoiceAssistantWebSocketServer {
       worktreesRoot: this.worktreesRoot,
       agentManager: this.agentManager,
       agentStorage: this.agentStorage,
+      agentChangeRequests: this.agentChangeRequests,
       messageReceipts: this.messageReceipts,
       agentMessages: this.agentMessages,
       creationService: this.creationService,
@@ -2053,6 +2068,7 @@ export class VoiceAssistantWebSocketServer {
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        agentChangeRequests: true,
         terminalCollection: true,
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
