@@ -152,7 +152,11 @@ import type {
 import type { SelectedFile } from "@/attachments/selected-file";
 import { resolveComposerAttachmentSubmitFormat } from "@/composer/attachments/submit";
 import { composerWorkspaceAttachment } from "@/composer/attachments/workspace";
-import { useWorkspaceAttachmentsForScopes } from "@/attachments/workspace-attachments-store";
+import { useSessionNavigationPreferences } from "@/session-navigation/preferences";
+import {
+  buildWorkspaceAttachmentScopeKey,
+  useWorkspaceAttachmentsForScopes,
+} from "@/attachments/workspace-attachments-store";
 import { droppedItemsToSelectedFiles } from "@/composer/attachments/drop";
 import { getFileTypeLabel } from "@/attachments/file-types";
 import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
@@ -1330,7 +1334,21 @@ function ComposerContentImpl({
     () => textSource.getSnapshot().trim().length > 0,
   );
   const setUserInput = onChangeText;
-  const workspaceAttachments = useWorkspaceAttachmentsForScopes(attachmentScopeKeys);
+  const selectedDirectory = useSessionNavigationPreferences(
+    (state) => state.selectedDirectoryBySession?.[`${serverId}:${agentId}`],
+  );
+  const effectiveAttachmentScopeKeys = useMemo(() => {
+    if (!selectedDirectory) return attachmentScopeKeys;
+    return [
+      ...attachmentScopeKeys,
+      buildWorkspaceAttachmentScopeKey({
+        serverId,
+        sessionAgentId: agentId,
+        cwd: selectedDirectory,
+      }),
+    ];
+  }, [attachmentScopeKeys, serverId, agentId, selectedDirectory]);
+  const workspaceAttachments = useWorkspaceAttachmentsForScopes(effectiveAttachmentScopeKeys);
   const {
     selectedAttachments,
     buildOutgoingAttachments,
@@ -2452,6 +2470,13 @@ function ComposerContentImpl({
           <View style={inputAreaContentStyle}>
             {isFullscreen ? null : queueList}
             {!isFullscreen && sendErrorNode}
+            <Text
+              selectable
+              style={styles.executionDirectory}
+              testID="composer-execution-directory"
+            >
+              Execution: {cwd}
+            </Text>
 
             <ComposerAutocompleteBinding
               text={textSource}
@@ -2567,6 +2592,12 @@ const animatedStaticStyles = RNStyleSheet.create({
 });
 
 const styles = StyleSheet.create((theme: Theme) => ({
+  executionDirectory: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[1],
+  },
   borderSeparator: {
     height: theme.borderWidth[1],
     backgroundColor: theme.colors.border,

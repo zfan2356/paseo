@@ -189,3 +189,141 @@ test.describe("Model B sidebar shape", () => {
     }
   });
 });
+
+for (const width of [1200, 390]) {
+  test(`session tree keeps shared-workspace sessions and explicit directories at width ${width}`, async ({
+    page,
+  }, info) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width, height: 900 });
+    const mock = await seedMockAgentWorkspace({
+      repoPrefix: "session-tree-",
+      title: "Investigate checkout",
+    });
+    const second = await mock.client.createAgent({
+      provider: "mock",
+      cwd: mock.cwd,
+      workspaceId: mock.workspaceId,
+      title: "Compare results",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+    });
+    const { createTempDirectory, createTempGitRepo } = await import("../support/helpers/workspace");
+    const notes = await createTempDirectory("session-notes-");
+    const other = await createTempGitRepo("session-other-");
+    try {
+      const { openAgentRoute } = await import("../support/helpers/mock-agent");
+      await openAgentRoute(page, mock);
+      await expect(page.getByTestId("composer-execution-directory").first()).toBeVisible();
+      if (width === 390) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+      const firstRow = page.getByTestId(`session-row-${mock.agentId}`).filter({ visible: true });
+      const secondRow = page.getByTestId(`session-row-${second.id}`).filter({ visible: true });
+      await expect(firstRow).toBeVisible();
+      await expect(firstRow).toContainText("Investigate checkout");
+      await expect(secondRow).toContainText("Compare results");
+      await firstRow.getByRole("button", { name: "Expand session directories" }).click();
+      await expect(firstRow).toContainText("Launch · Execution");
+      await expect(firstRow).toContainText("main checkout");
+      await firstRow.getByRole("button", { name: "+ Bind directory", exact: true }).click();
+      await page.getByTestId("session-directory-path").fill(`${notes.path}/missing`);
+      await page.getByTestId("bind-session-directory-submit").click();
+      await expect(page.getByTestId("session-directory-field-error")).toContainText(
+        /does not exist|not found|ENOENT/i,
+      );
+      await page.getByTestId("session-directory-path").fill(notes.path);
+      await page.getByTestId("bind-session-directory-submit").click();
+      await expect(
+        page.getByTestId(`session-directory-${mock.agentId}-${notes.path}`),
+      ).toBeVisible();
+      await expect(firstRow).toContainText("Non-Git directory");
+      await firstRow.getByRole("button", { name: "+ Bind directory", exact: true }).click();
+      await page.getByTestId("session-directory-path").fill(other.path);
+      await page.getByTestId("bind-session-directory-submit").click();
+      await expect(
+        page.getByTestId(`session-directory-${mock.agentId}-${other.path}`),
+      ).toContainText("main checkout");
+      await expect(secondRow).not.toContainText(notes.path);
+      const screenshot = info.outputPath(`session-tree-${width}.png`);
+      await page.screenshot({ path: screenshot, fullPage: true });
+      await info.attach(`session tree ${width}`, { path: screenshot, contentType: "image/png" });
+      await page.getByTestId(`session-directory-${mock.agentId}-${notes.path}`).click();
+      await expect(page.getByTestId("files-pane-header").filter({ visible: true })).toBeVisible();
+      await expect(
+        page.getByTestId("file-explorer-tree-scroll").filter({ visible: true }),
+      ).toContainText("README.md");
+      // The composer can be behind the compact Explorer; its retained text must still name execution cwd.
+      await expect(page.getByTestId("composer-execution-directory").first()).toContainText(
+        mock.cwd,
+      );
+    } finally {
+      await mock.cleanup();
+      await notes.cleanup();
+      await other.cleanup();
+    }
+  });
+}
+
+test("session tree keeps a non-Git launch directory and reports an expired binding", async ({
+  page,
+}) => {
+  const { createTempDirectory } = await import("../support/helpers/workspace");
+  const { openAgentRoute } = await import("../support/helpers/mock-agent");
+  const launch = await seedWorkspace({ repoPrefix: "session-nongit-", git: false });
+  const expired = await createTempDirectory("session-expired-");
+  const agent = await launch.client.createAgent({
+    provider: "mock",
+    cwd: launch.repoPath,
+    workspaceId: launch.workspaceId,
+    title: "Read notes",
+    modeId: "load-test",
+    model: "e2e-fast-stream",
+  });
+  try {
+    await launch.client.mutateSessionContext(agent.id, { kind: "link", path: expired.path });
+    await expired.cleanup();
+    await openAgentRoute(page, { agentId: agent.id, workspaceId: launch.workspaceId });
+    const row = page.getByTestId(`session-row-${agent.id}`).filter({ visible: true });
+    await row.getByRole("button", { name: "Expand session directories" }).click();
+    await expect(row).toContainText("Non-Git directory");
+    const missing = page.getByTestId(`session-directory-${agent.id}-${expired.path}`);
+    await expect(missing).toContainText("Unavailable");
+    await row
+      .getByRole("button", { name: `Directory actions ${expired.path}`, exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "Remove binding", exact: true }).click();
+    await expect(missing).toHaveCount(0);
+    await expect(row).toContainText("Launch · Execution");
+  } finally {
+    await launch.cleanup();
+    await expired.cleanup();
+  }
+});
+
+test("session tree retains a terminal workspace with no root session", async ({ page }) => {
+  const resource = await seedWorkspace({ repoPrefix: "session-terminal-" });
+  const created = await resource.client.createTerminal(
+    resource.repoPath,
+    "Independent terminal",
+    undefined,
+    { workspaceId: resource.workspaceId },
+  );
+  expect(created.error).toBeNull();
+  if (!created.terminal) throw new Error("Terminal was not created");
+  const terminalId = created.terminal.id;
+  try {
+    await gotoWorkspace(page, resource.workspaceId);
+    await page.getByTestId("directory-terminal-resources").filter({ visible: true }).click();
+    const row = page
+      .getByTestId(`sidebar-workspace-row-${getServerId()}:${resource.workspaceId}`)
+      .filter({ visible: true });
+    await expect(row).toBeVisible();
+    await row.click();
+    await expect(
+      page.getByTestId(`workspace-tab-terminal_${terminalId}`).filter({ visible: true }),
+    ).toBeVisible();
+    await expect(page.locator('[data-testid^="session-row-"]')).toHaveCount(0);
+  } finally {
+    await resource.client.killTerminal(terminalId);
+    await resource.cleanup();
+  }
+});

@@ -181,6 +181,8 @@ function useDiscardChangesAction({
 }
 
 interface ChangesSurfaceProps {
+  directory?: string;
+  sessionAgentId?: string;
   serverId: string;
   workspaceId?: string | null;
   cwd: string;
@@ -1436,6 +1438,8 @@ function ChangesCommits({
 }
 
 function useDiffTabNavigation({
+  directory,
+  sessionAgentId,
   serverId,
   workspaceId,
   cwd,
@@ -1447,6 +1451,8 @@ function useDiffTabNavigation({
   cwd: string;
   isMobile: boolean;
   pullRequestOpenLocation: PullRequestOpenLocation;
+  directory?: string;
+  sessionAgentId?: string;
 }) {
   const openTab = useWorkspaceLayoutStore((state) => state.openTab);
   const openWorkspaceTab = useCallback(
@@ -1462,15 +1468,23 @@ function useDiffTabNavigation({
     if (!persistenceKey || isMobile) {
       return;
     }
-    openWorkspaceTab(persistenceKey, { kind: "working_diff" }, FOCUSED_PANE_PLACEMENT);
-  }, [isMobile, openWorkspaceTab, persistenceKey]);
+    openWorkspaceTab(
+      persistenceKey,
+      { kind: "working_diff", directory, sessionAgentId },
+      FOCUSED_PANE_PLACEMENT,
+    );
+  }, [isMobile, openWorkspaceTab, persistenceKey, directory, sessionAgentId]);
   const openCommit = useCallback(
     (sha: string) => {
       if (persistenceKey) {
-        openWorkspaceTab(persistenceKey, { kind: "commit_diff", sha }, FOCUSED_PANE_PLACEMENT);
+        openWorkspaceTab(
+          persistenceKey,
+          { kind: "commit_diff", sha, directory, sessionAgentId },
+          FOCUSED_PANE_PLACEMENT,
+        );
       }
     },
-    [openWorkspaceTab, persistenceKey],
+    [openWorkspaceTab, persistenceKey, directory, sessionAgentId],
   );
   const openPullRequest = useCallback(() => {
     if (!persistenceKey) return;
@@ -1488,6 +1502,8 @@ function useDiffTabNavigation({
 }
 
 export function ChangesSurface({
+  directory,
+  sessionAgentId,
   serverId,
   workspaceId,
   cwd,
@@ -1555,6 +1571,8 @@ export function ChangesSurface({
     openCommit: handleCommitPress,
     openPullRequest: handleOpenPullRequest,
   } = useDiffTabNavigation({
+    directory,
+    sessionAgentId,
     serverId,
     workspaceId,
     cwd,
@@ -1606,17 +1624,19 @@ export function ChangesSurface({
   } = useWorkingDiff({
     presentation,
     serverId,
+    sessionAgentId,
     workspaceId: workspaceId ?? undefined,
     cwd,
     ignoreWhitespace: preferences.hideWhitespace,
     enabled: enabled !== false,
   });
   usePublishWorkingDiffAttachment({
+    sessionAgentId,
     serverId,
     workspaceId: workspaceId ?? undefined,
     cwd,
     attachment: reviewAttachment,
-    enabled: true,
+    enabled: enabled !== false,
   });
   const {
     status: pullRequestStatus,

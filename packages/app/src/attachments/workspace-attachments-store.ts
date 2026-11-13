@@ -6,6 +6,7 @@ import type { WorkspaceComposerAttachment } from "./types";
 const EMPTY_WORKSPACE_ATTACHMENTS: readonly WorkspaceComposerAttachment[] = [];
 
 export interface WorkspaceAttachmentScopeInput {
+  sessionAgentId?: string;
   kind?: "workspace";
   serverId: string;
   workspaceId?: string | null;
@@ -52,6 +53,8 @@ function normalizeCwd(cwd: string): string {
 }
 
 export function buildWorkspaceAttachmentScopeKey(input: WorkspaceAttachmentScopeInput): string {
+  if (input.sessionAgentId)
+    return `session-directory-attachments:${JSON.stringify([input.serverId, input.sessionAgentId, input.cwd])}`;
   const workspaceId = input.workspaceId?.trim();
   // workspaceId is opaque; do not parse this key back into a path.
   const workspacePart = workspaceId

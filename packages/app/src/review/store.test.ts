@@ -359,3 +359,19 @@ it("saves an acknowledged open edit as a new version and keeps subsequent edits 
   expect(getReviewDraftComments("first")).toMatchObject([{ id: restored.id, body: "Saved again" }]);
   resetReviewDraftStore();
 });
+
+it("separates review drafts for explicit directories of sessions sharing a workspace", () => {
+  const base = {
+    serverId: "srv",
+    workspaceId: "shared",
+    cwd: "/repo",
+    mode: "uncommitted",
+    baseRef: null,
+    ignoreWhitespace: false,
+    sessionAgentId: "one",
+  } as const;
+  expect(buildReviewDraftKey(base)).not.toBe(
+    buildReviewDraftKey({ ...base, sessionAgentId: "two" }),
+  );
+  expect(buildReviewDraftKey(base)).not.toBe(buildReviewDraftKey({ ...base, cwd: "/other" }));
+});

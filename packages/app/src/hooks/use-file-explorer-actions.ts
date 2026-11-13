@@ -1,3 +1,8 @@
+import {
+  buildWorkspaceExplorerStateKey,
+  normalizeWorkspaceValue,
+  type FileExplorerWorkspaceScope,
+} from "@/file-explorer/scope";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useSessionStore, type AgentFileExplorerState } from "@/stores/session-store";
@@ -24,34 +29,9 @@ function createExplorerState(): AgentFileExplorerState {
   };
 }
 
-export interface FileExplorerWorkspaceScope {
-  workspaceId?: string | null;
-  workspaceRoot?: string | null;
-}
-
-function normalizeWorkspaceValue(value: string | null | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-export function buildWorkspaceExplorerStateKey(scope: FileExplorerWorkspaceScope): string | null {
-  const normalizedWorkspaceId = normalizeWorkspaceValue(scope.workspaceId);
-  if (normalizedWorkspaceId) {
-    return `workspace:${normalizedWorkspaceId}`;
-  }
-  const normalizedWorkspaceRoot = normalizeWorkspaceValue(scope.workspaceRoot);
-  if (!normalizedWorkspaceRoot) {
-    return null;
-  }
-  return `root:${normalizedWorkspaceRoot}`;
-}
-
 export function useFileExplorerActions(params: { serverId: string } & FileExplorerWorkspaceScope) {
   const { t } = useTranslation();
-  const { serverId, workspaceId, workspaceRoot } = params;
+  const { serverId, workspaceId, workspaceRoot, sessionAgentId } = params;
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const setFileExplorer = useSessionStore((state) => state.setFileExplorer);
   const normalizedWorkspaceRoot = useMemo(
@@ -61,10 +41,12 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
   const workspaceStateKey = useMemo(
     () =>
       buildWorkspaceExplorerStateKey({
+        serverId,
         workspaceId,
+        sessionAgentId,
         workspaceRoot: normalizedWorkspaceRoot,
       }),
-    [workspaceId, normalizedWorkspaceRoot],
+    [serverId, workspaceId, normalizedWorkspaceRoot, sessionAgentId],
   );
 
   const updateExplorerState = useCallback(

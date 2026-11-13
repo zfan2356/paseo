@@ -44,3 +44,11 @@ describe("working diff comparison", () => {
     },
   );
 });
+
+it("isolates explicit directory comparison choices across sessions and paths", () => {
+  const key = workingDiffComparisonKey({ ...checkout, sessionAgentId: "one" });
+  expect(key).not.toBe(workingDiffComparisonKey({ ...checkout, sessionAgentId: "two" }));
+  expect(key).not.toBe(
+    workingDiffComparisonKey({ ...checkout, sessionAgentId: "one", cwd: "/other" }),
+  );
+});

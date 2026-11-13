@@ -26,6 +26,18 @@ close-gesture lifetime. Platform adapters own resizing and inset geometry.
 The host keeps three recently used tabs plus modified tabs; unmodified tabs beyond that budget
 can remount. Native retained content stays live, while web chat uses its existing deferred Freeze.
 
+## Session directory targets
+
+Keep explicit directory targets fixed when the session or workspace changes. Propagate the session
+and directory through file opens, side opens, working diffs and commit diffs. Explorer navigation,
+expanded paths, comparison choices and review drafts use that same scope; content and Git facts
+keep their shared directory keys. Directory attachments and drag payloads carry absolute paths.
+Legacy targets without a directory retain the workspace default.
+
+Close the left sidebar before revealing a directory target. On compact layouts its dismiss action
+selects the chat surface, so calling it after Explorer navigation hides the requested destination.
+Directory target tabs keep the owning workspace for terminal and resource operations.
+
 ## Sheets
 
 On compact layouts, files and subagents open in a sheet over the workspace, so the tab switcher

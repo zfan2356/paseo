@@ -9,6 +9,7 @@ export interface WorkingDiffComparisonState {
 }
 
 export interface WorkingDiffCheckoutIdentity {
+  sessionAgentId?: string;
   serverId: string;
   workspaceId?: string | null;
   cwd: string;
@@ -20,6 +21,8 @@ function normalizeCwd(cwd: string): string {
 }
 
 export function workingDiffComparisonKey(input: WorkingDiffCheckoutIdentity): string {
+  if (input.sessionAgentId)
+    return `working-diff:session=${JSON.stringify([input.serverId, input.sessionAgentId, input.cwd])}`;
   const workspaceId = input.workspaceId?.trim();
   const checkout = workspaceId
     ? `workspace=${encodeURIComponent(workspaceId)}`

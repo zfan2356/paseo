@@ -7,6 +7,7 @@ import type { KeyboardInputEvent } from "./internal/overlays";
 import { hasActiveOverlay } from "./internal/overlay-dispatch";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { usePathname, useRouter } from "expo-router";
+import { useSessionStore } from "@/stores/session-store";
 import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { useKeyboardActionDispatcher } from "@/keyboard/keyboard-action-dispatcher-context";
@@ -59,7 +60,16 @@ export function useKeyboardShortcuts({
   const isMac = getShortcutOs() === "mac";
   const openProjectPickerAction = useOpenAddProject();
   const activeWorkspaceSelection = useActiveWorkspaceSelection();
-  const keyboardWorkspaceSelectionRef = useRef<ActiveWorkspaceSelection | null>(null);
+  const activeAgentId = useSessionStore((state) =>
+    activeWorkspaceSelection
+      ? state.sessions[activeWorkspaceSelection.serverId]?.focusedAgentId
+      : null,
+  );
+  const activeServerId = activeWorkspaceSelection?.serverId;
+  const activeWorkspaceId = activeWorkspaceSelection?.workspaceId;
+  const keyboardWorkspaceSelectionRef = useRef<
+    (ActiveWorkspaceSelection & { agentId?: string }) | null
+  >(null);
   const publishBrowserShortcutPolicy = useCallback(
     (chordState?: ChordState) => {
       publishKeyboardPolicy({ bindings, chordState, isMac, enabled });
@@ -68,10 +78,14 @@ export function useKeyboardShortcuts({
   );
 
   useEffect(() => {
-    if (activeWorkspaceSelection) {
-      keyboardWorkspaceSelectionRef.current = activeWorkspaceSelection;
+    if (activeServerId && activeWorkspaceId) {
+      keyboardWorkspaceSelectionRef.current = {
+        serverId: activeServerId,
+        workspaceId: activeWorkspaceId,
+        agentId: activeAgentId ?? undefined,
+      };
     }
-  }, [activeWorkspaceSelection]);
+  }, [activeServerId, activeWorkspaceId, activeAgentId]);
 
   useEffect(() => {
     publishBrowserShortcutPolicy();
@@ -124,8 +138,13 @@ export function useKeyboardShortcuts({
         keyboardWorkspaceSelectionRef.current = {
           serverId: action.serverId,
           workspaceId: action.workspaceId,
+          agentId: action.agentId,
         };
-        navigateToWorkspace({ serverId: action.serverId, workspaceId: action.workspaceId });
+        navigateToWorkspace({
+          serverId: action.serverId,
+          workspaceId: action.workspaceId,
+          target: action.agentId ? { kind: "agent", agentId: action.agentId } : undefined,
+        });
         return true;
       case "navigate-last-workspace":
         if (navigateToLastWorkspace()) {

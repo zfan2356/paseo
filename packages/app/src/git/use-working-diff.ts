@@ -16,6 +16,7 @@ import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useWorkingDiffComparison } from "@/git/working-diff-comparison";
 
 interface UseWorkingDiffOptions {
+  sessionAgentId?: string;
   serverId: string;
   workspaceId?: string;
   cwd: string;
@@ -26,6 +27,7 @@ interface UseWorkingDiffOptions {
 }
 
 export function useWorkingDiff({
+  sessionAgentId,
   serverId,
   workspaceId,
   cwd,
@@ -57,6 +59,7 @@ export function useWorkingDiff({
   const { comparison: diffMode, selectComparison } = useWorkingDiffComparison({
     serverId,
     workspaceId,
+    sessionAgentId,
     cwd,
   });
   const selectUncommitted = useCallback(() => selectComparison("uncommitted"), [selectComparison]);
@@ -84,12 +87,13 @@ export function useWorkingDiff({
       buildReviewDraftKey({
         serverId,
         workspaceId,
+        sessionAgentId,
         cwd,
         mode: diffMode,
         baseRef,
         ignoreWhitespace,
       }),
-    [baseRef, cwd, diffMode, ignoreWhitespace, serverId, workspaceId],
+    [baseRef, cwd, diffMode, ignoreWhitespace, serverId, workspaceId, sessionAgentId],
   );
   const reviewActions = useInlineReviewController({ reviewDraftKey, presentation });
   const reviewAttachment = useReviewAttachmentSnapshot({
@@ -131,6 +135,7 @@ export function useWorkingDiff({
 }
 
 export function usePublishWorkingDiffAttachment({
+  sessionAgentId,
   serverId,
   workspaceId,
   cwd,
@@ -140,12 +145,13 @@ export function usePublishWorkingDiffAttachment({
   serverId: string;
   workspaceId?: string;
   cwd: string;
+  sessionAgentId?: string;
   attachment: ReturnType<typeof useWorkingDiff>["reviewAttachment"];
   enabled: boolean;
 }) {
   const scopeKey = useMemo(
-    () => buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd }),
-    [cwd, serverId, workspaceId],
+    () => buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd, sessionAgentId }),
+    [cwd, serverId, workspaceId, sessionAgentId],
   );
   const setWorkspaceAttachments = useWorkspaceAttachmentsStore(
     (state) => state.setWorkspaceAttachments,

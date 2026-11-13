@@ -193,3 +193,10 @@ describe("workspace attachments store", () => {
     ).toEqual([draftContext, workspaceContext]);
   });
 });
+
+it("isolates explicit directory review context from another session and checkout", () => {
+  const input = { serverId: "srv", workspaceId: "shared", cwd: "/repo", sessionAgentId: "one" };
+  const key = buildWorkspaceAttachmentScopeKey(input);
+  expect(key).not.toBe(buildWorkspaceAttachmentScopeKey({ ...input, sessionAgentId: "two" }));
+  expect(key).not.toBe(buildWorkspaceAttachmentScopeKey({ ...input, cwd: "/other" }));
+});

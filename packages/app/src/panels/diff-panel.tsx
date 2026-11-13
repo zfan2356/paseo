@@ -83,33 +83,52 @@ function ChangesPanel() {
     usePaneContext();
   const [changesState, setChangesState] = usePanelState(changesStateSchema, defaultChangesState);
   const { preferences } = useChangesPreferences();
-  const cwd = useWorkspaceDirectory(serverId, workspaceId);
+  const workspaceDirectory = useWorkspaceDirectory(serverId, workspaceId);
   const isActive = useRetainedPanelActive();
-  const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId });
+  const directory =
+    target.kind === "working_diff" || target.kind === "changes_tree" ? target.directory : undefined;
+  const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId, directory });
   invariant(
     target.kind === "working_diff" || target.kind === "changes_tree",
     "ChangesPanel requires working_diff or changes_tree target",
   );
+  const cwd = target.directory ?? workspaceDirectory;
   const isTree = target.kind === "changes_tree";
   const isCompact = useIsCompactFormFactor();
 
   const handleOpenFile = useCallback(
-    (path: string) => openPreferredTarget({ kind: "file", path }, isTree ? "diffs" : "diffFiles"),
-    [isTree, openPreferredTarget],
+    (path: string) =>
+      openPreferredTarget(
+        { kind: "file", path, directory: target.directory, sessionAgentId: target.sessionAgentId },
+        isTree ? "diffs" : "diffFiles",
+      ),
+    [isTree, openPreferredTarget, target.directory, target.sessionAgentId],
   );
 
   const handleSelectDiffFile = useCallback(
     (path: string) =>
       openPreferredTarget(
-        { kind: "working_diff", focusPath: path, focusRequestId: Date.now() },
+        {
+          kind: "working_diff",
+          directory: target.directory,
+          sessionAgentId: target.sessionAgentId,
+          focusPath: path,
+          focusRequestId: Date.now(),
+        },
         "diffs",
       ),
-    [openPreferredTarget],
+    [openPreferredTarget, target.directory, target.sessionAgentId],
   );
   const handleOpenDiffToSide = useCallback(
     (path: string) =>
-      openTargetToSide?.({ kind: "working_diff", focusPath: path, focusRequestId: Date.now() }),
-    [openTargetToSide],
+      openTargetToSide?.({
+        kind: "working_diff",
+        directory: target.directory,
+        sessionAgentId: target.sessionAgentId,
+        focusPath: path,
+        focusRequestId: Date.now(),
+      }),
+    [openTargetToSide, target.directory, target.sessionAgentId],
   );
 
   if (!cwd) {
@@ -127,11 +146,19 @@ function ChangesPanel() {
 
   return (
     <View style={styles.container} testID={testID}>
+      {target.directory ? (
+        <Text selectable style={styles.mutedText}>
+          {serverId} · {cwd}
+          Directory changes can include work from other sessions and tools.
+        </Text>
+      ) : null}
       <RenderProfile id={profileId}>
         <ChangesSurface
           serverId={serverId}
           workspaceId={workspaceId}
           cwd={cwd}
+          directory={target.directory}
+          sessionAgentId={target.sessionAgentId}
           enabled={isActive}
           presentation={presentation}
           focusPath={target.kind === "working_diff" ? target.focusPath : undefined}
@@ -151,9 +178,10 @@ function ChangesPanel() {
 function CommitDiffPanel() {
   const { t } = useTranslation();
   const { serverId, workspaceId, target } = usePaneContext();
-  const cwd = useWorkspaceDirectory(serverId, workspaceId);
+  const workspaceDirectory = useWorkspaceDirectory(serverId, workspaceId);
   const panelPreferences = useDiffPanelPreferences();
   invariant(target.kind === "commit_diff", "CommitDiffPanel requires commit_diff target");
+  const cwd = target.directory ?? workspaceDirectory;
   const { files, isLoading, error, capabilityMissing } = useCommitDiffFiles({
     serverId,
     cwd: cwd ?? "",

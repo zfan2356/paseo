@@ -34,6 +34,7 @@ type ReviewAttachmentContextLine = ReviewAttachment["comments"][number]["context
 type ReviewComposerAttachment = Extract<ComposerAttachment, { kind: "review" }>;
 
 export interface BuildReviewDraftKeyInput {
+  sessionAgentId?: string;
   serverId: string;
   workspaceId?: string | null;
   cwd: string;
@@ -89,9 +90,14 @@ function normalizeBaseRef(baseRef: string | null | undefined): string {
 function buildReviewDraftScopeParts(input: BuildReviewDraftScopeKeyInput): string[] {
   const workspaceId = input.workspaceId?.trim();
   // workspaceId is opaque; do not parse this key back into a path.
-  const workspacePart = workspaceId
-    ? `workspace=${encodeKeyPart(workspaceId)}`
-    : `cwd=${encodeKeyPart(normalizeCwd(input.cwd))}`;
+  const explicitSession = input.sessionAgentId
+    ? `session=${JSON.stringify([input.sessionAgentId, input.cwd])}`
+    : null;
+  const workspacePart =
+    explicitSession ??
+    (workspaceId
+      ? `workspace=${encodeKeyPart(workspaceId)}`
+      : `cwd=${encodeKeyPart(normalizeCwd(input.cwd))}`);
 
   return [
     "review",

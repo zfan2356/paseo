@@ -60,6 +60,12 @@ export function useFetchQuery<
   return useQuery(fetchQueryOptions(input), queryClient);
 }
 
+export function useReplicaQueries<TData>(
+  inputs: ReplicaQueryInput<TData, Error, TData, QueryKey>[],
+): UseQueryResult<TData, Error>[] {
+  return useQueries({ queries: inputs.map((input) => replicaQueryOptions(input)) });
+}
+
 export function useFetchQueries<TData>(
   inputs: FetchQueryInput<TData, Error, TData, QueryKey>[],
 ): UseQueryResult<TData, Error>[] {
