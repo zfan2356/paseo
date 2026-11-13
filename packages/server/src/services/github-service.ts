@@ -1441,7 +1441,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     if (!host.settled) {
       return 0;
     }
-    const key = host.value ?? "";
+    const key = host.value ?? "github.com";
     const pauseUntil = pollPausedUntilByHost.get(key) ?? 0;
     if (pauseUntil <= deps.now()) {
       pollPausedUntilByHost.delete(key);
@@ -1528,7 +1528,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         legacyTargets.push(target);
         continue;
       }
-      const key = host.value ?? "";
+      const key = host.value ?? "github.com";
       const group = batchGroups.get(key) ?? [];
       group.push({
         target,
@@ -1585,7 +1585,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
       const targetHost = target.repository
         ? { settled: true, value: target.repository.host }
         : peekRepoHost(target.cwd);
-      if (!targetHost.settled || (targetHost.value ?? "") !== host) {
+      if (!targetHost.settled || (targetHost.value ?? "github.com") !== host) {
         continue;
       }
       target.pollCycleStartedAt = null;

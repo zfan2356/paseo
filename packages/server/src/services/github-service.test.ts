@@ -5055,3 +5055,50 @@ it("applies the GitHub account reserve to numbered PR polling", async () => {
   service.dispose?.();
   vi.useRealTimers();
 });
+
+it("shares the public GitHub batch and reserve key between checkout and numbered targets", async () => {
+  vi.useFakeTimers();
+  const runner = createScriptedRunner([
+    batchPollStatusJson({
+      t0: batchPollRepositoryJson([batchPollPrNodeJson({ state: "OPEN", headRefName: "feat-a" })]),
+      t1: batchPollRepositoryJson([], {
+        pullRequest: batchPollPrNodeJson({
+          number: 9,
+          url: "https://github.com/other/repo/pull/9",
+        }),
+      }),
+    }),
+    batchPollStatusJson({ t0: batchPollChecksAliasJson([]), t1: batchPollChecksAliasJson([]) }),
+  ]);
+  const service = createGitHubService({
+    runner: runner.runner,
+    resolveGhPath: async () => "/gh",
+    resolveRepoHost: async () => null,
+    resolveRepoSlug: async () => "acme/widgets",
+  });
+  const onStatus = vi.fn();
+  const checkout = service.retainCurrentPullRequestStatusPoll!({
+    cwd: "/checkout",
+    headRef: "feat-a",
+    onStatus,
+  });
+  const numbered = service.retainPullRequestStatusPoll!({
+    cwd: "/elsewhere",
+    host: "github.com",
+    projectPath: "other/repo",
+    number: 9,
+    onStatus,
+    onError: vi.fn(),
+  });
+  await flushMicrotasks();
+  await vi.advanceTimersByTimeAsync(0);
+  await flushMicrotasks();
+  expect(runner.calls).toHaveLength(2);
+  expect(runner.calls[0].args[3]).toContain('t0: repository(owner: "acme", name: "widgets")');
+  expect(runner.calls[0].args[3]).toContain('t1: repository(owner: "other", name: "repo")');
+  expect(onStatus).toHaveBeenCalledTimes(2);
+  checkout.unsubscribe();
+  numbered.unsubscribe();
+  service.dispose?.();
+  vi.useRealTimers();
+});
