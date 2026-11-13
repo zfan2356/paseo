@@ -31,26 +31,26 @@ generated src/generated/validation/ws-outbound.aot.ts: envelope + 260 session me
 > @getpaseo/relay@0.15.3 build
 > tsc -p tsconfig.json --incremental false
 
-[highlight] 
-[highlight] > paseo@0.15.3 build:highlight
-[highlight] > npm run build --workspace=@getpaseo/highlight
-[highlight] 
 [plugin] 
 [plugin] > paseo@0.15.3 build:plugin
 [plugin] > npm run build --workspace=@getpaseo/plugin
 [plugin] 
+[highlight] 
+[highlight] > paseo@0.15.3 build:highlight
+[highlight] > npm run build --workspace=@getpaseo/highlight
+[highlight] 
 [relay] 
 [relay] > paseo@0.15.3 build:relay
 [relay] > npm run build --workspace=@getpaseo/relay
 [relay] 
-[highlight] 
-[highlight] > @getpaseo/highlight@0.15.3 build
-[highlight] > tsc -p tsconfig.json --incremental false
-[highlight] 
 [plugin] 
 [plugin] > @getpaseo/plugin@0.15.3 build
 [plugin] > tsc -p tsconfig.json --incremental false
 [plugin] 
+[highlight] 
+[highlight] > @getpaseo/highlight@0.15.3 build
+[highlight] > tsc -p tsconfig.json --incremental false
+[highlight] 
 [relay] 
 [relay] > @getpaseo/relay@0.15.3 build
 [relay] > tsc -p tsconfig.json --incremental false
