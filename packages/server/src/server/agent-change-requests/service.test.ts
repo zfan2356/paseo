@@ -82,9 +82,10 @@ const attachment = {
   headRefName: "branch",
 };
 
-function created() {
+function created(fromHistory = false) {
   event({
     type: "agent_stream",
+    fromHistory,
     agentId: "a",
     event: {
       type: "timeline",
@@ -135,7 +136,8 @@ describe("session linked change requests", () => {
     await vi.waitFor(() => expect(read).not.toHaveBeenCalled());
     expect((await service.list("a")).items).toEqual([]);
     await service.update("a", { autoLink: true });
-    expect((await service.list("a")).items).toEqual([]);
+    created(true);
+    await vi.waitFor(async () => expect((await service.list("a")).items).toEqual([]));
     created();
     await vi.waitFor(async () => expect((await service.list("a")).items).toHaveLength(1));
     expect((await service.list("a")).items[0].reference).toMatchObject({

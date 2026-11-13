@@ -14440,3 +14440,53 @@ test("notifies accepted structured prompts without requiring a client message id
     rmSync(workdir, { recursive: true, force: true });
   }
 });
+
+test("marks broadcast provider history so completed tools cannot become new session links", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-linked-history-"));
+  class HistoryClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new (class extends TestAgentSession {
+        override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+          yield {
+            type: "timeline",
+            provider: "codex",
+            item: {
+              type: "tool_call",
+              callId: "old-create",
+              name: "shell",
+              status: "completed",
+              error: null,
+              detail: { type: "shell", command: "gw mr create --json", exitCode: 0, output: "{}" },
+            },
+          };
+        }
+      })(config);
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new HistoryClient() },
+    logger: createTestLogger(),
+  });
+  const events: AgentManagerEvent[] = [];
+  const stop = manager.subscribe((event) => events.push(event), { replayState: false });
+  let agentId: string | null = null;
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = agent.id;
+    await manager.hydrateTimelineFromProvider(agent.id, { force: true, broadcast: true });
+    expect(
+      events.filter((event) => event.type === "agent_stream" && event.event.type === "timeline"),
+    ).toEqual([
+      expect.objectContaining({
+        fromHistory: true,
+        event: expect.objectContaining({ item: expect.objectContaining({ callId: "old-create" }) }),
+      }),
+    ]);
+  } finally {
+    stop();
+    if (agentId) await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});

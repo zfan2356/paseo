@@ -69,7 +69,8 @@ export class AgentChangeRequests {
             this.removeAgent(event.agentId);
             return;
           }
-          if (event.type !== "agent_stream" || event.event.type !== "timeline") return;
+          if (event.type !== "agent_stream" || event.fromHistory || event.event.type !== "timeline")
+            return;
           const item = event.event.item;
           if (
             item.type !== "tool_call" ||
