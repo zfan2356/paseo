@@ -188,7 +188,7 @@ function createdIdentity(output: string, forge: string): ChangeRequestIdentity |
     return parseChangeRequestUrl(urls[0], forge);
   }
   try {
-    const value: unknown = JSON.parse(output.trim());
+    const value: unknown = parseGwCreateJson(output);
     if (
       !value ||
       typeof value !== "object" ||
@@ -202,6 +202,19 @@ function createdIdentity(output: string, forge: string): ChangeRequestIdentity |
     return candidate;
   } catch {
     return null;
+  }
+}
+
+function parseGwCreateJson(output: string): unknown {
+  const trimmed = output.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // gw waits for its automatic git push, then prints one json.Marshal line.
+    // Push output may precede that line even with --json. Only the final complete
+    // JSON record is evidence; a URL in the push log cannot add a link.
+    const lastLine = trimmed.slice(trimmed.lastIndexOf("\n") + 1);
+    return JSON.parse(lastLine);
   }
 }
 

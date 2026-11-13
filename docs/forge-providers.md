@@ -149,7 +149,9 @@ first supported commands are standalone `gh pr create`, `glab mr create`, and
 argument, or the tool cwd's origin) must match the returned URL. Shell wrappers,
 compound commands, assistant prose, ordinary view commands, and ambiguous output
 are excluded. For `gw`, use `--json`: its top-level `iid` and `web_url` must agree;
-project identity comes from that URL. Plain text output is not collected.
+project identity comes from that URL. Its automatic Git push can precede the
+final JSON record with progress output, so that final record is parsed separately.
+Plain text output is not collected.
 
 Linked status reads address the forge host, complete project path, and number.
 They never select a request using the checkout branch. Self-hosted URLs pass the

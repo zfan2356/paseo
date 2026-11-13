@@ -142,3 +142,31 @@ describe("strict create evidence", () => {
     ]);
   });
 });
+
+it("recognizes gw's final JSON after its automatic push, but never a URL in push logs", () => {
+  const pushed =
+    "branch 'feature' set up to track 'origin/feature'.\nTo git.woa.com:group/repo.git\n * [new branch] feature -> feature\n";
+  expect(createdChangeRequest({ ...detail, output: pushed + output + "\n" }, remote)?.number).toBe(
+    686,
+  );
+  expect(
+    createdChangeRequest(
+      { ...detail, output: pushed + "https://git.woa.com/group/repo/merge_requests/686" },
+      remote,
+    ),
+  ).toBeNull();
+  expect(
+    createdChangeRequest({ ...detail, output: pushed + output + "\ntruncated" }, remote),
+  ).toBeNull();
+  expect(
+    createdChangeRequest(
+      {
+        ...detail,
+        output:
+          pushed +
+          JSON.stringify({ iid: 12, web_url: "https://git.woa.com/group/repo/merge_requests/686" }),
+      },
+      remote,
+    ),
+  ).toBeNull();
+});

@@ -10,6 +10,7 @@ import {
   defaultResolveRemoteUrl,
   ForgeAuthenticationError,
   ForgeCliMissingError,
+  ForgeCommandError,
 } from "../../services/forge-cli-command.js";
 import {
   createdChangeRequest,
@@ -375,6 +376,11 @@ export class AgentChangeRequests {
       availability = "unauthenticated";
     else if (code === 403) availability = "forbidden";
     else if (code === 404) availability = "not_found";
+    else if (error instanceof ForgeCommandError) {
+      if (/\b404\b|\bnot found\b/i.test(error.stderr)) availability = "not_found";
+      else if (/\b403\b|\bforbidden\b|resource not accessible/i.test(error.stderr))
+        availability = "forbidden";
+    }
     this.publishStatus(poll, null, availability);
   }
 

@@ -1,3 +1,6 @@
+import { getForgeDefinitionOrNeutral } from "@getpaseo/protocol/forge-manifest";
+import { ControlSizeProvider } from "@/components/ui/control-size";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -33,17 +36,20 @@ function ConnectedChangeRequests({ client, agentId }: { client: DaemonClient; ag
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const toggle = useCallback(() => setExpanded((value) => !value), []);
+  const compact = useIsCompactFormFactor();
   const supported = client.supportsAgentChangeRequests();
   if (!supported) return null;
   return (
-    <ChangeRequestsList
-      key={agentId}
-      client={client}
-      agentId={agentId}
-      expanded={expanded}
-      toggle={toggle}
-      label={t("agentChangeRequests.title")}
-    />
+    <ControlSizeProvider size={compact ? "md" : "sm"}>
+      <ChangeRequestsList
+        key={agentId}
+        client={client}
+        agentId={agentId}
+        expanded={expanded}
+        toggle={toggle}
+        label={t("agentChangeRequests.title")}
+      />
+    </ControlSizeProvider>
   );
 }
 
@@ -99,7 +105,12 @@ export function ChangeRequestsView({
   const count = state.snapshot?.items.length ?? 0;
   return (
     <View style={styles.container}>
-      <Button variant="ghost" size="sm" onPress={toggle} testID="agent-change-requests-toggle">
+      <Button
+        variant="ghost"
+        style={styles.headerButton}
+        onPress={toggle}
+        testID="agent-change-requests-toggle"
+      >
         {label} · {count}
       </Button>
       {expanded ? (
@@ -134,31 +145,45 @@ export function ChangeRequestsView({
                     remove={model.remove}
                   />
                 ))}
-                <Field label={t("agentChangeRequests.url")} hint={t("agentChangeRequests.hint")}>
-                  <FormTextInput
-                    key={state.inputRevision}
-                    onChangeText={model.setUrl}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    accessibilityLabel={t("agentChangeRequests.url")}
-                    editable={!state.busy}
-                  />
-                </Field>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={state.busy || !state.url.trim()}
-                  onPress={model.add}
-                  testID="agent-change-requests-add"
-                >
-                  {t("agentChangeRequests.add")}
-                </Button>
+                <ChangeRequestAddForm model={model} />
               </>
             )}
           </View>
         </ScrollView>
       ) : null}
     </View>
+  );
+}
+
+function ChangeRequestAddForm({ model }: { model: ReturnType<typeof openChangeRequests> }) {
+  const { t } = useTranslation();
+  const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
+  return (
+    <>
+      <View style={styles.inputRow}>
+        <View style={styles.input}>
+          <Field label={t("agentChangeRequests.url")}>
+            <FormTextInput
+              key={state.inputRevision}
+              onChangeText={model.setUrl}
+              autoCapitalize="none"
+              autoCorrect={false}
+              accessibilityLabel={t("agentChangeRequests.url")}
+              editable={!state.busy}
+            />
+          </Field>
+        </View>
+        <Button
+          variant="default"
+          disabled={state.busy || !state.url.trim()}
+          onPress={model.add}
+          testID="agent-change-requests-add"
+        >
+          {t("agentChangeRequests.add")}
+        </Button>
+      </View>
+      <Text style={styles.muted}>{t("agentChangeRequests.hint")}</Text>
+    </>
   );
 }
 
@@ -176,6 +201,9 @@ function ChangeRequestRow({
     void openExternalUrl(item.reference.url);
   }, [item.reference.url]);
   const removeItem = useCallback(() => remove(item.reference.key), [remove, item.reference.key]);
+  const numberLabel =
+    getForgeDefinitionOrNeutral(item.reference.forge).changeRequestNumberPrefix +
+    item.reference.number;
   const status = item.status;
   let lifecycle = t("agentChangeRequests.pending");
   if (status) lifecycle = status.isDraft ? "draft" : status.state;
@@ -184,13 +212,26 @@ function ChangeRequestRow({
   });
   return (
     <View style={styles.item}>
-      <Button variant="ghost" size="sm" onPress={open}>
-        {item.reference.projectPath} #{item.reference.number}
-      </Button>
+      <View style={styles.row}>
+        <Button variant="ghost" style={styles.link} onPress={open}>
+          {item.reference.projectPath} {numberLabel}
+        </Button>
+        <Button
+          variant="outline"
+          disabled={disabled}
+          onPress={removeItem}
+          accessibilityLabel={
+            t("agentChangeRequests.remove") + " " + item.reference.projectPath + " " + numberLabel
+          }
+        >
+          {t("agentChangeRequests.remove")}
+        </Button>
+      </View>
       {status ? <Text style={styles.text}>{status.title}</Text> : null}
       <Text style={styles.muted}>
-        {lifecycle} · {availability}
-        {item.stale ? ` · ${t("agentChangeRequests.stale")}` : ""}
+        {status ? lifecycle : availability}
+        {status && item.availability !== "available" ? ` · ${availability}` : ""}
+        {status && item.stale ? ` · ${t("agentChangeRequests.stale")}` : ""}
       </Text>
       {status ? (
         <Text style={styles.muted}>
@@ -203,21 +244,16 @@ function ChangeRequestRow({
           {t("agentChangeRequests.refreshed")}: {new Date(item.refreshedAt).toLocaleTimeString()}
         </Text>
       ) : null}
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled={disabled}
-        onPress={removeItem}
-        accessibilityLabel={`${t("agentChangeRequests.remove")} ${item.reference.projectPath} #${item.reference.number}`}
-      >
-        {t("agentChangeRequests.remove")}
-      </Button>
     </View>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
   container: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  headerButton: { alignSelf: "flex-start" },
+  link: { flexShrink: 1, justifyContent: "flex-start" },
+  input: { flex: 1, minWidth: 0 },
+  inputRow: { flexDirection: "row", alignItems: "flex-end", gap: theme.spacing[2] },
   list: { maxHeight: 340 },
   body: { padding: theme.spacing[4], gap: theme.spacing[3] },
   row: {

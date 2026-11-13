@@ -73,7 +73,7 @@ it("renders repository status and dispatches add/remove through the form", async
   );
   expect(screen.getByText("Cross repository MR")).toBeTruthy();
   expect(screen.getByText(/CI: success/).textContent).toContain("MERGEABLE");
-  expect(screen.getByText("group/repo #7")).toBeTruthy();
+  expect(screen.getByText("group/repo !7")).toBeTruthy();
   const input = screen.getByRole("textbox");
   fireEvent.change(input, { target: { value: "https://github.com/other/repo/pull/9" } });
   await act(async () => {
@@ -81,7 +81,7 @@ it("renders repository status and dispatches add/remove through the form", async
   });
   expect(update).toHaveBeenLastCalledWith({ addUrl: "https://github.com/other/repo/pull/9" });
   await act(async () => {
-    fireEvent.click(screen.getByLabelText(/group\/repo #7/));
+    fireEvent.click(screen.getByLabelText(/group\/repo !7/));
   });
   expect(update).toHaveBeenLastCalledWith({ removeKey: "one" });
   model.close();

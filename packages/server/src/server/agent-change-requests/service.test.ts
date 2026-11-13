@@ -8,7 +8,7 @@ import type { AgentManager, AgentSubscriber } from "../agent/agent-manager.js";
 import { AgentChangeRequests } from "./service.js";
 import { createForgeResolver } from "../../services/forge-resolver.js";
 import { createTgitService } from "../../services/tgit-service.js";
-import { ForgeAuthenticationError } from "../../services/forge-cli-command.js";
+import { ForgeAuthenticationError, ForgeCommandError } from "../../services/forge-cli-command.js";
 import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
 import type { AgentPromptInput } from "../agent/agent-sdk-types.js";
 
@@ -222,5 +222,27 @@ it("releases polling when the agent is removed", async () => {
   await vi.advanceTimersByTimeAsync(300_000);
   expect(read).toHaveBeenCalledOnce();
   expect(receive).toHaveBeenLastCalledWith({ agentId: "a", autoLink: true, items: [] });
+  stop();
+});
+
+it.each([
+  ["HTTP 404: Not Found", "not_found"],
+  ["HTTP 403: Forbidden", "forbidden"],
+])("classifies CLI read failure %s", async (stderr, availability) => {
+  await service.update("a", { addUrl: url });
+  read.mockRejectedValueOnce(
+    new ForgeCommandError(
+      { brand: "GitLab", binary: "glab" },
+      { args: [], cwd: "/repo", exitCode: 1, stderr },
+    ),
+  );
+  const stop = await service.subscribe("a", () => {});
+  await vi.waitFor(async () =>
+    expect((await service.list("a")).items[0]).toMatchObject({
+      availability,
+      status: null,
+      stale: true,
+    }),
+  );
   stop();
 });
