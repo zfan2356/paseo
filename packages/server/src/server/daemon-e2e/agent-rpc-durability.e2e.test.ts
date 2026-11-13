@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
@@ -256,3 +256,55 @@ function toAgentEntrySummary(entry: AgentDirectoryEntrySummaryInput) {
     workspaceName: entry.project.workspaceName ?? null,
   };
 }
+
+test("session MR RPCs persist independent repository links and own their subscriptions", async () => {
+  const fixture = seedStaleAgentFixture();
+  let daemon: TestPaseoDaemon | null = null;
+  let client: DaemonClient | null = null;
+  try {
+    daemon = await createTestPaseoDaemon({ paseoHomeRoot: fixture.paseoHomeRoot, cleanup: false });
+    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    await client.connect();
+    expect(client.supportsAgentChangeRequests()).toBe(true);
+    const agentId = fixture.healthyAgentId;
+    expect((await client.listAgentChangeRequests(agentId)).items).toEqual([]);
+    const observed: unknown[] = [];
+    const observation = client.observeAgentChangeRequests(agentId);
+    observation.subscribe({
+      snapshot: () => {},
+      update: (message) => {
+        if (message.type === "agent.changeRequests.changed")
+          observed.push(message.payload.snapshot);
+      },
+    });
+    await observation.ready;
+    await client.updateAgentChangeRequests(agentId, { autoLink: false });
+    await vi.waitFor(() =>
+      expect(observed).toContainEqual({ agentId, autoLink: false, items: [] }),
+    );
+    await observation.release();
+    const linked = await client.updateAgentChangeRequests(agentId, {
+      addUrl: "https://git.woa.com/another/project/merge_requests/7",
+    });
+    expect(linked.items[0].reference).toMatchObject({
+      forge: "tgit",
+      projectPath: "another/project",
+      number: 7,
+    });
+    await client.close();
+    client = null;
+    await daemon.close();
+    daemon = null;
+    daemon = await createTestPaseoDaemon({ paseoHomeRoot: fixture.paseoHomeRoot, cleanup: false });
+    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    await client.connect();
+    const restored = await client.listAgentChangeRequests(agentId);
+    expect(restored).toEqual(linked);
+    await client.updateAgentChangeRequests(agentId, { removeKey: restored.items[0].reference.key });
+    expect((await client.listAgentChangeRequests(agentId)).items).toEqual([]);
+  } finally {
+    await client?.close();
+    await daemon?.close();
+    for (const target of fixture.cleanupPaths) rmSync(target, { recursive: true, force: true });
+  }
+});

@@ -1603,3 +1603,31 @@ describe("createGitLabService", () => {
     );
   });
 });
+
+it("routes numbered GitLab status, approvals and CI to the explicit repository", async () => {
+  const { service, calls } = makeService(
+    (args) => {
+      if (args[0] === "mr") return ok(JSON.stringify(mergeRequestWithPipeline()));
+      if (args[0] === "api") return ok(JSON.stringify({ approvals_left: 0, approved_by: [] }));
+      if (args[0] === "ci") return ok(JSON.stringify({ id: 306, status: "success", jobs: [] }));
+      throw new Error(`Unexpected invocation ${args.join(" ")}`);
+    },
+    { resolveRemoteUrl: async () => "https://wrong.test/another/checkout" },
+  );
+  const result = await service.getPullRequestStatus!({
+    cwd: "/cwd",
+    host: "gitlab.example.com",
+    projectPath: "example-group/example-project",
+    number: 14,
+  });
+  expect(result).toMatchObject({ number: 14, state: "open" });
+  expect(calls[0]).toContain("https://gitlab.example.com/example-group/example-project");
+  expect(calls[1]).toEqual([
+    "api",
+    "--hostname",
+    "gitlab.example.com",
+    "projects/example-group%2Fexample-project/merge_requests/14/approvals",
+  ]);
+  expect(calls[2]).toContain("https://gitlab.example.com/example-group/example-project");
+  expect(calls.some((args) => args.includes("list"))).toBe(false);
+});

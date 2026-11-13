@@ -1,3 +1,4 @@
+import type { AgentChangeRequests } from "./agent-change-requests/service.js";
 import { DiffSession } from "./diff/index.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
@@ -509,6 +510,7 @@ export interface SessionOptions {
   worktreesRoot?: string;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
+  agentChangeRequests?: AgentChangeRequests;
   messageReceipts: Pick<MessageReceipts, "send" | "lookup">;
   agentMessages: AgentMessageDelivery;
   creationService: Pick<CreationService, "create" | "subscribe">;
@@ -808,6 +810,7 @@ export class Session {
   private readonly github: ForgeService;
   private readonly renameCurrentBranch: typeof renameCurrentBranchDefault;
   private readonly workspaceGitService: WorkspaceGitService;
+  private readonly agentChangeRequests?: AgentChangeRequests;
   private readonly workspaceRuntimeStore: WorkspaceRuntimeStore;
   private readonly workspaceAutoName: WorkspaceAutoName;
   private readonly gitMutation: GitMutationService;
@@ -890,6 +893,7 @@ export class Session {
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
 
   constructor(options: SessionOptions) {
+    this.agentChangeRequests = options.agentChangeRequests;
     const {
       clientId,
       permissions,
@@ -2733,10 +2737,66 @@ export class Session {
     });
   }
 
+  private dispatchAgentChangeRequestsMessage(
+    msg: SessionInboundMessage,
+  ): Promise<void> | undefined {
+    const service = this.agentChangeRequests;
+    if (!service) return undefined;
+    switch (msg.type) {
+      case "agent.changeRequests.list.request":
+      case "agent.changeRequests.update.request":
+        return (async () => {
+          const snapshot =
+            msg.type === "agent.changeRequests.list.request"
+              ? await service.list(msg.agentId)
+              : await service.update(msg.agentId, msg);
+          this.emit({
+            type:
+              msg.type === "agent.changeRequests.list.request"
+                ? "agent.changeRequests.list.response"
+                : "agent.changeRequests.update.response",
+            payload: { requestId: msg.requestId, snapshot, error: null },
+          });
+        })();
+      case "agent.changeRequests.subscribe.request":
+        return (async () => {
+          let active = true;
+          const stops: (() => void)[] = [];
+          const owner = this.delivery.begin("agent-change-requests", undefined, () => {
+            active = false;
+            for (const stop of stops) stop();
+          });
+          try {
+            this.emit({
+              type: "agent.changeRequests.subscribe.response",
+              payload: { requestId: msg.requestId, subscriptionId: owner.responseId },
+            });
+            for (const agentId of new Set(msg.agentIds)) {
+              const stop = await service.subscribe(agentId, (snapshot) =>
+                owner.emit({
+                  type: "agent.changeRequests.changed",
+                  payload: { subscriptionId: owner.responseId, snapshot },
+                }),
+              );
+              if (active) stops.push(stop);
+              else stop();
+            }
+          } catch (error) {
+            await owner.release();
+            throw error;
+          }
+        })();
+      default:
+        return undefined;
+    }
+  }
+
   private dispatchSubscriptionMessage(
     msg: SessionInboundMessage,
     source?: object,
   ): Promise<void> | undefined {
+    if (msg.type.startsWith("agent.changeRequests."))
+      return this.dispatchAgentChangeRequestsMessage(msg);
     if (msg.type === "workspace.setup.subscribe.request") return this.subscribeWorkspaceSetup(msg);
     if (msg.type === "browser.host.register.request") return this.registerBrowserHost(msg);
     if (msg.type === "browser.automation.execute.response") {

@@ -4955,3 +4955,103 @@ describe("ForgeService", () => {
     ).rejects.toThrow("Unable to resolve GitHub repository for pull request creation");
   });
 });
+
+it("batches numbered PRs across repositories and routes both reads to the target host", async () => {
+  vi.useFakeTimers();
+  const runner = createScriptedRunner([
+    batchPollStatusJson({
+      t0: batchPollRepositoryJson([], {
+        isFork: true,
+        parent: { owner: { login: "parent" }, name: "repo" },
+        pullRequest: batchPollPrNodeJson({
+          number: 9,
+          url: "https://github.com/other/repo/pull/9",
+          state: "OPEN",
+          headRefName: "arbitrary",
+          headRepositoryOwner: { login: "fork" },
+        }),
+      }),
+      t1: batchPollRepositoryJson([], {
+        pullRequest: batchPollPrNodeJson({
+          number: 10,
+          url: "https://github.com/third/repo/pull/10",
+        }),
+      }),
+    }),
+    batchPollStatusJson({ t0: batchPollChecksAliasJson([]), t1: batchPollChecksAliasJson([]) }),
+  ]);
+  const service = createGitHubService({
+    runner: runner.runner,
+    resolveGhPath: async () => "/gh",
+    resolveRepoHost: async () => "wrong.example",
+    resolveRepoSlug: async () => "wrong/repo",
+  });
+  const received: Array<CurrentPullRequestStatus | null> = [];
+  const onError = vi.fn();
+  const a = service.retainPullRequestStatusPoll!({
+    cwd: "/unrelated",
+    host: "github.com",
+    projectPath: "other/repo",
+    number: 9,
+    onStatus: (status) => received.push(status),
+    onError,
+  });
+  const b = service.retainPullRequestStatusPoll!({
+    cwd: "/another",
+    host: "github.com",
+    projectPath: "third/repo",
+    number: 10,
+    onStatus: (status) => received.push(status),
+    onError,
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  await flushMicrotasks();
+  expect(onError).not.toHaveBeenCalled();
+  expect(received.map((status) => status?.number)).toEqual([9, 10]);
+  expect(runner.calls).toHaveLength(2);
+  expect(runner.calls[0].args[3]).toContain('repository(owner: "other", name: "repo")');
+  expect(runner.calls[0].args[3]).toContain("pullRequest(number: 9)");
+  expect(runner.calls[0].args[3]).not.toContain('headRefName: ""');
+  expect(runner.calls.every((call) => call.envOverlay?.GH_HOST === "github.com")).toBe(true);
+  a.unsubscribe();
+  b.unsubscribe();
+  await vi.advanceTimersByTimeAsync(600_000);
+  expect(runner.calls).toHaveLength(2);
+  service.dispose?.();
+  vi.useRealTimers();
+});
+
+it("applies the GitHub account reserve to numbered PR polling", async () => {
+  vi.useFakeTimers();
+  const now = Date.now();
+  const runner = createScriptedRunner([
+    batchPollStatusWithRateLimitJson({
+      aliases: { t0: batchPollRepositoryJson([], { pullRequest: batchPollPrNodeJson() }) },
+      limit: 5000,
+      remaining: 1,
+      resetAt: new Date(now + 3_600_000).toISOString(),
+    }),
+  ]);
+  const service = createGitHubService({
+    runner: runner.runner,
+    resolveGhPath: async () => "/gh",
+    resolveRepoHost: async () => null,
+    resolveRepoSlug: async () => "wrong/repo",
+  });
+  const errors = vi.fn();
+  const retained = service.retainPullRequestStatusPoll!({
+    cwd: "/repo",
+    host: "github.com",
+    projectPath: "acme/widgets",
+    number: 42,
+    onStatus: vi.fn(),
+    onError: errors,
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(errors).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(300_000);
+  expect(runner.calls).toHaveLength(1);
+  retained.unsubscribe();
+  service.dispose?.();
+  vi.useRealTimers();
+});

@@ -3242,3 +3242,47 @@ describe("detectGiteaFamilySoftware", () => {
     expect(software).toBe("gitea");
   });
 });
+
+it("routes numbered Gitea status and CI through the target host's existing tea login", async () => {
+  const { service, calls } = makeService(
+    (args) => {
+      if (args[0] === "login")
+        return ok(
+          JSON.stringify([{ name: "target-login", url: "https://gitea.com", token: "test-token" }]),
+        );
+      if (args[1] === "repos/target/repo/pulls/5")
+        return ok(
+          JSON.stringify({
+            number: 5,
+            html_url: "https://gitea.com/target/repo/pulls/5",
+            title: "Explicit",
+            state: "open",
+            head: { ref: "feature", sha: "abc" },
+            base: { ref: "main" },
+          }),
+        );
+      if (args[1].includes("/commits/"))
+        return ok(JSON.stringify({ state: "success", total_count: 0, statuses: [] }));
+      if (args[1].includes("/actions/tasks"))
+        return ok(JSON.stringify({ workflow_runs: [], total_count: 0 }));
+      throw new Error(`Unexpected invocation ${args.join(" ")}`);
+    },
+    { resolveRemoteUrl: async () => "https://wrong.test/wrong/repo" },
+  );
+  expect(
+    await service.getPullRequestStatus!({
+      cwd: "/cwd",
+      host: "gitea.com",
+      projectPath: "target/repo",
+      number: 5,
+    }),
+  ).toMatchObject({ number: 5, title: "Explicit", headSha: "abc" });
+  expect(
+    calls
+      .filter((args) => args[0] === "api")
+      .every(
+        (args) =>
+          args[1].startsWith("repos/target/repo/") && argValue(args, "--login") === "target-login",
+      ),
+  ).toBe(true);
+});

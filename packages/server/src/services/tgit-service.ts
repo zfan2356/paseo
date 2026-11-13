@@ -370,7 +370,69 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
     throw new TgitUnsupportedOperationError();
   }
 
+  async function statusForMr(project: string, detail: TgitMr): Promise<CurrentPullRequestStatus> {
+    const snapshot = await checks(project, detail);
+    const normalized: PullRequestCheck[] = snapshot.records.map((check) => ({
+      name: check.context,
+      status: checkStatus(check.state),
+      url: safeWebUrl(check.target_url),
+      checkRunId: check.id,
+    }));
+    const gateStatuses = [gateStatus(detail.commit_check_state, detail.commit_check_block)];
+    if (snapshot.aggregate)
+      gateStatuses.push(gateStatus(snapshot.aggregate.state, snapshot.aggregate.block));
+    appendBlockingGate({ checks: normalized, gateStatuses, url: mrUrl(project, detail.iid) });
+    const review = await get(
+      `${projectPath(project)}/merge_request/${detail.id}/review`,
+      reviewSchema,
+    );
+    let mergeable: CurrentPullRequestStatus["mergeable"] = "UNKNOWN";
+    if (isOpen(detail)) {
+      const branch = await get(
+        `${projectPath(project)}/repository/branches/${encodeURIComponent(detail.target_branch)}`,
+        branchSchema,
+      );
+      const conflict = await get(
+        `${projectPath(project)}/merge_request/${detail.id}/merge_conflict_check`,
+        conflictSchema,
+      );
+      const currentConflict =
+        conflict.base_commit === detail.source_commit &&
+        conflict.target_commit === branch.commit.id;
+      if (currentConflict && conflict.has_conflicts === true) mergeable = "CONFLICTING";
+      if (currentConflict && conflict.has_conflicts === false) mergeable = "MERGEABLE";
+    }
+    const after = await mrByNumber(project, detail.iid);
+    if (
+      after.source_commit !== detail.source_commit ||
+      after.target_branch !== detail.target_branch ||
+      after.updated_at !== detail.updated_at ||
+      after.state !== detail.state
+    ) {
+      throw new TgitApiError(0, "TGit MR changed during refresh");
+    }
+    const segments = project.split("/");
+    return {
+      ...summary(detail, project),
+      repoOwner: segments.slice(0, -1).join("/"),
+      repoName: segments.at(-1),
+      headSha: detail.source_commit,
+      isMerged: detail.state === "merged",
+      isDraft: detail.work_in_progress,
+      mergeable,
+      checks: normalized,
+      checksStatus: computeChecksStatus(normalized),
+      reviewDecision: reviewDecision(review.state),
+      forgeSpecific: { forge: "tgit", readOnly: true },
+    };
+  }
+
   const service: ForgeService = {
+    async getPullRequestStatus(input) {
+      if (input.host !== "git.woa.com") throw new Error("Unsupported TGit host");
+      if (!readToken()) throw authenticationError();
+      return statusForMr(input.projectPath, await mrByNumber(input.projectPath, input.number));
+    },
     async isAuthenticated({ cwd }) {
       if (!readToken()) return false;
       try {
@@ -429,60 +491,7 @@ export function createTgitService(options: CreateTgitServiceOptions = {}): Forge
       const project = await repo(input.cwd);
       const detail = await currentMr(project, input);
       if (!detail) return null;
-      const snapshot = await checks(project, detail);
-      const normalized: PullRequestCheck[] = snapshot.records.map((check) => ({
-        name: check.context,
-        status: checkStatus(check.state),
-        url: safeWebUrl(check.target_url),
-        checkRunId: check.id,
-      }));
-      const gateStatuses = [gateStatus(detail.commit_check_state, detail.commit_check_block)];
-      if (snapshot.aggregate)
-        gateStatuses.push(gateStatus(snapshot.aggregate.state, snapshot.aggregate.block));
-      appendBlockingGate({ checks: normalized, gateStatuses, url: mrUrl(project, detail.iid) });
-      const review = await get(
-        `${projectPath(project)}/merge_request/${detail.id}/review`,
-        reviewSchema,
-      );
-      let mergeable: CurrentPullRequestStatus["mergeable"] = "UNKNOWN";
-      if (isOpen(detail)) {
-        const branch = await get(
-          `${projectPath(project)}/repository/branches/${encodeURIComponent(detail.target_branch)}`,
-          branchSchema,
-        );
-        const conflict = await get(
-          `${projectPath(project)}/merge_request/${detail.id}/merge_conflict_check`,
-          conflictSchema,
-        );
-        const currentConflict =
-          conflict.base_commit === detail.source_commit &&
-          conflict.target_commit === branch.commit.id;
-        if (currentConflict && conflict.has_conflicts === true) mergeable = "CONFLICTING";
-        if (currentConflict && conflict.has_conflicts === false) mergeable = "MERGEABLE";
-      }
-      const after = await mrByNumber(project, detail.iid);
-      if (
-        after.source_commit !== detail.source_commit ||
-        after.target_branch !== detail.target_branch ||
-        after.updated_at !== detail.updated_at ||
-        after.state !== detail.state
-      ) {
-        throw new TgitApiError(0, "TGit MR changed during refresh");
-      }
-      const segments = project.split("/");
-      return {
-        ...summary(detail, project),
-        repoOwner: segments.slice(0, -1).join("/"),
-        repoName: segments.at(-1),
-        headSha: detail.source_commit,
-        isMerged: detail.state === "merged",
-        isDraft: detail.work_in_progress,
-        mergeable,
-        checks: normalized,
-        checksStatus: computeChecksStatus(normalized),
-        reviewDecision: reviewDecision(review.state),
-        forgeSpecific: { forge: "tgit", readOnly: true },
-      };
+      return statusForMr(project, detail);
     },
     async getPullRequestTimeline(input): Promise<PullRequestTimeline> {
       const project = await repo(input.cwd);

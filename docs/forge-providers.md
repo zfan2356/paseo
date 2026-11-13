@@ -131,6 +131,35 @@ review aggregate, and merge conflicts are separate signals. Missing gate data
 stays pending, and conflict results apply only to their reported source/target
 commits. Lists and timelines are bounded to 1,000 records per read.
 
+## Session PR/MR links
+
+A session can link change requests from several repositories independently of its
+workspace branch. The workspace's current-branch PR/MR stays a separate surface.
+Session links persist with the agent; live forge status is a daemon cache.
+
+Removing a link also excludes that identity from automatic collection. Manual
+addition clears the exclusion. Turning off automatic addition affects future
+submissions and tool completions; enabling it never scans earlier conversation
+history. This prevents a removed link from reappearing during provider replay.
+
+Automatic collection accepts submitted `forge_change_request` attachments whose
+metadata matches the URL, and completed shell calls with exit code zero. The
+first supported commands are standalone `gh pr create`, `glab mr create`, and
+`gw mr create --json`. The command's repository (an explicit CLI repository
+argument, or the tool cwd's origin) must match the returned URL. Shell wrappers,
+compound commands, assistant prose, ordinary view commands, and ambiguous output
+are excluded. For `gw`, use `--json`: its top-level `iid` and `web_url` must agree;
+project identity comes from that URL. Plain text output is not collected.
+
+Linked status reads address the forge host, complete project path, and number.
+They never select a request using the checkout branch. Self-hosted URLs pass the
+same authenticated-host trust gate as workspace forge resolution. Only active
+subscriptions retain polling; identical identities share one poll across
+sessions. GitHub numbered targets participate in the account-wide batch budget
+described above. Errors retain the last successful snapshot and mark it stale.
+
+The plugin's read-only session view is documented in [Plugins](plugins.md#session-change-requests).
+
 ## App
 
 Each app forge splits into two modules so pure logic never imports the client

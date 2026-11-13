@@ -860,6 +860,9 @@ export class AgentManager {
   private readonly foregroundMutationTails = new Map<string, Promise<void>>();
   private readonly runs = new AgentRunState();
   private readonly subscribers = new Set<SubscriptionRecord>();
+  private readonly submittedPromptSubscribers = new Set<
+    (agentId: string, prompt: AgentPromptInput) => void
+  >();
   private readonly idFactory: () => string;
   private readonly registry?: AgentStorage;
   private readonly durableTimelineStore?: AgentTimelineStore;
@@ -1303,6 +1306,19 @@ export class AgentManager {
       Boolean(agent.activeForegroundTurnId) ||
       this.runs.hasRun(agentId)
     );
+  }
+
+  private notifySubmittedPrompt(agentId: string, prompt: AgentPromptInput): void {
+    for (const subscriber of this.submittedPromptSubscribers) subscriber(agentId, prompt);
+  }
+
+  subscribeSubmittedPrompts(
+    callback: (agentId: string, prompt: AgentPromptInput) => void,
+  ): () => void {
+    this.submittedPromptSubscribers.add(callback);
+    return () => {
+      this.submittedPromptSubscribers.delete(callback);
+    };
   }
 
   subscribe(callback: AgentSubscriber, options?: SubscribeOptions): () => void {
@@ -3048,6 +3064,7 @@ export class AgentManager {
       return false;
     }
     this.touchUpdatedAt(agent);
+    this.notifySubmittedPrompt(agent.id, prompt);
     if (options?.clientMessageId) {
       this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted");
       this.emitState(agent);
@@ -3313,6 +3330,7 @@ export class AgentManager {
               event.item.clientMessageId === options.clientMessageId,
           )
         : undefined;
+      this.notifySubmittedPrompt(agent.id, prompt);
       if (options?.clientMessageId) {
         this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted", {
           messageId: options.clientMessageId,
@@ -3636,6 +3654,7 @@ export class AgentManager {
     expectedTurnId: string,
     providerMessageId: string | undefined,
   ): Promise<void> {
+    this.notifySubmittedPrompt(agent.id, prompt);
     if (!clientMessageId) {
       return;
     }

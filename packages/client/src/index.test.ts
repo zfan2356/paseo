@@ -2191,3 +2191,112 @@ test("background stop rejects when the host does not advertise the operation", a
   ).rejects.toThrow("Update the host");
   await client.close();
 });
+
+const CHANGE_REQUEST_FEATURES = { ownedSubscriptions: true, agentChangeRequests: true };
+const LINKED_SNAPSHOT = { agentId: "agent-a", autoLink: true, items: [] };
+function answerChangeRequests(ws: FakeWebSocket, snapshot = LINKED_SNAPSHOT) {
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  expect(request.type).toBe("agent.changeRequests.list.request");
+  ws.message(
+    sessionMessage({
+      type: "agent.changeRequests.list.response",
+      payload: { requestId: request.requestId, snapshot, error: null },
+    }),
+  );
+}
+
+test("agent changeRequests is read-only, lists and disposes its owned subscription", async () => {
+  const { client, ws } = await connectClient(CHANGE_REQUEST_FEATURES);
+  const api = client.agents.ref("agent-a").changeRequests;
+  expect(Object.keys(api).sort()).toEqual(["list", "subscribe"]);
+  const listed = api.list();
+  answerChangeRequests(ws);
+  await expect(listed).resolves.toEqual(LINKED_SNAPSHOT);
+  const received: unknown[] = [];
+  const stop = api.subscribe((snapshot) => received.push(snapshot));
+  acknowledgeObservation(ws, "linked-first");
+  await vi.waitFor(() =>
+    expect(parseSentSessionMessage(ws.sent.at(-1)).type).toBe("agent.changeRequests.list.request"),
+  );
+  answerChangeRequests(ws);
+  await vi.waitFor(() => expect(received).toEqual([LINKED_SNAPSHOT]));
+  stop();
+  await vi.waitFor(() =>
+    expect(parseSentSessionMessage(ws.sent.at(-1)).type).toBe("subscription.release.request"),
+  );
+  ws.message(
+    sessionMessage({
+      type: "agent.changeRequests.changed",
+      payload: {
+        subscriptionId: "linked-first",
+        snapshot: { ...LINKED_SNAPSHOT, autoLink: false },
+      },
+    }),
+  );
+  expect(received).toHaveLength(1);
+  await client.close();
+});
+
+test("agent changeRequests restores its subscription and drops a list overtaken by a newer push", async () => {
+  const { client, ws } = await connectClient(CHANGE_REQUEST_FEATURES);
+  const received: unknown[] = [];
+  client.agents.ref("agent-a").changeRequests.subscribe((snapshot) => received.push(snapshot));
+  acknowledgeObservation(ws, "linked-first");
+  await vi.waitFor(() =>
+    expect(parseSentSessionMessage(ws.sent.at(-1)).type).toBe("agent.changeRequests.list.request"),
+  );
+  ws.message(
+    sessionMessage({
+      type: "agent.changeRequests.changed",
+      payload: {
+        subscriptionId: "linked-first",
+        snapshot: { ...LINKED_SNAPSHOT, autoLink: false },
+      },
+    }),
+  );
+  answerChangeRequests(ws);
+  await vi.waitFor(() => expect(received).toEqual([{ ...LINKED_SNAPSHOT, autoLink: false }]));
+  ws.readyState = 3;
+  ws.onclose?.({ code: 1006, reason: "Lost" });
+  const reconnecting = client.connect();
+  const next = FakeWebSocket.instances[1];
+  next.open();
+  next.message(
+    sessionMessage({
+      type: "status",
+      payload: {
+        status: "server_info",
+        serverId: "srv_sdk_test",
+        hostname: null,
+        version: null,
+        features: CHANGE_REQUEST_FEATURES,
+      },
+    }),
+  );
+  await reconnecting;
+  await vi.waitFor(() =>
+    expect(parseSentSessionMessage(next.sent.at(-1)).type).toBe(
+      "agent.changeRequests.subscribe.request",
+    ),
+  );
+  acknowledgeObservation(next, "linked-restored");
+  await vi.waitFor(() =>
+    expect(parseSentSessionMessage(next.sent.at(-1)).type).toBe(
+      "agent.changeRequests.list.request",
+    ),
+  );
+  answerChangeRequests(next);
+  await vi.waitFor(() =>
+    expect(received).toEqual([{ ...LINKED_SNAPSHOT, autoLink: false }, LINKED_SNAPSHOT]),
+  );
+  await client.close();
+});
+
+test("agent changeRequests fails with an update hint on older hosts", async () => {
+  const { client } = await connectClient();
+  await expect(client.agents.ref("a").changeRequests.list()).rejects.toThrow("Update the host");
+  expect(() => client.agents.ref("a").changeRequests.subscribe(() => {})).toThrow(
+    "Update the host",
+  );
+  await client.close();
+});

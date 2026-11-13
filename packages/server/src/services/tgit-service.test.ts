@@ -375,3 +375,30 @@ describe("TGit v3 adapter", () => {
     expect(fake.requests).toHaveLength(0);
   });
 });
+
+it("reads a TGit MR by explicit project while cwd points to another forge", async () => {
+  const h = setup();
+  h.setRemote("https://github.com/other/checkout.git");
+  const status = await h.service.getPullRequestStatus!({
+    cwd,
+    host: "git.woa.com",
+    projectPath: "example/repo",
+    number: 686,
+  });
+  expect(status).toMatchObject({
+    number: 686,
+    projectPath: "example/repo",
+    checksStatus: "success",
+    reviewDecision: "approved",
+  });
+  expect(h.requests.some(({ url }) => url.pathname.endsWith("/merge_requests"))).toBe(false);
+  expect(h.requests.every(({ url }) => url.hostname === "git.woa.com")).toBe(true);
+  await expect(
+    h.service.getPullRequestStatus!({
+      cwd,
+      host: "evil.test",
+      projectPath: "example/repo",
+      number: 686,
+    }),
+  ).rejects.toThrow("Unsupported TGit host");
+});

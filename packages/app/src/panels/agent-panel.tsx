@@ -1,3 +1,4 @@
+import { AgentChangeRequestsSection } from "@/agent-change-requests/section";
 import { PluginComposerExtensions } from "@/plugins/composer-extensions";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { Button } from "@/components/ui/button";
@@ -1366,6 +1367,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
 
   const dockContent = (
     <View style={styles.contentContainer}>
+      <AgentChangeRequestsSection serverId={serverId} agentId={agentId} draft={Boolean(draft)} />
       {streamContent}
 
       {showHistorySyncError ? (

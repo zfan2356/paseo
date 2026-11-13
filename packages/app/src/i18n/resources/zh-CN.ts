@@ -2,6 +2,31 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const zhCN: TranslationResources = {
+  agentChangeRequests: {
+    title: "关联 PR/MR",
+    autoLink: "自动加入",
+    loading: "加载中…",
+    empty: "尚未关联 PR/MR",
+    url: "PR/MR 链接",
+    hint: "粘贴完整链接。自动加入来源为已提交的附件和成功的创建命令。",
+    add: "添加",
+    remove: "移除",
+    pending: "等待状态",
+    stale: "已过期",
+    review: "审查",
+    merge: "可合并性",
+    refreshed: "刷新于",
+    availability: {
+      available: "可用",
+      pending: "加载中",
+      unsupported: "不支持此平台或主机，请检查 CLI 登录状态",
+      unauthenticated: "请登录此代码平台",
+      cli_missing: "请安装代码平台 CLI",
+      forbidden: "无访问权限",
+      not_found: "不存在或无权限",
+      error: "刷新失败",
+    },
+  },
   paneFind: {
     connectionFailure: "无法搜索此聊天。请检查主机连接后重试。",
     historyChangedFailure: "搜索期间聊天已更改。请重新搜索。",

@@ -1,3 +1,4 @@
+import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
 import {
   DiffStreamRouter,
   DiffSubscriptionError,
@@ -2726,6 +2727,8 @@ export class DaemonClient {
         if (query.type === "workspace.setup.subscribe.request")
           this.requireWorkspaceSetupObservation();
         if (query.type === "plugin.rpc.subscribe.request") this.requirePluginSubscriptions();
+        if (query.type === "agent.changeRequests.subscribe.request")
+          this.requireAgentChangeRequests();
         const requestId = this.createRequestId(options?.requestId);
         const request = SessionInboundMessageSchema.parse({ ...query, requestId });
         try {
@@ -3924,6 +3927,49 @@ export class DaemonClient {
       throw new Error(payload.error);
     }
     return payload;
+  }
+
+  supportsAgentChangeRequests(): boolean {
+    return this.lastServerInfoMessage?.features?.agentChangeRequests === true;
+  }
+
+  private requireAgentChangeRequests(): void {
+    // COMPAT(agentChangeRequests): added after v0.15.3, remove after 2027-05-13.
+    if (!this.supportsAgentChangeRequests())
+      throw new Error("Update the host to link session PRs/MRs.");
+  }
+
+  async listAgentChangeRequests(agentId: string): Promise<AgentChangeRequestsSnapshot> {
+    this.requireAgentChangeRequests();
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.changeRequests.list.response">({
+        message: { type: "agent.changeRequests.list.request", agentId },
+      });
+    if (payload.error || !payload.snapshot) throw new Error(payload.error ?? "Agent not found");
+    return payload.snapshot;
+  }
+
+  async updateAgentChangeRequests(
+    agentId: string,
+    options: { addUrl?: string; removeKey?: string; autoLink?: boolean },
+  ): Promise<AgentChangeRequestsSnapshot> {
+    this.requireAgentChangeRequests();
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.changeRequests.update.response">({
+        message: { type: "agent.changeRequests.update.request", agentId, ...options },
+      });
+    if (payload.error || !payload.snapshot) throw new Error(payload.error ?? "Agent not found");
+    return payload.snapshot;
+  }
+
+  observeAgentChangeRequests(
+    agentId: string,
+  ): OwnedSubscription<CorrelatedResponsePayload<"agent.changeRequests.subscribe.response">> {
+    this.requireAgentChangeRequests();
+    return this.observe("agent.changeRequests.subscribe.response", {
+      type: "agent.changeRequests.subscribe.request",
+      agentIds: [agentId],
+    });
   }
 
   async listAgentBackgroundWork(

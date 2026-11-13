@@ -1,3 +1,4 @@
+import { LinkedChangeRequestSchema } from "./agent-change-requests.js";
 import { AgentMessageSchema } from "./agent-message.js";
 import {
   HostsListRequestSchema,
@@ -2031,6 +2032,25 @@ export const ProviderSubagentListRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
+export const AgentChangeRequestsListRequestSchema = z.object({
+  type: z.literal("agent.changeRequests.list.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+});
+export const AgentChangeRequestsUpdateRequestSchema = z.object({
+  type: z.literal("agent.changeRequests.update.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  addUrl: z.string().optional(),
+  removeKey: z.string().optional(),
+  autoLink: z.boolean().optional(),
+});
+export const AgentChangeRequestsSubscribeRequestSchema = z.object({
+  type: z.literal("agent.changeRequests.subscribe.request"),
+  requestId: z.string(),
+  agentIds: z.array(z.string()),
+});
+
 export const AgentBackgroundWorkListRequestMessageSchema = z.object({
   type: z.literal("agent.background_work.list.request"),
   agentId: z.string(),
@@ -3472,6 +3492,9 @@ export const SubscriptionReleaseResponseSchema = z.object({
 });
 
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
+  AgentChangeRequestsListRequestSchema,
+  AgentChangeRequestsUpdateRequestSchema,
+  AgentChangeRequestsSubscribeRequestSchema,
   HostsListRequestSchema,
   HostsAddRequestSchema,
   HostsUpdateRequestSchema,
@@ -3902,6 +3925,7 @@ export const ServerInfoStatusPayloadSchema = z
         directorySync: z.boolean().optional(),
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         workspaceLabels: z.boolean().optional(),
+        agentChangeRequests: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
         // COMPAT(workspaceBaseBranch): added after v0.11.2, remove gate after 2027-10-14.
         workspaceBaseBranch: z.boolean().optional(),
@@ -7394,7 +7418,50 @@ export const AgentSkillsImportLegacySelectionResponseSchema = z.object({
   }),
 });
 
+export const AgentChangeRequestsSnapshotSchema = z.object({
+  agentId: z.string(),
+  autoLink: z.boolean(),
+  items: z.array(
+    z.object({
+      reference: LinkedChangeRequestSchema,
+      status: CheckoutPrStatusSchema.nullable(),
+      availability: z.string(),
+      refreshedAt: z.string().nullable(),
+      stale: z.boolean(),
+    }),
+  ),
+});
+export type AgentChangeRequestsSnapshot = z.infer<typeof AgentChangeRequestsSnapshotSchema>;
+export const AgentChangeRequestsListResponseSchema = z.object({
+  type: z.literal("agent.changeRequests.list.response"),
+  payload: z.object({
+    requestId: z.string(),
+    snapshot: AgentChangeRequestsSnapshotSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+export const AgentChangeRequestsUpdateResponseSchema = z.object({
+  type: z.literal("agent.changeRequests.update.response"),
+  payload: z.object({
+    requestId: z.string(),
+    snapshot: AgentChangeRequestsSnapshotSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+export const AgentChangeRequestsSubscribeResponseSchema = z.object({
+  type: z.literal("agent.changeRequests.subscribe.response"),
+  payload: z.object({ requestId: z.string(), subscriptionId: z.string() }),
+});
+export const AgentChangeRequestsChangedSchema = z.object({
+  type: z.literal("agent.changeRequests.changed"),
+  payload: z.object({ subscriptionId: z.string(), snapshot: AgentChangeRequestsSnapshotSchema }),
+});
+
 export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
+  AgentChangeRequestsListResponseSchema,
+  AgentChangeRequestsUpdateResponseSchema,
+  AgentChangeRequestsSubscribeResponseSchema,
+  AgentChangeRequestsChangedSchema,
   HostsListResponseSchema,
   HostsChangedSchema,
   HostsAddResponseSchema,
