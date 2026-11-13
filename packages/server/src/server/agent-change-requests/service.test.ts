@@ -249,3 +249,50 @@ it.each([
   );
   stop();
 });
+
+it("marks retained status stale after the final subscription releases", async () => {
+  await service.update("a", { addUrl: url });
+  const stop = await service.subscribe("a", () => {});
+  await vi.waitFor(async () => expect((await service.list("a")).items[0].stale).toBe(false));
+  stop();
+  expect((await service.list("a")).items[0]).toMatchObject({
+    stale: true,
+    status: { title: "Title" },
+  });
+  let finish!: (value: typeof status) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const resume = await service.subscribe("a", () => {});
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  expect((await service.list("a")).items[0].stale).toBe(true);
+  finish(status);
+  await vi.waitFor(async () => expect((await service.list("a")).items[0].stale).toBe(false));
+  resume();
+});
+
+it.each([
+  ["https://gitlab.com", "Group/Sub/Repo", "-/merge_requests"],
+  ["https://gitea.com", "Owner/Repo", "pulls"],
+  ["https://codeberg.org", "Owner/Repo", "pulls"],
+])(
+  "accepts canonical URL casing for %s without changing MR identity",
+  async (host, project, route) => {
+    read.mockResolvedValueOnce({
+      ...status,
+      number: 7,
+      url: `${host}/${project}/${route}/7`,
+      projectPath: project,
+    });
+    await service.update("a", { addUrl: `${host}/${project.toUpperCase()}/${route}/7` });
+    const stop = await service.subscribe("a", () => {});
+    await vi.waitFor(async () =>
+      expect((await service.list("a")).items[0].availability).toBe("available"),
+    );
+    expect((await service.list("a")).items[0].reference.projectPath).toBe(project.toLowerCase());
+    stop();
+  },
+);

@@ -24,10 +24,10 @@ describe("session change request identities", () => {
     );
     expect(
       parseChangeRequestUrl("https://gitlab.com/Group/sub/repo/-/merge_requests/12")?.projectPath,
-    ).toBe("Group/sub/repo");
+    ).toBe("group/sub/repo");
     expect(
       parseChangeRequestUrl("https://gitlab.com/Group/sub/repo/-/merge_requests/12")?.key,
-    ).not.toBe(parseChangeRequestUrl("https://gitlab.com/group/sub/repo/-/merge_requests/12")?.key);
+    ).toBe(parseChangeRequestUrl("https://gitlab.com/group/sub/repo/-/merge_requests/12")?.key);
   });
   it.each([
     "http://github.com/a/b/pull/1",

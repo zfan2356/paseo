@@ -1404,11 +1404,9 @@ export function createGiteaService(options: CreateGiteaServiceOptions = {}): For
     if (!teaPath) {
       throw new TeaCliMissingError();
     }
+    if (runOptions.login) args = [args[0], "--login", runOptions.login, ...args.slice(1)];
     try {
-      const result = await runner(
-        runOptions.login ? [...args, "--login", runOptions.login] : args,
-        runOptions,
-      );
+      const result = await runner(args, runOptions);
       return result.stdout.trim();
     } catch (error) {
       throw teaCliRunner.normalizeError(error, { args: redactTeaArgs(args), cwd: runOptions.cwd });

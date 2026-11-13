@@ -727,3 +727,22 @@ test("preserves linked change requests and opt-out keys across live snapshots an
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test("a failed link mutation does not discard the runtime snapshot queued behind it", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-linked-write-failure-"));
+  try {
+    const storage = new AgentStorage(dir, createTestLogger());
+    const agent = createManagedAgent({ id: "write-after-failure" });
+    await storage.applySnapshot(agent);
+    const record = (await storage.get(agent.id))!;
+    const failed = storage.mutateChangeRequests(agent.id, () => {
+      throw new Error("Link limit");
+    });
+    const next = storage.upsert({ ...record, title: "Later snapshot" });
+    await expect(failed).rejects.toThrow("Link limit");
+    await next;
+    expect((await storage.get(agent.id))?.title).toBe("Later snapshot");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

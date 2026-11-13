@@ -1026,12 +1026,12 @@ function createAgentHandleFactory(
             },
             update: (message) => {
               if (
-                message.type !== "agent.changeRequests.changed" ||
+                message.type !== "agent.change_requests.update" ||
                 message.payload.snapshot.agentId !== id
               )
                 return;
               sequence++;
-              if (active) listener(message.payload.snapshot);
+              if (active && !scopeSignal.aborted) listener(message.payload.snapshot);
             },
             error: onError,
           });

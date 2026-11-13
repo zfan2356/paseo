@@ -3246,11 +3246,12 @@ describe("detectGiteaFamilySoftware", () => {
 it("routes numbered Gitea status and CI through the target host's existing tea login", async () => {
   const { service, calls } = makeService(
     (args) => {
+      const endpoint = args.find((arg) => arg.startsWith("repos/")) ?? "";
       if (args[0] === "login")
         return ok(
           JSON.stringify([{ name: "target-login", url: "https://gitea.com", token: "test-token" }]),
         );
-      if (args[1] === "repos/target/repo/pulls/5")
+      if (endpoint === "repos/target/repo/pulls/5")
         return ok(
           JSON.stringify({
             number: 5,
@@ -3261,9 +3262,9 @@ it("routes numbered Gitea status and CI through the target host's existing tea l
             base: { ref: "main" },
           }),
         );
-      if (args[1].includes("/commits/"))
+      if (endpoint.includes("/commits/"))
         return ok(JSON.stringify({ state: "success", total_count: 0, statuses: [] }));
-      if (args[1].includes("/actions/tasks"))
+      if (endpoint.includes("/actions/tasks"))
         return ok(JSON.stringify({ workflow_runs: [], total_count: 0 }));
       throw new Error(`Unexpected invocation ${args.join(" ")}`);
     },
@@ -3282,7 +3283,9 @@ it("routes numbered Gitea status and CI through the target host's existing tea l
       .filter((args) => args[0] === "api")
       .every(
         (args) =>
-          args[1].startsWith("repos/target/repo/") && argValue(args, "--login") === "target-login",
+          args[1] === "--login" &&
+          args[2] === "target-login" &&
+          args[3].startsWith("repos/target/repo/"),
       ),
   ).toBe(true);
 });

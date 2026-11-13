@@ -2727,7 +2727,7 @@ export class DaemonClient {
         if (query.type === "workspace.setup.subscribe.request")
           this.requireWorkspaceSetupObservation();
         if (query.type === "plugin.rpc.subscribe.request") this.requirePluginSubscriptions();
-        if (query.type === "agent.changeRequests.subscribe.request")
+        if (query.type === "agent.change_requests.subscribe.request")
           this.requireAgentChangeRequests();
         const requestId = this.createRequestId(options?.requestId);
         const request = SessionInboundMessageSchema.parse({ ...query, requestId });
@@ -3942,8 +3942,8 @@ export class DaemonClient {
   async listAgentChangeRequests(agentId: string): Promise<AgentChangeRequestsSnapshot> {
     this.requireAgentChangeRequests();
     const payload =
-      await this.sendNamespacedCorrelatedSessionRequest<"agent.changeRequests.list.response">({
-        message: { type: "agent.changeRequests.list.request", agentId },
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.change_requests.list.response">({
+        message: { type: "agent.change_requests.list.request", agentId },
       });
     if (payload.error || !payload.snapshot) throw new Error(payload.error ?? "Agent not found");
     return payload.snapshot;
@@ -3955,8 +3955,8 @@ export class DaemonClient {
   ): Promise<AgentChangeRequestsSnapshot> {
     this.requireAgentChangeRequests();
     const payload =
-      await this.sendNamespacedCorrelatedSessionRequest<"agent.changeRequests.update.response">({
-        message: { type: "agent.changeRequests.update.request", agentId, ...options },
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.change_requests.update.response">({
+        message: { type: "agent.change_requests.update.request", agentId, ...options },
       });
     if (payload.error || !payload.snapshot) throw new Error(payload.error ?? "Agent not found");
     return payload.snapshot;
@@ -3964,10 +3964,10 @@ export class DaemonClient {
 
   observeAgentChangeRequests(
     agentId: string,
-  ): OwnedSubscription<CorrelatedResponsePayload<"agent.changeRequests.subscribe.response">> {
+  ): OwnedSubscription<CorrelatedResponsePayload<"agent.change_requests.subscribe.response">> {
     this.requireAgentChangeRequests();
-    return this.observe("agent.changeRequests.subscribe.response", {
-      type: "agent.changeRequests.subscribe.request",
+    return this.observe("agent.change_requests.subscribe.response", {
+      type: "agent.change_requests.subscribe.request",
       agentIds: [agentId],
     });
   }

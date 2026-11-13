@@ -1,3 +1,4 @@
+import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
 import type { AgentChangeRequests } from "./agent-change-requests/service.js";
 import { DiffSession } from "./diff/index.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
@@ -2743,44 +2744,55 @@ export class Session {
     const service = this.agentChangeRequests;
     if (!service) return undefined;
     switch (msg.type) {
-      case "agent.changeRequests.list.request":
-      case "agent.changeRequests.update.request":
+      case "agent.change_requests.list.request":
+      case "agent.change_requests.update.request":
         return (async () => {
           const snapshot =
-            msg.type === "agent.changeRequests.list.request"
+            msg.type === "agent.change_requests.list.request"
               ? await service.list(msg.agentId)
               : await service.update(msg.agentId, msg);
           this.emit({
             type:
-              msg.type === "agent.changeRequests.list.request"
-                ? "agent.changeRequests.list.response"
-                : "agent.changeRequests.update.response",
+              msg.type === "agent.change_requests.list.request"
+                ? "agent.change_requests.list.response"
+                : "agent.change_requests.update.response",
             payload: { requestId: msg.requestId, snapshot, error: null },
           });
         })();
-      case "agent.changeRequests.subscribe.request":
+      case "agent.change_requests.subscribe.request":
         return (async () => {
           let active = true;
+          let ready = false;
+          const initial = new Map<string, AgentChangeRequestsSnapshot>();
           const stops: (() => void)[] = [];
           const owner = this.delivery.begin("agent-change-requests", undefined, () => {
             active = false;
             for (const stop of stops) stop();
           });
           try {
-            this.emit({
-              type: "agent.changeRequests.subscribe.response",
-              payload: { requestId: msg.requestId, subscriptionId: owner.responseId },
-            });
+            const emitSnapshot = (snapshot: AgentChangeRequestsSnapshot) => {
+              if (!active) return;
+              if (!ready) {
+                initial.set(snapshot.agentId, snapshot);
+                return;
+              }
+              owner.emit({
+                type: "agent.change_requests.update",
+                payload: { subscriptionId: owner.responseId, snapshot },
+              });
+            };
             for (const agentId of new Set(msg.agentIds)) {
-              const stop = await service.subscribe(agentId, (snapshot) =>
-                owner.emit({
-                  type: "agent.changeRequests.changed",
-                  payload: { subscriptionId: owner.responseId, snapshot },
-                }),
-              );
+              const stop = await service.subscribe(agentId, emitSnapshot);
               if (active) stops.push(stop);
               else stop();
             }
+            if (!active) return;
+            this.emit({
+              type: "agent.change_requests.subscribe.response",
+              payload: { requestId: msg.requestId, subscriptionId: owner.responseId },
+            });
+            ready = true;
+            for (const snapshot of initial.values()) emitSnapshot(snapshot);
           } catch (error) {
             await owner.release();
             throw error;
@@ -2795,7 +2807,7 @@ export class Session {
     msg: SessionInboundMessage,
     source?: object,
   ): Promise<void> | undefined {
-    if (msg.type.startsWith("agent.changeRequests."))
+    if (msg.type.startsWith("agent.change_requests."))
       return this.dispatchAgentChangeRequestsMessage(msg);
     if (msg.type === "workspace.setup.subscribe.request") return this.subscribeWorkspaceSetup(msg);
     if (msg.type === "browser.host.register.request") return this.registerBrowserHost(msg);

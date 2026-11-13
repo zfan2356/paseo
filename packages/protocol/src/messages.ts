@@ -2033,12 +2033,12 @@ export const ProviderSubagentListRequestMessageSchema = z.object({
 });
 
 export const AgentChangeRequestsListRequestSchema = z.object({
-  type: z.literal("agent.changeRequests.list.request"),
+  type: z.literal("agent.change_requests.list.request"),
   requestId: z.string(),
   agentId: z.string(),
 });
 export const AgentChangeRequestsUpdateRequestSchema = z.object({
-  type: z.literal("agent.changeRequests.update.request"),
+  type: z.literal("agent.change_requests.update.request"),
   requestId: z.string(),
   agentId: z.string(),
   addUrl: z.string().optional(),
@@ -2046,7 +2046,7 @@ export const AgentChangeRequestsUpdateRequestSchema = z.object({
   autoLink: z.boolean().optional(),
 });
 export const AgentChangeRequestsSubscribeRequestSchema = z.object({
-  type: z.literal("agent.changeRequests.subscribe.request"),
+  type: z.literal("agent.change_requests.subscribe.request"),
   requestId: z.string(),
   agentIds: z.array(z.string()),
 });
@@ -3925,6 +3925,7 @@ export const ServerInfoStatusPayloadSchema = z
         directorySync: z.boolean().optional(),
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         workspaceLabels: z.boolean().optional(),
+        // COMPAT(agentChangeRequests): added after v0.15.3, remove after 2027-05-13.
         agentChangeRequests: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
         // COMPAT(workspaceBaseBranch): added after v0.11.2, remove gate after 2027-10-14.
@@ -7433,7 +7434,7 @@ export const AgentChangeRequestsSnapshotSchema = z.object({
 });
 export type AgentChangeRequestsSnapshot = z.infer<typeof AgentChangeRequestsSnapshotSchema>;
 export const AgentChangeRequestsListResponseSchema = z.object({
-  type: z.literal("agent.changeRequests.list.response"),
+  type: z.literal("agent.change_requests.list.response"),
   payload: z.object({
     requestId: z.string(),
     snapshot: AgentChangeRequestsSnapshotSchema.nullable(),
@@ -7441,7 +7442,7 @@ export const AgentChangeRequestsListResponseSchema = z.object({
   }),
 });
 export const AgentChangeRequestsUpdateResponseSchema = z.object({
-  type: z.literal("agent.changeRequests.update.response"),
+  type: z.literal("agent.change_requests.update.response"),
   payload: z.object({
     requestId: z.string(),
     snapshot: AgentChangeRequestsSnapshotSchema.nullable(),
@@ -7449,11 +7450,11 @@ export const AgentChangeRequestsUpdateResponseSchema = z.object({
   }),
 });
 export const AgentChangeRequestsSubscribeResponseSchema = z.object({
-  type: z.literal("agent.changeRequests.subscribe.response"),
+  type: z.literal("agent.change_requests.subscribe.response"),
   payload: z.object({ requestId: z.string(), subscriptionId: z.string() }),
 });
 export const AgentChangeRequestsChangedSchema = z.object({
-  type: z.literal("agent.changeRequests.changed"),
+  type: z.literal("agent.change_requests.update"),
   payload: z.object({ subscriptionId: z.string(), snapshot: AgentChangeRequestsSnapshotSchema }),
 });
 

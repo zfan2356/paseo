@@ -7,11 +7,28 @@ export type ChangeRequestIdentity = Pick<
   LinkedChangeRequest,
   "key" | "forge" | "host" | "projectPath" | "number" | "url"
 >;
-const ROUTES: Record<string, { pattern: RegExp; route: string; pair?: boolean }> = {
-  github: { pattern: /^\/(.+)\/pull\/([1-9]\d*)\/?$/, route: "pull", pair: true },
-  gitlab: { pattern: /^\/(.+)\/-\/merge_requests\/([1-9]\d*)\/?$/, route: "-/merge_requests" },
+const ROUTES: Record<
+  string,
+  { pattern: RegExp; route: string; pair?: boolean; caseInsensitive?: boolean }
+> = {
+  github: {
+    pattern: /^\/(.+)\/pull\/([1-9]\d*)\/?$/,
+    route: "pull",
+    pair: true,
+    caseInsensitive: true,
+  },
+  gitlab: {
+    pattern: /^\/(.+)\/-\/merge_requests\/([1-9]\d*)\/?$/,
+    route: "-/merge_requests",
+    caseInsensitive: true,
+  },
   tgit: { pattern: /^\/(.+?)\/(?:-\/)?merge_requests\/([1-9]\d*)\/?$/, route: "merge_requests" },
-  gitea: { pattern: /^\/(.+)\/pulls\/([1-9]\d*)\/?$/, route: "pulls", pair: true },
+  gitea: {
+    pattern: /^\/(.+)\/pulls\/([1-9]\d*)\/?$/,
+    route: "pulls",
+    pair: true,
+    caseInsensitive: true,
+  },
 };
 ROUTES.forgejo = ROUTES.gitea;
 ROUTES.codeberg = ROUTES.gitea;
@@ -30,6 +47,10 @@ function safeUrl(value: string): URL | null {
   }
 }
 
+export function normalizeChangeRequestProjectPath(forge: string, path: string): string {
+  return ROUTES[forge]?.caseInsensitive ? path.toLowerCase() : path;
+}
+
 export function parseChangeRequestUrl(value: string, forge?: string): ChangeRequestIdentity | null {
   const url = safeUrl(value);
   if (!url) return null;
@@ -46,7 +67,7 @@ export function parseChangeRequestUrl(value: string, forge?: string): ChangeRequ
   )
     return null;
   if (grammar.pair && segments.length !== 2) return null;
-  const projectPath = forge === "github" ? match[1].toLowerCase() : match[1];
+  const projectPath = normalizeChangeRequestProjectPath(forge, match[1]);
   const number = Number(match[2]);
   if (!Number.isSafeInteger(number)) return null;
   return {
@@ -225,7 +246,7 @@ export function createdChangeRequest(
   if (!target) return null;
   const candidate = createdIdentity(detail.output, forge);
   if (!candidate) return null;
-  const project = forge === "github" ? target.path.toLowerCase() : target.path;
+  const project = normalizeChangeRequestProjectPath(forge, target.path);
   return candidate.host === target.host.toLowerCase() && candidate.projectPath === project
     ? candidate
     : null;

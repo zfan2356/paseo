@@ -2196,10 +2196,10 @@ const CHANGE_REQUEST_FEATURES = { ownedSubscriptions: true, agentChangeRequests:
 const LINKED_SNAPSHOT = { agentId: "agent-a", autoLink: true, items: [] };
 function answerChangeRequests(ws: FakeWebSocket, snapshot = LINKED_SNAPSHOT) {
   const request = parseSentSessionMessage(ws.sent.at(-1));
-  expect(request.type).toBe("agent.changeRequests.list.request");
+  expect(request.type).toBe("agent.change_requests.list.request");
   ws.message(
     sessionMessage({
-      type: "agent.changeRequests.list.response",
+      type: "agent.change_requests.list.response",
       payload: { requestId: request.requestId, snapshot, error: null },
     }),
   );
@@ -2216,7 +2216,7 @@ test("agent changeRequests is read-only, lists and disposes its owned subscripti
   const stop = api.subscribe((snapshot) => received.push(snapshot));
   acknowledgeObservation(ws, "linked-first");
   await vi.waitFor(() =>
-    expect(parseSentSessionMessage(ws.sent.at(-1)).type).toBe("agent.changeRequests.list.request"),
+    expect(parseSentSessionMessage(ws.sent.at(-1)).type).toBe("agent.change_requests.list.request"),
   );
   answerChangeRequests(ws);
   await vi.waitFor(() => expect(received).toEqual([LINKED_SNAPSHOT]));
@@ -2226,7 +2226,7 @@ test("agent changeRequests is read-only, lists and disposes its owned subscripti
   );
   ws.message(
     sessionMessage({
-      type: "agent.changeRequests.changed",
+      type: "agent.change_requests.update",
       payload: {
         subscriptionId: "linked-first",
         snapshot: { ...LINKED_SNAPSHOT, autoLink: false },
@@ -2243,11 +2243,11 @@ test("agent changeRequests restores its subscription and drops a list overtaken 
   client.agents.ref("agent-a").changeRequests.subscribe((snapshot) => received.push(snapshot));
   acknowledgeObservation(ws, "linked-first");
   await vi.waitFor(() =>
-    expect(parseSentSessionMessage(ws.sent.at(-1)).type).toBe("agent.changeRequests.list.request"),
+    expect(parseSentSessionMessage(ws.sent.at(-1)).type).toBe("agent.change_requests.list.request"),
   );
   ws.message(
     sessionMessage({
-      type: "agent.changeRequests.changed",
+      type: "agent.change_requests.update",
       payload: {
         subscriptionId: "linked-first",
         snapshot: { ...LINKED_SNAPSHOT, autoLink: false },
@@ -2276,13 +2276,13 @@ test("agent changeRequests restores its subscription and drops a list overtaken 
   await reconnecting;
   await vi.waitFor(() =>
     expect(parseSentSessionMessage(next.sent.at(-1)).type).toBe(
-      "agent.changeRequests.subscribe.request",
+      "agent.change_requests.subscribe.request",
     ),
   );
   acknowledgeObservation(next, "linked-restored");
   await vi.waitFor(() =>
     expect(parseSentSessionMessage(next.sent.at(-1)).type).toBe(
-      "agent.changeRequests.list.request",
+      "agent.change_requests.list.request",
     ),
   );
   answerChangeRequests(next);
@@ -2331,14 +2331,14 @@ test("agent changeRequests suppresses an in-flight list after plugin API disposa
   acknowledgeObservation(socket, "borrowed");
   await vi.waitFor(() =>
     expect(parseSentSessionMessage(socket.sent.at(-1)).type).toBe(
-      "agent.changeRequests.list.request",
+      "agent.change_requests.list.request",
     ),
   );
   const request = parseSentSessionMessage(socket.sent.at(-1));
   await api.dispose();
   socket.message(
     sessionMessage({
-      type: "agent.changeRequests.list.response",
+      type: "agent.change_requests.list.response",
       payload: { requestId: request.requestId, snapshot: LINKED_SNAPSHOT, error: null },
     }),
   );
@@ -2346,4 +2346,46 @@ test("agent changeRequests suppresses an in-flight list after plugin API disposa
   await Promise.resolve();
   expect(receive).not.toHaveBeenCalled();
   await daemon.close();
+});
+
+test("agent changeRequests ignores a push still in delivery after API disposal starts", async () => {
+  const daemon = new DaemonClient({
+    url: "ws://daemon.test",
+    clientId: "late-push",
+    webSocketFactory: (url) => new FakeWebSocket(url),
+    reconnect: { enabled: false },
+  });
+  type Observation = ReturnType<DaemonClient["observeAgentChangeRequests"]>;
+  let observer: Parameters<Observation["subscribe"]>[0] | undefined;
+  let released!: () => void;
+  const release = new Promise<void>((resolve) => {
+    released = resolve;
+  });
+  const spy = vi.spyOn(daemon, "observeAgentChangeRequests").mockReturnValue({
+    subscriptionId: "held",
+    ready: Promise.resolve({ requestId: "ready", subscriptionId: "held" }),
+    subscribe: (next) => {
+      observer = next;
+      return () => {};
+    },
+    release: () => release,
+  });
+  const api = createPaseoApi(daemon);
+  try {
+    const listener = vi.fn();
+    api.agents.ref("agent-a").changeRequests.subscribe(listener);
+    const disposed = api.dispose();
+    observer!.update({
+      type: "agent.change_requests.update",
+      payload: { subscriptionId: "held", snapshot: LINKED_SNAPSHOT },
+    });
+    expect(listener).not.toHaveBeenCalled();
+    released();
+    await disposed;
+  } finally {
+    released();
+    await api.dispose();
+    spy.mockRestore();
+    await daemon.close();
+  }
 });

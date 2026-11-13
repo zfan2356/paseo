@@ -16,6 +16,7 @@ import {
   createdChangeRequest,
   isChangeRequestCreateCommand,
   parseChangeRequestUrl,
+  normalizeChangeRequestProjectPath,
   type ChangeRequestIdentity,
 } from "./identity.js";
 
@@ -152,7 +153,7 @@ export class AgentChangeRequests {
         identity.number !== block.number ||
         (block.projectPath &&
           identity.projectPath !==
-            (identity.forge === "github" ? block.projectPath.toLowerCase() : block.projectPath))
+            normalizeChangeRequestProjectPath(identity.forge, block.projectPath))
       )
         continue;
       await this.add(agentId, identity, "attachment");
@@ -174,7 +175,10 @@ export class AgentChangeRequests {
         return settings;
       const items = settings.linkedChangeRequests ?? [];
       if (items.some((item) => item.key === identity.key)) return settings;
-      if (items.length >= 100) throw new Error("A session can link at most 100 PRs/MRs");
+      if (items.length >= 100) {
+        if (source !== "manual") return settings;
+        throw new Error("A session can link at most 100 PRs/MRs");
+      }
       return {
         ...settings,
         linkedChangeRequests: [
@@ -290,6 +294,8 @@ export class AgentChangeRequests {
       held.users.delete(notify);
       if (held.users.size) return;
       held.active = false;
+      const cached = this.cache.get(reference.key);
+      if (cached) this.cache.set(reference.key, { ...cached, stale: true });
       if (held.timer) clearTimeout(held.timer);
       held.release?.();
       this.polls.delete(reference.key);

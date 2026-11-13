@@ -156,6 +156,13 @@ The JSON must include `web_url`. Older `gw` builds pass the API payload through
 without filling that field; upgrade `gw` if the API omits it, or add the link
 manually. Paseo never constructs a missing evidence URL from the command.
 
+Claude Code's native Bash tool has no numeric exit code on ordinary success.
+Paseo accepts its structured SDK result only for a finished, non-error Bash
+call; interrupted, backgrounded, timed-out, and specially interpreted nonzero
+results are excluded. Generic completed tools and unstructured output do not
+establish success. A fork's default upstream target can differ from the tool
+cwd's origin; pass an explicit repository argument or add that link manually.
+
 Linked status reads address the forge host, complete project path, and number.
 They never select a request using the checkout branch. Self-hosted URLs pass the
 same authenticated-host trust gate as workspace forge resolution. Only active

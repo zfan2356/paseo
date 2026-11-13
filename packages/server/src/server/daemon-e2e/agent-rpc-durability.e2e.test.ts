@@ -266,6 +266,9 @@ test("session MR RPCs persist independent repository links and own their subscri
     client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
     await client.connect();
     expect(client.supportsAgentChangeRequests()).toBe(true);
+    const missing = client.observeAgentChangeRequests("missing-agent");
+    await expect(missing.ready).rejects.toThrow("Agent not found");
+    await missing.release();
     const agentId = fixture.healthyAgentId;
     expect((await client.listAgentChangeRequests(agentId)).items).toEqual([]);
     const observed: unknown[] = [];
@@ -273,7 +276,7 @@ test("session MR RPCs persist independent repository links and own their subscri
     observation.subscribe({
       snapshot: () => {},
       update: (message) => {
-        if (message.type === "agent.changeRequests.changed")
+        if (message.type === "agent.change_requests.update")
           observed.push(message.payload.snapshot);
       },
     });
