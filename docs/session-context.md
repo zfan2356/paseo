@@ -194,7 +194,7 @@ PR #10 的 `uniqueWorkspaceAgents()` 确实在同 workspace 第二个候选出�
 6. 旧 app 连新 daemon：保留旧 workspace/agent wire 和生命周期接口，不移除/收窄字段，不向未订阅旧端推未知新事件。旧 app 的 workspace 显示仍是旧语义；新 app 的会话项目独立，不能靠重写老 FK 来模拟。二进制降级忽略但保留新侧文件，再升级恢复；新端删除会话后清理其侧文件，旧端删除造成的孤儿只能在核实 agent 真正不存在后清理，不复活会话。
 7. 新 app 连旧 daemon：统一导航所需的新上下文/目录能力在一个 host 边界检测，提示更新以使用会话目录树；该 host 的原聊天、明确 cwd 的文件/Git/终端入口仍可进入，但不拿 cwd 拼出一份声称完整的多目录关联。混合版本按 host 给出明确能力状态，不加一个面向所有用户的旧导航模式。MR 摘要、远端 diff、远端活动仍各自用独立能力 gate；缺详情能力就外链/提示更新，不拿 checkout 内容替代。
 
-新增 daemon capability `sessionContext`（名称实施时统一），以 dotted `agent.context.*.request/.response` 和明确观察契约提供上下文管理；MR 状态沿用 `agentChangeRequests`，远端 diff/详情另立能力。新增 wire 字段 optional、纯结构，不新增 transform/catch/preprocess。磁盘初始化、旧 app parsing 与功能 gate 分别验证；不是加一个 feature flag 就完成兼容。
+daemon capability `sessionContext`，以 dotted `agent.context.*.request/.response` 和明确观察契约提供上下文管理；MR 状态沿用 `agentChangeRequests`，远端 diff/详情另立能力。新增 wire 字段 optional、纯结构，不新增 transform/catch/preprocess。磁盘初始化、旧 app parsing 与功能 gate 分别验证；不是加一个 feature flag 就完成兼容。
 
 按路径的**操作**必须保留：文件、Git、终端、脚本、worktree 清理都需要明确真实目标。按路径的**全局模式**删除：同一树已经同时表达会话关联和目录事实，全局开关会使行的意义随设置变化，还让跨仓会话重新退回启动 cwd。具体替代入口是侧栏目录子项及“目录与终端”，不是取消用户直接使用目录的能力。原全局开关已确认删除；任何后续目录资源偏好只能定义为“显式目录资源入口的显示偏好”，不要让会话行变回 checkout 行，也不要自动回落。
 

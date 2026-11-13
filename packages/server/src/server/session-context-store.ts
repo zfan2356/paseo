@@ -49,7 +49,7 @@ export class SessionContextStore {
     if (existing) return existing;
     const workspace = agent.workspaceId ? await this.deps.getWorkspace(agent.workspaceId) : null;
     const migrate = await this.deps.isVisibleRoot(agent);
-    // COMPAT(sessionContext): added in v0.13.0; remove legacy seeding after 2027-05-13.
+    // COMPAT(sessionContext): added after v0.15.3; remove legacy seeding after 2027-05-13.
     // File existence is the import marker, saved with the values in one atomic write.
     const context: SessionContext = {
       agentId,

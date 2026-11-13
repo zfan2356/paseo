@@ -28,6 +28,21 @@ const contributionSchema: z.ZodType<PluginThemeContribution> = z.strictObject({
   id: z.string(),
   name: z.union([z.string().trim().min(1).max(60), z.custom<PluginMessage>(isPluginMessage)]),
   appearance: z.enum(["light", "dark"]),
+  overrides: z
+    .strictObject({
+      surface3: hexColorSchema.optional(),
+      surface4: hexColorSchema.optional(),
+      surfaceDiffEmpty: hexColorSchema.optional(),
+      surfaceSidebar: hexColorSchema.optional(),
+      foregroundExtraMuted: hexColorSchema.optional(),
+      borderAccent: hexColorSchema.optional(),
+      accentBright: hexColorSchema.optional(),
+      accentForeground: hexColorSchema.optional(),
+      destructive: hexColorSchema.optional(),
+      terminalBlack: hexColorSchema.optional(),
+      terminalBrightBlack: hexColorSchema.optional(),
+    })
+    .optional(),
   colors: z.strictObject({
     background: hexColorSchema,
     foreground: hexColorSchema,
@@ -82,6 +97,7 @@ function buildDarkPluginTheme(contribution: PluginThemeContribution): Theme {
       terminalBlack: colors.control,
       terminalBrightBlack: colors.ring,
       ring: colors.ring,
+      ...contribution.overrides,
     }),
   );
 }
@@ -112,6 +128,7 @@ function buildLightPluginTheme(contribution: PluginThemeContribution): Theme {
       terminalBlack: colors.foreground,
       terminalBrightBlack: colors.ring,
       ring: colors.ring,
+      ...contribution.overrides,
     }),
   );
 }

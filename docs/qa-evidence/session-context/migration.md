@@ -1,6 +1,6 @@
 # Session context migration rehearsal
 
-Snapshot: 2026-11-13T14:12:05.377Z. Code: WORK-366 implementation, first reviewed slice `81a99aba9`. This rehearsal reads migration fields from the local production home and runs `SessionContextStore` against an isolated task-owned home. It starts no daemon and does not write production files.
+Snapshot: 2026-11-13T14:12:05.377Z. Code: WORK-366 SessionContextStore; the final integration includes target main `e3aeab4c4`. This rehearsal reads migration fields from the local production home and runs `SessionContextStore` against an isolated task-owned home. It starts no daemon and does not write production files.
 
 The private snapshot contains only agent IDs, cwd, workspace membership, archive/internal flags, parent labels, workspace pin/label values and project IDs. Credentials, transcripts, prompts and titles were not copied. The report contains aggregate counts and opaque project IDs. Capture was a live read of files, not a quiesced filesystem snapshot.
 
