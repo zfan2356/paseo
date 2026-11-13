@@ -98,29 +98,22 @@ export class WorkspaceLabelCatalogStore {
       workspaces: ReadonlyMap<string, PersistedWorkspaceRecord>,
       contexts: readonly SessionContext[],
     ) => WorkspaceLabelMutation<TResult>,
+    contextAgentId?: string,
   ): Promise<TResult> {
     await this.initialize();
     if (this.blocked) throw new WorkspaceLabelStorageUncertainError();
 
     const operation = async () => {
-      const contexts = (await this.contexts?.listStoredUnlocked()) ?? [];
+      let contexts: SessionContext[] = [];
+      if (this.contexts && contextAgentId)
+        contexts = [await this.contexts.getUnlocked(contextAgentId)];
       let mutation!: WorkspaceLabelMutation<TResult>;
       let transaction: WorkspaceLabelTransaction | null = null;
       const result = await this.workspaces
         .commitWorkspaceLabelMutation({
           stage: (workspaces) => {
             mutation = planner(this.labels, workspaces, contexts);
-            if (mutation.labelRewrite && this.contexts)
-              mutation.contextUpdates = this.contexts.rewriteLabels(
-                contexts,
-                mutation.labelRewrite.from,
-                mutation.labelRewrite.to,
-              );
             transaction = transactionFor(this.labels, mutation, workspaces);
-            if (mutation.contextUpdates?.length)
-              transaction.beforeContexts = contexts.filter((context) =>
-                mutation.contextUpdates?.some((update) => update.agentId === context.agentId),
-              );
             return {
               updates: mutation.workspaceUpdates,
               result: mutation.result,
@@ -132,6 +125,18 @@ export class WorkspaceLabelCatalogStore {
           },
           beforeWorkspaceWrite: async () => {
             if (!transaction) throw new Error("Workspace label transaction was not staged");
+            if (mutation.labelRewrite && this.contexts) {
+              contexts = await this.contexts.listStoredUnlocked();
+              mutation.contextUpdates = this.contexts.rewriteLabels(
+                contexts,
+                mutation.labelRewrite.from,
+                mutation.labelRewrite.to,
+              );
+            }
+            if (mutation.contextUpdates?.length)
+              transaction.beforeContexts = contexts.filter((context) =>
+                mutation.contextUpdates?.some((update) => update.agentId === context.agentId),
+              );
             await this.writeTransaction(this.transactionPath, transaction);
             await this.writeCatalog(this.filePath, transaction.afterLabels);
             for (const context of mutation.contextUpdates ?? [])

@@ -252,23 +252,22 @@ export class WorkspaceLabelService {
     name: string;
     assigned: boolean;
   }): Promise<SessionContext> {
-    const store = this.contexts;
-    if (!store) throw new Error("Session contexts unavailable");
-    return this.exclusive(async () => {
-      await store.get(input.agentId);
-      return this.catalog.commit((catalog, _workspaces, contexts) => {
-        const definition = catalog.find(
-          (label) => workspaceLabelKey(label.name) === workspaceLabelKey(requireName(input.name)),
-        );
-        if (!definition) throw new WorkspaceLabelError("label_not_found", "Label not found");
+    if (!this.contexts) throw new Error("Session contexts unavailable");
+    return this.exclusive(async () =>
+      this.catalog.commit((catalog, _workspaces, contexts) => {
+        const name = requireName(input.name);
+        const key = workspaceLabelKey(name);
+        const definition = catalog.find((label) => workspaceLabelKey(label.name) === key);
+        if (input.assigned && !definition)
+          throw new WorkspaceLabelError("label_not_found", "Label not found");
         const current = contexts.find((context) => context.agentId === input.agentId);
         if (!current) throw new Error("Session context not found");
         const context = {
           ...current,
           sidebarLabelNames: updateAssignmentLabels(
             current.sidebarLabelNames,
-            workspaceLabelKey(definition.name),
-            definition.name,
+            key,
+            definition?.name ?? name,
             input.assigned,
           ),
         };
@@ -278,8 +277,8 @@ export class WorkspaceLabelService {
           contextUpdates: [context],
           result: context,
         };
-      });
-    });
+      }, input.agentId),
+    );
   }
 
   private async exclusive<T>(operation: () => Promise<T>): Promise<T> {

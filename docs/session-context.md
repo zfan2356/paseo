@@ -63,7 +63,7 @@ WorkspaceRecord（保留）
 
 `SessionContext.projectId` 是新的会话分组 FK，不改 `WorkspaceRecord.projectId`，也不从 live remote、MR 仓库或绑定路径重新计算。跨 host 仅用已有 projectKey 合并显示，不能用客户端计算出的 remote 冒充 projectId。一个会话只在一个主项目分组出现；跨仓工作在其子项体现。允许手动“未分组”，孤儿项目显示待修复状态并允许重新选择，不能让会话从侧边栏消失；删除项目需先给出受影响会话的去向。
 
-把新增上下文保存到独立 `$PASEO_HOME/agent-contexts/{agentId}.json`，用现有 Zod 和原子写、store 内串行 mutation。理由是旧 agent schema 会过滤未知字段，旧 daemon 重写 agent record 可能丢失新数据。WORK-328 已有的 MR 数据保持原存储权威，不在上下文里再复制。目录相关与会话展示元数据可共用这一文件，替代 WORK-364 尚未实施的单独 agent-directories 文件；不造版本迁移框架。缺文件才初始化，损坏/无权限不能当成空值覆盖。会话标签引用现有 host 标签目录，但赋值独立于工作区标签；重命名/删除标签必须扩展现有 store 的串行、可恢复复合事务，不能把两边更新交给组件分别写。
+把新增上下文保存到独立 `$PASEO_HOME/agent-contexts/{agentId}.json`，用现有 Zod 和原子写、store 内串行 mutation。理由是旧 agent schema 会过滤未知字段，旧 daemon 重写 agent record 可能丢失新数据。WORK-328 已有的 MR 数据保持原存储权威，不在上下文里再复制。目录相关与会话展示元数据可共用这一文件，替代 WORK-364 尚未实施的单独 agent-directories 文件；不造版本迁移框架。缺文件才初始化，损坏/无权限不能当成空值覆盖。遗留导入的固定时点见第 5 节，存储规则见 [data-model.md](data-model.md#session-context)。会话标签引用现有 host 标签目录，但赋值独立于工作区标签；重命名/删除标签必须扩展现有 store 的串行、可恢复复合事务，不能把两边更新交给组件分别写。
 
 目录按服务端 OS 词法绝对化、精确路径去重，沿用 exact-root 约定，不用 realpath、remote 或分支替换持久身份。启动目录与额外绑定目录合成展示列表，最多 32 项（含启动项）；只支持会话所在 daemon 的目录，跨 host 绑定留后续。MR 的 host 可以不同，不因此获得该 host 的本地文件访问。
 
@@ -186,7 +186,7 @@ PR #10 的 `uniqueWorkspaceAgents()` 确实在同 workspace 第二个候选出�
 
 迁移要保留已有资源，而不是把每个 workspace 机械变成一个会话。
 
-1. 新 daemon 首次读取缺失的 SessionContext 时幂等初始化：启动目录取已记录 cwd，项目取现有 owning workspace 的项目；title 仍用现有 agent.title。不能追溯确认的最早目录不伪造历史。新建/导入会话走同一规则；重放和并发首次读取不会覆盖用户已选项目/绑定。
+1. 首次升级启动在开放客户端之前固定现存会话集合，补齐缺失的 SessionContext 并完成遗留置顶/标签导入。启动目录取已记录 cwd，项目取 owning workspace；title 仍用 agent.title。导入完成标记只在整批成功后保存，中断重试保留已初始化的用户值。之后的新建/导入会话和普通缺文件读取只初始化启动目录与项目，置顶和标签为空，不再继承 workspace 的值。重放和并发首次读取不会覆盖用户已选项目/绑定；不能确认的历史目录不伪造。
 2. 一个 workspace 的多个根会话逐条呈现，共享 cwd 逐条保留。旧 workspace 标题只在仅有一个可见根会话且 agent 无自有标题时作为一次性/种子；多会话不把同一标题强写给全部会话。旧 workspace 置顶/标签可一次性复制到其各个可见根会话，保留原排序并以创建时间/ID 稳定展开；之后互相独立。已有会话自身标题和已经初始化的上下文优先，旧客户端之后改 workspace 标签不会反向覆盖会话。导入标记与数据同原子保存。
 3. 项目顺序、主机/项目筛选、标签目录和排序偏好延续；旧 pinnedWorkspaceOrder 用初始化时明确的 workspace→会话列表展开成新 per-device 会话顺序，旧键继续接受读取但不再作为新导航权威。多会话有相同标签/置顶是显式迁移结果，不是实时共享。
 4. workspace 布局、终端 ID、运行服务和插件面板不丢弃。旧布局继续原样保留，新的会话浏览状态按 `(serverId,agentId)` 存到独立命名空间；切两个同 workspace 会话时各自恢复目标，不复制运行中的终端进程。终端、脚本仍由内部容器管理；从明确目录新建终端时显式选/创建其资源容器，不能通过“绑定目录”就隐式启动终端或执行 setup。没有可见根会话的已有终端/服务/文件标签，保留在“目录与终端”资源入口，直到用户明确清理，不伪造聊天。

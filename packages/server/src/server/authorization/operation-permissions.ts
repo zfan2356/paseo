@@ -7,7 +7,7 @@ export type PermissionRequirement = DaemonPermission | readonly DaemonPermission
 
 const INBOUND_PERMISSION = {
   "agent.context.get.request": "workspace.read",
-  "agent.context.mutate.request": "workspace.write",
+  "agent.context.mutate.request": "workspace.manage",
   "hosts.list.request": "daemon.read",
   "hosts.add.request": "tunnel.manage",
   "hosts.update.request": "tunnel.manage",
@@ -246,7 +246,7 @@ const INBOUND_PERMISSION = {
 
 const OUTBOUND_PERMISSION = {
   "agent.context.get.response": "workspace.read",
-  "agent.context.mutate.response": "workspace.write",
+  "agent.context.mutate.response": "workspace.manage",
   "agent.context.update": "workspace.read",
   "hosts.list.response": "daemon.read",
   "hosts.changed": "daemon.read",

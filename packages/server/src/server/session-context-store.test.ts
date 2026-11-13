@@ -56,6 +56,7 @@ describe("session context", () => {
       labels: ["Review"],
     });
     contexts = store();
+    await contexts.initializeLegacy(["one", "two", "child"]);
   });
   afterEach(async () => {
     await rm(home, { recursive: true, force: true });
@@ -93,8 +94,117 @@ describe("session context", () => {
     await expect(contexts.get("missing")).rejects.toThrow("Agent not found");
   });
 
+  test("legacy import is fixed before clients connect; later workspace edits and new sessions stay independent", async () => {
+    const existing = await contexts.get("one");
+    await contexts.mutate("one", { kind: "pin", pinned: false });
+    await workspaces.update("workspace", (workspace) => ({
+      ...workspace,
+      labels: ["Later"],
+      pinnedAt: "2026-02-01T00:00:00.000Z",
+    }));
+    const fresh = await contexts.get("created-after-upgrade");
+    expect(fresh).toMatchObject({ projectId: "project", pinnedAt: null, sidebarLabelNames: [] });
+    await store().initializeLegacy(["one", "two", "created-after-upgrade"]);
+    expect(await contexts.get("one")).toEqual({ ...existing, pinnedAt: null });
+    expect((await contexts.get("two")).sidebarLabelNames).toEqual(["Review"]);
+    expect(await contexts.get("created-after-upgrade")).toEqual(fresh);
+    await rm(path.join(home, "agent-contexts", "two.json"));
+    await store().initializeLegacy(["two"]);
+    expect(await contexts.get("two")).toMatchObject({ pinnedAt: null, sidebarLabelNames: [] });
+  });
+
+  test("an interrupted legacy import retries missing records without overwriting initialized user values", async () => {
+    const complete = path.join(home, "agent-contexts", ".legacy-import-complete");
+    const two = path.join(home, "agent-contexts", "two.json");
+    const saved = await readFile(two, "utf8");
+    await rm(complete);
+    await rm(path.join(home, "agent-contexts", "one.json"));
+    await writeFile(two, "{broken");
+    await expect(contexts.initializeLegacy(["one", "two"])).rejects.toThrow("context two");
+    await expect(readFile(complete)).rejects.toThrow();
+    await contexts.mutate("one", { kind: "pin", pinned: false });
+    await writeFile(two, saved);
+    await store().initializeLegacy(["one", "two"]);
+    expect((await contexts.get("one")).pinnedAt).toBeNull();
+    expect(await readFile(complete, "utf8")).toBe("complete\n");
+  });
+
+  test("ordinary workspace assignments and session assignments ignore unrelated corrupt contexts", async () => {
+    const labels = createWorkspaceLabelService({
+      paseoHome: home,
+      workspaceRegistry: workspaces,
+      sessionContexts: contexts,
+    });
+    await writeFile(path.join(home, "agent-contexts", "broken.json"), "{broken");
+    await expect(
+      labels.setAssignment({
+        workspaceId: "workspace",
+        label: { name: "Review", color: "sky" },
+        assigned: true,
+      }),
+    ).resolves.toMatchObject({ workspaceLabels: ["Review"] });
+    await expect(
+      labels.setSessionAssignment({ agentId: "one", name: "Review", assigned: false }),
+    ).resolves.toMatchObject({ sidebarLabelNames: [] });
+    await expect(
+      labels.update({ name: "Review", newName: "Review", color: "red" }),
+    ).resolves.toMatchObject({
+      label: { name: "Review", color: "red" },
+    });
+    await expect(labels.update({ name: "Review", newName: "Ready" })).rejects.toThrow(
+      "context broken",
+    );
+    await expect(labels.delete("Review")).rejects.toThrow("context broken");
+    expect(await readFile(path.join(home, "agent-contexts", "broken.json"), "utf8")).toBe(
+      "{broken",
+    );
+  });
+
+  test("after downgrade rename/delete, unknown historical labels remain readable and removable", async () => {
+    const oldLabels = createWorkspaceLabelService({
+      paseoHome: home,
+      workspaceRegistry: workspaces,
+    });
+    await oldLabels.setAssignment({
+      workspaceId: "workspace",
+      label: { name: "Review", color: "sky" },
+      assigned: true,
+    });
+    await oldLabels.update({ name: "Review", newName: "Ready" });
+    expect((await contexts.get("one")).sidebarLabelNames).toEqual(["Review"]);
+    const labels = createWorkspaceLabelService({
+      paseoHome: home,
+      workspaceRegistry: workspaces,
+      sessionContexts: contexts,
+    });
+    await expect(
+      labels.setSessionAssignment({ agentId: "one", name: "review", assigned: false }),
+    ).resolves.toMatchObject({ sidebarLabelNames: [] });
+    await labels.setSessionAssignment({ agentId: "one", name: "Ready", assigned: true });
+    await oldLabels.delete("Ready");
+    const upgraded = createWorkspaceLabelService({
+      paseoHome: home,
+      workspaceRegistry: workspaces,
+      sessionContexts: contexts,
+    });
+    expect((await contexts.get("one")).sidebarLabelNames).toEqual(["Ready"]);
+    await expect(
+      upgraded.setSessionAssignment({ agentId: "one", name: "Ready", assigned: false }),
+    ).resolves.toMatchObject({ sidebarLabelNames: [] });
+  });
+
+  test("rejects relative directory links and removals instead of resolving daemon cwd", async () => {
+    await expect(contexts.mutate("one", { kind: "link", path: "." })).rejects.toThrow(
+      "must be absolute",
+    );
+    await expect(contexts.mutate("one", { kind: "unlink", path: "../repo" })).rejects.toThrow(
+      "must be absolute",
+    );
+    expect((await contexts.get("one")).linkedDirectories).toEqual([]);
+  });
+
   test("never overwrites malformed or unreadable side files", async () => {
-    await mkdir(path.join(home, "agent-contexts"));
+    await mkdir(path.join(home, "agent-contexts"), { recursive: true });
     const file = path.join(home, "agent-contexts", "one.json");
     await writeFile(file, "{broken");
     await expect(contexts.get("one")).rejects.toThrow();
@@ -346,6 +456,7 @@ test("a lost committed-marker acknowledgement blocks contexts until restart with
       label: { name: "Review", color: "sky" },
       assigned: true,
     });
+    await contexts.initializeLegacy(["one"]);
     await contexts.get("one");
     loseAck = true;
     await expect(labels.update({ name: "Review", newName: "Ready" })).rejects.toThrow("uncertain");

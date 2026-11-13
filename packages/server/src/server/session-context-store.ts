@@ -6,7 +6,7 @@ import {
   type SessionContextMutation,
 } from "@getpaseo/protocol/session-context";
 import { workspaceLabelKey } from "@getpaseo/protocol/workspace-labels";
-import { writeJsonFileAtomic } from "./atomic-file.js";
+import { writeJsonFileAtomic, writeFileAtomic } from "./atomic-file.js";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { PersistedWorkspaceRecord } from "./workspace-registry.js";
 
@@ -16,6 +16,17 @@ interface ContextDependencies {
   getWorkspace(id: string): Promise<PersistedWorkspaceRecord | null>;
   isVisibleRoot(agent: StoredAgentRecord): Promise<boolean>;
   projectExists(id: string): Promise<boolean>;
+}
+
+export class SessionContextReadError extends Error {
+  readonly code = "session_context_unreadable";
+  constructor(
+    readonly agentId: string,
+    cause: unknown,
+  ) {
+    super(`Cannot read session context ${agentId}`, { cause });
+    this.name = "SessionContextReadError";
+  }
 }
 
 /** One daemon-owned queue also makes catalog/assignment compound commits indivisible. */
@@ -42,15 +53,30 @@ export class SessionContextStore {
     return this.exclusive(() => this.getUnlocked(agentId));
   }
 
-  async getUnlocked(agentId: string): Promise<SessionContext> {
+  // COMPAT(sessionContext): added after v0.15.3; remove legacy import after 2027-05-13.
+  initializeLegacy(agentIds: readonly string[]): Promise<void> {
+    return this.exclusive(async () => {
+      const marker = path.join(this.deps.directory, ".legacy-import-complete");
+      try {
+        if ((await fs.readFile(marker, "utf8")) !== "complete\n")
+          throw new Error("Invalid session context import marker");
+        return;
+      } catch (error) {
+        if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+      }
+      for (const agentId of agentIds) await this.getUnlocked(agentId, true);
+      await writeFileAtomic(marker, "complete\n");
+    });
+  }
+
+  async getUnlocked(agentId: string, importLegacy = false): Promise<SessionContext> {
     const agent = await this.deps.getAgent(agentId);
     if (!agent) throw new Error("Agent not found");
     const existing = await this.read(agentId);
     if (existing) return existing;
     const workspace = agent.workspaceId ? await this.deps.getWorkspace(agent.workspaceId) : null;
-    const migrate = await this.deps.isVisibleRoot(agent);
-    // COMPAT(sessionContext): added after v0.15.3; remove legacy seeding after 2027-05-13.
-    // File existence is the import marker, saved with the values in one atomic write.
+    const migrate = importLegacy && (await this.deps.isVisibleRoot(agent));
+    // Existing side files always win, including a partially completed legacy import.
     const context: SessionContext = {
       agentId,
       launchDirectory: path.resolve(agent.cwd),
@@ -136,6 +162,7 @@ export class SessionContextStore {
           context.autoLinkDirectories = mutation.enabled;
           break;
         case "link": {
+          if (!path.isAbsolute(mutation.path)) throw new Error("Directory path must be absolute");
           const directory = path.resolve(mutation.path);
           if (!(await fs.stat(directory)).isDirectory()) throw new Error("Not a directory");
           await fs.access(directory, constants.R_OK | constants.X_OK);
@@ -157,6 +184,7 @@ export class SessionContextStore {
           break;
         }
         case "unlink": {
+          if (!path.isAbsolute(mutation.path)) throw new Error("Directory path must be absolute");
           const directory = path.resolve(mutation.path);
           if (directory === context.launchDirectory)
             throw new Error("Cannot remove the launch directory");
@@ -215,22 +243,26 @@ export class SessionContextStore {
       raw = await fs.readFile(this.file(agentId), "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
+      throw new SessionContextReadError(agentId, error);
     }
-    const context = SessionContextSchema.parse(JSON.parse(raw));
-    if (context.agentId !== agentId) throw new Error("Session context identity mismatch");
-    const directories = [
-      context.launchDirectory,
-      ...context.linkedDirectories.map((item) => item.path),
-    ];
-    if (
-      directories.length > 32 ||
-      new Set(directories).size !== directories.length ||
-      directories.some(
-        (directory) => !path.isAbsolute(directory) || path.resolve(directory) !== directory,
+    try {
+      const context = SessionContextSchema.parse(JSON.parse(raw));
+      if (context.agentId !== agentId) throw new Error("Session context identity mismatch");
+      const directories = [
+        context.launchDirectory,
+        ...context.linkedDirectories.map((item) => item.path),
+      ];
+      if (
+        directories.length > 32 ||
+        new Set(directories).size !== directories.length ||
+        directories.some(
+          (directory) => !path.isAbsolute(directory) || path.resolve(directory) !== directory,
+        )
       )
-    )
-      throw new Error("Invalid stored session directories");
-    return context;
+        throw new Error("Invalid stored session directories");
+      return context;
+    } catch (error) {
+      throw new SessionContextReadError(agentId, error);
+    }
   }
 }

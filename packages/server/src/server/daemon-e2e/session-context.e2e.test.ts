@@ -133,3 +133,57 @@ test("context RPCs isolate subscribed sources, preserve execution identity, rele
     workspaceId: workspace.id,
   });
 }, 60_000);
+
+test("first upgraded boot imports a fixed cohort before any legacy client can edit workspace metadata", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "paseo-context-cohort-"));
+  roots.push(root);
+  const directory = path.join(root, "directory");
+  await mkdir(directory);
+  const oldHost = await start(root);
+  const oldClient = await connect(oldHost, true);
+  const workspace = (
+    await oldClient.createWorkspace({ source: { kind: "directory", path: directory } })
+  ).workspace;
+  if (!workspace) throw new Error("Workspace missing");
+  const pin = await oldClient.setWorkspacePinned(workspace.id, true);
+  await oldClient.setWorkspaceLabel({
+    workspaceId: workspace.id,
+    label: { name: "Review", color: "sky" },
+    assigned: true,
+  });
+  const now = "2026-01-01T00:00:00.000Z";
+  const existing = parseStoredAgentRecord({
+    id: "legacy-root",
+    provider: "codex",
+    cwd: directory,
+    workspaceId: workspace.id,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await oldHost.daemon.agentStorage.upsert(existing);
+  await oldClient.close();
+  clients.length = 0;
+  await oldHost.close();
+  daemons.length = 0;
+  // This fixture represents the home before this feature's first upgraded boot.
+  await rm(path.join(oldHost.paseoHome, "agent-contexts", ".legacy-import-complete"));
+  const upgraded = await start(root);
+  const legacy = await connect(upgraded, true);
+  await legacy.setWorkspacePinned(workspace.id, false);
+  await legacy.setWorkspaceLabel({
+    workspaceId: workspace.id,
+    label: { name: "Later", color: "red" },
+    assigned: true,
+  });
+  const modern = await connect(upgraded);
+  expect((await modern.getSessionContext(existing.id)).context).toMatchObject({
+    pinnedAt: pin.pinnedAt,
+    sidebarLabelNames: ["Review"],
+  });
+  await upgraded.daemon.agentStorage.upsert({ ...existing, id: "created-after-upgrade" });
+  expect((await modern.getSessionContext("created-after-upgrade")).context).toMatchObject({
+    projectId: workspace.projectId,
+    pinnedAt: null,
+    sidebarLabelNames: [],
+  });
+}, 60_000);
