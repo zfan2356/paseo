@@ -1,3 +1,5 @@
+import { SessionContextStore } from "./session-context-store.js";
+import { getParentAgentIdFromLabels } from "@getpaseo/protocol/agent-labels";
 import { createRestartRecovery } from "./agent/restart-recovery/index.js";
 import { sendPromptToAgent } from "./agent/agent-prompt.js";
 import { createIdleRuntimeCleanup } from "./agent/idle-runtime-cleanup/index.js";
@@ -946,9 +948,28 @@ export async function createPaseoDaemon(
     path.join(config.paseoHome, "projects", "workspaces.json"),
     logger,
   );
+  const sessionContexts = new SessionContextStore({
+    directory: path.join(config.paseoHome, "agent-contexts"),
+    getAgent: (id) => agentStorage.get(id),
+    getWorkspace: (id) => workspaceRegistry!.get(id),
+    projectExists: async (id) => {
+      const project = await projectRegistry.get(id);
+      return !!project && !project.archivedAt;
+    },
+    isVisibleRoot: async (agent) => {
+      if (agent.internal || agent.archivedAt) return false;
+      const parentId = getParentAgentIdFromLabels(agent.labels);
+      if (!parentId) return true;
+      const parent = await agentStorage.get(parentId);
+      return (
+        !!agent.workspaceId && !!parent?.workspaceId && agent.workspaceId !== parent.workspaceId
+      );
+    },
+  });
   const workspaceLabelService = createWorkspaceLabelService({
     paseoHome: config.paseoHome,
     workspaceRegistry,
+    sessionContexts,
   });
   const github = createGitHubService();
   const workspaceGitService = new WorkspaceGitServiceImpl({
@@ -1068,6 +1089,7 @@ export async function createPaseoDaemon(
     logger,
   });
   await workspaceLabelService.initialize();
+  await sessionContexts.initializeLegacy((await agentStorage.listAll()).map((agent) => agent.id));
   logger.info({ elapsed: elapsed() }, "Workspace registries bootstrapped");
   const teardownArchivedWorkspaceRuntime = (workspaceId: string): void => {
     scriptRuntimeStore.removeForWorkspace(workspaceId);
@@ -1888,6 +1910,7 @@ export async function createPaseoDaemon(
               pluginRuntime,
               orchestrationSkills,
               workspaceLabelService,
+              sessionContexts,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();

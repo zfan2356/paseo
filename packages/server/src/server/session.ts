@@ -1,3 +1,4 @@
+import type { SessionContextStore } from "./session-context-store.js";
 import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
 import type { AgentChangeRequests } from "./agent-change-requests/service.js";
 import { DiffSession } from "./diff/index.js";
@@ -520,6 +521,7 @@ export interface SessionOptions {
   workspaceBaseBranch?: WorkspaceBaseBranchService;
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
+  sessionContexts?: SessionContextStore;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -853,6 +855,7 @@ export class Session {
     WorkspaceUpdatesSubscriptionState
   >();
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly sessionContexts?: SessionContextStore;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -1000,6 +1003,7 @@ export class Session {
     });
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
+    this.sessionContexts = options.sessionContexts;
     this.projectRegistry = projectRegistry;
     this.workspaceRegistry = workspaceRegistry;
     this.directorySync = resolveDirectorySync(directorySync);
@@ -2859,10 +2863,83 @@ export class Session {
     source?: object,
   ): Promise<void> | undefined {
     return (
+      this.dispatchSessionContextMessage(msg) ??
       this.dispatchAgentRewindMessage(msg, source) ??
       this.dispatchAgentRelationshipMessage(msg) ??
       this.dispatchAgentTimelineMessage(msg, source)
     );
+  }
+
+  private dispatchSessionContextMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    if (msg.type !== "agent.context.get.request" && msg.type !== "agent.context.mutate.request")
+      return undefined;
+    return this.handleSessionContext(msg);
+  }
+
+  private async handleSessionContext(
+    request: Extract<
+      SessionInboundMessage,
+      { type: "agent.context.get.request" | "agent.context.mutate.request" }
+    >,
+  ): Promise<void> {
+    const store = this.sessionContexts;
+    if (!store) throw new Error("Session contexts unavailable");
+    if (request.type === "agent.context.mutate.request") {
+      const context =
+        request.mutation.kind === "label"
+          ? await this.requireWorkspaceLabels().setSessionAssignment({
+              agentId: request.agentId,
+              ...request.mutation,
+            })
+          : await store.mutate(request.agentId, request.mutation);
+      this.emit({
+        type: "agent.context.mutate.response",
+        payload: { requestId: request.requestId, context },
+      });
+      return;
+    }
+    if (!request.subscribe) {
+      this.emit({
+        type: "agent.context.get.response",
+        payload: { requestId: request.requestId, context: await store.get(request.agentId) },
+      });
+      return;
+    }
+    let bootstrap: ReturnType<typeof store.subscribe> | undefined;
+    const owner = this.delivery.begin(
+      "session-context",
+      request.subscribe.subscriptionId,
+      async () => {
+        await bootstrap?.then(
+          (value) => value.unsubscribe(),
+          () => undefined,
+        );
+      },
+    );
+    let ready = false;
+    let pending: import("@getpaseo/protocol/session-context").SessionContext | undefined;
+    try {
+      bootstrap = store.subscribe(request.agentId, (context) => {
+        if (owner.signal.aborted) return;
+        if (!ready) pending = context;
+        else owner.emit({ type: "agent.context.update", payload: { context } });
+      });
+      const subscription = await bootstrap;
+      if (owner.signal.aborted) return;
+      this.emit({
+        type: "agent.context.get.response",
+        payload: {
+          requestId: request.requestId,
+          context: subscription.context,
+          subscriptionId: owner.responseId,
+        },
+      });
+      ready = true;
+      if (pending) owner.emit({ type: "agent.context.update", payload: { context: pending } });
+    } catch (error) {
+      await owner.release();
+      throw error;
+    }
   }
 
   private dispatchHostServiceMessage(msg: SessionInboundMessage): Promise<void> | undefined {
@@ -3890,6 +3967,7 @@ export class Session {
     try {
       await this.agentStorage.remove(agentId);
       await this.agentManager.deleteAgentState(agentId);
+      await this.sessionContexts?.remove(agentId);
       // Directory removal is daemon-wide; agent_deleted below stays a source-scoped RPC reply.
       if (knownAgent) this.agentManager.notifyAgentRemoved(knownAgent);
     } catch (error) {

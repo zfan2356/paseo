@@ -1310,3 +1310,34 @@ describe("workspace message schemas", () => {
     expect(newDirectory.source.kind).toBe("directory");
   });
 });
+
+test("session context uses opt-in RPCs without changing legacy agent/workspace messages", () => {
+  const request = {
+    type: "agent.context.get.request",
+    agentId: "one",
+    requestId: "read",
+    subscribe: {},
+  };
+  expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+  const mutation = {
+    type: "agent.context.mutate.request",
+    agentId: "one",
+    requestId: "change",
+    mutation: { kind: "project", projectId: null },
+  };
+  expect(SessionInboundMessageSchema.parse(mutation)).toEqual(mutation);
+  expect(
+    SessionInboundMessageSchema.parse({ type: "fetch_agents_request", requestId: "old" }),
+  ).toMatchObject({ type: "fetch_agents_request" });
+  const info = SessionOutboundMessageSchema.parse({
+    type: "status",
+    payload: {
+      status: "server_info",
+      serverId: "server",
+      hostname: null,
+      version: null,
+      features: { sessionContext: true },
+    },
+  });
+  expect(info).toMatchObject({ payload: { features: { sessionContext: true } } });
+});

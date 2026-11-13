@@ -1,3 +1,4 @@
+import { SessionContextSchema, SessionContextMutationSchema } from "./session-context.js";
 import { LinkedChangeRequestSchema } from "./agent-change-requests.js";
 import { AgentMessageSchema } from "./agent-message.js";
 import {
@@ -1058,6 +1059,19 @@ export const WorkspaceLabelDefinitionSchema = z.object({
 const WorkspaceLabelSyncCursorSchema = z.object({
   generation: z.string(),
   afterSeq: z.number().int().nonnegative(),
+});
+
+export const AgentContextGetRequestSchema = z.object({
+  type: z.literal("agent.context.get.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+  subscribe: z.object({ subscriptionId: z.string().optional() }).optional(),
+});
+export const AgentContextMutateRequestSchema = z.object({
+  type: z.literal("agent.context.mutate.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+  mutation: SessionContextMutationSchema,
 });
 
 export const WorkspaceLabelListRequestSchema = z.object({
@@ -3530,6 +3544,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
   WorkspacePinSetRequestSchema,
+  AgentContextGetRequestSchema,
+  AgentContextMutateRequestSchema,
   WorkspaceBaseBranchSetRequestSchema,
   WorkspaceLabelListRequestSchema,
   WorkspaceLabelAssignmentSetRequestSchema,
@@ -3925,6 +3941,7 @@ export const ServerInfoStatusPayloadSchema = z
         directorySync: z.boolean().optional(),
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         workspaceLabels: z.boolean().optional(),
+        sessionContext: z.boolean().optional(),
         // COMPAT(agentChangeRequests): added after v0.15.3, remove after 2027-05-13.
         agentChangeRequests: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
@@ -4684,6 +4701,23 @@ const WorkspaceLabelSyncMetadataSchema = z.object({
   headSeq: z.number().int().nonnegative(),
   removals: z.array(z.object({ name: z.string(), seq: z.number().int().positive() })),
 });
+export const AgentContextGetResponseSchema = z.object({
+  type: z.literal("agent.context.get.response"),
+  payload: z.object({
+    requestId: z.string(),
+    context: SessionContextSchema,
+    subscriptionId: z.string().optional(),
+  }),
+});
+export const AgentContextMutateResponseSchema = z.object({
+  type: z.literal("agent.context.mutate.response"),
+  payload: z.object({ requestId: z.string(), context: SessionContextSchema }),
+});
+export const AgentContextUpdateSchema = z.object({
+  type: z.literal("agent.context.update"),
+  payload: z.object({ context: SessionContextSchema, subscriptionId: z.string().optional() }),
+});
+
 export const WorkspaceLabelListResponseSchema = z.object({
   type: z.literal("workspace.label.list.response"),
   payload: z.object({
@@ -7523,6 +7557,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ArtifactMessageSchema,
   AgentUpdateMessageSchema,
   WorkspaceUpdateMessageSchema,
+  AgentContextGetResponseSchema,
+  AgentContextMutateResponseSchema,
+  AgentContextUpdateSchema,
   WorkspaceLabelListResponseSchema,
   WorkspaceLabelUpdateSchema,
   WorkspaceLabelAssignmentSetResponseSchema,

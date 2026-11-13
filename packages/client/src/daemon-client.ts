@@ -1,3 +1,4 @@
+import type { SessionContextMutation } from "@getpaseo/protocol/session-context";
 import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
 import {
   DiffStreamRouter,
@@ -2724,6 +2725,7 @@ export class DaemonClient {
       message,
       async (query, accept) => {
         resetSource = false;
+        if (query.type === "agent.context.get.request") this.requireSessionContext();
         if (query.type === "workspace.setup.subscribe.request")
           this.requireWorkspaceSetupObservation();
         if (query.type === "plugin.rpc.subscribe.request") this.requirePluginSubscriptions();
@@ -2951,6 +2953,34 @@ export class DaemonClient {
         }
         return msg.payload;
       },
+    });
+  }
+
+  private requireSessionContext(): void {
+    if (this.getLastServerInfoMessage()?.features?.sessionContext !== true)
+      throw new Error("Update the host to use session context");
+  }
+
+  getSessionContext(agentId: string) {
+    this.requireSessionContext();
+    return this.sendNamespacedCorrelatedSessionRequest({
+      message: { type: "agent.context.get.request", agentId },
+    });
+  }
+
+  observeSessionContext(agentId: string, options?: { signal?: AbortSignal }) {
+    this.requireSessionContext();
+    return this.observe(
+      "agent.context.get.response",
+      { type: "agent.context.get.request", agentId, subscribe: {} },
+      options,
+    );
+  }
+
+  mutateSessionContext(agentId: string, mutation: SessionContextMutation) {
+    this.requireSessionContext();
+    return this.sendNamespacedCorrelatedSessionRequest({
+      message: { type: "agent.context.mutate.request", agentId, mutation },
     });
   }
 

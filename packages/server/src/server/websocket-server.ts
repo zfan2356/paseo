@@ -1,3 +1,4 @@
+import type { SessionContextStore } from "./session-context-store.js";
 import { AgentChangeRequests } from "./agent-change-requests/service.js";
 import { createForgeResolver } from "../services/forge-resolver.js";
 import { createForgeService } from "../services/forge-registry.js";
@@ -708,6 +709,7 @@ export class VoiceAssistantWebSocketServer {
     pluginRuntime?: SessionOptions["pluginRuntime"],
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
+    private readonly sessionContexts?: SessionContextStore,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -1707,6 +1709,7 @@ export class VoiceAssistantWebSocketServer {
       workspaceRegistry: this.workspaceRegistry,
       workspaceBaseBranch: this.workspaceBaseBranch,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
+      sessionContexts: this.sessionContexts,
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -2068,6 +2071,7 @@ export class VoiceAssistantWebSocketServer {
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        ...(this.sessionContexts ? { sessionContext: true } : {}),
         agentChangeRequests: true,
         terminalCollection: true,
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
