@@ -98,6 +98,10 @@ happens inside the side agent's own app-server process using
 `sideChatForkFromThreadId`, avoiding the native cross-process thread writer lock.
 `forkForSideChat` initially returns `sideChatForkPending`; after connect, the
 realized native ID replaces it in the live agent and persisted record.
+The manager must preserve the fork intent when resolving the resume purpose.
+Dropping it resumes the parent thread and conflicts with its active writer.
+The pending-fork regression uses a provider adapter that rejects that resume;
+reopening the saved side conversation must reuse its realized ID without forking again.
 
 Claude uses the Agent SDK `forkSession` and resumes the returned session.
 ACP agents use the experimental `session/fork` call: the fork is created inside
@@ -135,6 +139,12 @@ during a new fork waits for the in-flight creation and discards incomplete forks
 Daemon restart resumes saved conversations on demand, even with a closed parent
 runtime. Concurrent resumes use the existing per-agent lifecycle queue. Closing
 an internal runtime preserves the storage record and committed timeline.
+
+`isEphemeralAgent` separates disposable helpers from labeled, durable Side Chats.
+The upstream idle collector may release an idle Side Chat runtime after its
+normal safety checks; reopening preserves the same native session and history.
+An in-progress fork protects its parent's runtime from collection. Restart
+continuation remains on demand for Side Chats, independently of directory visibility.
 
 `openSideChat` for a stored conversation already holds that side agent's
 lifecycle lane, so the resume inside it calls the unqueued internal resume.

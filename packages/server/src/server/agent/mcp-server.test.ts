@@ -1,12 +1,20 @@
+import {
+  createFinishSubscriptions,
+  createFinishObservation,
+  createJsonFinishSubscriptionStore,
+  type FinishSubscriptionStore,
+  type FinishSubscriptions,
+  type FinishSubscription,
+} from "./finish-subscriptions/index.js";
 import type { AgentMessageDelivery } from "./agent-messages/index.js";
 import { createTestAgentMessages } from "../test-utils/agent-messages.js";
-import { setupFinishNotification, type PromptDispatchDisposition } from "./agent-prompt.js";
-import { parseAgentMessage } from "./agent-messages/index.js";
+import { type PromptDispatchDisposition } from "./agent-prompt.js";
+import { parseAgentMessage, parseAgentMessages } from "./agent-messages/index.js";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { realpathSync } from "node:fs";
 import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve as resolvePath } from "node:path";
@@ -24,6 +32,7 @@ import { FakeOmp } from "./providers/omp/test-utils/fake-omp.js";
 import type {
   AgentClient,
   AgentMode,
+  AgentPermissionRequest,
   AgentPromptInput,
   AgentProvider,
   AgentRunResult,
@@ -68,7 +77,7 @@ import type { GeneratedWorkspaceName } from "../worktree-branch-name-generator.j
 import type { ForgeService } from "../../services/forge-service.js";
 import { areEquivalentPaths } from "../../utils/path.js";
 import { createTerminalManager, type TerminalManager } from "../../terminal/terminal-manager.js";
-import { createWorkerTerminalManager } from "../../terminal/worker-terminal-manager.js";
+import { startWorkerTerminalManager } from "../../terminal/worker-terminal-manager.js";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { PASEO_TOOL_NAMES } from "@getpaseo/protocol/paseo-tool-presentation/index";
 import { MutableDaemonConfigSchema, type AgentProfile } from "@getpaseo/protocol/messages";
@@ -127,6 +136,12 @@ interface RegisteredMcpToolWithHandler extends RegisteredMcpTool {
   }>;
 }
 
+const subscriptionServices: FinishSubscriptions[] = [];
+afterEach(async () => {
+  for (const service of subscriptionServices.splice(0)) await service.close();
+});
+const serverSubscriptionRecords = new WeakMap<object, Map<string, FinishSubscription>>();
+const serverSubscriptions = new WeakMap<object, FinishSubscriptions>();
 const serverDeliveries = new WeakMap<object, AgentMessageDelivery>();
 const toolDeliveries = new WeakMap<object, AgentMessageDelivery>();
 
@@ -257,6 +272,8 @@ function buildAgentManagerSpies() {
     hydrateTimelineFromProvider: vi.fn().mockResolvedValue(undefined),
     appendTimelineItem: vi.fn().mockResolvedValue(undefined),
     emitLiveTimelineItem: vi.fn().mockResolvedValue(undefined),
+    getPluginTools: () => [],
+    reloadStalePluginSession: async () => {},
     hasInFlightRun: vi.fn().mockReturnValue(false),
     steerOrReplaceActiveTurn: async () => ({ status: "inactive" as const }),
     tryRunOutOfBand: vi.fn().mockReturnValue(false),
@@ -277,7 +294,9 @@ function buildAgentStorageSpies() {
     setTitle: vi.fn().mockResolvedValue(undefined),
     upsert: vi.fn().mockResolvedValue(undefined),
     applySnapshot: vi.fn(),
-    list: vi.fn().mockResolvedValue([]),
+    listActive: vi.fn().mockResolvedValue([]),
+    listByWorkspaces: vi.fn().mockResolvedValue([]),
+    lastUserMessageAtByWorkspace: async () => new Map<string, string>(),
     remove: vi.fn(),
   };
 }
@@ -604,6 +623,10 @@ class FakeBrowserToolsBroker {
 }
 
 class BoundaryAgentManagerFake {
+  public getPluginTools(): [] {
+    return [];
+  }
+
   private readonly agent = createManagedAgent({
     id: "agent-1",
     cwd: REPO_CWD,
@@ -620,7 +643,16 @@ class BoundaryAgentManagerFake {
 }
 
 class BoundaryAgentStorageFake {
-  public async list(): Promise<StoredAgentRecord[]> {
+  public async listActive(): Promise<StoredAgentRecord[]> {
+    return [];
+  }
+  async listByWorkspaces() {
+    return [];
+  }
+  async lastUserMessageAtByWorkspace() {
+    return new Map<string, string>();
+  }
+  async listAll() {
     return [];
   }
 }
@@ -753,7 +785,8 @@ function createPaseoWorktreeForMcpTest(options: {
     initialize: async () => {},
     existsOnDisk: async () => true,
     get: async (workspaceId: string) => workspaces.get(workspaceId) ?? null,
-    list: async () => Array.from(workspaces.values()),
+    listAll: async () => Array.from(workspaces.values()),
+    listActive: async () => Array.from(workspaces.values()).filter((w) => !w.archivedAt),
     update: async (workspaceId, updater) => {
       const workspace = workspaces.get(workspaceId);
       if (!workspace) return null;
@@ -842,13 +875,48 @@ function createPaseoWorktreeForMcpTest(options: {
 // Typed in-memory workspace port for catalogue tests without workspace setup.
 async function createAgentMcpServer(
   options: Parameters<typeof createAgentMcpServerWithDependencies>[0],
+  subscriptionStore?: FinishSubscriptionStore,
 ) {
   const messages = createTestAgentMessages(options);
+  const records = new Map<string, FinishSubscription>();
+  const subscriptions = createFinishSubscriptions({
+    store: subscriptionStore ?? {
+      list: async () => [...records.values()],
+      put: async (record) => {
+        records.set(record.id, record);
+      },
+      remove: async (id) => {
+        records.delete(id);
+      },
+    },
+    messages: () => messages,
+    callerIsActive: async (id) => !(await options.agentStorage.get(id))?.archivedAt,
+    serverId: options.serverId ?? "self",
+    logger: options.logger,
+    ...createFinishObservation({
+      ...options,
+      waitForResume: async () => {},
+      messages: () => messages,
+      serverId: options.serverId ?? "self",
+      hosts: () => {
+        if (!options.hosts) throw new Error("No hosts");
+        return options.hosts();
+      },
+    }),
+  });
+  subscriptionServices.push(subscriptions);
   const server = await createAgentMcpServerWithDependencies({
     agentMessages: () => messages,
-    workspaceRegistry: { get: async () => null, list: async () => [], upsert: async () => {} },
+    finishSubscriptions: () => subscriptions,
+    workspaceRegistry: {
+      get: async () => null,
+      listActive: async () => [],
+      upsert: async () => {},
+    },
     ...options,
   });
+  serverSubscriptionRecords.set(server, records);
+  serverSubscriptions.set(server, subscriptions);
   serverDeliveries.set(server, messages);
   return server;
 }
@@ -1335,13 +1403,24 @@ describe("terminal MCP tools", () => {
   );
 
   it.each([
-    ["in-process", createTerminalManager],
-    ["worker", createWorkerTerminalManager],
+    ["in-process", async () => ({ manager: createTerminalManager(), home: null })],
+    [
+      "worker",
+      async () => {
+        const home = await mkdtemp(join(tmpdir(), "mcp-terminal-keys-home-"));
+        const manager = await startWorkerTerminalManager({
+          paseoHome: home,
+          paseoVersion: "0.0.0-test",
+          logger,
+        });
+        return { manager, home };
+      },
+    ],
   ] as const)(
     "delivers MCP key tokens through %s after terminal input modes change",
     async (_name, createManager) => {
       const { agentManager, agentStorage } = createTestDeps();
-      const terminalManager = await createManager();
+      const { manager: terminalManager, home } = await createManager();
       const terminal = await terminalManager.createTerminal({
         cwd: process.cwd(),
         workspaceId: "ws-terminal-keys",
@@ -1371,6 +1450,9 @@ describe("terminal MCP tools", () => {
         logger,
       });
 
+      // Every step is a round trip through a real PTY. A loaded Windows runner (ConPTY) has
+      // taken over 3 s to reach READY, so each step gets the same window rather than 1 s.
+      const roundTrip = { timeout: 5000 };
       let output = "";
       const unsubscribe = terminal.subscribe((message) => {
         if (message.type === "output") {
@@ -1378,16 +1460,13 @@ describe("terminal MCP tools", () => {
         }
       });
       try {
-        await vi.waitFor(
-          async () => {
-            const capture = await terminalManager.captureTerminal(terminal.id);
-            expect(capture.lines).toContain("READY");
-          },
-          { timeout: 5000 },
-        );
+        await vi.waitFor(async () => {
+          const capture = await terminalManager.captureTerminal(terminal.id);
+          expect(capture.lines).toContain("READY");
+        }, roundTrip);
         const tool = registeredTool(server, "send_terminal_keys");
         await tool.handler({ terminalId: terminal.id, keys: "application", literal: true });
-        await vi.waitFor(() => expect(output).toContain("APPLICATION_READY"));
+        await vi.waitFor(() => expect(output).toContain("APPLICATION_READY"), roundTrip);
         for (const [keys, hex] of [
           ["Down", "1b4f42"],
           ["Up", "1b4f41"],
@@ -1402,20 +1481,21 @@ describe("terminal MCP tools", () => {
           await vi.waitFor(async () => {
             const capture = await terminalManager.captureTerminal(terminal.id);
             expect(capture.lines.join("\n")).toContain(`HEX:${hex}`);
-          });
+          }, roundTrip);
         }
         await tool.handler({ terminalId: terminal.id, keys: "normal", literal: true });
-        await vi.waitFor(() => expect(output).toContain("NORMAL_READY"));
+        await vi.waitFor(() => expect(output).toContain("NORMAL_READY"), roundTrip);
         await tool.handler({ terminalId: terminal.id, keys: "Down" });
         await vi.waitFor(async () => {
           const capture = await terminalManager.captureTerminal(terminal.id);
           expect(capture.lines).toContain("HEX:1b5b42");
-        });
+        }, roundTrip);
       } finally {
         unsubscribe();
         await server.close();
         await terminalManager.killTerminalAndWait(terminal.id);
         terminalManager.killAll();
+        if (home) await rm(home, { recursive: true, force: true });
       }
     },
   );
@@ -1431,7 +1511,6 @@ describe("terminal MCP tools", () => {
         id: "term-1",
         name: "daemon",
         cwd: process.cwd(),
-        getState: vi.fn().mockReturnValue({ scrollback: [], grid: [[]] }),
       }),
       captureTerminal,
     });
@@ -1586,11 +1665,11 @@ describe("create_agent MCP tool", () => {
     expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ cwd: existingCwd }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { workspaceId: "workspace-created", background: false },
     );
   });
 
-  it("rejects public internal helpers and the old top-level execution background option", async () => {
+  it("rejects public internal helpers", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "mcp-public-helper-removal-"));
     const storage = new AgentStorage(join(workdir, "agents"), logger);
     const agentManager = new AgentManager({
@@ -1608,9 +1687,6 @@ describe("create_agent MCP tool", () => {
       const tool = registeredTool(server, "create_agent");
       const input = { title: "Helper", provider: "codex/gpt-5.4", initialPrompt: "Summarize" };
       await expect(tool.handler({ ...input, internal: true })).rejects.toThrow(/Unrecognized key/);
-      await expect(tool.handler({ ...input, background: true })).rejects.toThrow(
-        /Unrecognized key/,
-      );
     } finally {
       await removeAgentStateDir(agentManager, storage, workdir);
     }
@@ -1732,7 +1808,7 @@ describe("create_agent MCP tool", () => {
         cwd: existingCwd,
       }),
       undefined,
-      { workspaceId: "wks_existing" },
+      { workspaceId: "wks_existing", background: false },
     );
   });
 
@@ -1776,7 +1852,7 @@ describe("create_agent MCP tool", () => {
         featureValues: { fast_mode: true },
       }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { workspaceId: "workspace-created", background: false },
     );
   });
 
@@ -1972,7 +2048,7 @@ describe("create_agent MCP tool", () => {
         title: "Fix auth bug",
       }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { workspaceId: "workspace-created", background: false },
     );
   });
 
@@ -2007,7 +2083,7 @@ describe("create_agent MCP tool", () => {
         title: "Fix auth",
       }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { workspaceId: "workspace-created", background: false },
     );
   });
 
@@ -2051,6 +2127,7 @@ describe("create_agent MCP tool", () => {
       {
         labels: { source: "mcp" },
         workspaceId: "workspace-created",
+        background: false,
       },
     );
   });
@@ -2153,7 +2230,7 @@ describe("create_agent MCP tool", () => {
           title: "Directory agent",
         }),
         undefined,
-        { workspaceId: "workspace-directory-auto-title" },
+        { workspaceId: "workspace-directory-auto-title", background: false },
       );
       expect(workspaceRecords.get("workspace-directory-auto-title")).toMatchObject({
         title: "Directory Workspace Title",
@@ -2638,7 +2715,7 @@ describe("create_agent MCP tool", () => {
       providerSnapshotManager: createOpenCodeManager().manager,
       workspaceRegistry: {
         get: vi.fn(async () => workspace),
-        list: vi.fn(async () => [workspace]),
+        listActive: vi.fn(async () => [workspace]),
         upsert: vi.fn(async () => undefined),
       },
       logger,
@@ -2671,7 +2748,7 @@ describe("create_agent MCP tool", () => {
       providerSnapshotManager: createOpenCodeManager().manager,
       workspaceRegistry: {
         get: vi.fn(async () => backgroundWorkspace),
-        list: vi.fn(async () => [backgroundWorkspace]),
+        listActive: vi.fn(async () => [backgroundWorkspace]),
         upsert: vi.fn(async () => undefined),
       },
       createDirectoryWorkspace: async (cwd, _title, _projectId, context) => {
@@ -2767,12 +2844,13 @@ describe("create_agent MCP tool", () => {
           source: "voice",
         },
         workspaceId: "wks_voice",
+        background: false,
       },
     );
     await rm(baseDir, { recursive: true, force: true });
   });
 
-  it("rejects background from caller agents and defaults notify-on-finish on", async () => {
+  it("defaults notify-on-finish on for caller agents", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     spies.agentManager.getAgent.mockReturnValue({
       id: "parent-agent",
@@ -2792,16 +2870,6 @@ describe("create_agent MCP tool", () => {
     });
 
     const tool = registeredTool(server, "create_agent");
-    await expect(
-      tool.handler({
-        ...subagentCurrentWorkspace(),
-        title: "Child",
-        provider: "codex/gpt-5.4",
-        initialPrompt: "Do work",
-        background: false,
-      }),
-    ).rejects.toThrow(/Unrecognized key/);
-
     const parsed = await tool.inputSchema.safeParseAsync({
       ...subagentCurrentWorkspace(),
       title: "Child",
@@ -2958,6 +3026,7 @@ describe("create_agent MCP tool", () => {
           source: "handoff",
         },
         workspaceId: "wks_parent",
+        background: false,
       },
     );
   });
@@ -3019,6 +3088,7 @@ describe("create_agent MCP tool", () => {
           [PARENT_AGENT_ID_LABEL]: "parent-agent",
         },
         workspaceId: "wks_parent",
+        background: false,
       },
     );
   });
@@ -3157,6 +3227,7 @@ describe("create_agent MCP tool", () => {
     expect(agentIdArg).toBeUndefined();
     expect(optionsArg).toEqual({
       workspaceId: "workspace-created",
+      background: false,
     });
   });
 
@@ -3234,7 +3305,7 @@ describe("create_agent MCP tool", () => {
     expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ modeId: "dynamic" }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { workspaceId: "workspace-created", background: false },
     );
   });
 
@@ -3273,7 +3344,7 @@ describe("create_agent MCP tool", () => {
     expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ modeId: "build", featureValues: { auto_accept: true } }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { workspaceId: "workspace-created", background: false },
     );
   });
 
@@ -3401,6 +3472,7 @@ class HeldTurnAgentSession implements AgentSession {
   readonly prompts: string[] = [];
   readonly steeredPrompts: AgentPromptInput[] = [];
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
+  private readonly permissions = new Map<string, AgentPermissionRequest>();
   private activeTurnId: string | null = null;
   private turnStartGate: Promise<void> | null = null;
   private nextStartError: Error | null = null;
@@ -3529,11 +3601,25 @@ class HeldTurnAgentSession implements AgentSession {
 
   async setMode(): Promise<void> {}
 
-  getPendingPermissions() {
-    return [];
+  requestPermission(id: string): void {
+    const request: AgentPermissionRequest = {
+      id,
+      name: "Write",
+      kind: "tool",
+      input: { path: id },
+    };
+    this.permissions.set(id, request);
+    this.pushEvent({ type: "permission_requested", provider: this.provider, request });
   }
 
-  async respondToPermission(): Promise<void> {}
+  getPendingPermissions() {
+    return [...this.permissions.values()];
+  }
+
+  async respondToPermission(requestId: string): Promise<void> {
+    this.permissions.delete(requestId);
+    this.pushEvent({ type: "permission_resolved", provider: this.provider, requestId });
+  }
 
   describePersistence() {
     return { provider: this.provider, sessionId: this.id };
@@ -3844,14 +3930,13 @@ describe("send_agent_prompt MCP tool", () => {
           secondResolve = resolve;
         });
         for (const dispatchResult of [first, second]) {
-          setupFinishNotification({
-            agentMessages: serverDeliveries.get(server)!,
-            agentManager: manager,
-            agentStorage: storage,
-            childAgentId: child.id,
-            callerAgentId: parent.id,
-            dispatchResult,
-            logger,
+          const registration = await serverSubscriptions
+            .get(server)!
+            .register({ childAgentId: child.id, callerAgentId: parent.id }, true);
+          void dispatchResult.then((result) => {
+            if (result) registration.accept();
+            else void registration.reject();
+            return undefined;
           });
         }
         firstResolve(firstAccepted ? "steered" : false);
@@ -3992,7 +4077,7 @@ describe("send_agent_prompt MCP tool", () => {
         notifyOnFinish: false,
       });
 
-      if (callerAgentId === "parent-agent") {
+      if (callerAgentId) {
         expect(parseAgentMessage(spies.agentManager.streamAgent.mock.calls[0][1])).toMatchObject({
           source: { kind: "agent-message", agentId: callerAgentId },
           text: prompt,
@@ -4064,8 +4149,7 @@ describe("send_agent_prompt MCP tool", () => {
     await serverDeliveries
       .get(server)!
       .waitForDispatch("child-agent", new AbortController().signal);
-    expect(spies.agentManager.subscribe).toHaveBeenCalled();
-    expect(spies.agentManager.waitForAgentEvent).not.toHaveBeenCalled();
+    expect(serverSubscriptionRecords.get(server)!.size).toBe(1);
     expect(response.structuredContent.guidance).toContain("You will get notified");
   });
 
@@ -6402,7 +6486,7 @@ describe("agent snapshot MCP serialization", () => {
       createManagedAgent({ id: "in-child-cwd", cwd: "/tmp/workspace/packages/server" }),
       createManagedAgent({ id: "other-cwd", cwd: "/tmp/other" }),
     ]);
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       createStoredRecord({
         id: "stored-in-cwd",
         cwd: "/tmp/workspace",
@@ -6461,7 +6545,7 @@ describe("agent snapshot MCP serialization", () => {
         updatedAt: new Date(old),
       }),
     ]);
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       createStoredRecord({ id: "recent-archived", cwd: TARGET_CWD, archivedAt: recent }),
       createStoredRecord({ id: "old-archived", cwd: TARGET_CWD, archivedAt: old }),
       createStoredRecord({
@@ -6502,7 +6586,7 @@ describe("agent snapshot MCP serialization", () => {
         archivedAt: new Date(now - index * 60 * 1000).toISOString(),
       }),
     );
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       ...recentArchivedRecords,
       createStoredRecord({
         id: "old-archived",
@@ -6533,7 +6617,7 @@ describe("agent snapshot MCP serialization", () => {
   it("returns compact list items for stored archived agents", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const now = new Date().toISOString();
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       createStoredRecord({
         id: "stored-archived-compact",
         cwd: REPO_CWD,
@@ -6652,7 +6736,7 @@ describe("agent snapshot MCP serialization", () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const now = new Date().toISOString();
     spies.agentManager.listAgents.mockReturnValue([createManagedAgent()]);
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       createStoredRecord({
         id: "stored-non-archived",
         updatedAt: now,
@@ -6878,4 +6962,126 @@ it("rejects hidden agent-worktree placement and directs callers to workspace cre
       baseBranch: "main",
     }),
   ).rejects.toThrow("create_workspace");
+});
+
+describe("local durable finish subscription MCP wiring", () => {
+  const logger = createTestLogger();
+  const existingCwd = process.cwd();
+  it.each(["concurrent", "repeated"] as const)(
+    "reports %s permission requests and final completion",
+    async (sequence) => {
+      const workdir = await mkdtemp(join(tmpdir(), "mcp-local-permissions-"));
+      const storage = new AgentStorage(join(workdir, "agents"), logger);
+      const parentClient = new HeldTurnAgentClient("claude", false);
+      const childClient = new HeldTurnAgentClient("codex", true);
+      const manager = new AgentManager({
+        clients: { claude: parentClient, codex: childClient },
+        registry: storage,
+        logger,
+      });
+      let mcp: Client | undefined;
+      try {
+        const parent = await manager.createAgent(
+          { provider: "claude", cwd: existingCwd },
+          undefined,
+          { workspaceId: "wks_parent" },
+        );
+        const child = await manager.createAgent(
+          { provider: "codex", cwd: existingCwd },
+          undefined,
+          { workspaceId: "wks_parent" },
+        );
+        const server = await createAgentMcpServer({
+          agentManager: manager,
+          agentStorage: storage,
+          callerAgentId: parent.id,
+          providerSnapshotManager: createOpenCodeManager().manager,
+          logger,
+        });
+        mcp = await connectInMemoryMcpClient(server);
+        await sendMcpAndAwaitDispatch(mcp, server, {
+          agentId: child.id,
+          prompt: "Permission work",
+        });
+        const prompts = () =>
+          parentClient.sessions[0]!.prompts.flatMap((prompt) => parseAgentMessages(prompt) ?? [])
+            .map((message) => message.text)
+            .join("\n");
+        const permissionIds = () =>
+          [...prompts().matchAll(/<permission-request>\n([\s\S]+?)\n<\/permission-request>/g)].map(
+            (match) => JSON.parse(match[1]!).requestId,
+          );
+        const respond = async (requestId: string) => {
+          const result = await mcp!.callTool({
+            name: "respond_to_permission",
+            arguments: { agentId: child.id, requestId, response: { behavior: "allow" } },
+          });
+          expect(result.isError).not.toBe(true);
+        };
+        childClient.sessions[0]!.requestPermission("first");
+        if (sequence === "concurrent") {
+          childClient.sessions[0]!.requestPermission("second");
+          await vi.waitFor(() => expect(permissionIds()).toEqual(["first", "second"]));
+          await respond("first");
+          await respond("second");
+        } else {
+          await vi.waitFor(() => expect(permissionIds()).toEqual(["first"]));
+          await respond("first");
+          childClient.sessions[0]!.requestPermission("second");
+          await vi.waitFor(() => expect(permissionIds()).toEqual(["first", "second"]));
+          await respond("second");
+        }
+        expect(serverSubscriptionRecords.get(server)!.size).toBe(1);
+        expect(prompts()).not.toContain("finished.");
+        childClient.sessions[0]!.finishTurn("Permission work complete");
+        await vi.waitFor(() => expect(prompts()).toContain("finished."));
+        expect(prompts()).toContain("Permission work complete");
+        expect(permissionIds()).toEqual(["first", "second"]);
+        await vi.waitFor(() => expect(serverSubscriptionRecords.get(server)!.size).toBe(0));
+      } finally {
+        await mcp?.close();
+        await removeAgentStateDir(manager, storage, workdir);
+      }
+    },
+  );
+
+  it("returns a tool error before sending a prompt when subscription storage cannot commit", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "mcp-registration-failure-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const client = new HeldTurnAgentClient("codex", true);
+    const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+    const subscriptions = createJsonFinishSubscriptionStore(workdir);
+    let mcp: Client | undefined;
+    try {
+      const parent = await manager.createAgent({ provider: "codex", cwd: existingCwd }, undefined, {
+        workspaceId: "wks_parent",
+      });
+      const child = await manager.createAgent({ provider: "codex", cwd: existingCwd }, undefined, {
+        workspaceId: "wks_parent",
+      });
+      expect(await subscriptions.list()).toEqual([]);
+      await mkdir(join(workdir, "finish-subscriptions.json"));
+      const server = await createAgentMcpServer(
+        {
+          agentManager: manager,
+          agentStorage: storage,
+          callerAgentId: parent.id,
+          providerSnapshotManager: createOpenCodeManager().manager,
+          logger,
+        },
+        subscriptions,
+      );
+      mcp = await connectInMemoryMcpClient(server);
+      const result = await mcp.callTool({
+        name: "send_agent_prompt",
+        arguments: { agentId: child.id, prompt: "Must not dispatch" },
+      });
+      expect(result.isError).toBe(true);
+      expect(client.sessions[1]!.prompts).toEqual([]);
+      expect(await subscriptions.list()).toEqual([]);
+    } finally {
+      await mcp?.close();
+      await removeAgentStateDir(manager, storage, workdir);
+    }
+  });
 });

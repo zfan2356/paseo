@@ -9,7 +9,7 @@ interface ViewportInput {
 }
 
 function rowOf(range: Range): HTMLElement | null {
-  return range.startContainer.parentElement?.closest<HTMLElement>("[data-history-row-id]") ?? null;
+  return range.startContainer.parentElement?.closest<HTMLElement>("[data-message-id]") ?? null;
 }
 
 export function createFindViewport({
