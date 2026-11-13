@@ -14400,3 +14400,43 @@ test("stops only a currently owned public background item with its current token
   expect(stopped).toEqual(["one"]);
   await manager.closeAgent(agent.id);
 });
+
+test("notifies accepted structured prompts without requiring a client message id", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-linked-prompt-"));
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    logger: createTestLogger(),
+  });
+  const received = vi.fn();
+  const stop = manager.subscribeSubmittedPrompts(received);
+  let agentId: string | null = null;
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = agent.id;
+    const prompt: AgentPromptInput = [
+      {
+        type: "forge_change_request",
+        forge: "tgit",
+        number: 7,
+        title: "MR",
+        url: "https://git.woa.com/team/repo/merge_requests/7",
+        projectPath: "team/repo",
+        baseRefName: "main",
+        headRefName: "feature",
+      },
+    ];
+    for await (const _event of manager.streamAgent(agent.id, prompt)) {
+    }
+    expect(received).toHaveBeenCalledExactlyOnceWith(agent.id, prompt);
+    stop();
+    for await (const _event of manager.streamAgent(agent.id, "next")) {
+    }
+    expect(received).toHaveBeenCalledOnce();
+  } finally {
+    stop();
+    if (agentId) await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});

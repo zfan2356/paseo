@@ -70,7 +70,9 @@ export function ChangeRequestsList({
       ...form,
       close: () => {
         form.close();
-        api.dispose();
+        void api
+          .dispose()
+          .catch((error) => console.error("Change request API cleanup failed", error));
       },
     };
   });

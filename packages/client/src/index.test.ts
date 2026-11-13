@@ -2300,3 +2300,50 @@ test("agent changeRequests fails with an update hint on older hosts", async () =
   );
   await client.close();
 });
+
+test("agent changeRequests suppresses an in-flight list after plugin API disposal", async () => {
+  const daemon = new DaemonClient({
+    url: "ws://daemon.test",
+    clientId: "scope-disposal-test",
+    webSocketFactory: (url) => new FakeWebSocket(url),
+    reconnect: { enabled: false },
+  });
+  // Use a borrowed API over a real connected low-level client to exercise its independent scope.
+  const connecting = daemon.connect();
+  const socket = FakeWebSocket.instances.at(-1)!;
+  socket.open();
+  socket.message(
+    sessionMessage({
+      type: "status",
+      payload: {
+        status: "server_info",
+        serverId: "srv_sdk_test",
+        hostname: null,
+        version: null,
+        features: CHANGE_REQUEST_FEATURES,
+      },
+    }),
+  );
+  await connecting;
+  const api = createPaseoApi(daemon);
+  const receive = vi.fn();
+  api.agents.ref("agent-a").changeRequests.subscribe(receive);
+  acknowledgeObservation(socket, "borrowed");
+  await vi.waitFor(() =>
+    expect(parseSentSessionMessage(socket.sent.at(-1)).type).toBe(
+      "agent.changeRequests.list.request",
+    ),
+  );
+  const request = parseSentSessionMessage(socket.sent.at(-1));
+  await api.dispose();
+  socket.message(
+    sessionMessage({
+      type: "agent.changeRequests.list.response",
+      payload: { requestId: request.requestId, snapshot: LINKED_SNAPSHOT, error: null },
+    }),
+  );
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(receive).not.toHaveBeenCalled();
+  await daemon.close();
+});
