@@ -1,3 +1,4 @@
+import { sidebarMaterialColor } from "@/styles/sidebar-material-color";
 import { SidebarViewSlot } from "@/plugins/sidebar-view";
 import { useAddHost } from "@/hosts/add-host";
 import { router } from "expo-router";
@@ -602,7 +603,7 @@ function MobileSidebar({
     () => ({
       paddingTop: insetsTop,
       paddingBottom: insetsBottom,
-      backgroundColor: theme.colors.surfaceSidebar,
+      backgroundColor: sidebarMaterialColor(theme.colors.surfaceSidebar),
     }),
     [insetsTop, insetsBottom, theme.colors.surfaceSidebar],
   );
@@ -984,7 +985,7 @@ const styles = StyleSheet.create((theme) => ({
   desktopSidebarBorder: (hasDivision: boolean) => ({
     borderRightWidth: hasDivision ? 0 : 1,
     borderRightColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: sidebarMaterialColor(theme.colors.surfaceSidebar),
   }),
   sidebarDragArea: {
     position: "relative",

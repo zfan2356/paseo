@@ -74,6 +74,7 @@ export const zhCN: TranslationResources = {
     changesHint: "此目录的更改可能包含其他会话或工具的内容。",
   },
   agentChangeRequests: {
+    link: "关联 PR/MR",
     title: "关联 PR/MR",
     autoLink: "自动加入",
     loading: "加载中…",

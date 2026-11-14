@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
@@ -269,7 +270,9 @@ export function SheetBackground({ style }: BottomSheetBackgroundProps) {
     ],
     [style, theme.colors.surface0, theme.borderRadius],
   );
-  return <Animated.View pointerEvents="none" style={combinedStyle} />;
+  return (
+    <Animated.View dataSet={MATERIAL_SLOTS.sheet} pointerEvents="none" style={combinedStyle} />
+  );
 }
 
 const ThemedBottomSheetHandle = withUnistyles(BottomSheetHandle, (theme) => ({
@@ -812,7 +815,14 @@ export function AdaptiveModalSheet({
         style={ABSOLUTE_FILL_STYLE}
         onPress={onClose}
       />
-      <View ref={setOverlayScope} style={desktopCardStyle} role="dialog" aria-modal tabIndex={-1}>
+      <View
+        dataSet={MATERIAL_SLOTS.dialog}
+        ref={setOverlayScope}
+        style={desktopCardStyle}
+        role="dialog"
+        aria-modal
+        tabIndex={-1}
+      >
         {cardInner}
       </View>
     </View>

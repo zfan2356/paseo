@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import {
   FloatingHeaderOverlay,
   useFloatingHeaderOverlayClearance,
@@ -271,6 +272,7 @@ function ToastCard({
 
   return (
     <Pressable
+      dataSet={MATERIAL_SLOTS.toast}
       accessible={false}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}

@@ -141,7 +141,7 @@ WorkspaceRecord（保留）
   重命名 / 标签 / 置顶 / 归档  沿用原版工作区菜单
 
 右侧文件 / 更改面板
-  绑定目录 / 创建 worktree / 移除绑定
+  绑定目录 / 创建 worktree / 移除绑定 / 关联 PR/MR
 
 设置 › 面板
   Changes / PR 打开位置、diff 布局、换行…  沿用

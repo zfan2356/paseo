@@ -74,6 +74,7 @@ export const en = {
     changesHint: "Directory changes can include work from other sessions and tools.",
   },
   agentChangeRequests: {
+    link: "Link PR/MR",
     title: "Linked PRs/MRs",
     autoLink: "Add automatically",
     loading: "Loading…",

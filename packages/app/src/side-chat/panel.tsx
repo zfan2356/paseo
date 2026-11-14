@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
@@ -60,6 +61,7 @@ export function SideChatOverlay({
   return (
     <View
       style={[styles.panel, isCompact ? styles.panelCompact : null]}
+      dataSet={MATERIAL_SLOTS.fullscreen}
       testID="agent-side-chat-panel"
     >
       <View style={styles.header}>

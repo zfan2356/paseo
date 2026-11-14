@@ -2,6 +2,8 @@
 
 Tokens — every color, font size, weight, spacing step, radius, icon size — live in `packages/app/src/styles/theme.ts`.
 
+Web and desktop use the glass and L1/L2/L3 elevation tokens in `MATERIAL`. The [material evidence](qa-evidence/materials/README.md) records coverage and Mac verification gaps. Native surfaces retain their existing styles.
+
 ---
 
 ## 1. Character

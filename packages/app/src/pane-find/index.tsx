@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import {
   forwardRef,
   useCallback,
@@ -216,6 +217,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
 
   return (
     <View
+      dataSet={MATERIAL_SLOTS.popover}
       style={styles.widget}
       accessibilityLabel={t("paneFind.title")}
       {...(isWeb

@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, Text, View, type PointerEvent as RNPointerEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -174,7 +175,13 @@ const ChatOutlineTick = memo(function ChatOutlineTick({
         />
       </Pressable>
       {hasAttention ? (
-        <View style={styles.preview} pointerEvents="none" aria-hidden testID="chat-outline-preview">
+        <View
+          dataSet={MATERIAL_SLOTS.tooltip}
+          style={styles.preview}
+          pointerEvents="none"
+          aria-hidden
+          testID="chat-outline-preview"
+        >
           <Text style={styles.previewText} numberOfLines={2}>
             {preview}
           </Text>

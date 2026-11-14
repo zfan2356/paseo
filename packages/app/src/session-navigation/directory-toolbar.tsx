@@ -25,6 +25,8 @@ import {
 } from "./model";
 import { BindDirectory, CreateSessionWorktree, useContextMutation } from "./actions";
 import { permitsSessionOperation } from "./operations";
+import { isWeb } from "@/constants/platform";
+import { ChangeRequestsDialog } from "@/agent-change-requests/section";
 
 export function useSessionDirectoryTarget() {
   const { serverId, workspaceId, target } = usePaneContext();
@@ -158,6 +160,7 @@ export function SessionDirectoryToolbar({
       context={context}
       directory={directory}
       canManage={connected && permitsSessionOperation(permissions, "workspace.manage")}
+      canWrite={connected && permitsSessionOperation(permissions, "workspace.write")}
       onBind={openBinding}
       onWorktree={repository ? openWorktree : undefined}
       onSelect={selectDirectory}
@@ -190,6 +193,7 @@ function DirectoryChoices({
   context,
   directory,
   canManage,
+  canWrite,
   onBind,
   onWorktree,
   onSelect,
@@ -201,12 +205,17 @@ function DirectoryChoices({
   context: import("@getpaseo/protocol/session-context").SessionContext;
   directory?: string;
   canManage: boolean;
+  canWrite: boolean;
   onBind(): void;
   onWorktree?: () => void;
   onSelect(path: string): void;
   children: import("react").ReactNode;
 }) {
   const { t } = useTranslation();
+  const [linkingChangeRequests, setLinkingChangeRequests] = useState(false);
+  const openChangeRequests = useCallback(() => setLinkingChangeRequests(true), []);
+  const closeChangeRequests = useCallback(() => setLinkingChangeRequests(false), []);
+  const supportsChangeRequests = isWeb && client.supportsAgentChangeRequests();
   const mutation = useContextMutation(client, serverId, agentId);
   const directories = sessionDirectories(context);
   const paths = directories.map(({ path }) => path);
@@ -249,6 +258,15 @@ function DirectoryChoices({
             <Text style={styles.menu}>⋯</Text>
           </DropdownMenuTrigger>
           <DropdownMenuContent sheetTitle={t("sessionNavigation.selectDirectory")}>
+            {supportsChangeRequests ? (
+              <DropdownMenuItem
+                disabled={!canWrite}
+                onSelect={openChangeRequests}
+                testID="session-directory-link-change-request"
+              >
+                {t("agentChangeRequests.link")}
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem disabled={!canManage || mutation.isPending} onSelect={onBind}>
               {t("sessionNavigation.addDirectory")}
             </DropdownMenuItem>
@@ -271,6 +289,14 @@ function DirectoryChoices({
         </Text>
       ) : null}
       {children}
+      {linkingChangeRequests ? (
+        <ChangeRequestsDialog
+          key={agentId}
+          client={client}
+          agentId={agentId}
+          onClose={closeChangeRequests}
+        />
+      ) : null}
     </View>
   );
 }

@@ -1,3 +1,4 @@
+import { Materials } from "@/styles/materials";
 import { RenderProfile } from "@/utils/render-profiler";
 import { useCallback, useState, type ComponentProps } from "react";
 import { ExpoRoot } from "expo-router";
@@ -16,6 +17,7 @@ const { ctx: context } = require("expo-router/_ctx") as {
 export function RootApp() {
   return (
     <RenderProfile id="App">
+      <Materials />
       <RootRouter context={context} />
     </RenderProfile>
   );

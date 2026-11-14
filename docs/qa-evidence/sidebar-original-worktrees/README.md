@@ -1,6 +1,7 @@
 # Original sidebar and worktree grouping
 
-WORK-416, contract v1. Input main: `17327eec7376632b47d63d49a06117d678de42cc`.
+WORK-416, contract v1. Initial comparison input: `17327eec7376632b47d63d49a06117d678de42cc`.
+Current integration base: `02c20c4eb5f9bc82adb0399e633e704068aa0f80`.
 Original sidebar baseline: `7eb1d2cb1c15648e683e946a4c079cfbf9017236`, immediately
 before WORK-372's `6ec5e2581` session navigation change.
 
@@ -11,6 +12,27 @@ sheets before navigation. The grouping controls replace the Workspaces heading.
 The retired session-card renderer and its collection, menu, projection and
 settings and hover modules have been removed. Stored session metadata remains intact; Explorer's
 directory context and operations remain independent of sidebar grouping.
+
+## Integration with current main
+
+The merge preserves main's sidebar material background and keeps the original
+workspace rows and their density. The retired session-row files remain deleted.
+Their new manual PR/MR entry now opens the same agent-scoped dialog from the
+Files/Changes directory actions menu. Empty request rows remain hidden; URL
+normalization, automatic linking, persistence and removal use main's existing form.
+
+Five affected browser cases pass: linking at 1200px and 390px; the original row's
+status, selection, pin, context menu and hover archive in both themes; 390px
+session-directory binding; and project/directory grouping with unchanged cwd and
+pins/archive. See [browser output](merge-main/browser.txt),
+[typecheck](merge-main/typecheck.txt), [lint](merge-main/lint.txt) and
+[production app build](merge-main/build.txt). Prior unchanged behavior retains the
+verification below.
+
+[Light desktop](merge-main/sidebar-light-1440-selected.png),
+[dark compact](merge-main/sidebar-dark-390-selected.png),
+[compact link menu](merge-main/link-menu-390.png),
+[link form](merge-main/link-form-1200.png).
 
 ## Fixed comparison
 
