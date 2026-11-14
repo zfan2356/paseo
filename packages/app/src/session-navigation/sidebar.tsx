@@ -289,7 +289,6 @@ const SessionRow = memo(function SessionRow({
           aria-selected={selected}
         >
           <Text numberOfLines={1} style={styles.text}>
-            {context?.pinnedAt ? "⌖ " : ""}
             {agent.title ?? t("sessionNavigation.untitled")}
           </Text>
           <SessionMetadata

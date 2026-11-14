@@ -485,14 +485,24 @@ test("session navigation restores nine pins and swaps complete lists without cha
       await expect(directory).not.toContainText("Execution:");
       await directory.click();
       await expect(page.getByTestId("execution-directory-full-path")).toHaveText(mock.cwd);
+      await page.screenshot({
+        path: info.outputPath(`execution-directory-details-${width}.png`),
+        fullPage: true,
+      });
       await page
         .getByTestId("execution-directory-details")
         .getByRole("button", { name: "Close", exact: true })
         .click();
+      await expect(page.getByTestId("execution-directory-full-path")).not.toBeVisible();
       if (width === 1200) {
         await directory.hover();
         await expect(page.getByText(`Execution: ${mock.cwd}`, { exact: true })).toBeVisible();
+        await page.screenshot({
+          path: info.outputPath("execution-directory-hover-1200.png"),
+          fullPage: true,
+        });
         await page.mouse.move(0, 0);
+        await expect(page.getByText(`Execution: ${mock.cwd}`, { exact: true })).not.toBeVisible();
       }
       await page.screenshot({
         path: info.outputPath(`execution-directory-${width}.png`),
@@ -506,7 +516,7 @@ test("session navigation restores nine pins and swaps complete lists without cha
       await expect(pins).not.toContainText("Ordinary session");
       const repositoryGroup = sidebar
         .locator('[data-testid^="session-group-"]')
-        .filter({ has: sidebar.getByTestId(`session-row-${ordinary.id}`) });
+        .filter({ has: page.getByTestId(`session-row-${ordinary.id}`) });
       await expect(repositoryGroup.locator('[data-testid^="session-row-"]')).toHaveCount(3);
       for (const id of worktreeAgents)
         await expect(repositoryGroup.getByTestId(`session-row-${id}`)).toBeVisible();
@@ -519,6 +529,11 @@ test("session navigation restores nine pins and swaps complete lists without cha
       });
       await sidebar.getByTestId("session-pinned-toggle").click();
       await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(0);
+      await repositoryGroup.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: info.outputPath(`session-repositories-${width}.png`),
+        fullPage: true,
+      });
       await sidebar.getByTestId("session-pinned-toggle").click();
       await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(9);
       await page.getByTestId("directory-terminal-resources").filter({ visible: true }).click();
