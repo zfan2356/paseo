@@ -2,6 +2,8 @@
 
 Tokens — every color, font size, weight, spacing step, radius, icon size — live in `packages/app/src/styles/theme.ts`.
 
+The [desktop material study](qa-evidence/material-preview/README.md) is opt-in and awaits visual approval.
+
 ---
 
 ## 1. Character

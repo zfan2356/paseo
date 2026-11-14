@@ -1,0 +1,125 @@
+{
+  "method": "WCAG sRGB relative luminance, 90% surface over worst-case black (light) or white (dark), before rounding. Status text measured directly on glass; tinted badges retain their separate fills.",
+  "rows": [
+    {
+      "scheme": "light",
+      "role": "foreground",
+      "foreground": "#1a1a1e",
+      "surface": "#ffffff",
+      "opacity": 0.9,
+      "backdrop": [0, 0, 0],
+      "composited": [229.5, 229.5, 229.5],
+      "ratio": 13.836634653446367
+    },
+    {
+      "scheme": "light",
+      "role": "foregroundMuted",
+      "foreground": "#5c605f",
+      "surface": "#ffffff",
+      "opacity": 0.9,
+      "backdrop": [0, 0, 0],
+      "composited": [229.5, 229.5, 229.5],
+      "ratio": 5.085311331722462
+    },
+    {
+      "scheme": "light",
+      "role": "statusSuccess",
+      "foreground": "#3e704a",
+      "surface": "#ffffff",
+      "opacity": 0.9,
+      "backdrop": [0, 0, 0],
+      "composited": [229.5, 229.5, 229.5],
+      "ratio": 4.624827675090697
+    },
+    {
+      "scheme": "light",
+      "role": "statusDanger",
+      "foreground": "#9d433b",
+      "surface": "#ffffff",
+      "opacity": 0.9,
+      "backdrop": [0, 0, 0],
+      "composited": [229.5, 229.5, 229.5],
+      "ratio": 5.075787416721334
+    },
+    {
+      "scheme": "light",
+      "role": "statusWarning",
+      "foreground": "#7b5d39",
+      "surface": "#ffffff",
+      "opacity": 0.9,
+      "backdrop": [0, 0, 0],
+      "composited": [229.5, 229.5, 229.5],
+      "ratio": 4.830742691240184
+    },
+    {
+      "scheme": "light",
+      "role": "statusMerged",
+      "foreground": "#7347af",
+      "surface": "#ffffff",
+      "opacity": 0.9,
+      "backdrop": [0, 0, 0],
+      "composited": [229.5, 229.5, 229.5],
+      "ratio": 5.154429380014265
+    },
+    {
+      "scheme": "dark",
+      "role": "foreground",
+      "foreground": "#fafafa",
+      "surface": "#181B1A",
+      "opacity": 0.9,
+      "backdrop": [255, 255, 255],
+      "composited": [47.1, 49.8, 48.900000000000006],
+      "ratio": 12.432064976452105
+    },
+    {
+      "scheme": "dark",
+      "role": "foregroundMuted",
+      "foreground": "#b3b7b5",
+      "surface": "#181B1A",
+      "opacity": 0.9,
+      "backdrop": [255, 255, 255],
+      "composited": [47.1, 49.8, 48.900000000000006],
+      "ratio": 6.3999487060052695
+    },
+    {
+      "scheme": "dark",
+      "role": "statusSuccess",
+      "foreground": "#6cb17b",
+      "surface": "#181B1A",
+      "opacity": 0.9,
+      "backdrop": [255, 255, 255],
+      "composited": [47.1, 49.8, 48.900000000000006],
+      "ratio": 5.0746026323363
+    },
+    {
+      "scheme": "dark",
+      "role": "statusDanger",
+      "foreground": "#d8847b",
+      "surface": "#181B1A",
+      "opacity": 0.9,
+      "backdrop": [255, 255, 255],
+      "composited": [47.1, 49.8, 48.900000000000006],
+      "ratio": 4.6382369388866245
+    },
+    {
+      "scheme": "dark",
+      "role": "statusWarning",
+      "foreground": "#c09664",
+      "surface": "#181B1A",
+      "opacity": 0.9,
+      "backdrop": [255, 255, 255],
+      "composited": [47.1, 49.8, 48.900000000000006],
+      "ratio": 4.812209120283381
+    },
+    {
+      "scheme": "dark",
+      "role": "statusMerged",
+      "foreground": "#a890d5",
+      "surface": "#181B1A",
+      "opacity": 0.9,
+      "backdrop": [255, 255, 255],
+      "composited": [47.1, 49.8, 48.900000000000006],
+      "ratio": 4.705456694312986
+    }
+  ]
+}

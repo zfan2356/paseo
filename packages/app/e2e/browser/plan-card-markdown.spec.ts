@@ -1,3 +1,4 @@
+import { openAttachmentMenu } from "../support/helpers/composer";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { waitForPermissionPrompt } from "../support/helpers/permissions";
@@ -302,6 +303,224 @@ test("Markdown images show a zoom-in cursor", async ({ page }) => {
     await openAgentRoute(page, session);
     const image = page.getByTestId("assistant-message").getByRole("button", { name: "pixel" });
     await expect(image).toHaveCSS("cursor", "zoom-in");
+  } finally {
+    await session.cleanup();
+  }
+});
+
+// Opt-in visual evidence for WORK-397; uses the same real renderer/daemon fixture.
+test("material preview evidence", async ({ page }, testInfo) => {
+  test.skip(process.env.PASEO_MATERIAL_QA !== "1", "Visual preview capture only");
+  test.setTimeout(240_000);
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const out =
+    (await import("node:path")).resolve(process.cwd(), "../../docs/qa-evidence/material-preview") +
+    "/";
+  await mkdir(out, { recursive: true });
+  const browser = page.context().browser();
+  if (!browser) throw new Error("Chromium is required for material evidence");
+  const browserCdp = await browser.newBrowserCDPSession();
+  const { gpu } = await browserCdp.send("SystemInfo.getInfo");
+  expect(gpu.featureStatus?.gpu_compositing).toBe("enabled");
+  const os = await import("node:os");
+  await writeFile(
+    `${out}environment.json`,
+    JSON.stringify(
+      {
+        os: os.platform(),
+        release: os.release(),
+        arch: os.arch(),
+        cpu: os.cpus()[0].model,
+        logicalCpus: os.cpus().length,
+        browser: browser.version(),
+        gpu,
+      },
+      null,
+      2,
+    ),
+  );
+  await browserCdp.detach();
+  const source = Array.from(
+    { length: 36 },
+    (_, index) =>
+      `## ${index + 1}. Keep the workspace in view\n\nPaseo connects to your development environment. The conversation stays readable while the agent works through changes, checks the result, and explains the next step.\n\n\`packages/app/src/styles/theme.ts\` owns the palette. **One surface, one purpose.** Keep the green accent for the action that matters.\n\n\`\`\`ts\nconst surface = { readable: true, focused: true };\nawait reviewChanges(surface);\n\`\`\``,
+  ).join("\n\n");
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "material-study-",
+    title: "Refine workspace surfaces",
+    initialPrompt: "Review the workspace surfaces and explain the implementation.",
+    featureValues: { mockAssistantResponse: source },
+  });
+  try {
+    await session.client.waitForFinish(session.agentId, 30_000);
+    const paintEvidence = [];
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.addInitScript(() => localStorage.setItem("paseo:material-preview", "glass"));
+      await openAgentRoute(page, session);
+      await page.evaluate(
+        (theme) =>
+          localStorage.setItem(
+            "@paseo:app-settings",
+            JSON.stringify({ theme, chatDisplay: "full" }),
+          ),
+        scheme,
+      );
+      await page.reload();
+      await expect(page.getByTestId("message-input-root")).toBeVisible({ timeout: 60_000 });
+      await page.waitForFunction(() => document.querySelector("[data-material-preview-styles]"));
+      const input = page.getByRole("textbox", { name: "Message agent..." }).first();
+      await input.fill("Keep the transcript crisp; soften only the floating surfaces.");
+      await input.blur();
+      // A synthetic wallpaper is only the window's backdrop; all UI is the real app.
+      await page.addStyleTag({
+        content:
+          "body { background: radial-gradient(ellipse at 0% 30%, #718f90, transparent 65%), radial-gradient(ellipse at 80% 80%, #b3a48d, #525e70); }",
+      });
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await page.waitForTimeout(500);
+        const scroll = page.getByTestId("agent-chat-scroll").filter({ visible: true });
+        await scroll.hover();
+        await page.mouse.wheel(0, -1400);
+        await page.waitForTimeout(400);
+        await scroll.evaluate((el) => {
+          el.scrollTop = el.scrollHeight * 0.45;
+        });
+        await page.waitForTimeout(400);
+        const scrollTop = await scroll.evaluate((el) => el.scrollTop);
+        const capture = async (scene: string) => {
+          for (const mode of ["solid", "glass"]) {
+            await page.evaluate((value) => {
+              document.documentElement.dataset.materialPreview = value;
+            }, mode);
+            await page.waitForTimeout(350);
+            await scroll.evaluate((el, top) => {
+              el.scrollTop = top;
+            }, scrollTop);
+            const blur = await page
+              .locator('[data-material="composer"]:visible')
+              .first()
+              .evaluate((el) => getComputedStyle(el).backdropFilter);
+            expect(blur).toBe(mode === "glass" ? "blur(24px) saturate(1.15)" : "none");
+            await page.screenshot({ path: `${out}${scheme}-${width}-${scene}-${mode}.png` });
+          }
+        };
+        await capture("conversation");
+        paintEvidence.push({
+          scheme,
+          width,
+          ancestors: await page
+            .locator('[data-material="composer"]:visible')
+            .first()
+            .evaluate((element) => {
+              const rows = [];
+              for (let node: Element | null = element; node; node = node.parentElement) {
+                const css = getComputedStyle(node);
+                rows.push({
+                  tag: node.tagName,
+                  material: node.getAttribute("data-material"),
+                  background: css.backgroundColor,
+                  opacity: css.opacity,
+                  filter: css.filter,
+                  backdropFilter: css.backdropFilter,
+                  isolation: css.isolation,
+                  mask: css.maskImage,
+                  willChange: css.willChange,
+                  contain: css.contain,
+                });
+              }
+              return rows;
+            }),
+        });
+        await openAttachmentMenu(page);
+        await page.waitForTimeout(500);
+        await capture("menu");
+        await page.keyboard.press("Escape");
+        await page.mouse.click(width - 25, 220);
+        await page.keyboard.press("Shift+?");
+        await expect(page.getByTestId("keyboard-shortcuts-dialog")).toBeVisible();
+        await page.waitForTimeout(500);
+        await capture("dialog");
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send("Emulation.setEmulatedMedia", {
+          features: [
+            { name: "prefers-color-scheme", value: scheme },
+            { name: "prefers-reduced-transparency", value: "reduce" },
+          ],
+        });
+        expect(
+          await page.evaluate(() => matchMedia("(prefers-reduced-transparency: reduce)").matches),
+        ).toBe(true);
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: `${out}${scheme}-${width}-reduced-transparency.png` });
+        await cdp.send("Emulation.setEmulatedMedia", {
+          features: [{ name: "prefers-color-scheme", value: scheme }],
+        });
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("keyboard-shortcuts-dialog")).toBeHidden();
+        await cdp.detach();
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.waitForTimeout(350);
+      }
+    }
+    await writeFile(`${out}paint.json`, JSON.stringify(paintEvidence, null, 2));
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const perf = [];
+    for (let trial = 0; trial < 3; trial++) {
+      for (const blur of trial % 2 ? [true, false] : [false, true]) {
+        const override = blur
+          ? null
+          : await page.addStyleTag({
+              content: "[data-material] { backdrop-filter: none !important; }",
+            });
+        const sample = await page
+          .getByTestId("agent-chat-scroll")
+          .filter({ visible: true })
+          .evaluate(async (element) => {
+            const frames: number[] = [];
+            const writes: number[] = [];
+            element.scrollTop = element.scrollHeight * 0.3;
+            let previous = await new Promise<number>(requestAnimationFrame);
+            for (let i = 0; i < 180; i++) {
+              const now = await new Promise<number>(requestAnimationFrame);
+              const start = performance.now();
+              element.scrollTop += i < 90 ? 12 : -12;
+              writes.push(performance.now() - start);
+              if (i >= 30) frames.push(now - previous);
+              previous = now;
+            }
+            return {
+              frames,
+              writes,
+              scrollHeight: element.scrollHeight,
+              viewportHeight: element.clientHeight,
+              nodes: document.querySelectorAll("*").length,
+            };
+          });
+        perf.push({ trial, blur, ...sample });
+        await override?.evaluate((element) => element.parentNode?.removeChild(element));
+      }
+    }
+    await writeFile(
+      `${out}frames.json`,
+      JSON.stringify(
+        {
+          browser: page.context().browser()?.version(),
+          viewport: { width: 1440, height: 1000 },
+          sections: 36,
+          characters: source.length,
+          samples: perf,
+        },
+        null,
+        2,
+      ),
+    );
+
+    await testInfo.attach("material-preview", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
   } finally {
     await session.cleanup();
   }

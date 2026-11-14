@@ -12,6 +12,11 @@ function videoMode(): "on" | "on-first-retry" | "retain-on-failure" {
   return "retain-on-failure";
 }
 
+function traceMode(): "off" | "on-first-retry" | "retain-on-failure" {
+  if (process.env.PASEO_MATERIAL_QA === "1") return "off";
+  return process.env.CI ? "on-first-retry" : "retain-on-failure";
+}
+
 export default defineConfig({
   testDir: "./e2e/browser",
   globalSetup: "./e2e/support/global-setup.ts",
@@ -27,9 +32,25 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL,
-    trace: process.env.CI ? "on-first-retry" : "retain-on-failure",
+    launchOptions: {
+      ...(process.env.E2E_CHROMIUM_EXECUTABLE_PATH
+        ? { executablePath: process.env.E2E_CHROMIUM_EXECUTABLE_PATH }
+        : {}),
+      // Headless Linux otherwise accepts backdrop-filter without compositing the blur.
+      ...(process.env.E2E_GPU_COMPOSITING === "1"
+        ? {
+            args: [
+              "--enable-gpu",
+              "--use-gl=angle",
+              "--use-angle=swiftshader",
+              "--enable-unsafe-swiftshader",
+            ],
+          }
+        : {}),
+    },
+    trace: traceMode(),
     screenshot: "only-on-failure",
-    video: videoMode(),
+    video: process.env.PASEO_MATERIAL_QA === "1" ? "off" : videoMode(),
   },
   projects: [
     {

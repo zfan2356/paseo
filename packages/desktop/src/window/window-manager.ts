@@ -1,3 +1,4 @@
+import { updateMaterialBackground } from "./material-preview.js";
 import {
   app,
   BrowserWindow,
@@ -205,7 +206,7 @@ export function registerWindowManager(input: { mode: DesktopWindowChromeMode }):
     }
 
     if (nextUpdate.backgroundColor) {
-      win.setBackgroundColor(nextUpdate.backgroundColor);
+      updateMaterialBackground(win, nextUpdate.backgroundColor);
     }
 
     if (input.mode === "native-mac") {

@@ -44,6 +44,7 @@ import {
   setupDragDropPrevention,
   buildStandardContextMenuItems,
 } from "./window/window-manager.js";
+import { materialWindowOptions, setupMaterialPreview } from "./window/material-preview.js";
 import { setupDarwinCompositorWatchdog } from "./window/compositor-watchdog/index.js";
 import { showWindowWhenReady } from "./window/show-when-ready.js";
 import { resolveDesktopWindowChromeMode, windowChromeModeArgument } from "./window/chrome.js";
@@ -701,7 +702,7 @@ async function createWindow(
     title,
     ...resolveWindowBounds(restoredWindowState),
     show: false,
-    backgroundColor: getWindowBackgroundColor(systemTheme),
+    ...materialWindowOptions(getWindowBackgroundColor(systemTheme)),
     ...(iconPath ? { icon: iconPath } : {}),
     ...getMainWindowChromeOptions({
       mode: DESKTOP_WINDOW_CHROME_MODE,
@@ -715,6 +716,7 @@ async function createWindow(
     },
   });
   applyDesktopWindowChromeMode({ win: mainWindow, mode: DESKTOP_WINDOW_CHROME_MODE });
+  setupMaterialPreview(mainWindow, getWindowBackgroundColor(systemTheme));
   menuBar?.attach(mainWindow);
 
   const webContentsId = mainWindow.webContents.id;

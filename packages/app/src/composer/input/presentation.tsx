@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useCallback, useMemo, type ReactNode, type Ref } from "react";
 import { View, type ViewProps } from "react-native";
 import { Maximize2, Minimize2 } from "lucide-react-native";
@@ -108,6 +109,7 @@ export function ComposerInputPresentation({
       <ComposerFullscreenBody fullscreen={fullscreen}>
         <View
           ref={inputWrapperRef}
+          dataSet={fullscreen ? MATERIAL_SLOTS.solid : MATERIAL_SLOTS.composer}
           style={fullscreen ? styles.fullscreenInputWrapper : inputWrapperStyle}
           pointerEvents={inputPointerEvents}
         >

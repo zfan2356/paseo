@@ -1,3 +1,4 @@
+import { sidebarMaterialColor, materialMutedColor } from "./sidebar-material-color";
 import { codexPalette } from "../../../../plugins/codex-theme/shared/palette";
 import { Platform } from "react-native";
 import { darkHighlightColors, lightHighlightColors } from "@getpaseo/highlight";
@@ -267,14 +268,14 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     surface3: tint.surface3,
     surface4: tint.surface4,
     surfaceDiffEmpty: tint.surfaceDiffEmpty,
-    surfaceSidebar: tint.surfaceSidebar,
+    surfaceSidebar: sidebarMaterialColor(tint.surfaceSidebar),
     surfaceSidebarHover: tint.surface3,
     surfaceSidebarSelected: tint.surface4,
     surfaceWorkspace: tint.surface0,
     interactionHighlight: "rgba(0, 0, 0, 0.06)",
 
     foreground: tint.foreground,
-    foregroundMuted: tint.foregroundMuted,
+    foregroundMuted: materialMutedColor(tint.foregroundMuted),
     foregroundExtraMuted: tint.foregroundExtraMuted,
 
     border: tint.border,
@@ -398,14 +399,14 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
     surface3: tint.surface3,
     surface4: tint.surface4,
     surfaceDiffEmpty: tint.surfaceDiffEmpty,
-    surfaceSidebar: tint.surfaceSidebar,
+    surfaceSidebar: sidebarMaterialColor(tint.surfaceSidebar),
     surfaceSidebarHover: tint.surface1,
     surfaceSidebarSelected: tint.surface2,
     surfaceWorkspace: tint.surface1,
     interactionHighlight: "rgba(255, 255, 255, 0.08)",
 
     foreground,
-    foregroundMuted: tint.foregroundMuted,
+    foregroundMuted: materialMutedColor(tint.foregroundMuted),
     foregroundExtraMuted: tint.foregroundExtraMuted,
 
     border: tint.border,
@@ -560,6 +561,29 @@ const ghosttyDarkColors = buildDarkSemanticColors({
   terminalBlack: "#21252d",
   terminalBrightBlack: "#4a4f5e",
 });
+
+// Opt-in desktop material study. Keep geometry and material strength shared.
+export const MATERIAL_PREVIEW = {
+  blur: 24,
+  saturation: 1.15,
+  opacity: 0.9,
+  sidebarOpacity: 0.9,
+  hairline: 1,
+  radius: { composer: 20, menu: 12, dialog: 20 },
+  motion: { duration: 160, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+  light: {
+    foregroundMuted: "#5c605f",
+    border: "rgba(0,0,0,0.10)",
+    shadow: "0 8px 32px rgba(0,0,0,0.10)",
+    dialogShadow: "0 24px 80px rgba(0,0,0,0.18)",
+  },
+  dark: {
+    foregroundMuted: "#b3b7b5",
+    border: "rgba(255,255,255,0.12)",
+    shadow: "0 8px 32px rgba(0,0,0,0.28)",
+    dialogShadow: "0 24px 80px rgba(0,0,0,0.42)",
+  },
+} as const;
 
 export const SPACING = {
   0: 0,
