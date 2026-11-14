@@ -1,3 +1,7 @@
+import {
+  useSessionDirectoryTarget,
+  SessionDirectoryToolbar,
+} from "@/session-navigation/directory-toolbar";
 import { Text, View } from "react-native";
 import { Files } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -22,27 +26,28 @@ function FilesPanel() {
   const { t } = useTranslation();
   const { serverId, workspaceId, target, openPreferredTarget, openTargetToSide } = usePaneContext();
   const defaultRoot = useWorkspaceDirectory(serverId, workspaceId);
-  const directory = target.kind === "files" ? target.directory : undefined;
+  const selection = useSessionDirectoryTarget();
+  const { directory, sessionAgentId } = selection;
   const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId, directory });
   invariant(target.kind === "files", "FilesPanel requires files target");
-  const workspaceRoot = target.directory ?? defaultRoot;
+  const workspaceRoot = directory ?? defaultRoot;
   const onOpenFile = useCallback(
     (path: string) =>
       openPreferredTarget(
-        { kind: "file", path, directory: target.directory, sessionAgentId: target.sessionAgentId },
+        { kind: "file", path, directory: directory, sessionAgentId },
         "explorerFiles",
       ),
-    [openPreferredTarget, target.directory, target.sessionAgentId],
+    [openPreferredTarget, directory, sessionAgentId],
   );
   const onOpenFileToSide = useCallback(
     (path: string) =>
       openTargetToSide?.({
         kind: "file",
         path,
-        directory: target.directory,
-        sessionAgentId: target.sessionAgentId,
+        directory: directory,
+        sessionAgentId: sessionAgentId,
       }),
-    [openTargetToSide, target.directory, target.sessionAgentId],
+    [openTargetToSide, directory, sessionAgentId],
   );
   if (!workspaceRoot) {
     return (
@@ -53,15 +58,16 @@ function FilesPanel() {
   }
   return (
     <View style={styles.fill}>
-      {target.directory ? (
+      <SessionDirectoryToolbar selection={selection} />
+      {directory ? (
         <Text selectable style={styles.path}>
-          {serverId} · {target.directory}
+          {serverId} · {directory}
         </Text>
       ) : null}
       <FileExplorerPane
         serverId={serverId}
         workspaceId={workspaceId}
-        sessionAgentId={target.sessionAgentId}
+        sessionAgentId={sessionAgentId}
         workspaceRoot={workspaceRoot}
         onOpenFile={onOpenFile}
         onOpenFileToSide={openTargetToSide ? onOpenFileToSide : undefined}

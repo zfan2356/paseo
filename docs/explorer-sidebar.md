@@ -37,12 +37,19 @@ the binding points into a subdirectory. Keep the source binding in navigation an
 and use the checkout root for Git file opens, attachments and writes. Legacy targets without a
 directory retain the workspace default.
 
-Close the left sidebar before revealing a directory target. On compact layouts its dismiss action
-selects the chat surface, so calling it after Explorer navigation hides the requested destination.
-Directory tabs retain the owning workspace for layout and chat placement. A binding grants no
-container-management authority: workspace archive and base-branch changes stay in the explicit
-resource entry. A directory Changes link opens its actual PR URL; it must not select a PR through
-the owning session’s checkout.
+Files and Changes expose the session directory selector and binding actions. A default panel follows
+the focused session's saved browsing selection; explicitly opened directory tabs keep their target.
+Selecting or binding a directory never changes execution cwd. Keep the selector mounted when the
+selected path fails to load, so another directory and Remove binding stay reachable. The immutable
+launch directory cannot be removed. Local Changes resolves nested paths to their actual checkout
+root before Git operations.
+
+Workspaces and terminals in the dock toolbar opens the existing global workspace list as a sheet.
+Open project exposes the same sheet when no workspace is selected. Its rows navigate to real
+workspaces and restore their terminal, service and layout state; they never create placeholder agents.
+A binding grants no container-management authority: workspace archive and base-branch changes stay
+in that resource entry. A directory Changes link opens its actual PR URL; it must not select a PR
+through the owning session's checkout.
 
 ## Sheets
 

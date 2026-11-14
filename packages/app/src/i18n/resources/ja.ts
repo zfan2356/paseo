@@ -3,6 +3,11 @@ import { pluginSettings } from "./plugin-settings";
 
 export const ja: TranslationResources = {
   sessionNavigation: {
+    workspaceResources: "ワークスペースとターミナル",
+    workspaceResourcesHint: "既存のターミナル、サービス、ワークスペースのレイアウトを開きます。",
+    selectDirectory: "セッションのディレクトリ",
+    byProject: "プロジェクト別",
+    byDirectory: "ディレクトリ別",
     labelCreatedAssignmentFailed:
       "Label “{{name}}” was created, but assignment failed: {{message}}. Retry to use this label.",
     markRead: "Mark as read",

@@ -1400,6 +1400,7 @@ function WorkspaceRowItem({
   shortcutNumber,
   showShortcutBadge,
   canCopyBranchName,
+  onWorkspacePress,
   canPin,
   onToggleWorkspacePin,
   reserveIdleStatusIndicatorSpace = true,
@@ -1414,8 +1415,9 @@ function WorkspaceRowItem({
     if (!workspace.serverId) {
       return;
     }
+    onWorkspacePress?.();
     navigateToWorkspace({ serverId: workspace.serverId, workspaceId: workspace.workspaceId });
-  }, [workspace.serverId, workspace.workspaceId]);
+  }, [workspace.serverId, workspace.workspaceId, onWorkspacePress]);
 
   return (
     <WorkspaceRow

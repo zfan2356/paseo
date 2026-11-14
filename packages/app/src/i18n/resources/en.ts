@@ -1,5 +1,10 @@
 export const en = {
   sessionNavigation: {
+    workspaceResources: "Workspaces and terminals",
+    workspaceResourcesHint: "Open existing terminals, services and workspace layouts.",
+    selectDirectory: "Session directories",
+    byProject: "By project",
+    byDirectory: "By directory",
     labelCreatedAssignmentFailed:
       "Label “{{name}}” was created, but assignment failed: {{message}}. Retry to use this label.",
     markRead: "Mark as read",

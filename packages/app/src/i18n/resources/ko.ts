@@ -3,6 +3,11 @@ import { pluginSettings } from "./plugin-settings";
 
 export const ko: TranslationResources = {
   sessionNavigation: {
+    workspaceResources: "작업 공간 및 터미널",
+    workspaceResourcesHint: "기존 터미널, 서비스 및 작업 공간 레이아웃을 엽니다.",
+    selectDirectory: "세션 디렉터리",
+    byProject: "프로젝트별",
+    byDirectory: "디렉터리별",
     labelCreatedAssignmentFailed:
       "Label “{{name}}” was created, but assignment failed: {{message}}. Retry to use this label.",
     markRead: "Mark as read",

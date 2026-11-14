@@ -3,6 +3,11 @@ import { pluginSettings } from "./plugin-settings";
 
 export const zhCN: TranslationResources = {
   sessionNavigation: {
+    workspaceResources: "工作区与终端",
+    workspaceResourcesHint: "打开已有终端、服务与工作区布局。",
+    selectDirectory: "会话关联目录",
+    byProject: "按项目",
+    byDirectory: "按目录",
     labelCreatedAssignmentFailed:
       "标签“{{name}}”已创建，但未能赋给会话：{{message}}。重试将复用该标签。",
     markRead: "标为已读",

@@ -3,6 +3,11 @@ import { pluginSettings } from "./plugin-settings";
 
 export const ar: TranslationResources = {
   sessionNavigation: {
+    workspaceResources: "مساحات العمل والطرفيات",
+    workspaceResourcesHint: "افتح الطرفيات والخدمات وتخطيطات مساحات العمل الحالية.",
+    selectDirectory: "مجلدات الجلسة",
+    byProject: "حسب المشروع",
+    byDirectory: "حسب المجلد",
     labelCreatedAssignmentFailed:
       "Label “{{name}}” was created, but assignment failed: {{message}}. Retry to use this label.",
     markRead: "Mark as read",

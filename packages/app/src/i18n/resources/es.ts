@@ -3,6 +3,12 @@ import { pluginSettings } from "./plugin-settings";
 
 export const es: TranslationResources = {
   sessionNavigation: {
+    workspaceResources: "Espacios de trabajo y terminales",
+    workspaceResourcesHint:
+      "Abre terminales, servicios y diseños de espacios de trabajo existentes.",
+    selectDirectory: "Directorios de la sesión",
+    byProject: "Por proyecto",
+    byDirectory: "Por directorio",
     labelCreatedAssignmentFailed:
       "Label “{{name}}” was created, but assignment failed: {{message}}. Retry to use this label.",
     markRead: "Mark as read",

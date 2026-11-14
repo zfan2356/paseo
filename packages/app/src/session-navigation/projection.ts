@@ -2,7 +2,7 @@ import { i18n } from "@/i18n/i18next";
 import type { Agent } from "@/stores/session-store";
 import type { SidebarProjectEntry } from "@/hooks/sidebar-workspaces-view-model";
 import type { ContextSnapshot } from "./contexts";
-import { sessionDirectories } from "./model";
+import { sessionDirectories, executionDirectoryLabel } from "./model";
 import { workspaceLabelKey } from "@getpaseo/protocol/workspace-labels";
 import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
 
@@ -18,13 +18,16 @@ interface SessionProjectionInput {
     sort: string;
     labels: readonly string[];
     projects: readonly string[];
-    group: string;
+    group: "project" | "directory";
   };
 }
 interface SessionGroup {
   key: string;
   name: string;
   agents: Agent[];
+}
+export function directorySessionGroupKey(serverId: string, cwd: string): string {
+  return JSON.stringify(["directory", serverId, cwd]);
 }
 export const PINNED_SESSION_GROUP = "pinned-sessions";
 export function sessionStatus(agent: Agent) {
@@ -97,18 +100,18 @@ export function projectSessions(input: SessionProjectionInput): SessionGroup[] {
     if (context?.pinnedAt) {
       key = PINNED_SESSION_GROUP;
       name = i18n.t("sidebar.pinned.title");
-    } else if (input.preferences.group === "status") {
-      key = sessionStatus(agent);
-      name = key.replaceAll("_", " ");
+    } else if (input.preferences.group === "directory") {
+      key = directorySessionGroupKey(input.serverId, agent.cwd);
+      name = executionDirectoryLabel(
+        agent.cwd,
+        input.roots.map((root) => root.cwd),
+      );
     }
     const group = groups.get(key) ?? { key, name, agents: [] };
     group.agents.push(agent);
     groups.set(key, group);
   }
-  const order =
-    input.preferences.group === "status"
-      ? ["needs_input", "failed", "attention", "running", "done"]
-      : input.projectOrder;
+  const order = input.preferences.group === "project" ? input.projectOrder : [];
   return [...groups.values()].sort((a, b) => {
     const aIndex = order.indexOf(a.key);
     const bIndex = order.indexOf(b.key);
