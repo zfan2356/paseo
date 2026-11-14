@@ -2,7 +2,7 @@
 
 Choose a visible material direction before production integration. This Draft PR keeps the renderer opt-in and the sidebar row structure owned by WORK-396. The recommended starting point is **balanced / 中等**: the wallpaper and moving illustration remain visible through the tint, while pronounced / 明显 deliberately exposes more color.
 
-**Every screenshot is the real App in Chromium. macOS vibrancy is 模拟 (simulated) in the workspace comparison: an authored coastal wallpaper is blurred behind the window. The CSS backdrop blur over the transcript is real.** The 390px captures are responsive Web. Linux uses **DejaVu Sans**, not SF Pro.
+**Every screenshot is the real App in Chromium. macOS vibrancy is 模拟 (simulated) in the workspace comparison: an authored coastal wallpaper is blurred behind the window. The CSS backdrop blur over the transcript is real.** The 390px captures are responsive Web. Linux uses **DejaVu Sans**, with **Noto Sans CJK SC** for the Chinese strength labels; these are not SF Pro.
 
 ## Compare the strengths
 
