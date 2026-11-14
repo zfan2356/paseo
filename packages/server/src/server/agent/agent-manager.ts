@@ -1634,9 +1634,9 @@ export class AgentManager {
     options: { includeExternal?: boolean } = {},
   ): { count: number; runningCount?: number } | undefined {
     const native = this.backgroundWork.summary(agentId);
-    if (options.includeExternal === false) return native;
+    if (options.includeExternal === false || !this.externalBackgroundWork.hasSources())
+      return native;
     const external = this.externalBackgroundWork.list(agentId);
-    if (!native && !this.externalBackgroundWork.hasSources()) return undefined;
     return {
       count: (native?.count ?? 0) + external.filter((entry) => entry.kind !== "source").length,
       runningCount:
@@ -1646,7 +1646,12 @@ export class AgentManager {
 
   private clearBackgroundWork(agentId: string): void {
     const items = this.backgroundWork.clear(agentId);
-    if (items) this.dispatch({ type: "background_work", agentId, items });
+    if (items)
+      this.dispatch({
+        type: "background_work",
+        agentId,
+        items: this.listAgentBackgroundWork(agentId),
+      });
   }
 
   listProviderSubagentActivity(): ProviderSubagentDescriptor[] {
@@ -4889,7 +4894,12 @@ export class AgentManager {
         event.items === null
           ? this.backgroundWork.clear(agent.id)
           : this.backgroundWork.apply(agent.id, event.items);
-      if (items) this.dispatch({ type: "background_work", agentId: agent.id, items });
+      if (items)
+        this.dispatch({
+          type: "background_work",
+          agentId: agent.id,
+          items: this.listAgentBackgroundWork(agent.id),
+        });
       return;
     }
     const turnId = getAgentStreamEventTurnId(event);

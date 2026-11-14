@@ -87,7 +87,7 @@ interface LoadedPlugin {
   providers: readonly PluginProviderMetadata[];
   usageSources: readonly PluginUsageSourceMetadata[];
   backgroundSources: readonly PluginUsageSourceMetadata[];
-  releaseBackground: (() => void) | null;
+  releaseBackground: ((mode: "remove" | "unavailable") => void) | null;
   child: PluginChild | null;
   outputCapture: PluginOutputCapture | null;
   pending: Map<string, PendingInvocation>;
@@ -285,6 +285,10 @@ function send(child: PluginChild, message: PluginProcessRequest): Promise<void> 
 
 export class PluginRuntime {
   private readonly plugins = new Map<string, LoadedPlugin>();
+  private readonly backgroundTeardowns = new Map<
+    string,
+    NonNullable<LoadedPlugin["releaseBackground"]>
+  >();
   private readonly pendingEvents = new Set<Promise<void>>();
   private readonly logTails = new Map<string, PluginLogTail>();
   private readonly logger: pino.Logger;
@@ -424,15 +428,18 @@ export class PluginRuntime {
           }, 5000);
       };
       void poll();
-      return () => {
+      return (mode: "remove" | "unavailable") => {
         active = false;
         clearTimeout(timer);
-        sink.close();
+        if (mode === "remove") sink.close();
+        else sink.fail();
       };
     });
-    loaded.releaseBackground = () => {
-      for (const release of releases) release();
+    loaded.releaseBackground = (mode) => {
+      for (const release of releases) release(mode);
     };
+    this.backgroundTeardowns.get(loaded.id)?.("remove");
+    this.backgroundTeardowns.set(loaded.id, loaded.releaseBackground);
   }
 
   async validatePlugin(configuredPath: string): Promise<void> {
@@ -441,7 +448,12 @@ export class PluginRuntime {
 
   async stopPluginById(pluginId: string): Promise<boolean> {
     const loaded = this.plugins.get(pluginId);
-    if (!loaded) return false;
+    if (!loaded) {
+      const release = this.backgroundTeardowns.get(pluginId);
+      release?.("remove");
+      this.backgroundTeardowns.delete(pluginId);
+      return Boolean(release);
+    }
     this.plugins.delete(pluginId);
     this.notifySessionOpenChange(loaded);
     this.rejectPending(loaded, `Plugin stopped: ${pluginId}`);
@@ -868,6 +880,8 @@ export class PluginRuntime {
   }
 
   async stopAll(): Promise<void> {
+    for (const release of this.backgroundTeardowns.values()) release("remove");
+    this.backgroundTeardowns.clear();
     const loaded = [...this.plugins.values()];
     this.plugins.clear();
     for (const plugin of loaded) {
@@ -1441,7 +1455,7 @@ export class PluginRuntime {
   }
 
   private async handleChildClose(loaded: LoadedPlugin): Promise<void> {
-    loaded.releaseBackground?.();
+    loaded.releaseBackground?.("unavailable");
     loaded.sessionSocket?.peerClosed();
     const wasPublished = this.plugins.get(loaded.id) === loaded;
     if (wasPublished) {
@@ -1458,7 +1472,9 @@ export class PluginRuntime {
   }
 
   private async stopPlugin(loaded: LoadedPlugin): Promise<void> {
-    loaded.releaseBackground?.();
+    loaded.releaseBackground?.("remove");
+    if (this.backgroundTeardowns.get(loaded.id) === loaded.releaseBackground)
+      this.backgroundTeardowns.delete(loaded.id);
     this.appendLog(loaded.id, "stdout", "[paseo] Stopping plugin");
     for (const [connectionId, state] of loaded.providerConnections) {
       if (state.connected) continue;

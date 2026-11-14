@@ -551,7 +551,10 @@ test("external background sources poll in subprocesses, isolate sessions, cancel
     path.join(directory, "index.server.ts"),
     `
 import { readFile, writeFile } from "node:fs/promises";
+import { defineRpc } from "@getpaseo/plugin";
+import { z } from "zod";
 export default function contribute(server) {
+  server.handle(defineRpc({name: "crash", input: z.object({}), output: z.null()}), () => { process.exit(12); });
   server.registerBackgroundWorkSource({
     id: "waits", label: "Multica fixture",
     async fetch({ paseo }) {
@@ -586,15 +589,20 @@ export default function contribute(server) {
     await client.connect();
     await legacy.connect();
     await reader.connect();
+    const workspace = await client.createWorkspace({
+      source: { kind: "directory", path: directory },
+      title: "Background sources",
+    });
+    if (!workspace.workspace) throw new Error("No test workspace");
     const a = await daemon.daemon.agentManager.createAgent(
       { provider: "claude", cwd: directory },
       undefined,
-      { workspaceId: undefined },
+      { workspaceId: workspace.workspace.id },
     );
     const b = await daemon.daemon.agentManager.createAgent(
       { provider: "codex", cwd: directory },
       undefined,
-      { workspaceId: undefined },
+      { workspaceId: workspace.workspace.id },
     );
     const entry = {
       agentId: a.id,
@@ -644,6 +652,82 @@ export default function contribute(server) {
     expect(
       (await client.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]?.external?.status,
     ).toContain("Cancelled");
+    const runningCounts: (number | undefined)[] = [];
+    const totalCounts: number[] = [];
+    const observation = client.observeAgents();
+    observation.subscribe({
+      update(message) {
+        if (
+          message.type === "agent_update" &&
+          message.payload.kind === "upsert" &&
+          message.payload.agent.id === b.id
+        )
+          runningCounts.push(message.payload.agent.backgroundWork?.runningCount);
+        if (
+          message.type === "agent_update" &&
+          message.payload.kind === "upsert" &&
+          message.payload.agent.id === b.id
+        )
+          totalCounts.push(message.payload.agent.backgroundWork?.count ?? -1);
+      },
+    });
+    await observation.ready;
+    await daemon.daemon.agentManager.closeAgent(b.id);
+    expect(daemon.daemon.agentManager.getAgent(b.id)).toBeNull();
+    expect((await client.fetchAgent(b.id))?.agent.backgroundWork).toEqual({
+      count: 1,
+      runningCount: 1,
+    });
+    runningCounts.length = 0;
+    await client.stopAgentBackgroundWork(b.id, (await client.listAgentBackgroundWork(b.id))[0]!);
+    await expect.poll(() => runningCounts.includes(0)).toBe(true);
+    expect((await client.fetchAgent(b.id))?.agent.backgroundWork).toEqual({
+      count: 1,
+      runningCount: 0,
+    });
+    expect(daemon.daemon.agentManager.getAgent(b.id)).toBeNull();
+    totalCounts.length = 0;
+    await writeFile(
+      inventoryPath,
+      JSON.stringify([
+        {
+          ...entry,
+          canStop: false,
+          external: { ...entry.external, running: false, status: "Cancelled · awaiting handling" },
+        },
+      ]),
+    );
+    await expect.poll(() => totalCounts.includes(0), { timeout: 10000 }).toBe(true);
+    expect((await client.fetchAgent(b.id))?.agent.backgroundWork).toEqual({
+      count: 0,
+      runningCount: 0,
+    });
+    expect(daemon.daemon.agentManager.getAgent(b.id)).toBeNull();
+    await observation.release();
+    await expect(client.invokePluginRpc("background-fixture", "crash", {})).rejects.toThrow();
+    await expect
+      .poll(
+        async () =>
+          (await client.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]?.external?.freshness,
+      )
+      .toBe("stale");
+    expect(
+      (await client.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]?.external?.status,
+    ).toContain("Cancelled");
+    await client.reloadPlugin("background-fixture");
+    await expect
+      .poll(
+        async () =>
+          (await client.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]?.external?.freshness,
+      )
+      .toBe("ready");
+    await expect(client.invokePluginRpc("background-fixture", "crash", {})).rejects.toThrow();
+    await expect
+      .poll(
+        async () =>
+          (await client.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]?.external?.freshness,
+      )
+      .toBe("stale");
     await client.removePlugin("background-fixture");
     await expect
       .poll(async () => daemon.daemon.agentManager.getAgentBackgroundWorkSummary(a.id))

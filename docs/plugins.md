@@ -592,7 +592,8 @@ The daemon authorizes stop requests using the host's existing background-work pe
 calling `stop(entry, { paseo })`. Recheck the external target there and cancel only the owned local
 wait. The UI keeps terminal entries until the source removes them, so a source can retain an ended
 wait until its delivery is handled. Use null for unknown times; observation time is not start time.
-Plugin teardown revokes its inventory and controls without stopping external work. A reloaded
+A crashed plugin retains stale inventory and revokes controls. Explicit disable or removal revokes
+its inventory without stopping external work. A reloaded
 instance must reconstruct from the external authority.
 
 Old clients receive provider inventory only. New clients declare `external_background_work` and

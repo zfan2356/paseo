@@ -2243,7 +2243,12 @@ export class Session {
         }
 
         if (event.type === "background_work") {
-          this.forwardBackgroundWork(event);
+          void this.forwardBackgroundWork(event).catch((error) => {
+            this.sessionLogger.error(
+              { err: error, agentId: event.agentId },
+              "Failed to publish background work",
+            );
+          });
           return;
         }
 
@@ -2415,11 +2420,13 @@ export class Session {
     this.forwardProviderSubagentUpdate(event);
   }
 
-  private forwardBackgroundWork(
+  private async forwardBackgroundWork(
     event: Extract<AgentManagerEvent, { type: "background_work" }>,
-  ): void {
+  ): Promise<void> {
     const agent = this.agentManager.getAgent(event.agentId);
     if (agent?.internal) return;
+    const record = agent ? null : await this.agentStorage.get(event.agentId);
+    if (!agent && (!record || record.internal || record.archivedAt)) return;
     this.emit({
       type: "agent.background_work.update",
       payload: {
@@ -2427,7 +2434,14 @@ export class Session {
         items: this.agentManager.listAgentBackgroundWork(event.agentId),
       },
     });
-    if (agent) void this.agentUpdates.forwardLiveAgent(agent);
+    if (agent) {
+      await this.agentUpdates.forwardLiveAgent(agent);
+      return;
+    }
+    if (record) {
+      await this.agentUpdates.emitStoredRecord(record);
+      if (record.workspaceId) await this.emitWorkspaceUpdateForWorkspaceId(record.workspaceId);
+    }
   }
 
   private emitProviderSubagentWorkspaceUpdate(event: ProviderSubagentManagerEvent): void {
@@ -2477,7 +2491,10 @@ export class Session {
     record: StoredAgentRecord,
     registeredProviderIds = new Set(this.providerSnapshotManager.listRegisteredProviderIds()),
   ): AgentSnapshotPayload {
-    return buildStoredAgentPayload(record, registeredProviderIds);
+    return {
+      ...buildStoredAgentPayload(record, registeredProviderIds),
+      backgroundWork: this.agentManager.getAgentBackgroundWorkSummary(record.id),
+    };
   }
 
   private isProviderVisibleToClient(provider: string): boolean {

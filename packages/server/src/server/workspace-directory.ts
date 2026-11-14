@@ -8,6 +8,7 @@ import type {
 } from "./messages.js";
 import {
   deriveAgentStateBucket,
+  runningBackgroundWorkCount,
   getWorkspaceStateBucketPriority,
   type WorkspaceStateBucket,
 } from "@getpaseo/protocol/agent-state-bucket";
@@ -392,7 +393,11 @@ export class WorkspaceDirectory {
         continue;
       }
       const isWorkspaceRoot = workspaceAgent.id === agent.id;
-      if (!isWorkspaceRoot && agent.status !== "running" && !agent.backgroundWork?.count) {
+      if (
+        !isWorkspaceRoot &&
+        agent.status !== "running" &&
+        !runningBackgroundWorkCount(agent.backgroundWork)
+      ) {
         continue;
       }
       const bucket = isWorkspaceRoot
