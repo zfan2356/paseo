@@ -190,7 +190,7 @@ it("shows the shortest unambiguous execution directory suffix", async () => {
   expect(executionDirectoryLabel("/", ["/works"])).toBe("/");
 });
 
-it("keeps all nine pins in one ordered section across project/status grouping and filters", async () => {
+it("keeps all nine pins in one ordered section across project/directory grouping and filters", async () => {
   const { projectSessions, PINNED_SESSION_GROUP } = await import("./projection");
   const agents = Array.from({ length: 10 }, (_, index) => ({
     ...sessionAgent,
@@ -223,7 +223,7 @@ it("keeps all nine pins in one ordered section across project/status grouping an
       .map((agent) => `host:${agent.id}`),
     projectOrder: [],
     search: "",
-    preferences: { sort: "lastPrompt", labels: [], projects: [], group: "project" },
+    preferences: { sort: "lastPrompt", labels: [], projects: [], group: "project" as const },
   };
   expect(
     projectSessions(input).map((group) => [group.key, group.agents.map((agent) => agent.id)]),
@@ -234,11 +234,11 @@ it("keeps all nine pins in one ordered section across project/status grouping an
   expect(
     projectSessions({
       ...input,
-      preferences: { ...input.preferences, group: "status", labels: ["work"] },
+      preferences: { ...input.preferences, group: "directory", labels: ["work"] },
     }).map((group) => [group.key, group.agents.map((agent) => agent.id)]),
   ).toEqual([
     [PINNED_SESSION_GROUP, ["7", "5", "3", "1"]],
-    ["done", ["9"]],
+    [JSON.stringify(["directory", "host", "/repo"]), ["9"]],
   ]);
   snapshots.set("host:8", {
     status: "ready",
@@ -250,4 +250,72 @@ it("keeps all nine pins in one ordered section across project/status grouping an
       group.agents.map((agent) => agent.id),
     ]),
   ).toEqual([["ungrouped", ["8"]]]);
+});
+
+it("changes only session grouping when launch paths, bindings and manual project assignment differ", async () => {
+  const { projectSessions, directorySessionGroupKey } = await import("./projection");
+  const agents = [
+    { ...sessionAgent, id: "main", cwd: "/repo" },
+    { ...sessionAgent, id: "tree", cwd: "/worktrees/feature" },
+    { ...sessionAgent, id: "notes", cwd: "/notes", title: "Research" },
+  ];
+  const projects: import("@/hooks/sidebar-workspaces-view-model").SidebarProjectEntry[] = [
+    "repo",
+    "manual",
+  ].map((id) => ({
+    viewKey: id,
+    projectName: id,
+    projectKind: "git",
+    iconWorkingDir: "/" + id,
+    workspaces: [],
+    hosts: [
+      { serverId: "host", projectId: id, iconWorkingDir: "/" + id, worktreeSupport: "supported" },
+    ],
+  }));
+  const snapshots = new Map<string, import("./contexts").ContextSnapshot>(
+    agents.map((agent) => [
+      "host:" + agent.id,
+      {
+        status: "ready",
+        context: {
+          ...context,
+          agentId: agent.id,
+          projectId: agent.id === "notes" ? "manual" : "repo",
+          launchDirectory: "/historical-launch",
+          linkedDirectories: [{ path: "/other", source: "manual", addedAt: "now" }],
+        },
+      },
+    ]),
+  );
+  const input = {
+    serverId: "host",
+    roots: agents,
+    projects,
+    snapshots,
+    pinnedOrder: [],
+    projectOrder: ["repo", "manual"],
+    search: "",
+    preferences: { sort: "created", labels: [], projects: [], group: "project" as const },
+  };
+  const before = structuredClone([...snapshots]);
+  const byProject = projectSessions(input);
+  expect(byProject.map((group) => [group.key, group.agents.map((agent) => agent.id)])).toEqual([
+    ["repo", ["main", "tree"]],
+    ["manual", ["notes"]],
+  ]);
+  const byDirectory = projectSessions({
+    ...input,
+    preferences: { ...input.preferences, group: "directory" },
+  });
+  expect(byDirectory.map((group) => [group.key, group.agents.map((agent) => agent.id)])).toEqual(
+    [agents[0], agents[2], agents[1]].map((agent) => [
+      directorySessionGroupKey("host", agent.cwd),
+      [agent.id],
+    ]),
+  );
+  expect(byDirectory.flatMap((group) => group.agents)).toEqual([agents[0], agents[2], agents[1]]);
+  expect([...snapshots]).toEqual(before);
+  expect(directorySessionGroupKey("other-host", "/repo")).not.toEqual(
+    directorySessionGroupKey("host", "/repo"),
+  );
 });

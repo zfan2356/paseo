@@ -60,20 +60,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import { isNative as platformIsNative } from "@/constants/platform";
 import { useOpenAddProject } from "@/hooks/use-open-add-project";
-import { useImportSession } from "@/hooks/use-import-session";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
-import {
-  type SidebarProjectEntry,
-  type SidebarWorkspaceEntry,
-} from "@/hooks/use-sidebar-workspaces-list";
 import { density } from "@/styles/density";
 import { SPACING } from "@/styles/theme";
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
-import type { PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
 import { RetainedPanelActivity } from "@/components/retained-panel";
-import type { SidebarWorkspaceGroup } from "@/components/sidebar/sidebar-labels";
-import type { SidebarProjectIconTarget } from "@/utils/sidebar-project-row-model";
-import { type SidebarGroupMode, useSidebarViewStore } from "@/stores/sidebar-view-store";
+import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import { useHosts } from "@/runtime/host-runtime";
 import { PluginSidebarItem } from "@/plugins/sidebar-items";
 import { builtinSidebarNavLabelKey } from "@/sidebar-nav/model";
@@ -88,7 +80,6 @@ import { openHostOverview } from "@/navigation/settings-navigation";
 import { UsageSidebarItem, UsageSidebarRoot, useUsageSummary, useOpenSidebarUsage } from "@/usage";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
-import { SidebarWorkspaceList } from "./sidebar-workspace-list";
 
 type SidebarTheme = ReturnType<typeof useUnistyles>["theme"];
 
@@ -99,23 +90,8 @@ const DEV_BUILD_LABEL = process.env.EXPO_PUBLIC_PASEO_DEV_BUILD_LABEL?.trim() ||
 
 interface SidebarSharedProps {
   theme: SidebarTheme;
-  workspaceGroups: SidebarWorkspaceGroup[];
-  projectIconTargets: SidebarProjectIconTarget[];
-  pinnedGroups: PinnedSidebarGroups;
-  projects: SidebarProjectEntry[];
-  hasProjectsBeforeFilter: boolean;
-  hasActiveProjectFilter: boolean;
-  workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   isInitialLoad: boolean;
-  isRevalidating: boolean;
-  isManualRefresh: boolean;
-  groupMode: SidebarGroupMode;
-  collapsedProjectKeys: ReadonlySet<string>;
-  shortcutIndexByWorkspaceKey: Map<string, number>;
-  toggleProjectCollapsed: (projectViewKey: string) => void;
-  handleRefresh: () => void;
   handleOpenProject: () => void;
-  handleImportSession: () => void;
   handleSettings: () => void;
   labels: SidebarLabels;
   handleAddHost: () => void;
@@ -157,39 +133,9 @@ export const LeftSidebar = memo(function LeftSidebar({
   const isCompactLayout = useIsCompactFormFactor();
   const showMobileAgent = usePanelStore((state) => state.showMobileAgent);
 
-  const {
-    projects,
-    hasProjectsBeforeFilter,
-    resolvedProjectFilters,
-    workspaceEntriesByKey,
-    isInitialLoad,
-    isRevalidating,
-    refreshAll,
-    workspaceGroups,
-    projectIconTargets,
-    pinnedGroups,
-    collapsedProjectKeys,
-    toggleProjectCollapsed,
-    groupMode,
-    shortcutModel,
-  } = useSidebarModel();
-  const { shortcutIndexByWorkspaceKey } = shortcutModel;
-
-  const [isManualRefresh, setIsManualRefresh] = useState(false);
-
-  const handleRefresh = useCallback(() => {
-    setIsManualRefresh(true);
-    refreshAll();
-  }, [refreshAll]);
-
-  useEffect(() => {
-    if (!isRevalidating && isManualRefresh) {
-      setIsManualRefresh(false);
-    }
-  }, [isRevalidating, isManualRefresh]);
+  const { isInitialLoad } = useSidebarModel();
 
   const openProjectPicker = useOpenAddProject();
-  const { open: openImportSession, sheet: importSessionSheet } = useImportSession();
 
   // Each destination closes the navigation overlay first. Closing is idempotent, so a docked
   // sidebar runs the same handler.
@@ -226,56 +172,38 @@ export const LeftSidebar = memo(function LeftSidebar({
 
   const sharedProps = {
     theme,
-    workspaceGroups,
-    projectIconTargets,
-    pinnedGroups,
-    projects,
-    hasProjectsBeforeFilter,
-    hasActiveProjectFilter: resolvedProjectFilters.length > 0,
-    workspaceEntriesByKey,
     isInitialLoad,
-    isRevalidating,
-    isManualRefresh,
-    groupMode,
-    collapsedProjectKeys,
-    shortcutIndexByWorkspaceKey,
-    toggleProjectCollapsed,
-    handleRefresh,
     labels,
   };
 
   const handlers = {
     handleOpenProject,
-    handleImportSession: openImportSession,
     handleSettings,
     handleAddHost,
     handleOpenHostSettings,
   };
 
   return (
-    <>
-      <RetainedPanelActivity active={active}>
-        {isCompactLayout ? (
-          <MobileSidebar
-            {...sharedProps}
-            {...handlers}
-            active={active}
-            insetsTop={insets.top}
-            insetsBottom={insets.bottom}
-            closeSidebar={showMobileAgent}
-          />
-        ) : (
-          <DesktopSidebar
-            {...sharedProps}
-            {...handlers}
-            insetsTop={insets.top}
-            active={active}
-            overlay={desktopOverlay}
-          />
-        )}
-      </RetainedPanelActivity>
-      {importSessionSheet}
-    </>
+    <RetainedPanelActivity active={active}>
+      {isCompactLayout ? (
+        <MobileSidebar
+          {...sharedProps}
+          {...handlers}
+          active={active}
+          insetsTop={insets.top}
+          insetsBottom={insets.bottom}
+          closeSidebar={showMobileAgent}
+        />
+      ) : (
+        <DesktopSidebar
+          {...sharedProps}
+          {...handlers}
+          insetsTop={insets.top}
+          active={active}
+          overlay={desktopOverlay}
+        />
+      )}
+    </RetainedPanelActivity>
   );
 });
 
@@ -545,25 +473,10 @@ function SidebarFooterRows({ onBeforeNavigate }: { onBeforeNavigate?: () => void
 }
 
 function MobileSidebar({
-  active,
+  active: _active,
   theme,
-  workspaceGroups,
-  projectIconTargets,
-  pinnedGroups,
-  projects,
-  hasProjectsBeforeFilter,
-  hasActiveProjectFilter,
-  workspaceEntriesByKey,
   isInitialLoad,
-  isRevalidating,
-  isManualRefresh,
-  groupMode,
-  collapsedProjectKeys,
-  shortcutIndexByWorkspaceKey,
-  toggleProjectCollapsed,
-  handleRefresh,
   handleOpenProject,
-  handleImportSession,
   handleSettings,
   labels,
   handleAddHost,
@@ -646,28 +559,7 @@ function MobileSidebar({
           {isInitialLoad && !hasActiveHostFilter ? (
             <SidebarAgentListSkeleton />
           ) : (
-            <SessionSidebar dismiss={closeSidebar}>
-              <SidebarWorkspaceList
-                collapsedProjectKeys={collapsedProjectKeys}
-                onToggleProjectCollapsed={toggleProjectCollapsed}
-                shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
-                groupMode={groupMode}
-                workspaceGroups={workspaceGroups}
-                projectIconTargets={projectIconTargets}
-                pinnedGroups={pinnedGroups}
-                projects={projects}
-                hasProjectsBeforeFilter={hasProjectsBeforeFilter}
-                hasActiveProjectFilter={hasActiveProjectFilter}
-                workspaceEntriesByKey={workspaceEntriesByKey}
-                isRefreshing={isManualRefresh && isRevalidating}
-                onRefresh={handleRefresh}
-                onWorkspacePress={handleWorkspacePress}
-                onAddProject={handleOpenProject}
-                onImportSession={handleImportSession}
-                parentGestureRef={closeGestureRef}
-                dragGestureHostActive={active}
-              />
-            </SessionSidebar>
+            <SessionSidebar dismiss={closeSidebar} />
           )}
         </SidebarViewSlot>
 
@@ -686,23 +578,8 @@ function MobileSidebar({
 
 function DesktopSidebar({
   theme,
-  workspaceGroups,
-  projectIconTargets,
-  pinnedGroups,
-  projects,
-  hasProjectsBeforeFilter,
-  hasActiveProjectFilter,
-  workspaceEntriesByKey,
   isInitialLoad,
-  isRevalidating,
-  isManualRefresh,
-  groupMode,
-  collapsedProjectKeys,
-  shortcutIndexByWorkspaceKey,
-  toggleProjectCollapsed,
-  handleRefresh,
   handleOpenProject,
-  handleImportSession,
   handleSettings,
   labels,
   handleAddHost,
@@ -727,7 +604,7 @@ function DesktopSidebar({
   const visibleSidebarWidth = useLeftPanelWidth();
 
   const closeSidebar = usePanelStore((state) => state.showMobileAgent);
-  const { gesture: closeGesture, gestureRef: closeGestureRef } = useCloseAgentListGesture(overlay);
+  const { gesture: closeGesture, gestureRef: _closeGestureRef } = useCloseAgentListGesture(overlay);
 
   const startWidth = useSharedValue(visibleSidebarWidth);
   const resizeWidth = useSharedValue(visibleSidebarWidth);
@@ -845,28 +722,7 @@ function DesktopSidebar({
             {isInitialLoad && !hasActiveHostFilter ? (
               <SidebarAgentListSkeleton />
             ) : (
-              <SessionSidebar dismiss={closeSidebar}>
-                <SidebarWorkspaceList
-                  collapsedProjectKeys={collapsedProjectKeys}
-                  onToggleProjectCollapsed={toggleProjectCollapsed}
-                  shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
-                  groupMode={groupMode}
-                  workspaceGroups={workspaceGroups}
-                  projectIconTargets={projectIconTargets}
-                  pinnedGroups={pinnedGroups}
-                  projects={projects}
-                  hasProjectsBeforeFilter={hasProjectsBeforeFilter}
-                  hasActiveProjectFilter={hasActiveProjectFilter}
-                  workspaceEntriesByKey={workspaceEntriesByKey}
-                  isRefreshing={isManualRefresh && isRevalidating}
-                  onRefresh={handleRefresh}
-                  onAddProject={handleOpenProject}
-                  onImportSession={handleImportSession}
-                  onWorkspacePress={closeSidebar}
-                  parentGestureRef={closeGestureRef}
-                  dragGestureHostActive={active}
-                />
-              </SessionSidebar>
+              <SessionSidebar dismiss={closeSidebar} />
             )}
           </SidebarViewSlot>
 

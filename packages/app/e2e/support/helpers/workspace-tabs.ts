@@ -72,7 +72,7 @@ async function selectWorkspaceTab(tab: Locator): Promise<void> {
 
 /** Reveal the Explorer sidebar without changing its selected view. */
 export async function ensureExplorerSidebar(page: Page): Promise<Locator> {
-  const toggle = page.getByTestId("workspace-explorer-toggle").first();
+  const toggle = page.getByTestId("workspace-explorer-toggle").filter({ visible: true }).first();
   await expect(toggle).toBeVisible({ timeout: 30_000 });
   const explorer = explorerSidebar(page);
   if ((await explorer.count()) === 0) {

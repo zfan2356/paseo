@@ -1,3 +1,7 @@
+import {
+  useSessionDirectoryTarget,
+  SessionDirectoryToolbar,
+} from "@/session-navigation/directory-toolbar";
 import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { checkoutDirectory } from "@/session-navigation/model";
 import { resolveChangesPresentation } from "./changes/presentation";
@@ -83,15 +87,15 @@ function ChangesPanel() {
   const { preferences } = useChangesPreferences();
   const workspaceDirectory = useWorkspaceDirectory(serverId, workspaceId);
   const isActive = useRetainedPanelActive();
-  const directory =
-    target.kind === "working_diff" || target.kind === "changes_tree" ? target.directory : undefined;
+  const selection = useSessionDirectoryTarget();
+  const { directory, sessionAgentId } = selection;
   invariant(
     target.kind === "working_diff" || target.kind === "changes_tree",
     "ChangesPanel requires working_diff or changes_tree target",
   );
   const resolved = useChangesDirectory({
     serverId,
-    directory: target.directory,
+    directory: directory,
     workspaceDirectory,
   });
   const cwd = resolved.cwd;
@@ -109,39 +113,51 @@ function ChangesPanel() {
           kind: "file",
           path,
           directory: directory ? (cwd ?? undefined) : undefined,
-          sessionAgentId: target.sessionAgentId,
+          sessionAgentId: sessionAgentId,
         },
         isTree ? "diffs" : "diffFiles",
       ),
-    [isTree, openPreferredTarget, directory, cwd, target.sessionAgentId],
+    [isTree, openPreferredTarget, directory, cwd, sessionAgentId],
   );
   const handleSelectDiffFile = useCallback(
     (path: string) =>
       openPreferredTarget(
         {
           kind: "working_diff",
-          directory: target.directory,
-          sessionAgentId: target.sessionAgentId,
+          directory: directory,
+          sessionAgentId: sessionAgentId,
           focusPath: path,
           focusRequestId: Date.now(),
         },
         "diffs",
       ),
-    [openPreferredTarget, target.directory, target.sessionAgentId],
+    [openPreferredTarget, directory, sessionAgentId],
   );
   const handleOpenDiffToSide = useCallback(
     (path: string) =>
       openTargetToSide?.({
         kind: "working_diff",
-        directory: target.directory,
-        sessionAgentId: target.sessionAgentId,
+        directory: directory,
+        sessionAgentId: sessionAgentId,
         focusPath: path,
         focusRequestId: Date.now(),
       }),
-    [openTargetToSide, target.directory, target.sessionAgentId],
+    [openTargetToSide, directory, sessionAgentId],
   );
-  if (resolved.loading) return <PanelState message={t("common.loading")} />;
-  if (resolved.error) return <PanelState message={resolved.error} tone="error" />;
+  if (resolved.loading)
+    return (
+      <View style={styles.container}>
+        <SessionDirectoryToolbar selection={selection} />
+        <PanelState message={t("common.loading")} />
+      </View>
+    );
+  if (resolved.error)
+    return (
+      <View style={styles.container}>
+        <SessionDirectoryToolbar selection={selection} />
+        <PanelState message={resolved.error} tone="error" />
+      </View>
+    );
   if (!cwd) {
     return <PanelState message={t("panels.diff.directoryMissing")} />;
   }
@@ -155,10 +171,11 @@ function ChangesPanel() {
   const profileId = isTree ? `ChangesTreePanel:${tabId}` : `WorkingDiffPanel:${tabId}`;
   return (
     <View style={styles.container} testID={testID}>
-      {target.directory ? (
+      <SessionDirectoryToolbar selection={selection} />
+      {directory ? (
         <View>
           <Text selectable style={styles.mutedText}>
-            {serverId} · {target.directory}
+            {directory}
           </Text>
           <Text selectable style={styles.mutedText}>
             {t("sessionNavigation.checkoutRoot", { path: cwd })}
@@ -171,8 +188,8 @@ function ChangesPanel() {
           serverId={serverId}
           workspaceId={workspaceId}
           cwd={cwd}
-          directory={target.directory}
-          sessionAgentId={target.sessionAgentId}
+          directory={directory}
+          sessionAgentId={sessionAgentId}
           enabled={isActive}
           presentation={presentation}
           focusPath={target.kind === "working_diff" ? target.focusPath : undefined}

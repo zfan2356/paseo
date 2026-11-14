@@ -246,7 +246,7 @@ export function SidebarDisplayPreferencesMenu({
       },
     ];
 
-    if (preferences.grouping === "project") {
+    if (sessions || preferences.grouping === "project") {
       definitions.push({
         id: "sort",
         title: t("sidebar.display.sort.label"),
@@ -327,14 +327,16 @@ export function SidebarDisplayPreferencesMenu({
           sheetTitle={t("sidebar.display.heading")}
           testID="sidebar-display-preferences-content"
         >
-          <MenuSubTrigger
-            id="grouping"
-            value={t(GROUPING_LABEL_KEYS[preferences.grouping])}
-            testID="sidebar-display-grouping"
-          >
-            {t("sidebar.display.grouping.label")}
-          </MenuSubTrigger>
-          {preferences.grouping === "project" ? (
+          {sessions ? null : (
+            <MenuSubTrigger
+              id="grouping"
+              value={t(GROUPING_LABEL_KEYS[preferences.grouping])}
+              testID="sidebar-display-grouping"
+            >
+              {t("sidebar.display.grouping.label")}
+            </MenuSubTrigger>
+          )}
+          {sessions || preferences.grouping === "project" ? (
             <MenuSubTrigger
               id="sort"
               value={
@@ -646,20 +648,20 @@ function ShowPage({
   const { t } = useTranslation();
   return (
     <>
-      {SIDEBAR_ROW_ITEMS.filter(
-        (item) => !sessions || ["host", "labels", "project"].includes(item),
-      ).map((item) => (
-        <OptionItem
-          key={item}
-          value={item}
-          icon={ROW_ITEM_ICONS[item]}
-          label={t(ROW_ITEM_LABEL_KEYS[item])}
-          selected={preferences.rowItems[item]}
-          closeOnSelect={false}
-          onSelect={preferences.toggleRowItem}
-          testID={`sidebar-row-item-${item}`}
-        />
-      ))}
+      {SIDEBAR_ROW_ITEMS.filter((item) => !sessions || ["host", "labels"].includes(item)).map(
+        (item) => (
+          <OptionItem
+            key={item}
+            value={item}
+            icon={ROW_ITEM_ICONS[item]}
+            label={t(ROW_ITEM_LABEL_KEYS[item])}
+            selected={preferences.rowItems[item]}
+            closeOnSelect={false}
+            onSelect={preferences.toggleRowItem}
+            testID={`sidebar-row-item-${item}`}
+          />
+        ),
+      )}
       {sessions ? null : <ChecksSubTrigger />}
       <MenuSeparator />
       {TRAILING_CHOICES.filter((choice) => !sessions || choice === "timestamp").map((choice) => (

@@ -12,25 +12,24 @@ import {
 } from "./operations";
 import { useLabelMenuPages } from "@/workspace-labels/picker";
 import { usePointerCapabilities } from "@/hooks/pointer-capabilities";
-import {
-  useWorkspaceLayoutStore,
-  selectExplorerSidebarPaneId,
-} from "@/stores/workspace-layout-store";
-import { findPaneById, collectAllTabs } from "@/stores/workspace-layout-actions";
-import { useIsExplorerSidebarOpen } from "@/workspace-tabs/explorer-sidebar";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import { useTranslation } from "react-i18next";
-import { getStatusBucketLabel, STATUS_BUCKET_ORDER } from "@/hooks/sidebar-status-view-model";
+import { getStatusBucketLabel } from "@/hooks/sidebar-status-view-model";
 import { useSidebarWorkspaceTrailing } from "@/components/sidebar/workspace-trailing";
 import { useCompactTimeAgo } from "@/hooks/use-time-ago";
-import { Fragment, memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Text, View, ScrollView } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { useFetchQueries } from "@/data/query";
 import type { SessionContext } from "@getpaseo/protocol/session-context";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { HostBadge } from "@/hosts/host-badge";
-import { AgentStatusDot } from "@/components/agent-status-dot";
+import { SidebarCardContent } from "@/components/sidebar/sidebar-workspace-row-content";
+import { ProjectStatusIndicator } from "@/components/sidebar/project-leading-visual";
+import { useProjectIcons } from "@/projects/icons";
+import { resolveSidebarProjectIconTargets } from "@/utils/sidebar-project-row-model";
+import { density } from "@/styles/density";
+import { getSidebarRowBackdrop } from "@/components/sidebar/sidebar-row-backdrop";
+import type { SessionGrouping } from "./preferences";
 import { sessionStatus, PINNED_SESSION_GROUP } from "./projection";
 import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
 import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-preferences/menu";
@@ -39,82 +38,39 @@ import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { type Agent } from "@/stores/session-store";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
-import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useSessionNavigationPreferences } from "./preferences";
-import { readDirectoryFacts, sessionDirectories, groupDirectories } from "./model";
-import {
-  BindDirectory,
-  SessionSettings,
-  CreateSessionWorktree,
-  useContextMutation,
-} from "./actions";
-import { Button } from "@/components/ui/button";
-import { PressHighlight } from "@/components/ui/press-highlight";
+import { SessionSettings } from "./actions";
 import { FormTextInput } from "@/components/ui/form-field";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import {
-  navigateToWorkspace,
   useActiveWorkspaceSelection,
   type ActiveWorkspaceSelection,
 } from "@/stores/navigation-active-workspace-store";
-import { checkoutStatusQueryKey } from "@/git/query-keys";
-import { shortenPath } from "@/utils/shorten-path";
-import { useIsCompactFormFactor } from "@/constants/layout";
-import { usePanelStore } from "@/stores/panel-store";
 import type { SidebarProjectEntry } from "@/hooks/sidebar-workspaces-view-model";
-export function SessionSidebar({
-  children,
-  dismiss,
-}: {
-  children: ReactNode;
-  dismiss?: () => void;
-}) {
+export function SessionSidebar({ dismiss }: { dismiss?: () => void }) {
   const { t } = useTranslation();
   const { sessionNavigation, allProjects } = useSidebarModel();
-  const [view, setView] = useState<"sessions" | "resources">("sessions");
-  const resources = view === "resources";
-  const options = useMemo<SegmentedControlOption<"sessions" | "resources">[]>(
+  const view = useSessionNavigationPreferences((state) => state.grouping ?? "project");
+  const setView = useSessionNavigationPreferences((state) => state.setGrouping);
+  const iconTargets = useMemo(() => resolveSidebarProjectIconTargets(allProjects), [allProjects]);
+  const projectIcons = useProjectIcons({ projects: iconTargets });
+  const options = useMemo<SegmentedControlOption<SessionGrouping>[]>(
     () => [
       {
-        value: "sessions",
-        label: t("sessionNavigation.sessions"),
-        testID: "session-navigation-sessions",
+        value: "project",
+        label: t("sessionNavigation.byProject"),
+        testID: "session-group-by-project",
       },
       {
-        value: "resources",
-        label: t("sessionNavigation.resources"),
-        testID: "directory-terminal-resources",
+        value: "directory",
+        label: t("sessionNavigation.byDirectory"),
+        testID: "session-group-by-directory",
       },
     ],
     [t],
   );
   const showShortcutBadges = useShowShortcutBadges();
   const activeWorkspace = useActiveWorkspaceSelection();
-  const activeWorkspaceKey = activeWorkspace
-    ? `${activeWorkspace.serverId}:${activeWorkspace.workspaceId}`
-    : null;
-  const compact = useIsCompactFormFactor();
-  const explorerOpen = useIsExplorerSidebarOpen({
-    isCompact: compact,
-    workspaceKey: activeWorkspaceKey,
-  });
-  const explorerTarget = useWorkspaceLayoutStore((state) => {
-    if (!activeWorkspaceKey) return null;
-    const layout = state.layoutByWorkspace[activeWorkspaceKey];
-    if (!layout) return null;
-    const pane = findPaneById(layout.root, selectExplorerSidebarPaneId(state, activeWorkspaceKey));
-    return (
-      collectAllTabs(layout.root).find((tab) => tab.tabId === pane?.focusedTabId)?.target ?? null
-    );
-  });
-  const directoryTarget =
-    explorerOpen && explorerTarget && "directory" in explorerTarget ? explorerTarget : null;
   const savedSelectedKey = useSessionNavigationPreferences((state) => state.selectedSessionKey);
   const activeHost = sessionNavigation.roots.find(
     (root) => root.source.serverId === activeWorkspace?.serverId,
@@ -136,58 +92,46 @@ export function SessionSidebar({
     <View style={styles.fill}>
       <View style={styles.viewHeader}>
         <SegmentedControl options={options} value={view} onValueChange={setView} size="sm" />
-        <SidebarDisplayPreferencesMenu sessions={!resources} />
+        <SidebarDisplayPreferencesMenu sessions />
       </View>
-      {resources ? (
-        <View style={styles.resources} testID="directory-terminal-resource-list">
-          {children}
-        </View>
-      ) : (
-        <>
-          <View style={styles.search}>
-            <FormTextInput
-              initialValue={search}
-              onChangeText={setSearch}
-              placeholder={t("sessionNavigation.search")}
-              accessibilityLabel={t("sessionNavigation.search")}
-            />
-          </View>
-          <ScrollView
-            style={styles.fill}
-            testID="session-sidebar"
-            keyboardShouldPersistTaps="handled"
-          >
-            {sessionNavigation.visibleHosts
-              .filter(
-                (host) =>
-                  sessionNavigation.roots.find((root) => root.source.serverId === host.serverId)
-                    ?.source.supported === false,
-              )
-              .map((host) => (
-                <Text key={host.serverId} style={styles.hint}>
-                  {t("sessionNavigation.updateHost", { host: host.label ?? host.serverId })}
-                </Text>
-              ))}
-            {sessionNavigation.groups.map((group) => (
-              <SessionGroup key={group.key} groupKey={group.key} name={group.name}>
-                {group.agents.map((agent) => (
-                  <ProjectedSessionRow
-                    key={agent.serverId + ":" + agent.id}
-                    agent={agent}
-                    model={sessionNavigation}
-                    projects={allProjects}
-                    dismiss={dismiss}
-                    showShortcutBadges={showShortcutBadges}
-                    activeWorkspace={activeWorkspace}
-                    selectedKey={selectedKey}
-                    directoryTarget={directoryTarget}
-                  />
-                ))}
-              </SessionGroup>
+      <View style={styles.search}>
+        <FormTextInput
+          initialValue={search}
+          onChangeText={setSearch}
+          placeholder={t("sessionNavigation.search")}
+          accessibilityLabel={t("sessionNavigation.search")}
+        />
+      </View>
+      <ScrollView style={styles.fill} testID="session-sidebar" keyboardShouldPersistTaps="handled">
+        {sessionNavigation.visibleHosts
+          .filter(
+            (host) =>
+              sessionNavigation.roots.find((root) => root.source.serverId === host.serverId)?.source
+                .supported === false,
+          )
+          .map((host) => (
+            <Text key={host.serverId} style={styles.hint}>
+              {t("sessionNavigation.updateHost", { host: host.label ?? host.serverId })}
+            </Text>
+          ))}
+        {sessionNavigation.groups.map((group) => (
+          <SessionGroup key={group.key} groupKey={group.key} name={group.name}>
+            {group.agents.map((agent) => (
+              <ProjectedSessionRow
+                key={agent.serverId + ":" + agent.id}
+                agent={agent}
+                model={sessionNavigation}
+                projects={allProjects}
+                dismiss={dismiss}
+                showShortcutBadges={showShortcutBadges}
+                activeWorkspace={activeWorkspace}
+                selectedKey={selectedKey}
+                projectIcons={projectIcons}
+              />
             ))}
-          </ScrollView>
-        </>
-      )}
+          </SessionGroup>
+        ))}
+      </ScrollView>
     </View>
   );
 }
@@ -200,19 +144,14 @@ function SessionGroup({
   children: ReactNode;
   groupKey: string;
 }) {
-  const { t } = useTranslation();
-  const bucket = STATUS_BUCKET_ORDER.find((candidate) => candidate === groupKey);
-  const displayName = bucket ? getStatusBucketLabel(bucket, t) : name;
-  const mode = useSidebarModel().groupMode;
+  const displayName = name;
   const pinned = groupKey === PINNED_SESSION_GROUP;
   const collapsed = useSidebarCollapsedSectionsStore((state) => {
     if (pinned) return state.collapsedPinned;
-    if (mode === "status") return state.collapsedWorkspaceGroupKeys.has(groupKey);
     return state.collapsedProjectKeys.has(groupKey);
   });
   const toggleGroup = useSidebarCollapsedSectionsStore((state) => {
     if (pinned) return state.togglePinnedCollapsed;
-    if (mode === "status") return state.toggleWorkspaceGroupCollapsed;
     return state.toggleProjectCollapsed;
   });
   const toggleGroupCollapsed = useCallback(() => toggleGroup(groupKey), [toggleGroup, groupKey]);
@@ -233,15 +172,14 @@ const SessionRow = memo(function SessionRow({
   client,
   context,
   contextError,
-  supported,
   projects,
   dismiss,
   hostBadge,
   showLabels,
-  projectLabel,
   shortcutNumber,
   selected,
-  activeDirectoryPath,
+  project,
+  projectIcon,
   permissions,
   labelCreateSupported,
   actionsReady,
@@ -250,27 +188,22 @@ const SessionRow = memo(function SessionRow({
   labelCreateSupported: boolean;
   actionsReady: boolean;
   selected: boolean;
-  activeDirectoryPath?: string;
+  project?: SidebarProjectEntry;
+  projectIcon: string | null;
   shortcutNumber?: number;
-  projectLabel?: string;
   hostBadge?: import("@/hosts/appearance").HostBadgeModel;
   showLabels: boolean;
   agent: Agent;
   client: DaemonClient | null;
   context: SessionContext | null;
   contextError: string | null;
-  supported: boolean;
   projects: SidebarProjectEntry[];
   dismiss?: () => void;
 }) {
   const { t } = useTranslation();
   const trailing = useSidebarWorkspaceTrailing();
-  const rowStyle = useMemo(() => [styles.row, selected && styles.selected], [selected]);
-  const selectedState = useMemo(() => ({ selected }), [selected]);
-  const key = `${agent.serverId}:${agent.id}`;
-  const expanded = useSessionNavigationPreferences((state) => state.expanded[key] === true);
-  const toggle = useSessionNavigationPreferences((state) => state.toggleExpanded);
-  const [dialog, setDialog] = useState<"settings" | "bind" | "rename" | null>(null);
+
+  const [dialog, setDialog] = useState<"settings" | "rename" | null>(null);
   const [hovered, setHovered] = useState(false);
   const connected = useHostRuntimeIsConnected(agent.serverId);
   const { finePointer } = usePointerCapabilities();
@@ -301,9 +234,7 @@ const SessionRow = memo(function SessionRow({
     navigateToAgent({ serverId: agent.serverId, agentId: agent.id });
     dismiss?.();
   }, [agent.serverId, agent.id, dismiss]);
-  const toggleSessionExpanded = useCallback(() => toggle(key), [toggle, key]);
   const openSettings = useCallback(() => setDialog("settings"), []);
-  const openBindDirectory = useCallback(() => setDialog("bind"), []);
   const archiveSession = useCallback(() => mutation.mutate({ kind: "archive" }), [mutation]);
   const renameSession = useCallback(() => setDialog("rename"), []);
   const submitRename = useCallback(
@@ -337,7 +268,6 @@ const SessionRow = memo(function SessionRow({
       read: markRead,
       archive: archiveSession,
       settings: openSettings,
-      bind: openBindDirectory,
     }),
     [
       canWrite,
@@ -352,58 +282,62 @@ const SessionRow = memo(function SessionRow({
       markRead,
       archiveSession,
       openSettings,
-      openBindDirectory,
     ],
   );
   const closeDialog = useCallback(() => setDialog(null), []);
+  const leading = useMemo(
+    () => (
+      <View
+        testID={`session-status-${agent.id}`}
+        accessibilityRole="image"
+        accessibilityLabel={getStatusBucketLabel(sessionStatus(agent), t)}
+      >
+        <ProjectStatusIndicator
+          iconDataUri={projectIcon}
+          displayName={project?.projectName ?? t("sessionNavigation.ungrouped")}
+          projectViewKey={project?.viewKey ?? "ungrouped"}
+          statusBucket={sessionStatus(agent)}
+          backdrop={getSidebarRowBackdrop({ selected, isHovered: hovered })}
+          testID={`session-project-icon-${agent.id}`}
+        />
+      </View>
+    ),
+    [agent, project, projectIcon, hovered, selected, t],
+  );
+  const metadata = useMemo(
+    () =>
+      showLabels && context?.sidebarLabelNames.length ? (
+        <Text numberOfLines={1} style={styles.hint}>
+          {context.sidebarLabelNames.join(", ")}
+        </Text>
+      ) : null,
+    [showLabels, context],
+  );
+  const trailingContent = (
+    <>
+      {trailing === "timestamp" ? (
+        <SessionTimestamp date={agent.lastUserMessageAt ?? agent.createdAt} />
+      ) : null}
+      {hostBadge ? <HostBadge badge={hostBadge} /> : null}
+      {finePointer ? <SessionArchiveButton actions={actions} visible={hovered} /> : null}
+      <SessionMenu actions={actions} pages={pages} />
+    </>
+  );
   return (
     <View testID={`session-row-${agent.id}`}>
       <SessionRowMenuFrame actions={actions} pages={pages} onHoverChange={setHovered}>
-        <View style={rowStyle}>
-          <Button
-            variant="ghost"
-            size="sm"
-            accessibilityLabel={t(
-              expanded ? "sessionNavigation.collapse" : "sessionNavigation.expand",
-            )}
-            onPress={toggleSessionExpanded}
-            disabled={!supported}
-          >
-            {expanded ? "▾" : "▸"}
-          </Button>
-          <PressHighlight
-            style={styles.title}
+        <View style={[styles.card, hovered && styles.hovered, selected && styles.selected]}>
+          <SidebarCardContent
             onPress={openChat}
-            accessibilityRole="button"
-            accessibilityState={selectedState}
-            aria-selected={selected}
-          >
-            <View style={styles.titleLine}>
-              <View
-                testID={`session-status-${agent.id}`}
-                accessibilityRole="image"
-                accessibilityLabel={getStatusBucketLabel(sessionStatus(agent), t)}
-              >
-                <AgentStatusDot bucket={sessionStatus(agent)} showInactive />
-              </View>
-              <Text numberOfLines={1} style={styles.text}>
-                {agent.title ?? t("sessionNavigation.untitled")}
-              </Text>
-            </View>
-            <SessionMetadata
-              agent={agent}
-              context={context}
-              hostBadge={hostBadge}
-              showLabels={showLabels}
-              projectLabel={projectLabel}
-            />
-          </PressHighlight>
-          {shortcutNumber ? <Text style={styles.hint}>{shortcutNumber}</Text> : null}
-          {trailing === "timestamp" ? (
-            <SessionTimestamp date={agent.lastUserMessageAt ?? agent.createdAt} />
-          ) : null}
-          {finePointer ? <SessionArchiveButton actions={actions} visible={hovered} /> : null}
-          <SessionMenu actions={actions} pages={pages} />
+            selected={selected}
+            title={agent.title ?? t("sessionNavigation.untitled")}
+            titleTestID={`session-title-${agent.id}`}
+            isHovered={hovered}
+            shortcutNumber={shortcutNumber}
+            leading={leading}
+            metadata={metadata}
+            trailing={trailingContent}
+          />
         </View>
       </SessionRowMenuFrame>
       <SessionActionFeedback error={mutation.error} connected={connected} readOnly={readOnly} />
@@ -411,19 +345,6 @@ const SessionRow = memo(function SessionRow({
         <Text style={styles.error} accessibilityRole="alert">
           {contextError}
         </Text>
-      ) : null}
-      {supported && expanded && !context ? (
-        <Text style={styles.hint}>{t("sessionNavigation.loading")}</Text>
-      ) : null}
-      {expanded && context && client ? (
-        <SessionDirectories
-          agent={agent}
-          client={client}
-          context={context}
-          dismiss={dismiss}
-          activeDirectoryPath={activeDirectoryPath}
-          bind={openBindDirectory}
-        />
       ) : null}
       {dialog === "rename" ? (
         <AdaptiveRenameModal
@@ -468,127 +389,18 @@ function SessionActionFeedback({
     </>
   );
 }
-function SessionDirectories({
-  agent,
-  client,
-  context,
-  dismiss,
-  bind,
-  activeDirectoryPath,
-}: {
-  activeDirectoryPath?: string;
-  agent: Agent;
-  client: DaemonClient;
-  context: SessionContext;
-  dismiss?: () => void;
-  bind(): void;
-}) {
-  const { t } = useTranslation();
-  const connected = useHostRuntimeIsConnected(agent.serverId);
-
-  const active = useRetainedPanelActive();
-  const compact = useIsCompactFormFactor();
-  const mutation = useContextMutation(client, agent.serverId, agent.id);
-  const [worktreeRepository, setWorktreeRepository] = useState<string | null>(null);
-  const directories = sessionDirectories(context);
-  const facts = useFetchQueries(
-    directories.map((directory) => ({
-      queryKey: checkoutStatusQueryKey(agent.serverId, directory.path),
-      queryFn: () =>
-        readDirectoryFacts({
-          client,
-          path: directory.path,
-          refreshError: t("sessionNavigation.refreshError"),
-        }),
-      enabled: connected && active,
-      dataShape: "value",
-      staleTimeMs: 15000,
-      retry: false,
-    })),
-  );
-  const groups = groupDirectories(
-    directories.map((directory, index) => {
-      const query = facts[index];
-      const status = query.data;
-      const repository = status?.isGit ? (status.mainRepoRoot ?? status.repoRoot) : null;
-      return { path: directory.path, launch: directory.launch, repository, status, query };
-    }),
-  );
-  const open = useCallback(
-    (path: string, kind: "files" | "changes_tree") => {
-      if (!agent.workspaceId) return;
-      dismiss?.();
-      useSessionNavigationPreferences
-        .getState()
-        .selectDirectory(`${agent.serverId}:${agent.id}`, path);
-      navigateToAgent({ serverId: agent.serverId, agentId: agent.id });
-      navigateToWorkspace({
-        serverId: agent.serverId,
-        workspaceId: agent.workspaceId,
-        target: { kind, directory: path, sessionAgentId: agent.id },
-      });
-      if (compact) usePanelStore.getState().showMobileFileExplorer();
-    },
-    [agent.workspaceId, agent.serverId, agent.id, compact, dismiss],
-  );
-  const closeWorktreeDialog = useCallback(() => setWorktreeRepository(null), []);
-  return (
-    <View style={styles.directories}>
-      {mutation.error ? (
-        <Text style={styles.error} accessibilityRole="alert">
-          {mutation.error.message}
-        </Text>
-      ) : null}
-      {groups.map((group) => {
-        return (
-          <Fragment key={group.repository ?? "other"}>
-            <Text style={styles.hint}>
-              {group.repository
-                ? shortenPath(group.repository)
-                : t("sessionNavigation.otherDirectories")}
-            </Text>
-            {group.directories.map((directory) => (
-              <DirectoryRow
-                key={directory.path}
-                directory={directory}
-                selected={activeDirectoryPath === directory.path}
-                connected={connected}
-                agentId={agent.id}
-                open={open}
-                mutation={mutation}
-              />
-            ))}
-            {group.repository ? (
-              <WorktreeButton repository={group.repository} select={setWorktreeRepository} />
-            ) : null}
-          </Fragment>
-        );
-      })}
-      <Button variant="ghost" size="sm" onPress={bind}>
-        {t("sessionNavigation.addDirectory")}
-      </Button>
-      {mutation.isPending ? (
-        <Text style={styles.hint}>{t("sessionNavigation.updating")}</Text>
-      ) : null}
-      {worktreeRepository ? (
-        <CreateSessionWorktree
-          client={client}
-          serverId={agent.serverId}
-          agentId={agent.id}
-          repository={worktreeRepository}
-          onClose={closeWorktreeDialog}
-        />
-      ) : null}
-    </View>
-  );
-}
 const styles = StyleSheet.create((theme) => ({
   selected: {
-    backgroundColor: theme.colors.interactionHighlight,
+    backgroundColor: theme.colors.surfaceSidebarSelected,
     borderRadius: theme.borderRadius.md,
   },
   fill: { flex: 1 },
-  resources: { flex: 1 },
+  card: {
+    paddingHorizontal: theme.spacing[2],
+    minHeight: density.rowHeight,
+    borderRadius: theme.borderRadius.md,
+  },
+  hovered: { backgroundColor: theme.colors.surfaceSidebarHover },
   viewHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -596,29 +408,8 @@ const styles = StyleSheet.create((theme) => ({
     padding: theme.spacing[1],
   },
   search: { padding: theme.spacing[2] },
-  host: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
-    padding: theme.spacing[2],
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 44,
-    paddingHorizontal: theme.spacing[2],
-    gap: theme.spacing[1],
-  },
-  title: { flex: 1, minWidth: 0, paddingVertical: theme.spacing[1] },
-  titleLine: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
-  text: { color: theme.colors.foreground, fontSize: theme.fontSize.base, flexShrink: 1 },
   hint: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
   error: { color: theme.colors.destructive, fontSize: theme.fontSize.sm },
-  menu: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.base,
-    padding: theme.spacing[2],
-  },
-  directories: { paddingLeft: theme.spacing[6], gap: theme.spacing[1] },
 }));
 function SessionDialog({
   dialog,
@@ -628,7 +419,7 @@ function SessionDialog({
   projects,
   onClose,
 }: {
-  dialog: "settings" | "bind" | null;
+  dialog: "settings" | null;
   agent: Agent;
   context: SessionContext | null;
   client: DaemonClient | null;
@@ -647,135 +438,7 @@ function SessionDialog({
         onClose={onClose}
       />
     );
-  if (dialog === "bind")
-    return (
-      <BindDirectory
-        client={client}
-        serverId={agent.serverId}
-        agentId={agent.id}
-        onClose={onClose}
-      />
-    );
   return null;
-}
-interface DirectoryRowProps {
-  selected: boolean;
-  directory: {
-    path: string;
-    launch: boolean;
-    repository: string | null;
-    status: import("@/git/checkout-status-cache").CheckoutStatusPayload | undefined;
-    query: import("@tanstack/react-query").UseQueryResult<
-      import("@/git/checkout-status-cache").CheckoutStatusPayload,
-      Error
-    >;
-  };
-  connected: boolean;
-  agentId: string;
-  open(path: string, kind: "files" | "changes_tree"): void;
-  mutation: ReturnType<typeof useContextMutation>;
-}
-function DirectoryRow({
-  directory,
-  connected,
-  agentId,
-  open,
-  mutation,
-  selected,
-}: DirectoryRowProps) {
-  const directoryStyle = useMemo(() => [styles.title, selected && styles.selected], [selected]);
-  const selectedState = useMemo(() => ({ selected }), [selected]);
-  const { t } = useTranslation();
-  const status = directory.status;
-  const unavailable = directory.query.error?.message ?? status?.error?.message;
-  const checkout = status?.isGit ? status.repoRoot : null;
-  const worktree = Boolean(checkout && directory.repository !== checkout);
-  let detail = directory.query.isPending
-    ? t("sessionNavigation.checking")
-    : t("sessionNavigation.nonGit");
-  if (status?.isGit)
-    detail = `${worktree ? t("sessionNavigation.worktree") : t("sessionNavigation.mainCheckout")} · ${status.currentBranch ?? t("sessionNavigation.detached")}`;
-  if (unavailable) detail = t("sessionNavigation.unavailable", { reason: unavailable });
-  if (!connected) detail = t("sessionNavigation.offline");
-  const openFiles = useCallback(() => open(directory.path, "files"), [open, directory.path]);
-  const openChanges = useCallback(
-    () => open(directory.path, "changes_tree"),
-    [open, directory.path],
-  );
-  const retryDirectory = useCallback(() => {
-    void directory.query.refetch();
-  }, [directory.query]);
-  const removeBinding = useCallback(
-    () => mutation.mutate({ kind: "unlink", path: directory.path }),
-    [mutation, directory.path],
-  );
-  return (
-    <View key={directory.path}>
-      <View style={styles.row}>
-        <PressHighlight
-          accessibilityRole="button"
-          style={directoryStyle}
-          accessibilityState={selectedState}
-          onPress={openFiles}
-          testID={`session-directory-${agentId}-${directory.path}`}
-        >
-          <Text style={unavailable ? styles.hint : styles.text} numberOfLines={1}>
-            {directoryDisplayPath(directory.path)}
-          </Text>
-          <Text style={styles.hint}>
-            {directory.launch ? t("sessionNavigation.launchExecution") : ""}
-            {detail}
-          </Text>
-        </PressHighlight>
-        <DropdownMenu compactMode="sheet">
-          <DropdownMenuTrigger
-            accessibilityRole="button"
-            accessibilityLabel={t("sessionNavigation.directoryActions", { path: directory.path })}
-          >
-            <Text style={styles.menu}>⋯</Text>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent sheetTitle={directory.path}>
-            <DropdownMenuItem onSelect={openFiles}>{t("sessionNavigation.files")}</DropdownMenuItem>
-            <DropdownMenuItem onSelect={openChanges}>
-              {t("sessionNavigation.changes")}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={directory.query.isFetching || !connected}
-              onSelect={retryDirectory}
-            >
-              {t("sessionNavigation.retry")}
-            </DropdownMenuItem>
-            {!directory.launch ? (
-              <DropdownMenuItem disabled={mutation.isPending} onSelect={removeBinding}>
-                {t("sessionNavigation.remove")}
-              </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </View>
-    </View>
-  );
-}
-function WorktreeButton({
-  repository,
-  select,
-}: {
-  repository: string;
-  select(repository: string): void;
-}) {
-  const { t } = useTranslation();
-  const create = useCallback(() => select(repository), [select, repository]);
-  return (
-    <Button variant="ghost" size="sm" onPress={create}>
-      {t("sessionNavigation.newWorktree")}
-    </Button>
-  );
-}
-function directoryDisplayPath(path: string): string {
-  const short = shortenPath(path);
-  if (short.length <= 36) return short;
-  const segments = short.split(/[\\/]/).filter(Boolean);
-  return segments.at(-1) ?? short;
 }
 function SessionTimestamp({ date }: { date: Date }) {
   const time = useCompactTimeAgo(date);
@@ -789,12 +452,9 @@ function ProjectedSessionRow({
   showShortcutBadges,
   activeWorkspace,
   selectedKey,
-  directoryTarget,
+  projectIcons,
 }: {
-  directoryTarget: Extract<
-    import("@/workspace-tabs/model").WorkspaceTabTarget,
-    { kind: "files" | "changes_tree" | "working_diff" | "file" | "commit_diff" }
-  > | null;
+  projectIcons: ReadonlyMap<string, string | null>;
   activeWorkspace: ActiveWorkspaceSelection | null;
   selectedKey: string | null | undefined;
   showShortcutBadges: boolean;
@@ -830,54 +490,19 @@ function ProjectedSessionRow({
     <SessionRow
       agent={agent}
       selected={selected}
-      activeDirectoryPath={
-        activeWorkspace?.serverId === agent.serverId && directoryTarget?.sessionAgentId === agent.id
-          ? directoryTarget.directory
-          : undefined
-      }
+      project={project}
+      projectIcon={project ? (projectIcons.get(project.viewKey) ?? null) : null}
       client={target?.client ?? null}
       context={context}
       contextError={snapshot?.status === "error" ? snapshot.message : null}
-      supported={hostActions.supported === true}
       permissions={hostActions.permissions}
       labelCreateSupported={hostActions.labelCreateSupported}
       actionsReady={hostActions.supported === false || snapshot !== undefined}
       projects={projects}
       dismiss={dismiss}
       hostBadge={model.badges.get(agent.serverId)}
-      projectLabel={model.rowItems.project ? project?.projectName : undefined}
       showLabels={model.rowItems.labels}
       shortcutNumber={showShortcutBadges ? model.shortcutIndexBySession.get(key) : undefined}
     />
-  );
-}
-function SessionMetadata({
-  agent,
-  context,
-  hostBadge,
-  showLabels,
-  projectLabel,
-}: {
-  agent: Agent;
-  context: SessionContext | null;
-  hostBadge?: import("@/hosts/appearance").HostBadgeModel;
-  showLabels: boolean;
-  projectLabel?: string;
-}) {
-  const { t } = useTranslation();
-  const labels = showLabels && context ? context.sidebarLabelNames.join(", ") : "";
-  return (
-    <View>
-      <Text style={styles.hint}>
-        {getStatusBucketLabel(sessionStatus(agent), t)}
-        {labels ? " · " + labels : ""}
-        {projectLabel ? " · " + projectLabel : ""}
-        {context
-          ? " · " +
-            t("sessionNavigation.directoryCount", { count: sessionDirectories(context).length })
-          : ""}
-      </Text>
-      {hostBadge ? <HostBadge badge={hostBadge} /> : null}
-    </View>
   );
 }

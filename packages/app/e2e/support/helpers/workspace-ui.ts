@@ -12,13 +12,22 @@ export async function openNewAgentComposer(page: Page): Promise<void> {
  * seeds a workspace/project; zero-project flows need their own assertion.
  */
 export async function openDirectoryResources(page: Page): Promise<void> {
-  const toggle = page.getByTestId("directory-terminal-resources").filter({ visible: true });
-  await expect(toggle).toBeVisible();
-  const resources = page.getByTestId("directory-terminal-resource-list").filter({ visible: true });
-  if (!(await resources.isVisible())) await toggle.click();
-  await expect(
-    page.getByTestId("directory-terminal-resource-list").filter({ visible: true }),
-  ).toBeVisible();
+  const sheet = page.getByTestId("workspace-resources-sheet").filter({ visible: true });
+  if (await sheet.isVisible()) return;
+  const explorerToggle = page
+    .getByTestId("workspace-explorer-toggle")
+    .filter({ visible: true })
+    .first();
+  if (await explorerToggle.isVisible()) {
+    const { ensureExplorerSidebar } = await import("./workspace-tabs");
+    const explorer = await ensureExplorerSidebar(page);
+    await explorer.getByTestId("workspace-resources-open").click();
+  } else {
+    const home = page.getByTestId("open-project-workspace-resources");
+    if (!(await home.isVisible())) await page.goto("/open-project");
+    await home.click();
+  }
+  await expect(sheet).toBeVisible();
 }
 
 export async function waitForSidebarHydration(page: Page, timeout = 60_000): Promise<void> {

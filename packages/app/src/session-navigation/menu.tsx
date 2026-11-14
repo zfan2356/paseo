@@ -76,7 +76,6 @@ export interface SessionMenuActions {
   read(): void;
   archive(): void;
   settings(): void;
-  bind(): void;
 }
 
 export function SessionMenuItems({ actions }: { actions: SessionMenuActions }) {
@@ -119,9 +118,6 @@ export function SessionMenuItems({ actions }: { actions: SessionMenuActions }) {
       </MenuItem>
       <MenuItem disabled={!actions.canManage || busy} onSelect={actions.settings}>
         {t("sessionNavigation.settings")}
-      </MenuItem>
-      <MenuItem disabled={!actions.canManage || busy} onSelect={actions.bind}>
-        {t("sessionNavigation.bind")}
       </MenuItem>
       <MenuItem
         leading={archiveIcon}

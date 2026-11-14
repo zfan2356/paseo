@@ -47,8 +47,8 @@ async function seedSecondWorkspace(seeded: SeededWorkspace, title: string): Prom
 
 async function expectSessionSidebarSettled(page: Page) {
   const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
-  const sessions = page.getByTestId("session-navigation-sessions").filter({ visible: true });
-  const resources = page.getByTestId("directory-terminal-resources").filter({ visible: true });
+  const sessions = page.getByTestId("session-group-by-project").filter({ visible: true });
+  const resources = page.getByTestId("session-group-by-directory").filter({ visible: true });
   const pinnedTitle = sidebar.getByTestId("session-pinned-toggle");
   await expect(sidebar).toBeInViewport({ ratio: 1 });
   await expect(sessions).toBeInViewport({ ratio: 1 });
@@ -142,10 +142,7 @@ test.describe("Model B sidebar shape", () => {
 
       // Resource rows remain containers; the default tree separately lists sessions.
       await openDirectoryResources(page);
-      const sidebar = page
-        .getByTestId("directory-terminal-resource-list")
-        .filter({ visible: true })
-        .first();
+      const sidebar = page.getByTestId("workspace-resource-list").filter({ visible: true }).first();
       await expect(workspaceRow(page, mock.workspaceId).first()).toBeVisible({ timeout: 30_000 });
       await expect(sidebar.locator('[data-testid^="workspace-tab-"]')).toHaveCount(0);
       await expect(sidebar.locator('[data-testid^="sidebar-agent-row-"]')).toHaveCount(0);
@@ -174,7 +171,7 @@ test.describe("Model B sidebar shape", () => {
       // Switch to status grouping.
       await selectSidebarStatusGrouping(page);
 
-      const sidebar = page.getByTestId("sidebar-sessions").filter({ visible: true }).first();
+      const sidebar = page.getByTestId("workspace-resource-list").filter({ visible: true }).first();
 
       // The idle workspace lands in the Done bucket; the busy mock-agent workspace
       // lands in the Working bucket. Each workspace is bucketed independently.
@@ -230,7 +227,7 @@ test.describe("Model B sidebar shape", () => {
 });
 
 for (const width of [1200, 390]) {
-  test(`session tree keeps shared-workspace sessions and explicit directories at width ${width}`, async ({
+  test(`session panels keep shared-workspace sessions and explicit directories at width ${width}`, async ({
     page,
   }, info) => {
     test.setTimeout(180_000);
@@ -259,10 +256,12 @@ for (const width of [1200, 390]) {
       await expect(firstRow).toBeVisible();
       await expect(firstRow).toContainText("Investigate checkout");
       await expect(secondRow).toContainText("Compare results");
-      await firstRow.getByRole("button", { name: "Expand session directories" }).click();
-      await expect(firstRow).toContainText("Launch · Execution");
-      await expect(firstRow).toContainText("main checkout");
-      await firstRow.getByRole("button", { name: "+ Bind directory", exact: true }).click();
+      if (width === 390) await page.getByTestId("sidebar-close").click();
+      const { openFilesPanel } = await import("../support/helpers/workspace-tabs");
+      await openFilesPanel(page);
+      const actions = page.getByTestId("session-directory-actions").filter({ visible: true });
+      await actions.click();
+      await page.getByRole("menuitem", { name: "+ Bind directory", exact: true }).click();
       await page.getByTestId("session-directory-path").fill(`${notes.path}/missing`);
       await page.getByTestId("bind-session-directory-submit").click();
       await expect(page.getByTestId("session-directory-field-error")).toContainText(
@@ -270,25 +269,27 @@ for (const width of [1200, 390]) {
       );
       await page.getByTestId("session-directory-path").fill(notes.path);
       await page.getByTestId("bind-session-directory-submit").click();
-      await expect(
-        page.getByTestId(`session-directory-${mock.agentId}-${notes.path}`),
-      ).toBeVisible();
-      await expect(firstRow).toContainText("Non-Git directory");
-      await firstRow.getByRole("button", { name: "+ Bind directory", exact: true }).click();
+      await expect(page.getByTestId("bind-session-directory")).not.toBeVisible();
+      await actions.click();
+      await page.getByRole("menuitem", { name: "+ Bind directory", exact: true }).click();
       await page.getByTestId("session-directory-path").fill(other.path);
       await page.getByTestId("bind-session-directory-submit").click();
-      await expect(
-        page.getByTestId(`session-directory-${mock.agentId}-${other.path}`),
-      ).toContainText("main checkout");
-      await expect(secondRow).not.toContainText(notes.path);
-      const screenshot = info.outputPath(`session-tree-${width}.png`);
-      await page.screenshot({ path: screenshot, fullPage: true });
-      await info.attach(`session tree ${width}`, { path: screenshot, contentType: "image/png" });
-      await page.getByTestId(`session-directory-${mock.agentId}-${notes.path}`).click();
-      await expect(page.getByTestId("files-pane-header").filter({ visible: true })).toBeVisible();
+      await expect(page.getByTestId("bind-session-directory")).not.toBeVisible();
+      expect((await mock.client.getSessionContext(second.id)).context.linkedDirectories).toEqual(
+        [],
+      );
+      await page.getByTestId("session-directory-select").filter({ visible: true }).click();
+      await expect(page.getByRole("menuitem", { name: other.path, exact: true })).toBeVisible();
+      await page.getByRole("menuitem", { name: notes.path, exact: true }).click();
       await expect(
         page.getByTestId("file-explorer-tree-scroll").filter({ visible: true }),
       ).toContainText("README.md");
+      const screenshot = info.outputPath(`session-directories-${width}.png`);
+      await page.screenshot({ path: screenshot, fullPage: true });
+      await info.attach(`session directories ${width}`, {
+        path: screenshot,
+        contentType: "image/png",
+      });
       // The composer can be behind the compact Explorer; its retained text must still name execution cwd.
       await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
         "aria-label",
@@ -302,7 +303,7 @@ for (const width of [1200, 390]) {
   });
 }
 
-test("session tree keeps a non-Git launch directory and reports an expired binding", async ({
+test("session panels keep a non-Git launch directory and report an expired binding", async ({
   page,
 }) => {
   const { createTempDirectory } = await import("../support/helpers/workspace");
@@ -320,17 +321,24 @@ test("session tree keeps a non-Git launch directory and reports an expired bindi
     await launch.client.mutateSessionContext(agent.id, { kind: "link", path: expired.path });
     await expired.cleanup();
     await openAgentRoute(page, { agentId: agent.id, workspaceId: launch.workspaceId });
-    const row = page.getByTestId(`session-row-${agent.id}`).filter({ visible: true });
-    await row.getByRole("button", { name: "Expand session directories" }).click();
-    await expect(row).toContainText("Non-Git directory");
-    const missing = page.getByTestId(`session-directory-${agent.id}-${expired.path}`);
-    await expect(missing).toContainText("Unavailable");
-    await row
-      .getByRole("button", { name: `Directory actions ${expired.path}`, exact: true })
-      .click();
+    const { openFilesPanel } = await import("../support/helpers/workspace-tabs");
+    await openFilesPanel(page);
+    const selector = page.getByTestId("session-directory-select").filter({ visible: true });
+    await selector.click();
+    await expect(page.getByRole("menuitem", { name: new RegExp("Launch") })).toBeVisible();
+    await page.getByRole("menuitem", { name: expired.path, exact: true }).click();
+    await expect(page.getByText("Retry", { exact: true }).filter({ visible: true })).toBeVisible();
+    await page.getByTestId("session-directory-actions").filter({ visible: true }).click();
     await page.getByRole("menuitem", { name: "Remove binding", exact: true }).click();
-    await expect(missing).toHaveCount(0);
-    await expect(row).toContainText("Launch · Execution");
+    await expect
+      .poll(
+        async () =>
+          (await launch.client.getSessionContext(agent.id)).context.linkedDirectories.length,
+      )
+      .toBe(0);
+    await expect(
+      page.getByTestId("file-explorer-tree-scroll").filter({ visible: true }),
+    ).toContainText("README.md");
   } finally {
     await launch.cleanup();
     await expired.cleanup();
@@ -350,7 +358,7 @@ test("session tree retains a terminal workspace with no root session", async ({ 
   const terminalId = created.terminal.id;
   try {
     await gotoWorkspace(page, resource.workspaceId);
-    await page.getByTestId("directory-terminal-resources").filter({ visible: true }).click();
+    await openDirectoryResources(page);
     const row = page
       .getByTestId(`sidebar-workspace-row-${getServerId()}:${resource.workspaceId}`)
       .filter({ visible: true });
@@ -366,7 +374,7 @@ test("session tree retains a terminal workspace with no root session", async ({ 
   }
 });
 
-test("session tree resolves nested directory changes against the checkout root", async ({
+test("session panels resolve nested directory changes against the checkout root", async ({
   page,
 }) => {
   const { createTempGitRepo } = await import("../support/helpers/workspace");
@@ -390,10 +398,10 @@ test("session tree resolves nested directory changes against the checkout root",
       .first();
     await expect(composer).toBeEditable();
     await composer.fill("Keep the execution directory");
-    const row = page.getByTestId(`session-row-${mock.agentId}`).filter({ visible: true });
-    await row.getByRole("button", { name: "Expand session directories" }).click();
-    await row.getByRole("button", { name: `Directory actions ${binding}`, exact: true }).click();
-    await page.getByRole("menuitem", { name: "Local changes", exact: true }).click();
+    const { openChangesTreePanel } = await import("../support/helpers/workspace-tabs");
+    await openChangesTreePanel(page);
+    await page.getByTestId("session-directory-select").filter({ visible: true }).click();
+    await page.getByRole("menuitem", { name: binding, exact: true }).click();
     await expect(page.getByText(`Checkout: ${repo.path}`, { exact: true })).toBeVisible();
     const file = page.getByTestId("diff-tree-file-0-toggle").filter({ visible: true });
     await expect(file).toContainText("nested.txt");
@@ -414,7 +422,7 @@ test("session tree resolves nested directory changes against the checkout root",
   }
 });
 
-test("session navigation restores nine pins and swaps complete lists without changing execution", async ({
+test("session navigation restores nine pins across both session groupings without changing execution", async ({
   page,
 }, info) => {
   test.setTimeout(180_000);
@@ -551,6 +559,8 @@ test("session navigation restores nine pins and swaps complete lists without cha
       });
       if (width === 390) await page.getByRole("button", { name: "Open menu", exact: true }).click();
       const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+      await page.getByTestId("session-group-by-project").filter({ visible: true }).click();
+      await page.getByTestId("session-group-by-project").filter({ visible: true }).click();
       const openingBounds = await sidebar.boundingBox();
       const pins = sidebar.getByTestId("session-pinned-section");
       await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(9);
@@ -585,22 +595,14 @@ test("session navigation restores nine pins and swaps complete lists without cha
       });
       await sidebar.getByTestId("session-pinned-toggle").click();
       await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(9);
-      await page.getByTestId("directory-terminal-resources").filter({ visible: true }).click();
-      await expect(sidebar).not.toBeVisible();
-      const resources = page
-        .getByTestId("directory-terminal-resource-list")
-        .filter({ visible: true });
-      await expect(resources).toBeVisible();
-      await expect(
-        resources.getByTestId(`sidebar-workspace-row-${getServerId()}:${mock.workspaceId}`),
-      ).toBeVisible();
-      await page.screenshot({
-        path: info.outputPath(`directory-resources-${width}.png`),
-        fullPage: true,
-      });
-      await page.getByTestId("session-navigation-sessions").filter({ visible: true }).click();
+      await page.getByTestId("session-group-by-directory").filter({ visible: true }).click();
       await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(9);
-      await expect(resources).not.toBeVisible();
+      await expect(sidebar.locator('[data-testid^="session-row-"]')).toHaveCount(15);
+      const directoryGroup = sidebar
+        .locator('[data-testid^="session-group-"]')
+        .filter({ has: page.getByTestId(`session-row-${ordinary.id}`) });
+      await expect(directoryGroup.locator('[data-testid^="session-row-"]')).toHaveCount(1);
+      await page.getByTestId("session-group-by-project").filter({ visible: true }).click();
       await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
         "aria-label",
         `Execution: ${mock.cwd}`,
@@ -740,17 +742,12 @@ test("session toolbar stays inline and status dots follow each session independe
         const status = sidebar.getByTestId(`session-status-${id}`);
         await expect(status).toHaveAttribute("aria-label", label);
         await expect(status).toBeInViewport({ ratio: 1 });
-        await expect(status.locator(":scope > div")).toHaveCSS("width", "6px");
+        const icon = status.getByTestId(`session-project-icon-${id}`);
+        await expect(icon).toBeInViewport({ ratio: 1 });
+        await expect(icon.getByTestId("project-status-badge")).toHaveCount(
+          label === "Done" ? 0 : 1,
+        );
       }
-      const colors = await Promise.all(
-        [running, waiting, failed, mock.agentId].map((id) =>
-          sidebar
-            .getByTestId(`session-status-${id}`)
-            .locator(":scope > div")
-            .evaluate((node) => getComputedStyle(node).backgroundColor),
-        ),
-      );
-      expect(new Set(colors).size).toBe(4);
       await page.screenshot({
         path: info.outputPath(`session-states-${width}.png`),
         fullPage: true,
@@ -852,7 +849,8 @@ test("session card menus keep same-directory operations isolated across pointer 
       await expectSessionMenuSettled(page.getByTestId("session-menu-archive"));
     };
     await expect(row).toBeVisible();
-    await expect(row).toContainText("Directories: 1");
+    await expect(row).not.toContainText("Directories:");
+    await expect(row.getByTestId(`session-project-icon-${mock.agentId}`)).toBeVisible();
     await row.getByRole("button", { name: "Session menu", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Rename session", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
@@ -1236,6 +1234,8 @@ test.describe("session card touch controls", () => {
       await page.getByRole("button", { name: "Open menu", exact: true }).click();
       const row = page.getByTestId(`session-row-${mock.agentId}`).filter({ visible: true });
       await expect(row).toBeVisible();
+      const titleButton = row.getByRole("button", { name: "Touch session", exact: true });
+      expect((await titleButton.boundingBox())?.height).toBeGreaterThanOrEqual(44);
       expect(
         await page.evaluate(() => matchMedia("(hover: hover) and (pointer: fine)").matches),
       ).toBe(false);
@@ -1456,3 +1456,578 @@ for (const scenario of unavailableContextCases) {
     }
   });
 }
+
+test("session grouping shares compact cards and pins while right panels retain directory and terminal targets", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  page.setDefaultTimeout(15_000);
+  const { execFileSync } = await import("node:child_process");
+  const { writeFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const { createTempDirectory } = await import("../support/helpers/workspace");
+  const { ensureExplorerSidebar, openFilesPanel } =
+    await import("../support/helpers/workspace-tabs");
+  const { openMobileAgentSidebar, closeMobileAgentSidebar } =
+    await import("../support/helpers/sidebar");
+  const main = await seedMockAgentWorkspace({
+    repoPrefix: "group-project-",
+    title: "Main checkout conversation",
+  });
+  const other = await seedMockAgentWorkspace({
+    repoPrefix: "group-second-",
+    title: "Second project pinned",
+  });
+  const notes = await seedWorkspace({ repoPrefix: "group-notes-", git: false });
+  const trees = await createTempDirectory("group-worktrees-");
+  let terminalId: string | undefined;
+  let treeProjectId: string | undefined;
+  try {
+    const treePath = path.join(trees.path, "linked");
+    execFileSync("git", ["worktree", "add", "-b", "linked", treePath], {
+      cwd: main.cwd,
+      stdio: "ignore",
+    });
+    const tree = await main.client.createWorkspace({
+      source: { kind: "directory", path: treePath },
+    });
+    if (!tree.workspace) throw new Error(tree.error ?? "Missing worktree");
+    treeProjectId = tree.workspace.projectId;
+    const linked = await main.client.createAgent({
+      provider: "mock",
+      cwd: treePath,
+      workspaceId: tree.workspace.id,
+      title: "Linked worktree conversation",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+    });
+    const pinned = await main.client.createAgent({
+      provider: "mock",
+      cwd: main.cwd,
+      workspaceId: main.workspaceId,
+      title: "Main project pinned",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+    });
+    const nonGit = await notes.client.createAgent({
+      provider: "mock",
+      cwd: notes.repoPath,
+      workspaceId: notes.workspaceId,
+      title: "Non-Git research",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+    });
+    const independent = await notes.client.createWorkspace({
+      source: { kind: "directory", path: notes.repoPath, projectId: notes.projectId },
+      title: "Terminal without a conversation",
+    });
+    if (!independent.workspace) throw new Error("Missing terminal workspace");
+    const created = await notes.client.createTerminal(
+      notes.repoPath,
+      "Independent terminal",
+      undefined,
+      { workspaceId: independent.workspace.id },
+    );
+    if (!created.terminal) throw new Error(created.error ?? "Missing terminal");
+    terminalId = created.terminal.id;
+    await main.client.mutateSessionContext(pinned.id, { kind: "pin", pinned: true });
+    await other.client.mutateSessionContext(other.agentId, { kind: "pin", pinned: true });
+    const mainContext = (await main.client.getSessionContext(main.agentId)).context;
+    expect((await main.client.getSessionContext(linked.id)).context.projectId).toBe(
+      mainContext.projectId,
+    );
+    await writeFile(
+      path.join(notes.repoPath, "linked-proof.txt"),
+      "Directory content remains independent of execution cwd.\n",
+    );
+    await page.setViewportSize({ width: 1200, height: 1000 });
+    await openAgentRoute(page, main);
+    for (const width of [1200, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      if (width === 390) await openMobileAgentSidebar(page);
+      const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+      await expect(sidebar).toBeInViewport({ ratio: 1 });
+      await page.getByTestId("session-group-by-project").filter({ visible: true }).click();
+      const cards = sidebar.locator('[data-testid^="session-row-"]');
+      await expect(cards).toHaveCount(5);
+      const projectGroup = sidebar
+        .locator('[data-testid^="session-group-"]')
+        .filter({ has: page.getByTestId(`session-row-${main.agentId}`) });
+      await expect(projectGroup.getByTestId(`session-row-${linked.id}`)).toBeVisible();
+      const pinOrder = await sidebar
+        .getByTestId("session-pinned-section")
+        .locator('[data-testid^="session-row-"]')
+        .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-testid")));
+      await expect(sidebar.getByTestId(`session-project-icon-${nonGit.id}`)).toBeVisible();
+      await expect(sidebar.getByTestId(`session-row-${main.agentId}`)).not.toContainText(
+        "Directories:",
+      );
+      await expect(sidebar.getByRole("button", { name: /Expand session/ })).toHaveCount(0);
+      await page.screenshot({
+        path: info.outputPath(`group-project-${width}.png`),
+        fullPage: true,
+      });
+      const before = (await main.client.getSessionContext(main.agentId)).context;
+      await page.getByTestId("session-group-by-directory").filter({ visible: true }).click();
+      await expect(cards).toHaveCount(5);
+      const cwdGroup = sidebar
+        .locator('[data-testid^="session-group-"]')
+        .filter({ has: page.getByTestId(`session-row-${main.agentId}`) });
+      await expect(cwdGroup.getByTestId(`session-row-${linked.id}`)).toHaveCount(0);
+      expect(
+        await sidebar
+          .getByTestId("session-pinned-section")
+          .locator('[data-testid^="session-row-"]')
+          .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-testid"))),
+      ).toEqual(pinOrder);
+      expect((await main.client.getSessionContext(main.agentId)).context).toEqual(before);
+      await expect(
+        sidebar
+          .getByTestId(`session-row-${main.agentId}`)
+          .getByRole("button", { name: /Main checkout conversation/ }),
+      ).toHaveAttribute("aria-selected", "true");
+      await page.screenshot({
+        path: info.outputPath(`group-directory-${width}.png`),
+        fullPage: true,
+      });
+      if (width === 390) await closeMobileAgentSidebar(page);
+      const explorer = await ensureExplorerSidebar(page);
+      await expect(explorer.getByTestId("workspace-resources-open")).toBeInViewport({ ratio: 1 });
+      await explorer.getByTestId("workspace-resources-open").click();
+      const sheet = page.getByTestId("workspace-resources-sheet");
+      await expect(
+        page
+          .getByTestId("workspace-resource-list")
+          .getByTestId(`sidebar-workspace-row-${getServerId()}:${independent.workspace.id}`),
+      ).toBeVisible();
+      await expectSessionMenuSettled(sheet);
+      await page.screenshot({
+        path: info.outputPath(`workspace-resources-${width}.png`),
+        fullPage: true,
+      });
+      await page
+        .getByTestId("workspace-resource-list")
+        .getByTestId(`sidebar-workspace-title-${getServerId()}:${main.workspaceId}`)
+        .click();
+      await expect(sheet).not.toBeVisible();
+      await openFilesPanel(page);
+      await explorer.getByTestId("session-directory-actions").filter({ visible: true }).click();
+      await page.getByRole("menuitem", { name: "+ Bind directory", exact: true }).click();
+      const binding = page.getByTestId("bind-session-directory");
+      await page.getByTestId("session-directory-path").fill(notes.repoPath);
+      await page.getByTestId("bind-session-directory-submit").click();
+      await expect(binding).not.toBeVisible();
+      await explorer.getByTestId("session-directory-select").filter({ visible: true }).click();
+      await page.getByRole("menuitem", { name: notes.repoPath, exact: true }).click();
+      await expect(explorer.getByText("linked-proof.txt", { exact: true })).toBeVisible();
+      await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
+        "aria-label",
+        `Execution: ${main.cwd}`,
+      );
+      await page.screenshot({
+        path: info.outputPath(`linked-directory-${width}.png`),
+        fullPage: true,
+      });
+      await explorer.getByTestId("session-directory-actions").filter({ visible: true }).click();
+      await page.getByRole("menuitem", { name: "Remove binding", exact: true }).click();
+      await expect
+        .poll(
+          async () =>
+            (await main.client.getSessionContext(main.agentId)).context.linkedDirectories.length,
+        )
+        .toBe(0);
+      if (width === 390) {
+        await explorer.getByTestId("workspace-resources-open").click();
+        await page
+          .getByTestId("workspace-resource-list")
+          .getByTestId(`sidebar-workspace-title-${getServerId()}:${independent.workspace.id}`)
+          .click();
+        await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
+        await expect(
+          page
+            .getByRole("textbox", { name: "Terminal input", exact: true })
+            .filter({ visible: true }),
+        ).toBeInViewport({ ratio: 1 });
+        await page.screenshot({
+          path: info.outputPath("independent-terminal-390.png"),
+          fullPage: true,
+        });
+        await openAgentRoute(page, main);
+      }
+    }
+    await page.setViewportSize({ width: 1200, height: 1000 });
+    const explorer = await ensureExplorerSidebar(page);
+    await explorer.getByTestId("workspace-resources-open").click();
+    await page
+      .getByTestId("workspace-resource-list")
+      .getByTestId(`sidebar-workspace-row-${getServerId()}:${independent.workspace.id}`)
+      .click();
+    await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
+    await expect(
+      page.getByTestId(`workspace-tab-terminal_${terminalId}`).filter({ visible: true }),
+    ).toBeVisible();
+    expect((await main.client.fetchAgent({ agentId: main.agentId }))?.agent).toMatchObject({
+      cwd: main.cwd,
+      archivedAt: null,
+    });
+    for (const id of [main.agentId, linked.id, pinned.id, other.agentId, nonGit.id])
+      await main.client.archiveAgent(id);
+    await page.goto("/open-project");
+    await expect(page.locator('[data-testid^="session-row-"]')).toHaveCount(0);
+    await expect(page.getByTestId("open-project-workspace-resources")).toBeVisible();
+    await page.screenshot({
+      path: info.outputPath("empty-sessions-home-1200.png"),
+      fullPage: true,
+    });
+    await page.getByTestId("open-project-workspace-resources").click();
+    await page
+      .getByTestId("workspace-resource-list")
+      .getByTestId(`sidebar-workspace-row-${getServerId()}:${independent.workspace.id}`)
+      .click();
+    await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
+    await expect(
+      page.getByTestId(`workspace-tab-terminal_${terminalId}`).filter({ visible: true }),
+    ).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 1000 });
+    await page.goto("/open-project");
+    await expect(page.getByTestId("open-project-workspace-resources")).toBeVisible();
+    await page.screenshot({ path: info.outputPath("empty-sessions-home-390.png"), fullPage: true });
+    await page.getByTestId("open-project-workspace-resources").click();
+    await page
+      .getByTestId("workspace-resources-sheet")
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+  } catch (error) {
+    await captureSessionFailure(page, info);
+    throw error;
+  } finally {
+    if (terminalId) await notes.client.killTerminal(terminalId);
+    if (treeProjectId) await main.client.removeProject(treeProjectId);
+    await main.cleanup();
+    await other.cleanup();
+    await notes.cleanup();
+    await trees.cleanup();
+  }
+});
+
+test("Explorer resource action leaves Files and Changes readable at minimum dock width", async ({
+  page,
+}, info) => {
+  test.setTimeout(90_000);
+  page.setDefaultTimeout(15_000);
+  const mock = await seedMockAgentWorkspace({
+    repoPrefix: "resource-rail-width-",
+    title: "Toolbar width check",
+  });
+  try {
+    await page.setViewportSize({ width: 1200, height: 1000 });
+    await openAgentRoute(page, mock);
+    const { ensureExplorerSidebar } = await import("../support/helpers/workspace-tabs");
+    const explorer = await ensureExplorerSidebar(page);
+    const handle = page
+      .getByTestId("workspace-explorer-sidebar-resize-handle")
+      .getByRole("separator");
+    const box = await handle.boundingBox();
+    if (!box) throw new Error("Missing Explorer resize handle");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(1190, box.y + box.height / 2, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(async () => Math.round((await explorer.boundingBox())?.width ?? 0)).toBe(240);
+    await page.mouse.move(600, 900);
+    await waitForSettledPosition(explorer);
+    await page.screenshot({
+      path: info.outputPath("explorer-minimum-width-1200.png"),
+      fullPage: true,
+    });
+    for (const [id, label] of [
+      ["files", "Files"],
+      ["changes_tree", "Changes"],
+    ]) {
+      const tab = explorer.getByTestId(`workspace-tab-${id}`);
+      await expect(tab.getByText(label, { exact: true })).toBeInViewport({ ratio: 1 });
+      const captionFits = await tab.getByText(label, { exact: true }).evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const text = range.getBoundingClientRect();
+        const clip = element.getBoundingClientRect();
+        return text.width <= clip.width + 1;
+      });
+      expect(captionFits).toBe(true);
+      await tab.click();
+      await expect(tab).toHaveAttribute("aria-selected", "true");
+    }
+    const entry = explorer.getByTestId("workspace-resources-open");
+    await expect(entry).toBeInViewport({ ratio: 1 });
+    await entry.click();
+    await expect(page.getByTestId("workspace-resources-sheet")).toBeVisible();
+    await page
+      .getByTestId("workspace-resources-sheet")
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+  } catch (error) {
+    await captureSessionFailure(page, info);
+    throw error;
+  } finally {
+    await mock.cleanup();
+  }
+});
+
+test("Chinese dark previews keep mixed session states and Explorer entry visible on wide and compact layouts", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  page.setDefaultTimeout(15_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "@paseo:app-settings",
+      JSON.stringify({ theme: "dark", language: "zh-CN", chatDisplay: "full" }),
+    );
+  });
+  await page.emulateMedia({ colorScheme: "dark" });
+  const mock = await seedMockAgentWorkspace({
+    repoPrefix: "preview-states-",
+    title: "原会话：目录与状态核验",
+    model: "five-minute-stream",
+  });
+  const target = await seedWorkspace({
+    repoPrefix: "preview-target-",
+    repo: { files: [{ path: "preview-target.txt", content: "before\n" }] },
+  });
+  const agents: string[] = [];
+  let terminalId: string | undefined;
+  try {
+    const { context } = await mock.client.getSessionContext(mock.agentId);
+    if (!context.projectId) throw new Error("Missing session project");
+    await mock.client.renameProject(context.projectId, "会话导航");
+    for (const title of ["置顶：正在实现", "置顶：等待审批", "普通：验证失败"]) {
+      const agent = await mock.client.createAgent({
+        provider: "mock",
+        cwd: mock.cwd,
+        workspaceId: mock.workspaceId,
+        title,
+        modeId: "load-test",
+        model: "five-minute-stream",
+      });
+      agents.push(agent.id);
+    }
+    const [running, waiting, failed] = agents;
+    await mock.client.mutateSessionContext(running, { kind: "pin", pinned: true });
+    await mock.client.mutateSessionContext(waiting, { kind: "pin", pinned: true });
+    await mock.client.sendAgentMessage(running, "Implement the toolbar");
+    await mock.client.sendAgentMessage(waiting, "Emit synthetic plan approval");
+    await mock.client.sendAgentMessage(failed, "Emit synthetic turn failure");
+    await mock.client.mutateSessionContext(mock.agentId, { kind: "link", path: target.repoPath });
+    await writeFailureEvidence(`${target.repoPath}/preview-target.txt`, "after\n");
+    const created = await target.client.createTerminal(target.repoPath, "无会话终端", undefined, {
+      workspaceId: target.workspaceId,
+    });
+    if (!created.terminal) throw new Error(created.error ?? "Missing independent terminal");
+    terminalId = created.terminal.id;
+    await page.setViewportSize({ width: 1200, height: 1000 });
+    await openAgentRoute(page, mock);
+    const { ensureExplorerSidebar, openFilesPanel, openChangesTreePanel } =
+      await import("../support/helpers/workspace-tabs");
+    for (const width of [1200, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      if (width === 390) await page.getByRole("button", { name: "打开菜单", exact: true }).click();
+      const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+      await expect(
+        page.getByTestId("session-group-by-project").filter({ visible: true }),
+      ).toHaveText("按项目");
+      for (const [id, label] of [
+        [running, "运行中"],
+        [waiting, "需要输入"],
+        [failed, "失败"],
+        [mock.agentId, "已完成"],
+      ]) {
+        const state = sidebar.getByTestId(`session-status-${id}`);
+        await expect(state).toHaveAttribute("aria-label", label);
+        const icon = state.getByTestId(`session-project-icon-${id}`);
+        await expect(icon).toBeInViewport({ ratio: 1 });
+        const badge = icon.getByTestId("project-status-badge");
+        await expect(badge).toHaveCount(label === "已完成" ? 0 : 1);
+        if (label !== "已完成") await expect(badge).toBeInViewport({ ratio: 1 });
+      }
+      await expect(
+        sidebar.getByTestId("session-pinned-section").getByTestId(`session-row-${running}`),
+      ).toBeVisible();
+      await expect(
+        sidebar.getByTestId("session-pinned-section").getByTestId(`session-row-${waiting}`),
+      ).toBeVisible();
+      await expect(
+        sidebar.getByTestId("session-pinned-section").getByTestId(`session-row-${failed}`),
+      ).toHaveCount(0);
+      await page.mouse.move(width - 1, 950);
+      await waitForSettledPosition(sidebar);
+      await page.screenshot({
+        path: info.outputPath(`mixed-states-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      const saved = (await mock.client.getSessionContext(mock.agentId)).context;
+      await page.getByTestId("session-group-by-directory").filter({ visible: true }).click();
+      await expect(sidebar.locator('[data-testid^="session-row-"]')).toHaveCount(4);
+      expect((await mock.client.getSessionContext(mock.agentId)).context).toEqual(saved);
+      await expect(sidebar.getByTestId(`session-status-${running}`)).toHaveAttribute(
+        "aria-label",
+        "运行中",
+      );
+      await expect(sidebar.getByTestId(`session-status-${waiting}`)).toHaveAttribute(
+        "aria-label",
+        "需要输入",
+      );
+      await expect(sidebar.getByTestId(`session-status-${failed}`)).toHaveAttribute(
+        "aria-label",
+        "失败",
+      );
+      await waitForSettledPosition(sidebar);
+      await page.screenshot({
+        path: info.outputPath(`mixed-directory-states-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await page.getByTestId("session-group-by-project").filter({ visible: true }).click();
+      if (width === 390) await page.getByTestId("sidebar-close").click();
+      await openFilesPanel(page);
+      const explorer = await ensureExplorerSidebar(page);
+      await expect(
+        explorer.getByTestId("workspace-tab-files").getByText("文件", { exact: true }),
+      ).toBeInViewport({ ratio: 1 });
+      await expect(
+        explorer.getByTestId("workspace-tab-changes_tree").getByText("更改", { exact: true }),
+      ).toBeInViewport({ ratio: 1 });
+      const entry = explorer.getByTestId("workspace-resources-open");
+      await expect(entry).toHaveAttribute("aria-label", "工作区与终端");
+      await expect(entry).toBeInViewport({ ratio: 1 });
+      await page.mouse.move(width === 1200 ? 600 : 1, 900);
+      await waitForSettledPosition(explorer);
+      await page.screenshot({
+        path: info.outputPath(`explorer-entry-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await explorer.getByTestId("session-directory-select").filter({ visible: true }).click();
+      const directoryChoice = page.getByRole("menuitem", { name: target.repoPath, exact: true });
+      await expect(directoryChoice).toBeInViewport({ ratio: 1 });
+      await expectSessionMenuSettled(directoryChoice);
+      await page.screenshot({
+        path: info.outputPath(`directory-select-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await directoryChoice.click();
+      await expect(explorer.getByText("preview-target.txt", { exact: true })).toBeVisible();
+      await explorer.getByTestId("session-directory-actions").filter({ visible: true }).click();
+      const addDirectory = page.getByRole("menuitem", { name: "+ 绑定目录", exact: true });
+      const removeDirectory = page.getByRole("menuitem", { name: "移除绑定", exact: true });
+      await expect(addDirectory).toBeEnabled();
+      await expect(removeDirectory).toBeEnabled();
+      await expect(addDirectory).toBeInViewport({ ratio: 1 });
+      await expect(removeDirectory).toBeInViewport({ ratio: 1 });
+      await expectSessionMenuSettled(removeDirectory);
+      await page.screenshot({
+        path: info.outputPath(`directory-actions-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      if (width === 390)
+        await page
+          .getByRole("button", { name: "底部面板背景", exact: true })
+          .last()
+          .click({ position: { x: 5, y: 5 } });
+      else await page.keyboard.press("Escape");
+      await expect(removeDirectory).not.toBeVisible();
+      await openChangesTreePanel(page);
+      const changes = explorer.getByTestId("changes-tree-panel").filter({ visible: true });
+      if (width === 1200) await expect(changes).toContainText("preview-target.txt");
+      else {
+        await changes.getByTestId("changes-jump-to-file").click();
+        const changedFile = page.getByTestId("diff-tree-file-0-toggle").filter({ visible: true });
+        await expect(changedFile).toContainText("preview-target.txt");
+        await expect(changedFile).toBeInViewport({ ratio: 1 });
+        await expectSessionMenuSettled(changedFile);
+        await page.screenshot({
+          path: info.outputPath("git-file-list-zh-dark-390.png"),
+          fullPage: true,
+        });
+        await changedFile.click();
+        await expect(page.getByTestId("changes-jump-to-file-sheet")).not.toBeVisible();
+      }
+      await expect(
+        changes.getByText(`检出根目录：${target.repoPath}`, { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
+        "aria-label",
+        `执行：${mock.cwd}`,
+      );
+      await page.screenshot({
+        path: info.outputPath(`git-target-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await entry.click();
+      await expectSessionMenuSettled(page.getByTestId("workspace-resources-sheet"));
+      await page.screenshot({
+        path: info.outputPath(`resources-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await page
+        .getByTestId("workspace-resource-list")
+        .getByTestId(`sidebar-workspace-title-${getServerId()}:${target.workspaceId}`)
+        .click();
+      await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
+      await expect(
+        page
+          .getByRole("textbox", { name: "Terminal input", exact: true })
+          .filter({ visible: true }),
+      ).toBeInViewport({ ratio: 1 });
+      await page.screenshot({
+        path: info.outputPath(`independent-terminal-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      if (width === 390) await page.getByRole("button", { name: "打开菜单", exact: true }).click();
+      await page
+        .getByTestId(`session-row-${mock.agentId}`)
+        .filter({ visible: true })
+        .getByRole("button", { name: "原会话：目录与状态核验", exact: true })
+        .click();
+      const composer = page.locator("textarea[data-composer-input]").filter({ visible: true });
+      await expect(composer).toBeEditable();
+      if (width === 390) await expect(sidebar).not.toBeInViewport();
+      await expect(composer).toBeInViewport({ ratio: 1 });
+      await waitForSettledPosition(composer);
+      await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
+        "aria-label",
+        `执行：${mock.cwd}`,
+      );
+      await page.screenshot({
+        path: info.outputPath(`return-to-session-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+    }
+    for (const id of [mock.agentId, ...agents]) await mock.client.archiveAgent(id);
+    for (const width of [1200, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/open-project");
+      await expect(page.getByTestId("open-project-workspace-resources")).toBeVisible();
+      await page.screenshot({
+        path: info.outputPath(`empty-home-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await page.getByTestId("open-project-workspace-resources").click();
+      await page
+        .getByTestId("workspace-resource-list")
+        .getByTestId(`sidebar-workspace-title-${getServerId()}:${target.workspaceId}`)
+        .click();
+      await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
+      await expect(
+        page
+          .getByRole("textbox", { name: "Terminal input", exact: true })
+          .filter({ visible: true }),
+      ).toBeInViewport({ ratio: 1 });
+    }
+  } catch (error) {
+    await captureSessionFailure(page, info);
+    throw error;
+  } finally {
+    await Promise.allSettled(agents.map((id) => mock.client.cancelAgent(id)));
+    if (terminalId) await target.client.killTerminal(terminalId);
+    await mock.cleanup();
+    await target.cleanup();
+  }
+});
