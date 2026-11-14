@@ -30,16 +30,18 @@ The existing session-card matrix also covers same-directory operation isolation,
 
 Runtime source: `ee9a65365d57a559daa62e58d8015fc38407da20` (including `58ce057c4a69207abb70ab2bfd8990bcc2417ef9`); base `b60da86b9d695b2274e870d13fe7f4426b75892d`. [PR #18](https://github.com/zfan2356/paseo/pull/18) targets main. The following evidence commit adds this record and artifacts; it does not change runtime code. Independent review is WORK-399.
 
-| Check                                                                                  | Result                                   | Raw output                            |
-| -------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------- |
-| Session projection/model                                                               | 13 passed                                | [model](model.txt)                    |
-| Full workspace typecheck                                                               | Passed                                   | [typecheck](typecheck.txt)            |
-| Full lint                                                                              | Passed                                   | [lint](lint.txt)                      |
-| Server/declaration build                                                               | Passed                                   | [build](build-server.txt)             |
-| Commit hooks: format, lint, full typecheck                                             | Passed                                   | [hooks](commit-checks.txt)            |
-| Initial focused browser matrix                                                         | 13 passed, 2 failed                      | [matrix](browser-matrix.txt)          |
-| Targeted follow-up plus original resource projection                                   | 6 passed, service sheet dismissal failed | [follow-up](browser-final.txt)        |
-| Resource dismissal fix: original project/status rows, complete matrix, running service | 5 passed                                 | [regression](resource-regression.txt) |
+| Check                                                                                                     | Result                                   | Raw output                                                   |
+| --------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------ |
+| Session projection/model                                                                                  | 13 passed                                | [model](model.txt)                                           |
+| Full workspace typecheck                                                                                  | Passed                                   | [typecheck](typecheck.txt)                                   |
+| Full lint                                                                                                 | Passed                                   | [lint](lint.txt)                                             |
+| Server/declaration build                                                                                  | Passed                                   | [build](build-server.txt)                                    |
+| Commit hooks: format, lint, full typecheck                                                                | Passed                                   | [hooks](commit-checks.txt)                                   |
+| Initial focused browser matrix                                                                            | 13 passed, 2 failed                      | [matrix](browser-matrix.txt)                                 |
+| Targeted follow-up plus original resource projection                                                      | 6 passed, service sheet dismissal failed | [follow-up](browser-final.txt)                               |
+| Resource dismissal fix: original project/status rows, complete matrix, running service                    | 5 passed                                 | [regression](resource-regression.txt)                        |
+| Current/other workspace dismissal at 1200/390, status grouping, original terminal IDs and running service | 2 passed                                 | [final resource regression](resource-current-and-status.txt) |
+| Resource fix commit hooks: format, lint, full typecheck                                                   | Passed                                   | [fix hooks](resource-fix-checks.txt)                         |
 
 The initial failures were the obsolete six-pixel-dot assertion and a compact test clicking the retained header's Explorer toggle. The targeted run corrects both and exercises the complete grouping/empty-session matrix. It also covers the original resource projection and touch title geometry. The service failure exposed an existing workspace row callback that was accepted but never called. Restoring that callback before navigation closes the new resource sheet even when the destination workspace is retained. The final regression asserts sheet dismissal; a terminal visible behind a modal is insufficient evidence. These are focused files/cases, not a full local test suite.
 
