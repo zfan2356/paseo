@@ -1,0 +1,101 @@
+╭───────────────────────────────────╮
+│ lefthook v2.1.6  hook: pre-commit │
+╰───────────────────────────────────╯
+┃  format ❯ 
+
+
+> paseo@0.15.3 format:check:files
+> oxfmt --check docs/explorer-sidebar.md packages/app/e2e/browser/sidebar-model-b.spec.ts packages/app/e2e/support/helpers/hosts.ts packages/app/e2e/support/helpers/sidebar.ts packages/app/e2e/support/helpers/workspace-ui.ts packages/app/src/attachments/workspace-attachments-store.test.ts packages/app/src/attachments/workspace-attachments-store.ts packages/app/src/components/branch-switcher.tsx packages/app/src/components/left-sidebar.tsx packages/app/src/components/sidebar/display-preferences/menu.tsx packages/app/src/composer/index.tsx packages/app/src/git/diff-document/types.ts packages/app/src/git/diff-pane.tsx packages/app/src/git/file-header.tsx packages/app/src/git/policy.test.ts packages/app/src/git/policy.ts packages/app/src/git/use-working-diff.ts packages/app/src/git/working-diff-comparison/index.ts packages/app/src/git/working-diff-comparison/state.ts packages/app/src/hooks/use-branch-switcher.ts packages/app/src/i18n/resources.test.ts packages/app/src/i18n/resources/ar.ts packages/app/src/i18n/resources/en.ts packages/app/src/i18n/resources/es.ts packages/app/src/i18n/resources/fr.ts packages/app/src/i18n/resources/ja.ts packages/app/src/i18n/resources/ko.ts packages/app/src/i18n/resources/pt-BR.ts packages/app/src/i18n/resources/ru.ts packages/app/src/i18n/resources/zh-CN.ts packages/app/src/panels/diff-panel.tsx packages/app/src/review/store.test.ts packages/app/src/review/store.ts packages/app/src/session-navigation/actions.tsx packages/app/src/session-navigation/collection.ts packages/app/src/session-navigation/contexts.ts packages/app/src/session-navigation/model.test.ts packages/app/src/session-navigation/model.ts packages/app/src/session-navigation/preferences.ts packages/app/src/session-navigation/projection.ts packages/app/src/session-navigation/sidebar.tsx
+
+Checking formatting...
+
+All matched files use the correct format.
+Finished in 413ms on 41 files using 32 threads.
+
+┃  lint ❯ 
+
+
+> paseo@0.15.3 lint
+> oxlint packages/app/e2e/browser/sidebar-model-b.spec.ts packages/app/e2e/support/helpers/hosts.ts packages/app/e2e/support/helpers/sidebar.ts packages/app/e2e/support/helpers/workspace-ui.ts packages/app/src/attachments/workspace-attachments-store.test.ts packages/app/src/attachments/workspace-attachments-store.ts packages/app/src/components/branch-switcher.tsx packages/app/src/components/left-sidebar.tsx packages/app/src/components/sidebar/display-preferences/menu.tsx packages/app/src/composer/index.tsx packages/app/src/git/diff-document/types.ts packages/app/src/git/diff-pane.tsx packages/app/src/git/file-header.tsx packages/app/src/git/policy.test.ts packages/app/src/git/policy.ts packages/app/src/git/use-working-diff.ts packages/app/src/git/working-diff-comparison/index.ts packages/app/src/git/working-diff-comparison/state.ts packages/app/src/hooks/use-branch-switcher.ts packages/app/src/i18n/resources.test.ts packages/app/src/i18n/resources/ar.ts packages/app/src/i18n/resources/en.ts packages/app/src/i18n/resources/es.ts packages/app/src/i18n/resources/fr.ts packages/app/src/i18n/resources/ja.ts packages/app/src/i18n/resources/ko.ts packages/app/src/i18n/resources/pt-BR.ts packages/app/src/i18n/resources/ru.ts packages/app/src/i18n/resources/zh-CN.ts packages/app/src/panels/diff-panel.tsx packages/app/src/review/store.test.ts packages/app/src/review/store.ts packages/app/src/session-navigation/actions.tsx packages/app/src/session-navigation/collection.ts packages/app/src/session-navigation/contexts.ts packages/app/src/session-navigation/model.test.ts packages/app/src/session-navigation/model.ts packages/app/src/session-navigation/preferences.ts packages/app/src/session-navigation/projection.ts packages/app/src/session-navigation/sidebar.tsx
+
+Found 0 warnings and 0 errors.
+Finished in 852ms on 40 files with 177 rules using 32 threads.
+
+┃  typecheck ❯ 
+
+
+> paseo@0.15.3 typecheck
+> npm run typecheck --workspaces --if-present
+
+
+> @getpaseo/builtin-plugins@0.15.3 typecheck
+> tsgo -p tsconfig.json --noEmit
+
+
+> @getpaseo/expo-two-way-audio@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/highlight@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/plugin@0.15.3 typecheck
+> tsgo --noEmit && npm run typecheck:examples
+
+
+> @getpaseo/plugin@0.15.3 typecheck:examples
+> npm --prefix ../../plugin-examples/markdown-panel install --ignore-scripts --no-audit --no-fund && tsgo -p tsconfig.examples.json --noEmit
+
+
+up to date in 273ms
+
+> @getpaseo/protocol@0.15.3 pretypecheck
+> npm run generate:validators
+
+
+> @getpaseo/protocol@0.15.3 generate:validators
+> node scripts/generate-validation-aot.mjs
+
+generated src/generated/validation/ws-outbound.aot.ts: envelope + 260 session message validators
+
+> @getpaseo/protocol@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/client@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/server@0.15.3 typecheck
+> tsgo -p tsconfig.server.typecheck.json --noEmit
+
+
+> @getpaseo/app@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/relay@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/website@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/desktop@0.15.3 typecheck
+> tsgo --noEmit -p tsconfig.json
+
+
+> @getpaseo/cli@0.15.3 typecheck
+> tsgo --noEmit
+
+
+                                      
+  ────────────────────────────────────
+summary: (done in 30.37 seconds)      
+✓ format (0.79 seconds)
+✓ lint (1.22 seconds)
+✓ typecheck (30.33 seconds)
+[agent/sol/work-372 58d5891c0] fix(app): isolate directory Git actions and preserve navigation contracts
+ 41 files changed, 1324 insertions(+), 189 deletions(-)

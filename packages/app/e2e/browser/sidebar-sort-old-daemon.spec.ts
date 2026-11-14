@@ -21,6 +21,8 @@ test("published old daemon keeps workspace navigation and gates sorting", async 
       });
       expect(second.workspace).toBeTruthy();
       await openPublishedHost(page, daemon, project.workspaceId);
+      await expect(page.getByText(/Update .* to use session directories/)).toBeVisible();
+      await page.getByTestId("directory-terminal-resources").click();
       await openWorkspace(page, daemon.serverId, second.workspace!.id);
       await expectSortingRequiresHostUpdate(page);
       await selectSidebarStatusGrouping(page);

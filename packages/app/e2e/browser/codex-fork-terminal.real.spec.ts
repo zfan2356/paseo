@@ -75,11 +75,12 @@ test.describe("Codex conversation view switch", () => {
           { timeout: 30_000 },
         )
         .toContain("AGENT_SIDE_SENTINEL");
+      const tuiPrompt = "Reply with TUI_SIDE_ then SENTINEL, joined, with no other text.";
       workspace.client.sendTerminalInput(terminal.id, {
         type: "input",
-        data: "Reply with TUI_SIDE_ followed immediately by SENTINEL, with no other text.",
+        data: `\u001b[200~${tuiPrompt}\u001b[201~`,
       });
-      await expect.poll(terminalText).toContain("Reply with TUI_SIDE_");
+      await expect.poll(terminalText).toContain(tuiPrompt);
       workspace.client.sendTerminalInput(terminal.id, {
         type: "input",
         data: "\r",

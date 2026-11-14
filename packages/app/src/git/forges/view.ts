@@ -1,3 +1,4 @@
+import { tgitForgeView } from "./tgit.view";
 import type { ClientForgeViewModule } from "@/git/client-forge-module";
 import { codebergForgeView } from "./codeberg.view";
 import { forgejoForgeView } from "./forgejo.view";
@@ -16,6 +17,7 @@ export const CLIENT_FORGE_VIEW_MODULES: readonly ClientForgeViewModule[] = [
   giteaForgeView,
   forgejoForgeView,
   codebergForgeView,
+  tgitForgeView,
 ];
 
 export function getClientForgeViewModule(id: string): ClientForgeViewModule | null {
