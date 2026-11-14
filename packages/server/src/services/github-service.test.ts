@@ -23,7 +23,7 @@ const EXPECTED_GITHUB_FAST_POLL_MS = 20_000;
 const EXPECTED_GITHUB_SLOW_POLL_MS = 120_000;
 const EXPECTED_GITHUB_ERROR_BACKOFF_CAP_MS = 300_000;
 const CURRENT_PR_STATUS_BASE_FIELDS =
-  "number,url,title,state,isDraft,baseRefName,headRefName,headRefOid,mergedAt,reviewDecision,mergeable,headRepositoryOwner";
+  "number,url,title,state,isDraft,baseRefName,headRefName,headRefOid,updatedAt,mergedAt,reviewDecision,mergeable,headRepositoryOwner";
 const CURRENT_PR_STATUS_FIELDS = `${CURRENT_PR_STATUS_BASE_FIELDS},statusCheckRollup`;
 const FORK_PR_QUERY = "state=all&per_page=100&head=forkOwner%3Afeature%2Ffork";
 
@@ -3219,7 +3219,7 @@ describe("ForgeService", () => {
     });
   });
 
-  it("keeps a merged PR only when headRefOid matches the checkout HEAD", async () => {
+  it("keeps a merged PR when headRefOid matches the checkout HEAD", async () => {
     const headSha = "2222222222222222222222222222222222222222";
     const runner = createRunner([
       currentPullRequestJson({
@@ -3243,8 +3243,9 @@ describe("ForgeService", () => {
     expect(status?.state).toBe("merged");
   });
 
-  it("does not attach a stale merged PR after a same-name branch advances", async () => {
+  it("keeps a merged PR when its remote head advances beyond the checkout", async () => {
     const stale = currentPullRequestJson({
+      headRepositoryOwner: { login: "parentOwner" },
       state: "MERGED",
       mergedAt: "2026-07-17T12:00:00Z",
       headRefOid: "1111111111111111111111111111111111111111",
@@ -3265,10 +3266,103 @@ describe("ForgeService", () => {
         headRef: "feature/fork",
         headSha: "2222222222222222222222222222222222222222",
       }),
-    ).resolves.toBeNull();
+    ).resolves.toMatchObject({ state: "merged" });
     expect(runner.calls.some((call) => call.args[0] === "pr" && call.args[1] === "list")).toBe(
       true,
     );
+  });
+
+  it("prefers an exact terminal head and otherwise the most recently updated terminal PR", async () => {
+    const owner = { login: "forkOwner" };
+    const terminal = ({
+      number,
+      headRefOid,
+      updatedAt,
+      state,
+    }: {
+      number: number;
+      headRefOid: string;
+      updatedAt: string;
+      state: string;
+    }) =>
+      JSON.parse(
+        currentPullRequestJson({
+          number,
+          headRefOid,
+          updatedAt,
+          state,
+          mergedAt: state === "MERGED" ? updatedAt : null,
+          headRepositoryOwner: owner,
+        }),
+      );
+    const older = terminal({
+      number: 41,
+      headRefOid: "old",
+      updatedAt: "2026-07-01T00:00:00Z",
+      state: "MERGED",
+    });
+    const newer = terminal({
+      number: 42,
+      headRefOid: "new",
+      updatedAt: "2026-07-02T00:00:00Z",
+      state: "CLOSED",
+    });
+    for (const [headSha, expected] of [
+      ["old", 41],
+      ["other", 42],
+    ] as const) {
+      const runner = createScriptedRunner([JSON.stringify(older), JSON.stringify([older, newer])]);
+      const service = createGitHubService({
+        runner: runner.runner,
+        resolveGhPath: async () => "/usr/bin/gh",
+      });
+      const status = await service.getCurrentPullRequestStatus({
+        cwd: "/repo",
+        headRef: "feature/fork",
+        headRepositoryOwner: "forkOwner",
+        headSha,
+      });
+      expect(status?.number).toBe(expected);
+    }
+  });
+
+  it("prefers an exact merged PR over a closed draft", async () => {
+    const owner = { login: "forkOwner" };
+    const closedDraft = JSON.parse(
+      currentPullRequestJson({
+        number: 1,
+        state: "CLOSED",
+        isDraft: true,
+        headRefOid: "old",
+        updatedAt: "2026-07-01T00:00:00Z",
+        headRepositoryOwner: owner,
+      }),
+    );
+    const merged = JSON.parse(
+      currentPullRequestJson({
+        number: 2,
+        state: "MERGED",
+        mergedAt: "2026-07-02T00:00:00Z",
+        headRefOid: "exact",
+        updatedAt: "2026-07-02T00:00:00Z",
+        headRepositoryOwner: owner,
+      }),
+    );
+    const runner = createScriptedRunner([
+      JSON.stringify(closedDraft),
+      JSON.stringify([closedDraft, merged]),
+    ]);
+    const service = createGitHubService({
+      runner: runner.runner,
+      resolveGhPath: async () => "/usr/bin/gh",
+    });
+    const status = await service.getCurrentPullRequestStatus({
+      cwd: "/repo",
+      headRef: "feature/fork",
+      headRepositoryOwner: "forkOwner",
+      headSha: "exact",
+    });
+    expect(status).toMatchObject({ number: 2, state: "merged" });
   });
 
   it("prefers an open PR over an exact-SHA merged PR for the same head", async () => {
@@ -3311,6 +3405,84 @@ describe("ForgeService", () => {
     });
 
     expect(status).toMatchObject({ number: 43, state: "open" });
+  });
+
+  it("keeps a merged PR targeting the fork itself", async () => {
+    const runner = createScriptedRunner([
+      currentPullRequestJson({
+        number: 7,
+        url: "https://github.com/alice/app/pull/7",
+        state: "MERGED",
+        mergedAt: "2026-07-17T12:00:00Z",
+        headRefOid: "checkout-head",
+        headRepositoryOwner: { login: "alice" },
+      }),
+      JSON.stringify({
+        owner: { login: "alice" },
+        name: "app",
+        parent: { owner: { login: "acme" }, name: "app" },
+      }),
+      "[]",
+    ]);
+    const service = createGitHubService({
+      runner: runner.runner,
+      resolveGhPath: async () => "/usr/bin/gh",
+    });
+    const status = await service.getCurrentPullRequestStatus({
+      cwd: "/repo",
+      headRef: "feature/fork",
+      headSha: "checkout-head",
+    });
+    expect(status).toMatchObject({ number: 7, repoOwner: "alice", state: "merged" });
+  });
+
+  it("compares the fork's terminal PR against parent PRs by state, head and update time", async () => {
+    const local = JSON.parse(
+      currentPullRequestJson({
+        number: 7,
+        url: "https://github.com/alice/app/pull/7",
+        state: "MERGED",
+        mergedAt: "2026-07-17T12:00:00Z",
+        updatedAt: "2026-07-17T12:00:00Z",
+        headRefOid: "local-head",
+        headRepositoryOwner: { login: "alice" },
+      }),
+    );
+    for (const [state, headSha, updatedAt, expected] of [
+      ["OPEN", "other", "2026-07-16T12:00:00Z", 8],
+      ["CLOSED", "other", "2026-07-18T12:00:00Z", 7],
+      ["CLOSED", "other", "2026-07-18T12:00:00Z", 8],
+    ] as const) {
+      const parent = {
+        ...local,
+        number: 8,
+        url: "https://github.com/acme/app/pull/8",
+        state,
+        mergedAt: null,
+        headRefOid: headSha,
+        updatedAt,
+      };
+      const runner = createScriptedRunner([
+        JSON.stringify(local),
+        JSON.stringify({
+          owner: { login: "alice" },
+          name: "app",
+          parent: { owner: { login: "acme" }, name: "app" },
+        }),
+        JSON.stringify([{ number: 8 }]),
+        JSON.stringify(parent),
+      ]);
+      const service = createGitHubService({
+        runner: runner.runner,
+        resolveGhPath: async () => "/usr/bin/gh",
+      });
+      const status = await service.getCurrentPullRequestStatus({
+        cwd: "/repo",
+        headRef: "feature/fork",
+        headSha: state === "OPEN" || expected === 7 ? "local-head" : "neither",
+      });
+      expect(status?.number).toBe(expected);
+    }
   });
 
   it("resolves fork PR heads to the parent repository when gh pr view returns a stale branch match", async () => {
@@ -4782,4 +4954,151 @@ describe("ForgeService", () => {
       }),
     ).rejects.toThrow("Unable to resolve GitHub repository for pull request creation");
   });
+});
+
+it("batches numbered PRs across repositories and routes both reads to the target host", async () => {
+  vi.useFakeTimers();
+  const runner = createScriptedRunner([
+    batchPollStatusJson({
+      t0: batchPollRepositoryJson([], {
+        isFork: true,
+        parent: { owner: { login: "parent" }, name: "repo" },
+        pullRequest: batchPollPrNodeJson({
+          number: 9,
+          url: "https://github.com/other/repo/pull/9",
+          state: "OPEN",
+          headRefName: "arbitrary",
+          headRepositoryOwner: { login: "fork" },
+        }),
+      }),
+      t1: batchPollRepositoryJson([], {
+        pullRequest: batchPollPrNodeJson({
+          number: 10,
+          url: "https://github.com/third/repo/pull/10",
+        }),
+      }),
+    }),
+    batchPollStatusJson({ t0: batchPollChecksAliasJson([]), t1: batchPollChecksAliasJson([]) }),
+  ]);
+  const service = createGitHubService({
+    runner: runner.runner,
+    resolveGhPath: async () => "/gh",
+    resolveRepoHost: async () => "wrong.example",
+    resolveRepoSlug: async () => "wrong/repo",
+  });
+  const received: Array<CurrentPullRequestStatus | null> = [];
+  const onError = vi.fn();
+  const a = service.retainPullRequestStatusPoll!({
+    cwd: "/unrelated",
+    host: "github.com",
+    projectPath: "other/repo",
+    number: 9,
+    onStatus: (status) => received.push(status),
+    onError,
+  });
+  const b = service.retainPullRequestStatusPoll!({
+    cwd: "/another",
+    host: "github.com",
+    projectPath: "third/repo",
+    number: 10,
+    onStatus: (status) => received.push(status),
+    onError,
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  await flushMicrotasks();
+  expect(onError).not.toHaveBeenCalled();
+  expect(received.map((status) => status?.number)).toEqual([9, 10]);
+  expect(runner.calls).toHaveLength(2);
+  expect(runner.calls[0].args[3]).toContain('repository(owner: "other", name: "repo")');
+  expect(runner.calls[0].args[3]).toContain("pullRequest(number: 9)");
+  expect(runner.calls[0].args[3]).not.toContain('headRefName: ""');
+  expect(runner.calls.every((call) => call.envOverlay?.GH_HOST === "github.com")).toBe(true);
+  a.unsubscribe();
+  b.unsubscribe();
+  await vi.advanceTimersByTimeAsync(600_000);
+  expect(runner.calls).toHaveLength(2);
+  service.dispose?.();
+  vi.useRealTimers();
+});
+
+it("applies the GitHub account reserve to numbered PR polling", async () => {
+  vi.useFakeTimers();
+  const now = Date.now();
+  const runner = createScriptedRunner([
+    batchPollStatusWithRateLimitJson({
+      aliases: { t0: batchPollRepositoryJson([], { pullRequest: batchPollPrNodeJson() }) },
+      limit: 5000,
+      remaining: 1,
+      resetAt: new Date(now + 3_600_000).toISOString(),
+    }),
+  ]);
+  const service = createGitHubService({
+    runner: runner.runner,
+    resolveGhPath: async () => "/gh",
+    resolveRepoHost: async () => null,
+    resolveRepoSlug: async () => "wrong/repo",
+  });
+  const errors = vi.fn();
+  const retained = service.retainPullRequestStatusPoll!({
+    cwd: "/repo",
+    host: "github.com",
+    projectPath: "acme/widgets",
+    number: 42,
+    onStatus: vi.fn(),
+    onError: errors,
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(errors).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(300_000);
+  expect(runner.calls).toHaveLength(1);
+  retained.unsubscribe();
+  service.dispose?.();
+  vi.useRealTimers();
+});
+
+it("shares the public GitHub batch and reserve key between checkout and numbered targets", async () => {
+  vi.useFakeTimers();
+  const runner = createScriptedRunner([
+    batchPollStatusJson({
+      t0: batchPollRepositoryJson([batchPollPrNodeJson({ state: "OPEN", headRefName: "feat-a" })]),
+      t1: batchPollRepositoryJson([], {
+        pullRequest: batchPollPrNodeJson({
+          number: 9,
+          url: "https://github.com/other/repo/pull/9",
+        }),
+      }),
+    }),
+    batchPollStatusJson({ t0: batchPollChecksAliasJson([]), t1: batchPollChecksAliasJson([]) }),
+  ]);
+  const service = createGitHubService({
+    runner: runner.runner,
+    resolveGhPath: async () => "/gh",
+    resolveRepoHost: async () => null,
+    resolveRepoSlug: async () => "acme/widgets",
+  });
+  const onStatus = vi.fn();
+  const checkout = service.retainCurrentPullRequestStatusPoll!({
+    cwd: "/checkout",
+    headRef: "feat-a",
+    onStatus,
+  });
+  const numbered = service.retainPullRequestStatusPoll!({
+    cwd: "/elsewhere",
+    host: "github.com",
+    projectPath: "other/repo",
+    number: 9,
+    onStatus,
+    onError: vi.fn(),
+  });
+  await flushMicrotasks();
+  await vi.advanceTimersByTimeAsync(0);
+  await flushMicrotasks();
+  expect(runner.calls).toHaveLength(2);
+  expect(runner.calls[0].args[3]).toContain('t0: repository(owner: "acme", name: "widgets")');
+  expect(runner.calls[0].args[3]).toContain('t1: repository(owner: "other", name: "repo")');
+  expect(onStatus).toHaveBeenCalledTimes(2);
+  checkout.unsubscribe();
+  numbered.unsubscribe();
+  service.dispose?.();
+  vi.useRealTimers();
 });

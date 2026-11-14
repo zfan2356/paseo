@@ -1,8 +1,9 @@
+import { codexTheme } from "../../../../plugins/codex-theme/shared/palette";
 import { PluginTranslationRuntime } from "@getpaseo/plugin/client/host";
 import { QueryClient } from "@tanstack/react-query";
 import type { PluginThemeContribution } from "@getpaseo/plugin";
 import { describe, expect, it } from "vitest";
-import { darkTheme, lightTheme } from "@/styles/theme";
+import { darkTheme, lightTheme, darkCodexTheme } from "@/styles/theme";
 import { collectPluginThemes, rememberPluginThemeHost } from "./themes";
 import { toPluginTheme } from "./theme";
 import type { InstalledPlugin } from "./types";
@@ -56,8 +57,12 @@ function installed(serverId: string, themes: PluginThemeContribution[]): Install
     queryClient: new QueryClient(),
     paseo: {} as InstalledPlugin["paseo"],
     invoke: async () => undefined,
+    subscribe: () => {
+      throw new Error("Subscriptions are not used here");
+    },
     settingsScreens: [],
     surfaces: [],
+    sidebarViews: [],
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     filePanels: [],
@@ -74,6 +79,7 @@ function installed(serverId: string, themes: PluginThemeContribution[]): Install
 describe("toPluginTheme", () => {
   it("maps the app theme into the plugin color tokens", () => {
     expect(toPluginTheme(lightTheme)).toEqual({
+      colorScheme: "light",
       colors: {
         surface0: lightTheme.colors.surface0,
         surface1: lightTheme.colors.surface1,
@@ -88,6 +94,22 @@ describe("toPluginTheme", () => {
         statusDanger: lightTheme.colors.statusDanger,
       },
     });
+  });
+});
+
+describe("plugin resolved appearance", () => {
+  it("maps successive host themes without retaining the previous appearance", () => {
+    for (const theme of [lightTheme, darkTheme, lightTheme]) {
+      expect(toPluginTheme(theme).colorScheme).toBe(theme.colorScheme);
+    }
+  });
+
+  it.each([MOCHA, LATTE])("uses the contributed appearance for $name", (contribution) => {
+    const option = collectPluginThemes(
+      [installed("host-theme", [contribution])],
+      new Set(["host-theme"]),
+    )[0];
+    expect(toPluginTheme(option.theme).colorScheme).toBe(contribution.appearance);
   });
 });
 
@@ -216,4 +238,9 @@ describe("collectPluginThemes", () => {
     expect(withoutHostZ[0]?.serverId).toBe("host-a");
     expect(withoutHostZ[0]?.theme.colors.surface0).toBe("#1e1e2e");
   });
+});
+
+it("the contributed Codex palette exactly matches the offline legacy theme", () => {
+  const [option] = collectPluginThemes([installed("host", [codexTheme])], new Set(["host"]));
+  expect(option!.theme).toEqual(darkCodexTheme);
 });

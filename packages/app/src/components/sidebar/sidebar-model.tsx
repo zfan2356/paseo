@@ -1,3 +1,4 @@
+import { useSessionNavigationCollection } from "@/session-navigation/collection";
 import { useTranslation } from "react-i18next";
 import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import {
@@ -26,6 +27,7 @@ import {
 } from "@/workspace-labels";
 
 interface SidebarModel extends SidebarWorkspacesListResult {
+  sessionNavigation: ReturnType<typeof useSessionNavigationCollection>;
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   /**
    * Every project the sidebar could show, before any filter narrows it.
@@ -46,17 +48,26 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   shortcutModel: SidebarShortcutModel;
 }
 
+const EMPTY_RESOURCE_SHORTCUT_INDEX = new Map<string, number>();
+
 const SidebarModelContext = createContext<SidebarModel | null>(null);
 
 export function SidebarModelProvider({
   active,
+  keyboardNavigationActive = false,
   children,
 }: {
   active?: boolean;
+  keyboardNavigationActive?: boolean;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const list = useSidebarWorkspacesList({ enabled: active });
+  const modelActive = active !== false || keyboardNavigationActive;
+  const list = useSidebarWorkspacesList({ enabled: modelActive });
+  const sessionNavigation = useSessionNavigationCollection({
+    projects: list.projects,
+    enabled: modelActive,
+  });
   const showBackground = useSidebarViewStore((state) => state.showBackground);
   const groupMode = useSidebarViewStore((state) => state.groupMode);
   const labelFilter = useSidebarViewStore((state) => state.labelFilter);
@@ -98,10 +109,11 @@ export function SidebarModelProvider({
   // anything; the label filter reads `labels`, which only exists on an entry. Hydration opens a
   // live session-store subscription over every workspace on every visible host, so widening this
   // for a filter that does not need it costs a retained-but-inactive sidebar real work.
+  // Hardware keyboard navigation needs the same filtered targets while the sidebar is hidden.
   const needsWorkspaceEntries = groupMode !== "project" || hasActiveLabelFilter;
   const workspaceEntriesByKey = useSidebarWorkspaceEntries(
     list.workspacePlacements,
-    active !== false || needsWorkspaceEntries,
+    modelActive || needsWorkspaceEntries,
   );
   const filteredWorkspaceEntriesByKey = useMemo(() => {
     const byProject = filterWorkspacesByProjects({
@@ -178,6 +190,7 @@ export function SidebarModelProvider({
   const value = useMemo(
     () => ({
       ...list,
+      sessionNavigation,
       projects: filteredProjects,
       allProjects: list.projects,
       resolvedProjectFilters,
@@ -189,10 +202,14 @@ export function SidebarModelProvider({
       pinnedGroups: projection.pinnedGroups,
       collapsedProjectKeys,
       toggleProjectCollapsed,
-      shortcutModel: projection.shortcutModel,
+      shortcutModel: {
+        shortcutIndexByWorkspaceKey: EMPTY_RESOURCE_SHORTCUT_INDEX,
+        shortcutTargets: sessionNavigation.shortcutTargets,
+      },
     }),
     [
       resolvedProjectFilters,
+      sessionNavigation,
       collapsedProjectKeys,
       groupMode,
       list,

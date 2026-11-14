@@ -1,3 +1,5 @@
+import type { SessionContextStore } from "../../session-context-store.js";
+import type { SessionContext } from "@getpaseo/protocol/session-context";
 import {
   normalizeWorkspaceLabelName,
   workspaceLabelKey,
@@ -49,6 +51,7 @@ export class WorkspaceLabelService {
   constructor(
     private readonly catalog: WorkspaceLabelCatalogStore,
     private readonly sequence = new WorkspaceLabelSequence(),
+    private readonly contexts?: SessionContextStore,
   ) {}
 
   async initialize(): Promise<void> {
@@ -79,6 +82,30 @@ export class WorkspaceLabelService {
         unsubscribe();
         throw error;
       }
+    });
+  }
+
+  async create(input: WorkspaceLabelDefinition): Promise<{ label: WorkspaceLabelDefinition }> {
+    return this.exclusive(async () => {
+      const name = requireName(input.name);
+      const key = workspaceLabelKey(name);
+      const committed = await this.catalog.commit((catalog) => {
+        const existing = catalog.find((label) => workspaceLabelKey(label.name) === key);
+        if (existing && existing.color !== input.color) {
+          throw new WorkspaceLabelError(
+            "label_name_taken",
+            "A label with that name already exists",
+          );
+        }
+        const label = existing ?? { name, color: input.color };
+        return {
+          labels: existing ? [...catalog] : [...catalog, label],
+          workspaceUpdates: [],
+          result: { label, created: !existing },
+        };
+      });
+      if (committed.created) this.sequence.publish({ kind: "upsert", label: committed.label });
+      return { label: committed.label };
     });
   }
 
@@ -179,6 +206,7 @@ export class WorkspaceLabelService {
         return {
           labels: catalog.map((candidate) => (candidate === existing ? label : candidate)),
           workspaceUpdates,
+          ...(nameChanged ? { labelRewrite: { from: fromKey, to: label.name } } : {}),
           result: {
             label,
             affectedWorkspaceCount: workspaceUpdates.length,
@@ -217,6 +245,7 @@ export class WorkspaceLabelService {
         return {
           labels: catalog.filter((label) => label !== existing),
           workspaceUpdates,
+          labelRewrite: { from: key },
           result: {
             affectedWorkspaceCount: workspaceUpdates.length,
             deletedName: existing.name,
@@ -240,6 +269,40 @@ export class WorkspaceLabelService {
           .length,
       }));
     });
+  }
+
+  async setSessionAssignment(input: {
+    agentId: string;
+    name: string;
+    assigned: boolean;
+  }): Promise<SessionContext> {
+    if (!this.contexts) throw new Error("Session contexts unavailable");
+    return this.exclusive(async () =>
+      this.catalog.commit((catalog, _workspaces, contexts) => {
+        const name = requireName(input.name);
+        const key = workspaceLabelKey(name);
+        const definition = catalog.find((label) => workspaceLabelKey(label.name) === key);
+        if (input.assigned && !definition)
+          throw new WorkspaceLabelError("label_not_found", "Label not found");
+        const current = contexts.find((context) => context.agentId === input.agentId);
+        if (!current) throw new Error("Session context not found");
+        const context = {
+          ...current,
+          sidebarLabelNames: updateAssignmentLabels(
+            current.sidebarLabelNames,
+            key,
+            definition?.name ?? name,
+            input.assigned,
+          ),
+        };
+        return {
+          labels: [...catalog],
+          workspaceUpdates: [],
+          contextUpdates: [context],
+          result: context,
+        };
+      }, input.agentId),
+    );
   }
 
   private async exclusive<T>(operation: () => Promise<T>): Promise<T> {

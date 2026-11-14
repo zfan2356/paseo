@@ -1,3 +1,9 @@
+import {
+  useSessionDirectoryTarget,
+  SessionDirectoryToolbar,
+} from "@/session-navigation/directory-toolbar";
+import { useCheckoutStatusQuery } from "@/git/use-status-query";
+import { checkoutDirectory } from "@/session-navigation/model";
 import { resolveChangesPresentation } from "./changes/presentation";
 import { useCallback, useMemo, type ReactNode } from "react";
 import { Text, View } from "react-native";
@@ -22,10 +28,8 @@ import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { defaultChangesState, changesStateSchema } from "@/panels/changes/state";
 import { usePanelState } from "@/panels/use-panel-state";
 import { RenderProfile } from "@/utils/render-profiler";
-
 const ThemedFileDiff = withUnistyles(FileDiff);
 const ThemedGitCommitHorizontal = withUnistyles(GitCommitHorizontal);
-
 function useDiffPanelPreferences() {
   const { settings } = useAppSettings();
   const { preferences, updatePreferences } = useChangesPreferences();
@@ -60,7 +64,6 @@ function useDiffPanelPreferences() {
     toggleHideWhitespace,
   };
 }
-
 function PanelState({
   message,
   tone = "muted",
@@ -76,46 +79,88 @@ function PanelState({
     </View>
   );
 }
-
 function ChangesPanel() {
   const { t } = useTranslation();
   const { serverId, workspaceId, tabId, target, openPreferredTarget, openTargetToSide } =
     usePaneContext();
   const [changesState, setChangesState] = usePanelState(changesStateSchema, defaultChangesState);
   const { preferences } = useChangesPreferences();
-  const cwd = useWorkspaceDirectory(serverId, workspaceId);
+  const workspaceDirectory = useWorkspaceDirectory(serverId, workspaceId);
   const isActive = useRetainedPanelActive();
-  const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId });
+  const selection = useSessionDirectoryTarget();
+  const { directory, sessionAgentId } = selection;
   invariant(
     target.kind === "working_diff" || target.kind === "changes_tree",
     "ChangesPanel requires working_diff or changes_tree target",
   );
+  const resolved = useChangesDirectory({
+    serverId,
+    directory: directory,
+    workspaceDirectory,
+  });
+  const cwd = resolved.cwd;
+  const { addFile, canAddToChat } = useAddFileToChat({
+    serverId,
+    workspaceId,
+    directory: directory ? (cwd ?? undefined) : undefined,
+  });
   const isTree = target.kind === "changes_tree";
   const isCompact = useIsCompactFormFactor();
-
   const handleOpenFile = useCallback(
-    (path: string) => openPreferredTarget({ kind: "file", path }, isTree ? "diffs" : "diffFiles"),
-    [isTree, openPreferredTarget],
+    (path: string) =>
+      openPreferredTarget(
+        {
+          kind: "file",
+          path,
+          directory: directory ? (cwd ?? undefined) : undefined,
+          sessionAgentId: sessionAgentId,
+        },
+        isTree ? "diffs" : "diffFiles",
+      ),
+    [isTree, openPreferredTarget, directory, cwd, sessionAgentId],
   );
-
   const handleSelectDiffFile = useCallback(
     (path: string) =>
       openPreferredTarget(
-        { kind: "working_diff", focusPath: path, focusRequestId: Date.now() },
+        {
+          kind: "working_diff",
+          directory: directory,
+          sessionAgentId: sessionAgentId,
+          focusPath: path,
+          focusRequestId: Date.now(),
+        },
         "diffs",
       ),
-    [openPreferredTarget],
+    [openPreferredTarget, directory, sessionAgentId],
   );
   const handleOpenDiffToSide = useCallback(
     (path: string) =>
-      openTargetToSide?.({ kind: "working_diff", focusPath: path, focusRequestId: Date.now() }),
-    [openTargetToSide],
+      openTargetToSide?.({
+        kind: "working_diff",
+        directory: directory,
+        sessionAgentId: sessionAgentId,
+        focusPath: path,
+        focusRequestId: Date.now(),
+      }),
+    [openTargetToSide, directory, sessionAgentId],
   );
-
+  if (resolved.loading)
+    return (
+      <View style={styles.container}>
+        <SessionDirectoryToolbar selection={selection} />
+        <PanelState message={t("common.loading")} />
+      </View>
+    );
+  if (resolved.error)
+    return (
+      <View style={styles.container}>
+        <SessionDirectoryToolbar selection={selection} />
+        <PanelState message={resolved.error} tone="error" />
+      </View>
+    );
   if (!cwd) {
     return <PanelState message={t("panels.diff.directoryMissing")} />;
   }
-
   const presentation = resolveChangesPresentation({
     isTree,
     inlineDiff: preferences.inlineDiff,
@@ -124,14 +169,27 @@ function ChangesPanel() {
   });
   const testID = isTree ? "changes-tree-panel" : "working-diff-panel";
   const profileId = isTree ? `ChangesTreePanel:${tabId}` : `WorkingDiffPanel:${tabId}`;
-
   return (
     <View style={styles.container} testID={testID}>
+      <SessionDirectoryToolbar selection={selection} />
+      {directory ? (
+        <View>
+          <Text selectable style={styles.mutedText}>
+            {directory}
+          </Text>
+          <Text selectable style={styles.mutedText}>
+            {t("sessionNavigation.checkoutRoot", { path: cwd })}
+          </Text>
+          <Text style={styles.mutedText}>{t("sessionNavigation.changesHint")}</Text>
+        </View>
+      ) : null}
       <RenderProfile id={profileId}>
         <ChangesSurface
           serverId={serverId}
           workspaceId={workspaceId}
           cwd={cwd}
+          directory={directory}
+          sessionAgentId={sessionAgentId}
           enabled={isActive}
           presentation={presentation}
           focusPath={target.kind === "working_diff" ? target.focusPath : undefined}
@@ -147,13 +205,13 @@ function ChangesPanel() {
     </View>
   );
 }
-
 function CommitDiffPanel() {
   const { t } = useTranslation();
   const { serverId, workspaceId, target } = usePaneContext();
-  const cwd = useWorkspaceDirectory(serverId, workspaceId);
+  const workspaceDirectory = useWorkspaceDirectory(serverId, workspaceId);
   const panelPreferences = useDiffPanelPreferences();
   invariant(target.kind === "commit_diff", "CommitDiffPanel requires commit_diff target");
+  const cwd = target.directory ?? workspaceDirectory;
   const { files, isLoading, error, capabilityMissing } = useCommitDiffFiles({
     serverId,
     cwd: cwd ?? "",
@@ -161,7 +219,6 @@ function CommitDiffPanel() {
     enabled: Boolean(cwd),
   });
   const mode = useMemo(() => ({ kind: "commit" as const }), []);
-
   let body: ReactNode;
   if (!cwd) {
     body = <PanelState message={t("panels.diff.directoryMissing")} />;
@@ -189,7 +246,6 @@ function CommitDiffPanel() {
       />
     );
   }
-
   return (
     <View style={styles.container} testID="commit-diff-panel">
       {panelPreferences.canUseSplitLayout ? (
@@ -208,23 +264,25 @@ function CommitDiffPanel() {
     </View>
   );
 }
-
 const workingDiffPresentation = {
   label: (t) => t("panels.diff.diffLabel"),
   subtitle: (t) => t("panels.diff.changesSubtitle"),
   tooltip: (t) => t("panels.diff.changesSubtitle"),
   icon: ThemedFileDiff,
 } satisfies PanelPresentation;
-
 const changesTreePresentation = {
   label: (t) => t("panels.diff.changesLabel"),
   subtitle: (t) => t("panels.diff.changesSubtitle"),
   tooltip: (t) => t("panels.diff.changesSubtitle"),
   icon: ThemedFileDiff,
 } satisfies PanelPresentation;
-
 function useCommitDiffPanelDescriptor(
-  target: Extract<WorkspaceTabTarget, { kind: "commit_diff" }>,
+  target: Extract<
+    WorkspaceTabTarget,
+    {
+      kind: "commit_diff";
+    }
+  >,
 ): PanelDescriptor {
   const { t } = useTranslation();
   return {
@@ -236,22 +294,18 @@ function useCommitDiffPanelDescriptor(
     statusBucket: null,
   };
 }
-
 export const workingDiffPanelRegistration = definePanel("working_diff", {
   component: ChangesPanel,
   presentation: workingDiffPresentation,
 });
-
 export const changesTreePanelRegistration = definePanel("changes_tree", {
   component: ChangesPanel,
   presentation: changesTreePresentation,
 });
-
 export const commitDiffPanelRegistration = definePanel("commit_diff", {
   component: CommitDiffPanel,
   useDescriptor: useCommitDiffPanelDescriptor,
 });
-
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
@@ -292,3 +346,24 @@ const styles = StyleSheet.create((theme) => ({
     textAlign: "center",
   },
 }));
+function useChangesDirectory({
+  serverId,
+  directory,
+  workspaceDirectory,
+}: {
+  serverId: string;
+  directory?: string;
+  workspaceDirectory: string | null | undefined;
+}) {
+  const candidate = directory ?? workspaceDirectory;
+  const query = useCheckoutStatusQuery({ serverId, cwd: candidate ?? "" });
+  const cwd =
+    directory && candidate
+      ? checkoutDirectory({ directory: candidate, status: query.status })
+      : candidate;
+  return {
+    cwd,
+    loading: directory !== undefined && query.isLoading,
+    error: query.error?.message ?? null,
+  };
+}

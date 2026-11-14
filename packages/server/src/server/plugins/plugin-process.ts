@@ -1,3 +1,5 @@
+import type { BackgroundWorkSourceRegistration } from "@getpaseo/plugin/server";
+import { PluginAgentTools } from "./agent-tools.js";
 import { PluginHookHandlers } from "./lifecycle/index.js";
 import { evaluateBundle } from "./bundle-evaluator.js";
 import {
@@ -6,8 +8,21 @@ import {
   type PluginProcessRequest,
 } from "./plugin-process-protocol.js";
 import type { UsageSourceRegistration } from "@getpaseo/plugin/server/usage";
-import type { SettingsDefinition, PluginRpcContract } from "@getpaseo/plugin";
-import type { PluginHandlerContext, PluginServerContribution } from "@getpaseo/plugin/server";
+import type {
+  SettingsDefinition,
+  PluginRpcContract,
+  PluginSubscriptionContract,
+} from "@getpaseo/plugin";
+import type {
+  PluginHandlerContext,
+  PluginServerContext,
+  PluginServerContribution,
+} from "@getpaseo/plugin/server";
+import { assertPluginWireValue } from "@getpaseo/protocol/binary-frames/index";
+import {
+  PluginSubscriptionHandlers,
+  type PluginSubscriptionHandler,
+} from "./subscription-handlers.js";
 import { fileURLToPath } from "node:url";
 import type { ZodType } from "zod";
 import {
@@ -23,6 +38,7 @@ import { createPluginClientId } from "./plugin-session-identity.js";
 
 import { PluginSettingsStore } from "./settings/index.js";
 import { readPluginProviderIcon } from "./provider-icon.js";
+import { initializeEnvironmentProxy } from "../network/index.js";
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -59,11 +75,14 @@ export function createPluginWorker(options: {
     handler: RpcHandler;
   }
 
+  const agentTools = new PluginAgentTools();
   const hooks = new PluginHookHandlers(() => {
     send({ type: "hooks.changed", hooks: hooks.catalog() });
-  });
+  }, agentTools);
   const handlers = new Map<string, RegisteredRpc>();
+  const subscriptions = new PluginSubscriptionHandlers({ send, sendAndWait });
   const providers = new Map<string, ProviderRegistration>();
+  const backgroundSources = new Map<string, BackgroundWorkSourceRegistration>();
   const usageSources = new Map<string, UsageSourceRegistration>();
   const providerConnections = new Map<
     string,
@@ -95,11 +114,35 @@ export function createPluginWorker(options: {
     if (!/^[a-z][a-z0-9._-]*$/.test(normalized)) {
       throw new Error(`Invalid plugin RPC method: ${method}`);
     }
-    if (handlers.has(normalized)) {
+    if (handlers.has(normalized) || subscriptions.has(normalized)) {
       throw new Error(`Duplicate plugin RPC method: ${normalized}`);
     }
     return normalized;
   }
+
+  function registerSubscription(
+    contract: PluginSubscriptionContract,
+    handler: PluginSubscriptionHandler,
+  ): void {
+    if (typeof handler !== "function") {
+      throw new Error(`Plugin subscription ${contract.name} must provide a handler`);
+    }
+    const method = validateMethod(contract.name);
+    subscriptions.register({ ...contract, name: method }, handler);
+  }
+
+  // One name serves either an RPC or a subscription; the contract says which.
+  const handle = ((
+    contract: PluginRpcContract | PluginSubscriptionContract,
+    handler: (input: unknown, context: never) => unknown,
+  ) => {
+    if ("event" in contract) {
+      // The subscription handlers parse the input once and pass the result here.
+      registerSubscription(contract, handler as PluginSubscriptionHandler);
+      return;
+    }
+    register(contract, (input, context) => handler(input, context as never));
+  }) as PluginServerContext["handle"];
 
   function register(contract: PluginRpcContract, handler: RpcHandler): void {
     if (typeof handler !== "function") {
@@ -281,11 +324,20 @@ export function createPluginWorker(options: {
         )
       : null;
     const contributedCleanup = contribute({
-      handle: (contract, handler) =>
-        register(contract, (input, context) => handler(contract.input.parse(input), context)),
+      handle,
       registerProvider,
       registerUsageSource,
+      registerBackgroundWorkSource(source) {
+        if (
+          !/^[a-z][a-z0-9._-]*$/.test(source.id) ||
+          !source.label.trim() ||
+          backgroundSources.has(source.id)
+        )
+          throw new Error("Invalid or duplicate background source");
+        backgroundSources.set(source.id, source);
+      },
       registerSettings,
+      addHook: hooks.addHook,
       on: hooks.on,
       before: hooks.before,
     });
@@ -307,11 +359,13 @@ export function createPluginWorker(options: {
     send({
       type: "ready",
       methods: [...handlers.keys()].sort(),
+      subscriptions: subscriptions.catalog(),
       hooks: hooks.catalog(),
       providers: [...providers.values()]
         .sort((left, right) => left.id.localeCompare(right.id))
         .map(providerMetadata),
       usageSources: usageSourceMetadata,
+      backgroundSources: [...backgroundSources.values()].map(({ id, label }) => ({ id, label })),
     });
   }
 
@@ -322,6 +376,8 @@ export function createPluginWorker(options: {
       ?.dispose()
       .catch((error) => console.error("Plugin API cleanup failed", error));
     hooks.close();
+    agentTools.close();
+    subscriptions.releaseAll();
     for (const pending of pendingProviderConnections.values()) pending.tombstoned = true;
     const currentCleanup = cleanup;
     cleanup = null;
@@ -355,12 +411,54 @@ export function createPluginWorker(options: {
     );
   }
 
+  function isTransportMessage(
+    message: PluginProcessRequest,
+  ): message is Extract<PluginProcessRequest, { type: "paseo_frame" | "paseo_close" }> {
+    return message.type === "paseo_frame" || message.type === "paseo_close";
+  }
+
+  function isBackgroundMessage(
+    message: PluginProcessRequest,
+  ): message is Extract<PluginProcessRequest, { type: "background.fetch" | "background.stop" }> {
+    return message.type === "background.fetch" || message.type === "background.stop";
+  }
+
+  function handleBackgroundRequest(
+    message: Extract<PluginProcessRequest, { type: "background.fetch" | "background.stop" }>,
+  ): void {
+    void (async () => {
+      const source = backgroundSources.get(message.sourceId);
+      if (!source || !paseo) throw new Error("Background source unavailable");
+      if (message.type === "background.fetch") {
+        const snapshot = await source.fetch({ paseo });
+        if (snapshot.status !== "ready") return snapshot;
+        for (const entry of snapshot.items)
+          entry.canStop = entry.canStop && typeof source.stop === "function";
+        return snapshot;
+      }
+      if (!source.stop) throw new Error("Background source cannot cancel work");
+      await source.stop(message.entry, { paseo });
+      return null;
+    })().then(
+      (output) => send({ type: "result", requestId: message.requestId, output }),
+      () =>
+        send({
+          type: "error",
+          requestId: message.requestId,
+          error: "Background source request failed",
+        }),
+    );
+  }
+
   function rejectWhileStopping(message: PluginProcessRequest): void {
     if (
       message.type === "provider.status" ||
       message.type === "provider.catalog_key" ||
+      message.type === "background.fetch" ||
+      message.type === "background.stop" ||
       message.type === "usage.fetch" ||
-      message.type === "usage.discover"
+      message.type === "usage.discover" ||
+      message.type === "subscribe"
     ) {
       send({ type: "error", requestId: message.requestId, error: "Plugin is stopping" });
     } else if (message.type === "provider.connect") {
@@ -379,6 +477,50 @@ export function createPluginWorker(options: {
     } else if (message.type === "provider.close") {
       send({ type: "provider.closed", connectionId: message.connectionId });
     }
+  }
+
+  function handleToolMessage(
+    message: PluginProcessRequest,
+  ): message is Extract<
+    PluginProcessRequest,
+    { type: "tool.call" | "tool.cancel" | "tools.detach" }
+  > {
+    if (message.type === "tools.detach") {
+      agentTools.detach(message.agentId);
+      return true;
+    }
+    if (message.type === "tool.cancel") {
+      agentTools.cancel(message.requestId);
+      return true;
+    }
+    if (message.type === "tool.call") {
+      if (!paseo) {
+        send({ type: "error", requestId: message.requestId, error: "Plugin API unavailable" });
+        return true;
+      }
+      void agentTools
+        .call(message.requestId, message.agent, message.name, message.input, paseo)
+        .then((output) =>
+          send({
+            type: "result",
+            requestId: message.requestId,
+            output: jsonTransportValue(output),
+          }),
+        )
+        .catch((error) =>
+          send({ type: "error", requestId: message.requestId, error: describeError(error) }),
+        );
+      return true;
+    }
+    return false;
+  }
+
+  function handleSubscriptionMessage(
+    message: Extract<PluginProcessRequest, { type: "subscribe" | "unsubscribe" }>,
+  ): void {
+    if (message.type === "unsubscribe") subscriptions.release(message.subscriptionId);
+    else if (paseo) subscriptions.start(message, paseo);
+    else send({ type: "error", requestId: message.requestId, error: "Plugin API unavailable" });
   }
 
   function handleMessage(rawMessage: unknown): void {
@@ -422,6 +564,7 @@ export function createPluginWorker(options: {
       rejectWhileStopping(message);
       return;
     }
+    if (handleToolMessage(message)) return;
     if (message.type === "provider.status") {
       void (async () => {
         const provider = providers.get(message.providerId);
@@ -445,6 +588,10 @@ export function createPluginWorker(options: {
       })().catch((error) =>
         send({ type: "error", requestId: message.requestId, error: describeError(error) }),
       );
+      return;
+    }
+    if (isBackgroundMessage(message)) {
+      handleBackgroundRequest(message);
       return;
     }
     if (message.type === "usage.fetch" || message.type === "usage.discover") {
@@ -478,11 +625,16 @@ export function createPluginWorker(options: {
       void closeProviderConnection(message.connectionId);
       return;
     }
-    if (message.type === "paseo_frame" || message.type === "paseo_close") return;
+    if (isTransportMessage(message)) return;
     if (isHookMessage(message)) {
       handleHookMessage(message);
       return;
     }
+    if (message.type === "invoke") invoke(message);
+    else handleSubscriptionMessage(message);
+  }
+
+  function invoke(message: Extract<PluginProcessRequest, { type: "invoke" }>): void {
     const registered = handlers.get(message.method);
     if (!registered) {
       send({
@@ -498,7 +650,10 @@ export function createPluginWorker(options: {
         if (!paseo) throw new Error("Plugin Paseo API is unavailable");
         return registered.handler(input, { paseo });
       })
-      .then((output) => registered.contract.output.parseAsync(output))
+      .then((output: unknown) => {
+        assertPluginWireValue(output, "output");
+        return output;
+      })
       .then(
         (output) => send({ type: "result", requestId: message.requestId, output }),
         (error) =>
@@ -523,7 +678,7 @@ export function createPluginWorker(options: {
         });
         return;
       }
-      void hooks.invoke(message.requestId, message.kind, message.name, message.input, paseo).then(
+      void hooks.invoke(message.requestId, message.name, message.input, paseo).then(
         (output) => {
           return send({ type: "result", requestId: message.requestId, output });
         },
@@ -565,6 +720,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const parsed = PluginProcessRequestSchema.safeParse(raw);
     if (!worker && parsed.success && parsed.data.type === "initialize") {
       try {
+        initializeEnvironmentProxy();
         worker = createPluginWorker({ channel, contribute: evaluateBundle(parsed.data.bundle) });
       } catch (error) {
         channel.send({ type: "fatal", error: describeError(error) });

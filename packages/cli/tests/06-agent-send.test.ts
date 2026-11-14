@@ -44,6 +44,8 @@ try {
     assert(result.stdout.includes("--prompt-file"), "help should mention --prompt-file option");
     assert(result.stdout.includes("--no-wait"), "help should mention --no-wait flag");
     assert(result.stdout.includes("--host"), "help should mention --host option");
+    assert(result.stdout.includes("--if-idle"), "help should mention --if-idle flag");
+    assert(result.stdout.includes("--message-id"), "help should mention --message-id flag");
     assert(result.stdout.includes("<id>"), "help should mention id argument");
     assert(result.stdout.includes("[prompt]"), "help should mention optional prompt argument");
     console.log("  help should mention --prompt option");
