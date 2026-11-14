@@ -1605,7 +1605,10 @@ test("session grouping shares compact cards and pins while right panels retain d
         path: info.outputPath(`workspace-resources-${width}.png`),
         fullPage: true,
       });
-      await sheet.getByRole("button", { name: "Close", exact: true }).click();
+      await page
+        .getByTestId("workspace-resource-list")
+        .getByTestId(`sidebar-workspace-title-${getServerId()}:${main.workspaceId}`)
+        .click();
       await expect(sheet).not.toBeVisible();
       await openFilesPanel(page);
       await explorer.getByTestId("session-directory-actions").filter({ visible: true }).click();
@@ -1633,7 +1636,24 @@ test("session grouping shares compact cards and pins while right panels retain d
             (await main.client.getSessionContext(main.agentId)).context.linkedDirectories.length,
         )
         .toBe(0);
-      if (width === 390) await explorer.getByTestId("workspace-explorer-toggle").last().click();
+      if (width === 390) {
+        await explorer.getByTestId("workspace-resources-open").click();
+        await page
+          .getByTestId("workspace-resource-list")
+          .getByTestId(`sidebar-workspace-title-${getServerId()}:${independent.workspace.id}`)
+          .click();
+        await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
+        await expect(
+          page
+            .getByRole("textbox", { name: "Terminal input", exact: true })
+            .filter({ visible: true }),
+        ).toBeInViewport({ ratio: 1 });
+        await page.screenshot({
+          path: info.outputPath("independent-terminal-390.png"),
+          fullPage: true,
+        });
+        await openAgentRoute(page, main);
+      }
     }
     await page.setViewportSize({ width: 1200, height: 1000 });
     const explorer = await ensureExplorerSidebar(page);
@@ -1642,6 +1662,7 @@ test("session grouping shares compact cards and pins while right panels retain d
       .getByTestId("workspace-resource-list")
       .getByTestId(`sidebar-workspace-row-${getServerId()}:${independent.workspace.id}`)
       .click();
+    await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
     await expect(
       page.getByTestId(`workspace-tab-terminal_${terminalId}`).filter({ visible: true }),
     ).toBeVisible();
@@ -1663,6 +1684,7 @@ test("session grouping shares compact cards and pins while right panels retain d
       .getByTestId("workspace-resource-list")
       .getByTestId(`sidebar-workspace-row-${getServerId()}:${independent.workspace.id}`)
       .click();
+    await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
     await expect(
       page.getByTestId(`workspace-tab-terminal_${terminalId}`).filter({ visible: true }),
     ).toBeVisible();

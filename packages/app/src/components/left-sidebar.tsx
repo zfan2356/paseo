@@ -60,7 +60,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import { isNative as platformIsNative } from "@/constants/platform";
 import { useOpenAddProject } from "@/hooks/use-open-add-project";
-import { useImportSession } from "@/hooks/use-import-session";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { density } from "@/styles/density";
 import { SPACING } from "@/styles/theme";
@@ -137,7 +136,6 @@ export const LeftSidebar = memo(function LeftSidebar({
   const { isInitialLoad } = useSidebarModel();
 
   const openProjectPicker = useOpenAddProject();
-  const { sheet: importSessionSheet } = useImportSession();
 
   // Each destination closes the navigation overlay first. Closing is idempotent, so a docked
   // sidebar runs the same handler.
@@ -186,29 +184,26 @@ export const LeftSidebar = memo(function LeftSidebar({
   };
 
   return (
-    <>
-      <RetainedPanelActivity active={active}>
-        {isCompactLayout ? (
-          <MobileSidebar
-            {...sharedProps}
-            {...handlers}
-            active={active}
-            insetsTop={insets.top}
-            insetsBottom={insets.bottom}
-            closeSidebar={showMobileAgent}
-          />
-        ) : (
-          <DesktopSidebar
-            {...sharedProps}
-            {...handlers}
-            insetsTop={insets.top}
-            active={active}
-            overlay={desktopOverlay}
-          />
-        )}
-      </RetainedPanelActivity>
-      {importSessionSheet}
-    </>
+    <RetainedPanelActivity active={active}>
+      {isCompactLayout ? (
+        <MobileSidebar
+          {...sharedProps}
+          {...handlers}
+          active={active}
+          insetsTop={insets.top}
+          insetsBottom={insets.bottom}
+          closeSidebar={showMobileAgent}
+        />
+      ) : (
+        <DesktopSidebar
+          {...sharedProps}
+          {...handlers}
+          insetsTop={insets.top}
+          active={active}
+          overlay={desktopOverlay}
+        />
+      )}
+    </RetainedPanelActivity>
   );
 });
 

@@ -1,3 +1,5 @@
+import { useOpenAddProject } from "@/hooks/use-open-add-project";
+import { useImportSession } from "@/hooks/use-import-session";
 import { usePanelStore } from "@/stores/panel-store";
 import { View } from "react-native";
 import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-preferences/menu";
@@ -65,6 +67,9 @@ export function WorkspaceResourcesSheet({ onClose }: { onClose(): void }) {
 
 function WorkspaceResourceList({ onClose }: { onClose(): void }) {
   const model = useSidebarModel();
+  const openProject = useOpenAddProject();
+  const addProject = useCallback(() => openProject(), [openProject]);
+  const importSession = useImportSession();
   const openWorkspace = useCallback(() => {
     usePanelStore.getState().showMobileAgent();
     onClose();
@@ -87,7 +92,10 @@ function WorkspaceResourceList({ onClose }: { onClose(): void }) {
         hasActiveProjectFilter={model.resolvedProjectFilters.length > 0}
         workspaceEntriesByKey={model.workspaceEntriesByKey}
         onWorkspacePress={openWorkspace}
+        onAddProject={addProject}
+        onImportSession={importSession.open}
       />
+      {importSession.sheet}
     </View>
   );
 }

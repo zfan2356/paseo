@@ -1,3 +1,7 @@
+import { selectSidebarStatusGrouping } from "../support/helpers/sidebar";
+import { seedWorkspace } from "../support/helpers/seed-client";
+import { seedMockAgentWorkspace, openAgentRoute } from "../support/helpers/mock-agent";
+import { ensureExplorerSidebar } from "../support/helpers/workspace-tabs";
 import { test, expect } from "../support/fixtures";
 import { createTempGitRepo } from "../support/helpers/workspace";
 import {
@@ -45,6 +49,7 @@ test("scripts menu resizes when a service row grows after launch", async ({ page
     await completed;
 
     await page.goto(buildHostWorkspaceRoute(getServerId(), workspace.id));
+    await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
     await waitForWorkspaceTabsVisible(page);
     await openWorkspaceScriptsMenu(page);
 
@@ -87,9 +92,6 @@ test("workspace resources reopen the existing service and terminal without creat
 }, info) => {
   test.setTimeout(120_000);
   page.setDefaultTimeout(15_000);
-  const { seedWorkspace } = await import("../support/helpers/seed-client");
-  const { seedMockAgentWorkspace, openAgentRoute } = await import("../support/helpers/mock-agent");
-  const { ensureExplorerSidebar } = await import("../support/helpers/workspace-tabs");
   const chat = await seedMockAgentWorkspace({
     repoPrefix: "resource-chat-",
     title: "Keep this conversation",
@@ -114,7 +116,7 @@ test("workspace resources reopen the existing service and terminal without creat
     await page.getByTestId("open-project-workspace-resources").click();
     await page
       .getByTestId("workspace-resource-list")
-      .getByTestId(`sidebar-workspace-row-${getServerId()}:${resource.workspaceId}`)
+      .getByTestId(`sidebar-workspace-title-${getServerId()}:${resource.workspaceId}`)
       .click();
     await waitForWorkspaceTabsVisible(page);
     await openWorkspaceScriptsMenu(page);
@@ -127,13 +129,16 @@ test("workspace resources reopen the existing service and terminal without creat
       })
     ).terminals.map(({ id }) => id);
     expect(before.length).toBeGreaterThan(0);
+    await page.keyboard.press("Escape");
     await openAgentRoute(page, chat);
     const explorer = await ensureExplorerSidebar(page);
     await explorer.getByTestId("workspace-resources-open").click();
+    await selectSidebarStatusGrouping(page);
     await page
       .getByTestId("workspace-resource-list")
-      .getByTestId(`sidebar-workspace-row-${getServerId()}:${resource.workspaceId}`)
+      .getByTestId(`sidebar-workspace-title-${getServerId()}:${resource.workspaceId}`)
       .click();
+    await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
     await openWorkspaceScriptsMenu(page);
     await expect(menu).toContainText("localhost:");
     expect(
@@ -159,6 +164,17 @@ test("workspace resources reopen the existing service and terminal without creat
     });
     await page.getByTestId("workspace-scripts-stop-web").click();
     await expect(page.getByTestId("workspace-scripts-start-web")).toBeVisible();
+    await page.keyboard.press("Escape");
+    const currentExplorer = await ensureExplorerSidebar(page);
+    await currentExplorer.getByTestId("workspace-resources-open").click();
+    await page
+      .getByTestId("workspace-resource-list")
+      .getByTestId(`sidebar-workspace-title-${getServerId()}:${resource.workspaceId}`)
+      .click();
+    await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
+  } catch (error) {
+    await page.screenshot({ path: info.outputPath("failure-before-cleanup.png"), fullPage: true });
+    throw error;
   } finally {
     await resource.cleanup();
     await chat.cleanup();
