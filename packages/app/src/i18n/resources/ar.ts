@@ -465,6 +465,17 @@ export const ar: TranslationResources = {
       otherPlaceholder: "آخر...",
     },
     backgroundWork: {
+      cancelLocal: "إلغاء الانتظار المحلي",
+      unavailable: "مصدر المهام الخلفية غير متاح",
+      unknownStart: "وقت البدء غير متاح",
+      deadline: "الموعد النهائي",
+      finished: "انتهى",
+      freshness: {
+        ready: "آخر مزامنة",
+        loading: "جارٍ التحميل",
+        stale: "بيانات قديمة",
+        unavailable: "غير متاح",
+      },
       pillOne: "مهمة واحدة في الخلفية",
       pillMany: "{{count}} مهمة في الخلفية",
       notRunning: "لم يعد قيد التشغيل",

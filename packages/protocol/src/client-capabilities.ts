@@ -55,6 +55,7 @@ export const CLIENT_CAPS = {
   // Sources without it never receive agent-level background agents in inclusive lists or
   // update subscriptions, because older apps auto-open a tab for every replicated root agent.
   backgroundAgents: "background_agents",
+  externalBackgroundWork: "external_background_work",
   browserHost: "browser_host",
 } as const;
 

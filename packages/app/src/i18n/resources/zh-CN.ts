@@ -489,6 +489,17 @@ export const zhCN: TranslationResources = {
       otherPlaceholder: "其他...",
     },
     backgroundWork: {
+      cancelLocal: "取消本地等待",
+      unavailable: "后台来源不可用",
+      unknownStart: "开始时间未知",
+      deadline: "截止时间",
+      finished: "结束时间",
+      freshness: {
+        ready: "最后同步",
+        loading: "正在加载",
+        stale: "数据已过期",
+        unavailable: "不可用",
+      },
       pillOne: "1 个后台任务",
       pillMany: "{{count}} 个后台任务",
       notRunning: "已不再运行",

@@ -1025,3 +1025,14 @@ test("scoped descriptor builds allocate independently of archived history", asyn
     await rm(home, { recursive: true, force: true });
   }
 }, 30000);
+
+test("completed descendant waits stay listed without keeping the workspace running", async () => {
+  const fixture = new WorkspaceStatus();
+  fixture.hasRootAgent({ id: "parent-agent", status: "idle" });
+  fixture.hasDelegatedAgent({
+    id: "child-agent",
+    status: "idle",
+    backgroundWork: { count: 1, runningCount: 0 },
+  });
+  expect(await fixture.workspaceStatus()).toBe("done");
+});

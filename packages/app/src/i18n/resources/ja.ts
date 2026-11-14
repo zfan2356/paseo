@@ -474,6 +474,17 @@ export const ja: TranslationResources = {
       otherPlaceholder: "その他...",
     },
     backgroundWork: {
+      cancelLocal: "ローカル待機をキャンセル",
+      unavailable: "バックグラウンドソースを利用できません",
+      unknownStart: "開始時刻不明",
+      deadline: "期限",
+      finished: "終了",
+      freshness: {
+        ready: "最終同期",
+        loading: "読み込み中",
+        stale: "古いデータ",
+        unavailable: "利用不可",
+      },
       pillOne: "バックグラウンドタスク1件",
       pillMany: "バックグラウンドタスク{{count}}件",
       notRunning: "実行は終了しました",

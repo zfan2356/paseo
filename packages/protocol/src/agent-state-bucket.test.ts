@@ -30,6 +30,14 @@ describe("deriveAgentStateBucket", () => {
     ).toBe("failed");
     expect(deriveAgentStateBucket({ status: "idle", backgroundWork: { count: 0 } })).toBe("done");
   });
+  it("keeps completed external waits in the count without showing an idle agent as running", () => {
+    const backgroundWork = { count: 2, runningCount: 0 };
+    expect(deriveAgentStateBucket({ status: "idle", backgroundWork })).toBe("done");
+    expect(getAgentStatusPriority({ status: "idle", backgroundWork })).toBe(4);
+    expect(
+      deriveAgentStateBucket({ status: "idle", backgroundWork: { count: 2, runningCount: 1 } }),
+    ).toBe("running");
+  });
   it("prioritizes pending permissions as needs_input", () => {
     expect(
       deriveAgentStateBucket({

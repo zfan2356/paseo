@@ -131,3 +131,140 @@ test("publishes command changes without replacing a live item's identity", () =>
     stopToken: first.stopToken,
   });
 });
+
+describe("external background sources", () => {
+  test("fences replaced instances, preserves stale rows, and routes scoped stop tokens", async () => {
+    const { ExternalBackgroundWork } = await import("./external.js");
+    const changed = new Set<string>();
+    const store = new ExternalBackgroundWork((ids) => {
+      for (const id of ids) changed.add(id);
+    });
+    const stopped: string[] = [];
+    const entry = {
+      agentId: "agent-a",
+      id: "same-id",
+      kind: "monitor",
+      description: "CI watch",
+      startedAt: null,
+      canStop: true,
+      external: { status: "Running", running: true, deadline: T1, finishedAt: null, issue: null },
+    };
+    const first = store.open("plugin/waits", "Multica", async (item) => {
+      stopped.push(item.id);
+    });
+    first.replace({ status: "ready", observedAt: T0, items: [entry] });
+    const item = store.list("agent-a")[0]!;
+    expect(item.startedAt).toBe("");
+    expect(store.list("agent-b")).toEqual([]);
+    expect(await store.stop("agent-b", item.id, item.stopToken!)).toBe(false);
+    await store.stop("agent-a", item.id, item.stopToken!);
+    expect(stopped).toEqual(["same-id"]);
+    first.fail();
+    expect(store.list("agent-a")[0]!.external?.freshness).toBe("stale");
+    expect(store.list("agent-a")[0]!.canStop).toBe(false);
+    await expect(store.stop("agent-a", item.id, item.stopToken!)).rejects.toThrow("source changed");
+    const second = store.open("plugin/waits", "Multica", async () => {});
+    first.replace({ status: "ready", observedAt: T1, items: [] });
+    first.close();
+    expect(store.list("agent-a").some((row) => row.description === "CI watch")).toBe(true);
+    second.replace({ status: "ready", observedAt: T1, items: [] });
+    expect(store.list("agent-a")).toEqual([]);
+    expect(changed.has("agent-a")).toBe(true);
+    second.close();
+    expect(store.list("agent-b")).toEqual([]);
+  });
+
+  test("keeps native and external inventories independent even with identical ids", async () => {
+    const { ExternalBackgroundWork } = await import("./external.js");
+    const native = new AgentBackgroundWorkStore();
+    const external = new ExternalBackgroundWork(() => {});
+    const source = external.open("plugin", "Multica", async () => {});
+    source.replace({
+      status: "ready",
+      observedAt: T0,
+      items: [
+        {
+          agentId: "a",
+          id: "1",
+          kind: "monitor",
+          description: null,
+          startedAt: T0,
+          canStop: false,
+          external: {
+            status: "Succeeded · awaiting handling",
+            running: false,
+            deadline: T1,
+            finishedAt: T1,
+            issue: null,
+          },
+        },
+      ],
+    });
+    native.apply("a", [{ id: "1", kind: "shell", description: "native" }]);
+    expect(new Set([...native.list("a"), ...external.list("a")].map((item) => item.id)).size).toBe(
+      2,
+    );
+    native.clear("a");
+    expect(external.list("a")).toHaveLength(1);
+    source.close();
+    expect(native.summary("a")).toBeUndefined();
+  });
+});
+
+test("projects external inventory only to capable clients and strips read-only controls", async () => {
+  const { projectBackgroundWork } = await import("./projection.js");
+  const message = {
+    type: "agent.background_work.update" as const,
+    payload: {
+      agentId: "a",
+      items: [
+        {
+          id: "native",
+          kind: "shell",
+          description: null,
+          startedAt: T0,
+          canStop: true,
+          stopToken: "native-token",
+        },
+        {
+          id: "external",
+          kind: "monitor",
+          description: "CI",
+          startedAt: "",
+          canStop: true,
+          stopToken: "external-token",
+          external: {
+            source: "multica",
+            label: "Multica",
+            freshness: "ready" as const,
+            observedAt: T0,
+            status: "Running",
+            running: true,
+            deadline: T1,
+            finishedAt: null,
+            issue: null,
+          },
+        },
+      ],
+    },
+  };
+  const legacy = projectBackgroundWork(message, {
+    external: false,
+    canStop: true,
+    nativeSummary: () => ({ count: 1 }),
+  });
+  if (legacy.type !== "agent.background_work.update") throw new Error("Wrong message");
+  expect(legacy.payload.items.map((item) => item.id)).toEqual(["native"]);
+  const reader = projectBackgroundWork(message, {
+    external: true,
+    canStop: false,
+    nativeSummary: () => ({ count: 1 }),
+  });
+  if (reader.type !== "agent.background_work.update") throw new Error("Wrong message");
+  expect(reader.payload.items).toHaveLength(2);
+  expect(
+    reader.payload.items.every(
+      (item) => item.canStop === undefined && item.stopToken === undefined,
+    ),
+  ).toBe(true);
+});

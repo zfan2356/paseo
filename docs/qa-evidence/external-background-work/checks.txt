@@ -1,0 +1,397 @@
+=== store-test: /tmp/work401-store-test.log ===
+
+ RUN  v4.1.6 /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-401-a21df2769a42/worktree/packages/server
+
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  19:07:11
+   Duration  372ms (transform 77ms, setup 52ms, import 43ms, tests 30ms, environment 0ms)
+
+
+=== bucket-test: /tmp/work401-bucket-test.log ===
+
+ RUN  v4.1.7 /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-401-a21df2769a42/worktree/packages/protocol
+
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  19:11:12
+   Duration  361ms (transform 66ms, setup 0ms, import 86ms, tests 11ms, environment 0ms)
+
+
+=== sdk-boundaries: /tmp/work401-sdk-boundaries.log ===
+
+ RUN  v4.1.7 /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-401-a21df2769a42/worktree/packages/plugin
+
+
+ Test Files  1 passed (1)
+      Tests  91 passed (91)
+   Start at  19:04:57
+   Duration  9.77s (transform 235ms, setup 0ms, import 568ms, tests 8.94s, environment 0ms)
+
+
+=== manager-test: /tmp/work401-manager-test.log ===
+
+ RUN  v4.1.6 /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-401-a21df2769a42/worktree/packages/server
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 265 skipped (266)
+   Start at  19:25:10
+   Duration  2.27s (transform 1.30s, setup 54ms, import 1.91s, tests 71ms, environment 0ms)
+
+
+=== workspace-test: /tmp/work401-workspace-test.log ===
+
+ RUN  v4.1.6 /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-401-a21df2769a42/worktree/packages/server
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 29 skipped (30)
+   Start at  19:28:44
+   Duration  1.24s (transform 514ms, setup 66ms, import 905ms, tests 8ms, environment 0ms)
+
+
+=== paseo-e2e-delivery: /tmp/work401-paseo-e2e-delivery.log ===
+
+ RUN  v4.1.6 /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-401-a21df2769a42/worktree/packages/server
+
+(node:3817035) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:3817035) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:3817035) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 7 skipped (8)
+   Start at  20:56:47
+   Duration  26.81s (transform 10.57s, setup 46ms, import 13.44s, tests 13.08s, environment 0ms)
+
+
+=== build-server-current: /tmp/work401-build-server-current.log ===
+
+> paseo@0.15.3 build:server
+> npm run build:server-deps && npm run build --workspace=@getpaseo/server && npm run build --workspace=@getpaseo/cli
+
+
+> paseo@0.15.3 build:server-deps
+> npm run build:client && concurrently --kill-others-on-fail --names highlight,plugin,relay --prefix-colors yellow,green,blue "npm run build:highlight" "npm run build:plugin" "npm run build:relay"
+
+
+> paseo@0.15.3 build:client
+> npm run build --workspace=@getpaseo/client
+
+
+> @getpaseo/client@0.15.3 build
+> npm run build --workspace=@getpaseo/protocol && npm run build --workspace=@getpaseo/relay && tsc -p tsconfig.json --incremental false
+
+
+> @getpaseo/protocol@0.15.3 prebuild
+> npm run generate:validators
+
+
+> @getpaseo/protocol@0.15.3 generate:validators
+> node scripts/generate-validation-aot.mjs
+
+generated src/generated/validation/ws-outbound.aot.ts: envelope + 261 session message validators
+
+> @getpaseo/protocol@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+> @getpaseo/relay@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+[highlight] 
+[highlight] > paseo@0.15.3 build:highlight
+[highlight] > npm run build --workspace=@getpaseo/highlight
+[highlight] 
+[relay] 
+[relay] > paseo@0.15.3 build:relay
+[relay] > npm run build --workspace=@getpaseo/relay
+[relay] 
+[plugin] 
+[plugin] > paseo@0.15.3 build:plugin
+[plugin] > npm run build --workspace=@getpaseo/plugin
+[plugin] 
+[plugin] 
+[plugin] > @getpaseo/plugin@0.15.3 build
+[plugin] > tsc -p tsconfig.json --incremental false
+[plugin] 
+[relay] 
+[relay] > @getpaseo/relay@0.15.3 build
+[relay] > tsc -p tsconfig.json --incremental false
+[relay] 
+[highlight] 
+[highlight] > @getpaseo/highlight@0.15.3 build
+[highlight] > tsc -p tsconfig.json --incremental false
+[highlight] 
+[relay] npm run build:relay exited with code 0
+[highlight] npm run build:highlight exited with code 0
+[plugin] npm run build:plugin exited with code 0
+
+> @getpaseo/server@0.15.3 build
+> npm run build:lib && npm run build:scripts
+
+
+> @getpaseo/server@0.15.3 build:lib
+> tsc -p tsconfig.server.json --incremental false && node scripts/build-opencode-bridge-plugin.mjs && node scripts/build-terminal-worker.mjs && node -e "const fs=require('node:fs'); fs.mkdirSync('dist/server/server/speech/providers/local/sherpa/assets',{recursive:true}); fs.copyFileSync('src/server/speech/providers/local/sherpa/assets/silero_vad.onnx','dist/server/server/speech/providers/local/sherpa/assets/silero_vad.onnx'); fs.cpSync('src/terminal/shell-integration','dist/server/terminal/shell-integration',{recursive:true}); fs.cpSync('src/terminal/shell-integration','dist/src/terminal/shell-integration',{recursive:true}); fs.copyFileSync('src/terminal/terminal-ts-loader.mjs','dist/server/terminal/terminal-ts-loader.mjs'); fs.rmSync('dist/server/skills',{recursive:true,force:true}); fs.cpSync('../../skills','dist/server/skills',{recursive:true}); fs.rmSync('dist/server/builtin-plugins',{recursive:true,force:true}); fs.cpSync('../../plugins','dist/server/builtin-plugins',{recursive:true,filter:(source)=>!source.split(require('node:path').sep).some((segment)=>segment==='node_modules'||segment==='test')&&!/\.(test|spec)\.[cm]?[jt]sx?$/.test(source)&&!source.endsWith('.tsbuildinfo')});"
+
+
+> @getpaseo/server@0.15.3 build:scripts
+> tsc -p tsconfig.scripts.json --incremental false && node -e "const fs=require('node:fs'); fs.mkdirSync('dist/scripts',{recursive:true}); fs.copyFileSync('scripts/mcp-stdio-socket-bridge-cli.mjs','dist/scripts/mcp-stdio-socket-bridge-cli.mjs');"
+
+
+> @getpaseo/cli@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+=== build-server-delivery: /tmp/work401-build-server-delivery.log ===
+
+> @getpaseo/server@0.15.3 build
+> npm run build:lib && npm run build:scripts
+
+
+> @getpaseo/server@0.15.3 build:lib
+> tsc -p tsconfig.server.json --incremental false && node scripts/build-opencode-bridge-plugin.mjs && node scripts/build-terminal-worker.mjs && node -e "const fs=require('node:fs'); fs.mkdirSync('dist/server/server/speech/providers/local/sherpa/assets',{recursive:true}); fs.copyFileSync('src/server/speech/providers/local/sherpa/assets/silero_vad.onnx','dist/server/server/speech/providers/local/sherpa/assets/silero_vad.onnx'); fs.cpSync('src/terminal/shell-integration','dist/server/terminal/shell-integration',{recursive:true}); fs.cpSync('src/terminal/shell-integration','dist/src/terminal/shell-integration',{recursive:true}); fs.copyFileSync('src/terminal/terminal-ts-loader.mjs','dist/server/terminal/terminal-ts-loader.mjs'); fs.rmSync('dist/server/skills',{recursive:true,force:true}); fs.cpSync('../../skills','dist/server/skills',{recursive:true}); fs.rmSync('dist/server/builtin-plugins',{recursive:true,force:true}); fs.cpSync('../../plugins','dist/server/builtin-plugins',{recursive:true,filter:(source)=>!source.split(require('node:path').sep).some((segment)=>segment==='node_modules'||segment==='test')&&!/\.(test|spec)\.[cm]?[jt]sx?$/.test(source)&&!source.endsWith('.tsbuildinfo')});"
+
+
+> @getpaseo/server@0.15.3 build:scripts
+> tsc -p tsconfig.scripts.json --incremental false && node -e "const fs=require('node:fs'); fs.mkdirSync('dist/scripts',{recursive:true}); fs.copyFileSync('scripts/mcp-stdio-socket-bridge-cli.mjs','dist/scripts/mcp-stdio-socket-bridge-cli.mjs');"
+
+
+=== build-web-current: /tmp/work401-build-web-current.log ===
+
+> paseo@0.15.3 build:daemon-web-ui
+> node scripts/build-daemon-web-ui.mjs
+
+Exporting browser web app...
+
+> @getpaseo/app@0.15.3 build:web
+> npm --prefix ../.. run build:app-deps && expo export --platform web
+
+
+> paseo@0.15.3 build:app-deps
+> npm run build:highlight && npm run build:client && npm run build:plugin && npm run build --workspace=@getpaseo/expo-two-way-audio
+
+
+> paseo@0.15.3 build:highlight
+> npm run build --workspace=@getpaseo/highlight
+
+
+> @getpaseo/highlight@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+> paseo@0.15.3 build:client
+> npm run build --workspace=@getpaseo/client
+
+
+> @getpaseo/client@0.15.3 build
+> npm run build --workspace=@getpaseo/protocol && npm run build --workspace=@getpaseo/relay && tsc -p tsconfig.json --incremental false
+
+
+> @getpaseo/protocol@0.15.3 prebuild
+> npm run generate:validators
+
+
+> @getpaseo/protocol@0.15.3 generate:validators
+> node scripts/generate-validation-aot.mjs
+
+generated src/generated/validation/ws-outbound.aot.ts: envelope + 261 session message validators
+
+> @getpaseo/protocol@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+> @getpaseo/relay@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+> paseo@0.15.3 build:plugin
+> npm run build --workspace=@getpaseo/plugin
+
+
+> @getpaseo/plugin@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+> @getpaseo/expo-two-way-audio@0.15.3 build
+> tsc
+
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Expo Autolinking module resolution enabled
+Starting Metro Bundler
+
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+| (node:3566765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+Web Bundled 7461ms packages/app/index.ts (5820 modules)
+
+› Assets (25):
+../../node_modules/expo-router/assets/arrow_down.017bc6ba3fc25503e5eb5e53826d48a8.png (9.5KB)
+../../node_modules/expo-router/assets/error.d1ea1496f9057eb392d5bbf3732a61b7.png (469B)
+../../node_modules/expo-router/assets/file.19eeb73b9593a38f8e9f418337fc7d10.png (138B)
+../../node_modules/expo-router/assets/forward.d8b800c443b8972542883e0b9de2bdc6.png (188B)
+../../node_modules/expo-router/assets/pkg.ab19f4cbc543357183a20571f68380a3.png (364B)
+../../node_modules/expo-router/assets/react-navigation/elements/back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653B)
+../../node_modules/expo-router/assets/react-navigation/elements/back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207B)
+../../node_modules/expo-router/assets/react-navigation/elements/clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425B)
+../../node_modules/expo-router/assets/react-navigation/elements/close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235B)
+../../node_modules/expo-router/assets/react-navigation/elements/search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928B)
+../../node_modules/expo-router/assets/sitemap.412dd9275b6b48ad28f5e3d81bb1f626.png (465B)
+../../node_modules/expo-router/assets/unmatched.20e71bdf79e3a97bf55fd9e164041578.png (4.8KB)
+assets/images/favicon-dark-attention.882b3a27dcb2073e9e31b334f9ed9728.png (2.2KB)
+assets/images/favicon-dark-running.8112342ff0d39e047a7f8d4fad9402f3.png (2.2KB)
+assets/images/favicon-dark.8005ed36ac07a5a7c60de25780897bd4.png (1.7KB)
+assets/images/favicon-light-attention.882b3a27dcb2073e9e31b334f9ed9728.png (2.2KB)
+assets/images/favicon-light-running.8112342ff0d39e047a7f8d4fad9402f3.png (2.2KB)
+assets/images/favicon-light.8005ed36ac07a5a7c60de25780897bd4.png (1.7KB)
+assets/images/notification-icon.3bf81d33ddbf380606bdd248ba83e158.png (2.3KB)
+
+› web bundles (7):
+_expo/static/css/xterm-3bb1704bf6cb0876640973dc0244b4cb.css (4.2KB)
+_expo/static/js/web/desktop-attachment-bridge-8ba8b635705fd458537c4a1c400b1469.js (644B)
+_expo/static/js/web/desktop-attachment-store-c89cf6929244d695cdd9db60bdab8b6f.js (2.9KB)
+_expo/static/js/web/index-9ed225d5b075a4cd07a3bb9d98a838df.js (25MB)
+_expo/static/js/web/index-fe0b45f867cc0c98e709ce7368e5ee5d.js (45KB)
+_expo/static/js/web/indexeddb-attachment-store-3482291ac0b7eda28a16618d9884fa1d.js (3.2KB)
+_expo/static/js/web/native-file-attachment-store-447756fce81f31fc8b59950e010dd7a3.js (4.3KB)
+
+› Files (3):
+favicon.ico (15KB)
+index.html (3.3KB)
+metadata.json (49B)
+
+Exported: dist
+Cleaning packages/server/dist/server/web-ui...
+Copying assets to packages/server/dist/server/web-ui...
+Daemon web UI bundle:
+  raw:    24.12 MiB
+  gzip:   5.36 MiB
+  brotli: 3.84 MiB
+
+=== typecheck-delivery: /tmp/work401-typecheck-delivery.log ===
+
+> paseo@0.15.3 typecheck
+> npm run typecheck --workspaces --if-present
+
+
+> @getpaseo/builtin-plugins@0.15.3 typecheck
+> tsgo -p tsconfig.json --noEmit
+
+
+> @getpaseo/expo-two-way-audio@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/highlight@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/plugin@0.15.3 typecheck
+> tsgo --noEmit && npm run typecheck:examples
+
+
+> @getpaseo/plugin@0.15.3 typecheck:examples
+> npm --prefix ../../plugin-examples/markdown-panel install --ignore-scripts --no-audit --no-fund && tsgo -p tsconfig.examples.json --noEmit
+
+
+up to date in 318ms
+
+> @getpaseo/protocol@0.15.3 pretypecheck
+> npm run generate:validators
+
+
+> @getpaseo/protocol@0.15.3 generate:validators
+> node scripts/generate-validation-aot.mjs
+
+generated src/generated/validation/ws-outbound.aot.ts: envelope + 261 session message validators
+
+> @getpaseo/protocol@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/client@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/server@0.15.3 typecheck
+> tsgo -p tsconfig.server.typecheck.json --noEmit
+
+
+> @getpaseo/app@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/relay@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/website@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/desktop@0.15.3 typecheck
+> tsgo --noEmit -p tsconfig.json
+
+
+> @getpaseo/cli@0.15.3 typecheck
+> tsgo --noEmit
+
+
+=== lint-delivery: /tmp/work401-lint-delivery.log ===
+
+> paseo@0.15.3 lint
+> oxlint
+
+Found 0 warnings and 0 errors.
+Finished in 5.0s on 5560 files with 177 rules using 32 threads.
+
+=== plugin-typecheck-current: /tmp/work401-plugin-typecheck-current.log ===
+
+> @multica/paseo-multica@0.1.0 typecheck /data/home/jayjayzhang/works/repos/multica-work401-background/integrations/paseo-multica
+> tsc --noEmit
+
+
+=== plugin-test-current: /tmp/work401-plugin-test-current.log ===
+
+> @multica/paseo-multica@0.1.0 test /data/home/jayjayzhang/works/repos/multica-work401-background/integrations/paseo-multica
+> vitest run tests/service.test.ts
+
+
+ RUN  v4.1.0 /data/home/jayjayzhang/works/repos/multica-work401-background/integrations/paseo-multica
+
+
+ Test Files  1 passed (1)
+      Tests  35 passed (35)
+   Start at  19:54:57
+   Duration  2.65s (transform 659ms, setup 0ms, import 826ms, tests 1.46s, environment 0ms)
+
+

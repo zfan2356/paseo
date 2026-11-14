@@ -14276,9 +14276,34 @@ test("folds provider background work and clears it when the agent closes", async
     events.some((event) => event.type === "agent_stream" && event.event.type === "background_work"),
   ).toBe(false);
 
+  const source = manager.externalBackgroundWork.open("multica", "Multica", async () => {});
+  source.replace({
+    status: "ready",
+    observedAt: new Date().toISOString(),
+    items: [
+      {
+        agentId: snapshot.id,
+        id: "bash-1",
+        kind: "monitor",
+        description: "External watch",
+        startedAt: null,
+        canStop: false,
+        external: {
+          status: "Succeeded · awaiting handling",
+          running: false,
+          deadline: null,
+          finishedAt: null,
+          issue: null,
+        },
+      },
+    ],
+  });
+  expect(manager.getAgentBackgroundWorkSummary(snapshot.id)).toEqual({ count: 2, runningCount: 1 });
   await manager.closeAgent(snapshot.id);
-
-  expect(events).toContainEqual({ type: "background_work", agentId: snapshot.id, items: [] });
+  expect(manager.listAgentBackgroundWork(snapshot.id)).toHaveLength(1);
+  expect(manager.getAgentBackgroundWorkSummary(snapshot.id)).toEqual({ count: 1, runningCount: 0 });
+  expect(events.at(-1)).toBeDefined();
+  source.close();
   expect(manager.getAgentBackgroundWorkSummary(snapshot.id)).toBeUndefined();
 });
 

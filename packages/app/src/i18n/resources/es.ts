@@ -475,6 +475,17 @@ export const es: TranslationResources = {
       otherPlaceholder: "Otro...",
     },
     backgroundWork: {
+      cancelLocal: "Cancelar espera local",
+      unavailable: "Fuente en segundo plano no disponible",
+      unknownStart: "Hora de inicio no disponible",
+      deadline: "Fecha límite",
+      finished: "Finalizado",
+      freshness: {
+        ready: "Última sincronización",
+        loading: "Cargando",
+        stale: "Datos obsoletos",
+        unavailable: "No disponible",
+      },
       pillOne: "1 tarea en segundo plano",
       pillMany: "{{count}} tareas en segundo plano",
       notRunning: "Ya no está en ejecución",

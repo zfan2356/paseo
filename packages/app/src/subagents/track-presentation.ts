@@ -1,3 +1,4 @@
+import { runningBackgroundWorkCount } from "@getpaseo/protocol/agent-state-bucket";
 import type { TFunction } from "i18next";
 import type { ComposerTrackPillSegment } from "@/composer/tracks";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
@@ -24,7 +25,7 @@ export function deriveSubagentStatusBucket(
   backgroundWork?: { count: number } | null,
 ): SidebarStateBucket {
   if (status === "error") return "failed";
-  if (status === "running" || (backgroundWork?.count ?? 0) > 0) return "running";
+  if (status === "running" || runningBackgroundWorkCount(backgroundWork) > 0) return "running";
   return "done";
 }
 

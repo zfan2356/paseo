@@ -489,6 +489,17 @@ export const en = {
       otherPlaceholder: "Other...",
     },
     backgroundWork: {
+      cancelLocal: "Cancel local wait",
+      unavailable: "Background source unavailable",
+      unknownStart: "Start time unavailable",
+      deadline: "Deadline",
+      finished: "Finished",
+      freshness: {
+        ready: "Last synced",
+        loading: "Loading",
+        stale: "Stale",
+        unavailable: "Unavailable",
+      },
       pillOne: "1 background task",
       pillMany: "{{count}} background tasks",
       notRunning: "No longer running",

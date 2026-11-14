@@ -1,3 +1,4 @@
+import { projectBackgroundWork } from "./agent/background-work/projection.js";
 import type { SessionContextStore } from "./session-context-store.js";
 import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
 import type { AgentChangeRequests } from "./agent-change-requests/service.js";
@@ -767,7 +768,7 @@ export class Session {
         return this.onBinaryMessageToSource(source, frame);
       } else this.emitBinary(frame);
     },
-    (source, message) => this.workspaceSetupMessageForClient(message, source),
+    (source, message) => this.messageForClient(message, source),
     (request, message) =>
       this.sessionLogger.warn(
         {
@@ -2242,7 +2243,12 @@ export class Session {
         }
 
         if (event.type === "background_work") {
-          this.forwardBackgroundWork(event);
+          void this.forwardBackgroundWork(event).catch((error) => {
+            this.sessionLogger.error(
+              { err: error, agentId: event.agentId },
+              "Failed to publish background work",
+            );
+          });
           return;
         }
 
@@ -2414,16 +2420,28 @@ export class Session {
     this.forwardProviderSubagentUpdate(event);
   }
 
-  private forwardBackgroundWork(
+  private async forwardBackgroundWork(
     event: Extract<AgentManagerEvent, { type: "background_work" }>,
-  ): void {
+  ): Promise<void> {
     const agent = this.agentManager.getAgent(event.agentId);
     if (agent?.internal) return;
+    const record = agent ? null : await this.agentStorage.get(event.agentId);
+    if (!agent && (!record || record.internal || record.archivedAt)) return;
     this.emit({
       type: "agent.background_work.update",
-      payload: { agentId: event.agentId, items: event.items },
+      payload: {
+        agentId: event.agentId,
+        items: this.agentManager.listAgentBackgroundWork(event.agentId),
+      },
     });
-    if (agent) void this.agentUpdates.forwardLiveAgent(agent);
+    if (agent) {
+      await this.agentUpdates.forwardLiveAgent(agent);
+      return;
+    }
+    if (record) {
+      await this.agentUpdates.emitStoredRecord(record);
+      if (record.workspaceId) await this.emitWorkspaceUpdateForWorkspaceId(record.workspaceId);
+    }
   }
 
   private emitProviderSubagentWorkspaceUpdate(event: ProviderSubagentManagerEvent): void {
@@ -2473,7 +2491,10 @@ export class Session {
     record: StoredAgentRecord,
     registeredProviderIds = new Set(this.providerSnapshotManager.listRegisteredProviderIds()),
   ): AgentSnapshotPayload {
-    return buildStoredAgentPayload(record, registeredProviderIds);
+    return {
+      ...buildStoredAgentPayload(record, registeredProviderIds),
+      backgroundWork: this.agentManager.getAgentBackgroundWorkSummary(record.id),
+    };
   }
 
   private isProviderVisibleToClient(provider: string): boolean {
@@ -9021,6 +9042,7 @@ export class Session {
   ): Promise<void> {
     let error: string | null = null;
     try {
+      await this.readAgentBackgroundWork(msg.agentId);
       await this.agentManager.stopAgentBackgroundWork({
         agentId: msg.agentId,
         itemId: msg.itemId,
@@ -9066,10 +9088,11 @@ export class Session {
     }
   }
 
-  // Background work lives only in memory, so an agent that is not loaded has none.
   // Answering from storage keeps a read from resuming a dormant agent.
   private async readAgentBackgroundWork(agentId: string): Promise<AgentBackgroundWorkItem[]> {
-    if (this.agentManager.getAgent(agentId)) {
+    const agent = this.agentManager.getAgent(agentId);
+    if (agent?.internal) throw new Error(`Unknown agent '${agentId}'`);
+    if (agent) {
       if (!this.agentManager.getAgentBackgroundWorkSummary(agentId)) {
         throw new Error("Background work inventory is unavailable");
       }
@@ -9082,6 +9105,8 @@ export class Session {
     if (record.archivedAt) {
       throw new Error(`Agent is archived: ${agentId}`);
     }
+    if (this.agentManager.getAgentBackgroundWorkSummary(agentId))
+      return this.agentManager.listAgentBackgroundWork(agentId);
     throw new Error("Background work inventory is unavailable");
   }
 
@@ -9752,10 +9777,27 @@ export class Session {
           !this.delivery.isModern(source) &&
           this.wantsEvent(event, source)
         )
-          this.onMessageToSource(source, this.workspaceSetupMessageForClient(message, source));
+          this.onMessageToSource(source, this.messageForClient(message, source));
       }
-    } else if (delivered.size === 0 && this.wantsEvent(event)) this.onMessage(message);
+    } else if (delivered.size === 0 && this.wantsEvent(event))
+      this.onMessage(this.projectBackgroundWorkMessage(message));
     return true;
+  }
+
+  private projectBackgroundWorkMessage(
+    message: SessionOutboundMessage,
+    source?: object,
+  ): SessionOutboundMessage {
+    return projectBackgroundWork(message, {
+      external: source
+        ? this.supportsForSource(CLIENT_CAPS.externalBackgroundWork, source)
+        : this.supports(CLIENT_CAPS.externalBackgroundWork),
+      canStop:
+        this.authorization.allowsPermission("workspace.write") ||
+        this.authorization.allowsPermission("hub.execute"),
+      nativeSummary: (id) =>
+        this.agentManager.getAgentBackgroundWorkSummary(id, { includeExternal: false }),
+    });
   }
 
   private emit(msg: SessionOutboundMessage): void {
@@ -9782,20 +9824,21 @@ export class Session {
     if (msg.type === "workspace_setup_status_response") {
       if (this.clientSources.size > 0 && this.onMessageToSource) {
         for (const [source] of this.clientSources) {
-          this.onMessageToSource(source, this.workspaceSetupMessageForClient(msg, source));
+          this.onMessageToSource(source, this.messageForClient(msg, source));
         }
         return;
       }
-      msg = this.workspaceSetupMessageForClient(msg);
+      msg = this.messageForClient(msg);
     }
-    this.onMessage(msg);
+    this.onMessage(this.projectBackgroundWorkMessage(msg));
   }
 
   // COMPAT(workspaceSetupBlocked): added in v0.8.0, remove after 2027-03-07 once client floor >= v0.8.0.
-  private workspaceSetupMessageForClient(
+  private messageForClient(
     message: SessionOutboundMessage,
     source?: object,
   ): SessionOutboundMessage {
+    message = this.projectBackgroundWorkMessage(message, source);
     if (
       message.type !== "workspace_setup_progress" &&
       message.type !== "workspace_setup_status_response"

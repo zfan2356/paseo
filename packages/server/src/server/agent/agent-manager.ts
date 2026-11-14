@@ -1,3 +1,4 @@
+import { ExternalBackgroundWork } from "./background-work/external.js";
 import type { AttachedAgentTool, PluginAgentToolsRuntime } from "../plugins/agent-tools.js";
 import type { AgentToolResult } from "@getpaseo/plugin/server";
 import type { RuntimeCleanupCandidate } from "./idle-runtime-cleanup/index.js";
@@ -855,6 +856,15 @@ export class AgentManager {
   private readonly timelineStore: InMemoryAgentTimelineStore;
   private readonly providerSubagents = new ProviderSubagentStore();
   private readonly backgroundWork = new AgentBackgroundWorkStore();
+  readonly externalBackgroundWork = new ExternalBackgroundWork((affected, allAgents) => {
+    if (allAgents) for (const agent of this.listAgents()) affected.add(agent.id);
+    for (const agentId of affected)
+      this.dispatch({
+        type: "background_work",
+        agentId,
+        items: this.listAgentBackgroundWork(agentId),
+      });
+  });
   private readonly agentsAwaitingInitialSnapshotPersist = new Set<string>();
   private readonly sessionEventTails = new Map<string, Promise<void>>();
   private readonly steerEventBarriers = new Map<string, SteerEventBarrier>();
@@ -1597,8 +1607,7 @@ export class AgentManager {
   }
 
   listAgentBackgroundWork(agentId: string): AgentBackgroundWorkItem[] {
-    this.requirePublicAgent(agentId);
-    return this.backgroundWork.list(agentId);
+    return [...this.backgroundWork.list(agentId), ...this.externalBackgroundWork.list(agentId)];
   }
 
   async stopAgentBackgroundWork({
@@ -1606,6 +1615,7 @@ export class AgentManager {
     itemId,
     stopToken,
   }: StopAgentBackgroundWorkOptions): Promise<void> {
+    if (await this.externalBackgroundWork.stop(agentId, itemId, stopToken)) return;
     this.requirePublicAgent(agentId);
     // Inventory events share the session queue; drain events already received before
     // authorizing the token, including a reconnect's ownership revocation.
@@ -1619,13 +1629,29 @@ export class AgentManager {
     await agent.session.stopBackgroundWork(itemId);
   }
 
-  getAgentBackgroundWorkSummary(agentId: string): { count: number } | undefined {
-    return this.backgroundWork.summary(agentId);
+  getAgentBackgroundWorkSummary(
+    agentId: string,
+    options: { includeExternal?: boolean } = {},
+  ): { count: number; runningCount?: number } | undefined {
+    const native = this.backgroundWork.summary(agentId);
+    if (options.includeExternal === false || !this.externalBackgroundWork.hasSources())
+      return native;
+    const external = this.externalBackgroundWork.list(agentId);
+    return {
+      count: (native?.count ?? 0) + external.filter((entry) => entry.kind !== "source").length,
+      runningCount:
+        (native?.count ?? 0) + external.filter((entry) => entry.external?.running).length,
+    };
   }
 
   private clearBackgroundWork(agentId: string): void {
     const items = this.backgroundWork.clear(agentId);
-    if (items) this.dispatch({ type: "background_work", agentId, items });
+    if (items)
+      this.dispatch({
+        type: "background_work",
+        agentId,
+        items: this.listAgentBackgroundWork(agentId),
+      });
   }
 
   listProviderSubagentActivity(): ProviderSubagentDescriptor[] {
@@ -4868,7 +4894,12 @@ export class AgentManager {
         event.items === null
           ? this.backgroundWork.clear(agent.id)
           : this.backgroundWork.apply(agent.id, event.items);
-      if (items) this.dispatch({ type: "background_work", agentId: agent.id, items });
+      if (items)
+        this.dispatch({
+          type: "background_work",
+          agentId: agent.id,
+          items: this.listAgentBackgroundWork(agent.id),
+        });
       return;
     }
     const turnId = getAgentStreamEventTurnId(event);
