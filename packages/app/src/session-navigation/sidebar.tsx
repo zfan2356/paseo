@@ -1,3 +1,6 @@
+import { isWeb } from "@/constants/platform";
+import { ChangeRequestsDialog } from "@/agent-change-requests/section";
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { AdaptiveRenameModal } from "@/components/rename-modal";
 import {
   SessionMenu,
@@ -203,7 +206,7 @@ const SessionRow = memo(function SessionRow({
   const { t } = useTranslation();
   const trailing = useSidebarWorkspaceTrailing();
 
-  const [dialog, setDialog] = useState<"settings" | "rename" | null>(null);
+  const [dialog, setDialog] = useState<"settings" | "rename" | "change-requests" | null>(null);
   const [hovered, setHovered] = useState(false);
   const connected = useHostRuntimeIsConnected(agent.serverId);
   const { finePointer } = usePointerCapabilities();
@@ -234,6 +237,8 @@ const SessionRow = memo(function SessionRow({
     navigateToAgent({ serverId: agent.serverId, agentId: agent.id });
     dismiss?.();
   }, [agent.serverId, agent.id, dismiss]);
+  const openChangeRequests = useCallback(() => setDialog("change-requests"), []);
+  const supportsChangeRequests = isWeb && Boolean(client?.supportsAgentChangeRequests());
   const openSettings = useCallback(() => setDialog("settings"), []);
   const archiveSession = useCallback(() => mutation.mutate({ kind: "archive" }), [mutation]);
   const renameSession = useCallback(() => setDialog("rename"), []);
@@ -268,6 +273,7 @@ const SessionRow = memo(function SessionRow({
       read: markRead,
       archive: archiveSession,
       settings: openSettings,
+      linkChangeRequests: supportsChangeRequests ? openChangeRequests : undefined,
     }),
     [
       canWrite,
@@ -282,6 +288,8 @@ const SessionRow = memo(function SessionRow({
       markRead,
       archiveSession,
       openSettings,
+      supportsChangeRequests,
+      openChangeRequests,
     ],
   );
   const closeDialog = useCallback(() => setDialog(null), []);
@@ -326,7 +334,10 @@ const SessionRow = memo(function SessionRow({
   return (
     <View testID={`session-row-${agent.id}`}>
       <SessionRowMenuFrame actions={actions} pages={pages} onHoverChange={setHovered}>
-        <View style={[styles.card, hovered && styles.hovered, selected && styles.selected]}>
+        <View
+          dataSet={MATERIAL_SLOTS.sessionRow}
+          style={[styles.card, hovered && styles.hovered, selected && styles.selected]}
+        >
           <SidebarCardContent
             onPress={openChat}
             selected={selected}
@@ -419,7 +430,7 @@ function SessionDialog({
   projects,
   onClose,
 }: {
-  dialog: "settings" | null;
+  dialog: "settings" | "change-requests" | null;
   agent: Agent;
   context: SessionContext | null;
   client: DaemonClient | null;
@@ -427,6 +438,8 @@ function SessionDialog({
   onClose(): void;
 }) {
   if (!client || !context) return null;
+  if (dialog === "change-requests")
+    return <ChangeRequestsDialog client={client} agentId={agent.id} onClose={onClose} />;
   if (dialog === "settings")
     return (
       <SessionSettings

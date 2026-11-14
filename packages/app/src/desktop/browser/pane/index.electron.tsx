@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import {
   useCallback,
   useEffect,
@@ -1607,7 +1608,7 @@ function BrowserElementAnnotationCard({
 
   return createPortal(
     <View style={[styles.annotationOverlay, bounds]} pointerEvents="box-none">
-      <View style={styles.annotationCard}>
+      <View dataSet={MATERIAL_SLOTS.popover} style={styles.annotationCard}>
         <View style={styles.annotationHeader}>
           <Text numberOfLines={1} style={styles.annotationTitle}>
             {t("workspace.browser.annotate.title")}

@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { Modal } from "@/components/ui/modal";
 import {
@@ -171,7 +172,9 @@ function ComboboxSheetBackground({ style }: BottomSheetBackgroundProps) {
     [style, theme.colors.surface0, theme.borderRadius],
   );
 
-  return <Animated.View pointerEvents="none" style={combinedStyle} />;
+  return (
+    <Animated.View dataSet={MATERIAL_SLOTS.sheet} pointerEvents="none" style={combinedStyle} />
+  );
 }
 
 export interface SearchInputProps {
@@ -1215,6 +1218,7 @@ function DesktopComboboxBody(props: DesktopBodyProps): ReactElement | null {
         <Pressable style={styles.desktopBackdrop} onPress={props.handleClose} />
         <FloatingSurface
           testID="combobox-desktop-container"
+          dataSet={MATERIAL_SLOTS.combobox}
           entering={props.shouldUseDesktopFade ? FadeIn.duration(100) : undefined}
           exiting={props.shouldUseDesktopFade ? FadeOut.duration(100) : undefined}
           style={styles.desktopContainer}

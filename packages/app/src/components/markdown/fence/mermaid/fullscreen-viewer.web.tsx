@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { Modal } from "@/components/ui/modal";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { View } from "react-native";
@@ -95,7 +96,7 @@ export function MermaidFullscreenViewer({
   return (
     <Modal transparent animationType="fade" statusBarTranslucent visible onRequestClose={onClose}>
       <WindowChromeRootRegion corners="both">
-        <View style={styles.root}>
+        <View dataSet={MATERIAL_SLOTS.fullscreen} style={styles.root}>
           <View style={styles.backdrop} />
           <View style={contentLayerStyle}>
             {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus holder for the Escape shortcut */}

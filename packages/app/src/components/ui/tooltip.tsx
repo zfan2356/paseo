@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { Modal } from "@/components/ui/modal";
 import {
   Children,
@@ -549,6 +550,7 @@ export function TooltipContent({
           exiting={FadeOut.duration(80)}
           collapsable={false}
           role="tooltip"
+          dataSet={MATERIAL_SLOTS.tooltip}
           testID={testID}
           onLayout={handleLayout}
           style={contentStyle}
@@ -576,6 +578,7 @@ export function TooltipContent({
           exiting={FadeOut.duration(80)}
           collapsable={false}
           role="tooltip"
+          dataSet={MATERIAL_SLOTS.tooltip}
           testID={testID}
           onLayout={handleLayout}
           style={contentStyle}

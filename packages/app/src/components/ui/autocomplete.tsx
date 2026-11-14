@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ScrollView,
@@ -300,14 +301,14 @@ export function Autocomplete({
 
   if (shownStatus) {
     return (
-      <View style={containerStyle}>
+      <View style={containerStyle} dataSet={MATERIAL_SLOTS.autocomplete}>
         <AutocompleteStatusRow status={shownStatus} />
       </View>
     );
   }
 
   return (
-    <View style={containerStyle}>
+    <View style={containerStyle} dataSet={MATERIAL_SLOTS.autocomplete}>
       <ScrollView
         ref={scrollRef}
         onLayout={handleScrollViewLayout}

@@ -1,0 +1,41 @@
+import { expect, test } from "../support/fixtures";
+import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
+import { openAttachmentMenu } from "../support/helpers/composer";
+
+test("main baseline capture", async ({page}) => {
+  test.setTimeout(180_000);
+  const {readFile} = await import("node:fs/promises");
+  const out = (await import("node:path")).resolve(process.cwd(), "../../docs/qa-evidence/materials");
+  const wallpaper=await readFile(out+"/wallpaper.svg","utf8");
+  await page.route("https://material-study.test/wallpaper.svg",route=>route.fulfill({contentType:"image/svg+xml",body:wallpaper}));
+  const source=Array.from({length:18},(_,index)=>`## ${index+1}. A quieter place to work\n\nReview the coastal illustration and the next set of changes. Keep the colors, typography and spacing consistent across the workspace.\n\n![Coastal illustration](https://material-study.test/wallpaper.svg)\n\nThe warm sky and cool water stay distinct. **Preserve the contrast** as the content moves beneath the controls.\n\n| Detail | Direction |\n| --- | --- |\n| Palette | Teal, amber, slate |\n| Composition | Space to read and act |\n\n`).join("\n\n");
+  const session=await seedMockAgentWorkspace({repoPrefix:"material-study-",title:"Refine workspace surfaces",initialPrompt:"Review the workspace surfaces and explain the implementation.",featureValues:{mockAssistantResponse:source}});
+  try {
+    await session.client.waitForFinish(session.agentId,30_000);
+    for(const theme of ["light","dark"] as const){
+      await page.setViewportSize({width:1440,height:1000});
+      await openAgentRoute(page,session);
+      await page.evaluate(theme=>localStorage.setItem("@paseo:app-settings",JSON.stringify({theme,chatDisplay:"full"})),theme);
+      await page.reload();
+      await expect(page.getByTestId("message-input-root")).toBeVisible({timeout:60_000});
+      const input=page.getByRole("textbox",{name:"Message agent..."}).first();
+      await input.fill("Keep the transcript crisp; soften only the floating surfaces.");await input.blur();
+      for(const width of [1440,390]){
+        await page.setViewportSize({width,height:1000});await page.waitForTimeout(500);
+        const scroll=page.getByTestId("agent-chat-scroll").filter({visible:true});
+        await scroll.hover();await page.mouse.wheel(0,-1400);await page.waitForTimeout(400);
+        await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight*.45+60;});await page.waitForTimeout(400);
+        await page.screenshot({path:`${out}/main-${theme}-${width}-conversation.png`});
+        await openAttachmentMenu(page);await page.waitForTimeout(500);
+        await page.screenshot({path:`${out}/main-${theme}-${width}-menu.png`});
+        await page.keyboard.press("Escape");await page.mouse.click(width-25,220);await page.keyboard.press("Shift+?");
+        await expect(page.getByTestId("keyboard-shortcuts-dialog")).toBeVisible();await page.waitForTimeout(500);
+        await page.screenshot({path:`${out}/main-${theme}-${width}-dialog.png`});await page.keyboard.press("Escape");
+        if(width===390)await page.getByRole("button",{name:"Open menu",exact:true}).click();
+        await expect(page.getByTestId(`session-row-${session.agentId}`).filter({visible:true})).toBeVisible();
+        await page.waitForTimeout(500);await page.screenshot({path:`${out}/main-${theme}-${width}-sidebar.png`});
+        if(width===390)await page.getByTestId("sidebar-close").click();
+      }
+    }
+  }finally{await session.cleanup();}
+});
