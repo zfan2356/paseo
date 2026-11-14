@@ -1,3 +1,4 @@
+import { tgitForgeLogic } from "./tgit";
 import type { ClientForgeLogicModule, ForgeSpecificEnvelope } from "@/git/client-forge-module";
 import { codebergForgeLogic } from "./codeberg";
 import { forgejoForgeLogic } from "./forgejo";
@@ -17,6 +18,7 @@ export const CLIENT_FORGE_LOGIC_MODULES: readonly ClientForgeLogicModule[] = [
   giteaForgeLogic,
   forgejoForgeLogic,
   codebergForgeLogic,
+  tgitForgeLogic,
 ];
 
 export function getClientForgeLogicModule(id: string): ClientForgeLogicModule | null {

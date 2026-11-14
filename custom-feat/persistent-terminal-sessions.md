@@ -15,9 +15,9 @@ resorting to tmux.
 
 ## Design
 
-Ownership of PTYs moves out of the daemon into a **detached terminal worker
-process**, connected over an authenticated local socket with an NDJSON,
-versioned protocol (`terminal-worker-*.ts`, `worker-terminal-manager.ts`):
+PTY ownership now uses upstream's detached worker, authenticated framed socket,
+process records, cleanup reaper, runtime copies and protocol-version draining
+from `#7644`. The fork keeps the following overlay:
 
 - Graceful daemon shutdown _detaches_ from the worker instead of killing it.
   PTYs, foreground commands, and TUIs keep running; the next daemon
@@ -34,17 +34,41 @@ versioned protocol (`terminal-worker-*.ts`, `worker-terminal-manager.ts`):
   passive viewer and does not steal the PTY size from a desktop client;
   direct interaction can still claim ownership intentionally.
 
+New workers receive the current daemon environment and CLI path on every
+terminal creation. Linked conversation identity, activity tokens and explicit
+titles survive adoption. Requests reply only to their originating connection;
+terminal events and their activity tokens reach every attached daemon.
+
+`legacy-worker-connection.ts` adapts an already-running fork NDJSON worker's
+attach response to upstream's listing contract and its grid snapshots to
+bounded ANSI replay events. Only this draining adapter uses the retained
+protocol snapshot serializer; current workers serialize xterm directly.
+Each authenticated daemon has its own upstream replay controller, preserving
+request routing and independent backpressure during overlapping attachments.
+The adapter never launches another
+legacy worker, replaces its PTYs or bypasses authentication. The old worker is
+a draining member of the upstream pool. New terminals use the current worker;
+closing the last old terminal releases its attachment without another daemon
+restart. An explicit close reconnects to the legacy endpoint and confirms its
+terminals exited before the new worker's reaper runs.
+
 ### Explicit non-goals / limitations
 
-- No durability across machine reboot, worker crash, or an incompatible
-  worker-protocol version (a version bump uses a new endpoint; an old worker
-  with live terminals stays running but unreachable until they exit).
-- A reused worker keeps the environment of the daemon that launched it, so
-  post-restart terminals can inherit stale globals; agent-linked terminals
-  pin their critical values through the request env.
+- No durability across machine reboot or worker crash. Upstream drains the
+  previous protocol and closes obsolete workers; newer incompatible workers
+  remain untouched and report an explicit incompatibility.
+- Only an adopted legacy NDJSON worker retains its older daemon environment;
+  agent-linked terminals still pin their critical values through request env.
 - Activity hooks report to the daemon HTTP endpoint; reports with no daemon
   listening are dropped.
 - No second tmux-based keepalive path — this design is the only one.
+
+An unspecified graceful daemon shutdown still keeps terminals in this fork.
+The supervisor maps SIGINT/SIGTERM to an explicit keep intent before sending
+shutdown IPC, so signaling the supervisor and signaling its child agree.
+Explicit close requests, including `daemon stop` and `restart --kill-terminals`,
+use upstream's cleanup semantics. Deployment and production restarts require
+separate consent.
 
 Automatic conversation handoff on top of this is owned by
 [agent-tui-conversation-switch.md](agent-tui-conversation-switch.md); the

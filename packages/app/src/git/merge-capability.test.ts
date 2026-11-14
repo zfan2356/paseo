@@ -298,3 +298,14 @@ describe("deriveMergeCapability (gitea)", () => {
     expect(capability?.canDisableAutoMerge).toBe(false);
   });
 });
+
+describe("TGit read-only merge capability", () => {
+  it("keeps all write actions unavailable even for a mergeable MR", () => {
+    expect(deriveMergeCapability({ forge: "tgit", readOnly: true })).toMatchObject({
+      directMergeReady: false,
+      canEnableAutoMerge: false,
+      canDisableAutoMerge: false,
+      allowedMethods: [],
+    });
+  });
+});

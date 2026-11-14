@@ -57,6 +57,11 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
     }
     case "changes_tree":
     case "files":
+      return {
+        kind: value.kind,
+        ...(value.directory ? { directory: value.directory } : {}),
+        ...(value.sessionAgentId ? { sessionAgentId: value.sessionAgentId } : {}),
+      };
     case "pull_request":
       return { kind: value.kind };
     case "side_chat": {
@@ -69,7 +74,14 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
     }
     case "commit_diff": {
       const sha = trimNonEmpty(value.sha);
-      return sha ? { kind: "commit_diff", sha } : null;
+      return sha
+        ? {
+            kind: "commit_diff",
+            sha,
+            ...(value.directory ? { directory: value.directory } : {}),
+            ...(value.sessionAgentId ? { sessionAgentId: value.sessionAgentId } : {}),
+          }
+        : null;
     }
     default:
       return null;
@@ -145,13 +157,13 @@ function secondaryWorkspaceTabTargetsEqual(
     return workspaceFileLocationsEqual(left, right);
   }
   if (left.kind === "working_diff" && right.kind === "working_diff") {
-    return left.focusPath === right.focusPath && left.focusRequestId === right.focusRequestId;
+    return sameWorkingDiffTarget(left, right);
   }
   if (left.kind === "files" && right.kind === "files") {
-    return true;
+    return sameDirectoryTarget(left, right);
   }
   if (left.kind === "changes_tree" && right.kind === "changes_tree") {
-    return true;
+    return sameDirectoryTarget(left, right);
   }
   if (left.kind === "pull_request" && right.kind === "pull_request") {
     return true;
@@ -160,7 +172,7 @@ function secondaryWorkspaceTabTargetsEqual(
     return left.workspaceId === right.workspaceId;
   }
   if (left.kind === "commit_diff" && right.kind === "commit_diff") {
-    return left.sha === right.sha;
+    return sameDirectoryTarget(left, right) && left.sha === right.sha;
   }
   return false;
 }
@@ -224,13 +236,17 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
     return `setup_${target.workspaceId}`;
   }
   if (target.kind === "commit_diff") {
-    return `commit_diff_${target.sha}`;
+    return commitDiffTargetId(target);
   }
   if (target.kind === "working_diff") {
-    return "working_diff";
+    return target.directory
+      ? `working_diff_${JSON.stringify([target.sessionAgentId, target.directory])}`
+      : "working_diff";
   }
   if (target.kind === "changes_tree" || target.kind === "files" || target.kind === "pull_request") {
-    return target.kind;
+    return "directory" in target && target.directory
+      ? `${target.kind}_${JSON.stringify([target.sessionAgentId, target.directory])}`
+      : target.kind;
   }
   if (target.kind === "plugin") {
     const identity = `${target.pluginId.length}_${target.pluginId}_${target.panelId.length}_${target.panelId}`;
@@ -238,7 +254,9 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
       ? `plugin_workspace_${identity}`
       : `plugin_agent_${identity}_${target.agentId.length}_${target.agentId}`;
   }
-  return `file_${target.path}`;
+  return target.directory
+    ? `file_${JSON.stringify([target.sessionAgentId, target.directory, target.path])}`
+    : `file_${target.path}`;
 }
 
 function normalizePluginTabTarget(
@@ -276,6 +294,8 @@ function normalizeWorkingDiffTabTarget(
   const focusRequestId = normalizePositiveInteger(value.focusRequestId);
   return {
     kind: "working_diff" as const,
+    ...(value.directory ? { directory: value.directory } : {}),
+    ...(value.sessionAgentId ? { sessionAgentId: value.sessionAgentId } : {}),
     ...(focusPath ? { focusPath } : {}),
     ...(focusRequestId ? { focusRequestId } : {}),
   };
@@ -293,4 +313,28 @@ function trimOptionalString(value: string | null | undefined): string | null {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function sameDirectoryTarget(
+  left: { directory?: string; sessionAgentId?: string },
+  right: { directory?: string; sessionAgentId?: string },
+): boolean {
+  return left.directory === right.directory && left.sessionAgentId === right.sessionAgentId;
+}
+
+function sameWorkingDiffTarget(
+  left: Extract<WorkspaceTabTarget, { kind: "working_diff" }>,
+  right: Extract<WorkspaceTabTarget, { kind: "working_diff" }>,
+): boolean {
+  return (
+    sameDirectoryTarget(left, right) &&
+    left.focusPath === right.focusPath &&
+    left.focusRequestId === right.focusRequestId
+  );
+}
+
+function commitDiffTargetId(target: Extract<WorkspaceTabTarget, { kind: "commit_diff" }>): string {
+  return target.directory
+    ? `commit_diff_${JSON.stringify([target.sessionAgentId, target.directory, target.sha])}`
+    : `commit_diff_${target.sha}`;
 }

@@ -1,3 +1,4 @@
+import { openDirectoryResources } from "./workspace-ui";
 import { expect, type Page } from "@playwright/test";
 import { identityForeground, type IdentityColorName } from "@/styles/identity-colors";
 import { openSettings } from "./app";
@@ -22,15 +23,27 @@ export async function addOfflineHostAndReload(
   page: Page,
   input: { serverId: string; label: string; primaryLabel?: string },
 ): Promise<void> {
-  const offlineHost = buildSeededHost({
-    serverId: input.serverId,
-    label: input.label,
-    endpoint: "127.0.0.1:59999",
-    nowIso: new Date().toISOString(),
-  });
+  await addOfflineHostsAndReload(page, [input], { primaryLabel: input.primaryLabel });
+}
+
+/** Adds several unreachable hosts with one reload. See `addOfflineHostAndReload`. */
+export async function addOfflineHostsAndReload(
+  page: Page,
+  hosts: Array<{ serverId: string; label: string }>,
+  options: { primaryLabel?: string } = {},
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const offlineHosts = hosts.map((host) =>
+    buildSeededHost({
+      serverId: host.serverId,
+      label: host.label,
+      endpoint: "127.0.0.1:59999",
+      nowIso,
+    }),
+  );
 
   await page.evaluate(
-    ({ host, keys, primaryLabel }) => {
+    ({ hosts: added, keys, primaryLabel }) => {
       const nonce = localStorage.getItem(keys.nonce);
       if (!nonce) {
         throw new Error("Expected the e2e seed nonce before overriding the host registry.");
@@ -40,20 +53,22 @@ export async function addOfflineHostAndReload(
       if (primaryLabel && registry[0]) {
         registry[0].label = primaryLabel;
       }
-      if (!registry.some((entry) => entry.serverId === host.serverId)) {
-        registry.push(host);
+      for (const host of added) {
+        if (!registry.some((entry) => entry.serverId === host.serverId)) {
+          registry.push(host);
+        }
       }
       localStorage.setItem(keys.registry, JSON.stringify(registry));
       localStorage.setItem(keys.disableSeedOnce, nonce);
     },
     {
-      host: offlineHost,
+      hosts: offlineHosts,
       keys: {
         registry: REGISTRY_KEY,
         nonce: SEED_NONCE_KEY,
         disableSeedOnce: DISABLE_DEFAULT_SEED_ONCE_KEY,
       },
-      primaryLabel: input.primaryLabel,
+      primaryLabel: options.primaryLabel,
     },
   );
 
@@ -124,6 +139,7 @@ export async function waitForConnectedHost(
 }
 
 export async function openSidebarDisplayPreferences(page: Page): Promise<void> {
+  await openDirectoryResources(page);
   await page.getByTestId("sidebar-display-preferences-menu").click();
   await expect(page.getByTestId("sidebar-display-preferences-content")).toBeVisible({
     timeout: 10_000,
@@ -270,6 +286,28 @@ export async function reloadPreservingHostRegistry(page: Page): Promise<void> {
       localStorage.setItem(keys.disableSeedOnce, nonce);
     },
     { nonce: SEED_NONCE_KEY, disableSeedOnce: DISABLE_DEFAULT_SEED_ONCE_KEY },
+  );
+  await page.reload();
+}
+
+export async function disconnectAllHostsAndReload(page: Page): Promise<void> {
+  await page.evaluate(
+    ({ registryKey, nonceKey, disableSeedKey }) => {
+      const nonce = localStorage.getItem(nonceKey);
+      if (!nonce) throw new Error("Expected the e2e seed nonce");
+      const hosts = JSON.parse(localStorage.getItem(registryKey) ?? "[]");
+      for (const host of hosts) {
+        host.connections = [{ id: "offline", type: "directTcp", endpoint: "127.0.0.1:59999" }];
+        host.preferredConnectionId = "offline";
+      }
+      localStorage.setItem(registryKey, JSON.stringify(hosts));
+      localStorage.setItem(disableSeedKey, nonce);
+    },
+    {
+      registryKey: REGISTRY_KEY,
+      nonceKey: SEED_NONCE_KEY,
+      disableSeedKey: DISABLE_DEFAULT_SEED_ONCE_KEY,
+    },
   );
   await page.reload();
 }

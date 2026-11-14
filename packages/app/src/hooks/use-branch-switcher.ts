@@ -11,7 +11,6 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 interface UseBranchSwitcherInput {
   client: DaemonClient | null;
   normalizedServerId: string;
-  normalizedWorkspaceId: string;
   workspaceDirectory: string | null;
   currentBranchName: string | null;
   isGitCheckout: boolean;
@@ -22,6 +21,9 @@ interface UseBranchSwitcherInput {
 
 interface UseBranchSwitcherResult {
   branchOptions: ComboboxOption[];
+  isLoadingBranches: boolean;
+  isFetchingBranches: boolean;
+  branchError: Error | null;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   handleBranchSelect: (branchId: string) => void;
@@ -31,7 +33,6 @@ interface UseBranchSwitcherResult {
 export function useBranchSwitcher({
   client,
   normalizedServerId,
-  normalizedWorkspaceId,
   workspaceDirectory,
   currentBranchName,
   isGitCheckout,
@@ -42,8 +43,7 @@ export function useBranchSwitcher({
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
 
-  // Git operations are bound to the workspace directory; the opaque workspace id is
-  // used only for query cache identity below, never as a cwd.
+  // Git candidates and operations must refer to the same checkout path.
   const operations = useMemo(
     () =>
       client && workspaceDirectory
@@ -53,7 +53,7 @@ export function useBranchSwitcher({
   );
 
   const branchSuggestionsQuery = useQuery({
-    queryKey: ["branchSuggestions", normalizedServerId, normalizedWorkspaceId],
+    queryKey: ["branchSuggestions", normalizedServerId, workspaceDirectory],
     queryFn: async () => {
       if (!operations) {
         throw new Error(t("common.errors.daemonClientUnavailable"));
@@ -75,8 +75,8 @@ export function useBranchSwitcher({
   }, [branchSuggestionsQuery.data]);
 
   const stashListQueryKey = useMemo(
-    () => ["stashList", normalizedServerId, normalizedWorkspaceId] as const,
-    [normalizedServerId, normalizedWorkspaceId],
+    () => ["stashList", normalizedServerId, workspaceDirectory] as const,
+    [normalizedServerId, workspaceDirectory],
   );
 
   const invalidateStashAndCheckout = useCallback(async () => {
@@ -185,5 +185,14 @@ export function useBranchSwitcher({
     ],
   );
 
-  return { branchOptions, isOpen, setIsOpen, handleBranchSelect, invalidateStashAndCheckout };
+  return {
+    branchOptions,
+    isLoadingBranches: branchSuggestionsQuery.isPending,
+    isFetchingBranches: branchSuggestionsQuery.isFetching,
+    branchError: branchSuggestionsQuery.error,
+    isOpen,
+    setIsOpen,
+    handleBranchSelect,
+    invalidateStashAndCheckout,
+  };
 }
