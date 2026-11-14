@@ -1,8 +1,0 @@
-{
-  "action": "return",
-  "client_request_id": "83d263f3-c411-4c84-ab5e-e78a906036c5",
-  "expected_sequence": 2,
-  "version": 1,
-  "delivery_id": "3301d636-ed95-438a-8e17-de82a6b40a83",
-  "reason": "初审结论及R1有效并已处理；请按同一子合同继续增量复审：runtime ee9a65365d57a559daa62e58d8015fc38407da20 已接通项目及状态/置顶两条回调并补资源空态动作。2项最终真实浏览器回归已通过（1200/390当前/其他workspace、status模式、实际terminal input、同一terminal IDs/running service/stop）。证据已提交当前PR head，需给当前修订的最终结论；原通过入口和A/B独立探针复用，不重跑同一绿测。"
-}
