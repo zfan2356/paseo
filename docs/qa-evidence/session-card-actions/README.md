@@ -31,6 +31,7 @@ The focused browser matrix covers:
 4. Real touch context: no hover target, visible tappable kebab, pin and label creation/assignment.
 5. A noncurrent session moves from Ready to review to Done, then archives without taking focus. A server archive update arriving before the original request's failure does not resurrect its session or tab; History retains the archived record.
 6. A workspace descriptor update while a label assignment is pending keeps the duplicate-submit guard and later failure visible; retry succeeds.
+7. A host without sessionContext and a host whose initial context observation fails still allow rename, read and hover archive; pin/labels stay disabled. Only actual context loading gates the basic menu.
 
 Run only these cases from the repository root:
 
@@ -38,7 +39,7 @@ Run only these cases from the repository root:
 npm run test:e2e --workspace=@getpaseo/app -- sidebar-model-b.spec.ts workspace-labels.spec.ts --grep 'session card|same-target descriptor refresh'
 ```
 
-The local runner only selects the installed headless Chromium executable and disables video/trace; checked-in runner settings are unchanged. Runtime source: `44b9506e52e368f60601c96f756ac97e0fb3518c`, against main `030f54b7c7c2ef4c4bca7a427a3fa6dfd727e7af`. The delivery also adds the evidence and a screenshot-only wait for the offline menu. [PR #16](https://github.com/zfan2356/paseo/pull/16) carries the exact final revision.
+The local runner only selects the installed headless Chromium executable and disables video/trace; checked-in runner settings are unchanged. Runtime source: `983e03355db2ccb7d0cf79cf0b008648d2d60374`, against main `030f54b7c7c2ef4c4bca7a427a3fa6dfd727e7af`. The six-case matrix was collected for `44b9506e`; the later context-capability fix has two targeted cases. The Reviewer requested those focused cases without repeating the unaffected matrix. [PR #16](https://github.com/zfan2356/paseo/pull/16) carries the exact delivery revision and evidence.
 
 | Check                                                | Result                                                                          | Log                                |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------- |
@@ -51,7 +52,7 @@ The local runner only selects the installed headless Chromium executable and dis
 
 The semantic regression opens the card by its existing accessible label and requires a visible **Rename session** menu item. With only `session-navigation/sidebar.tsx` replaced by the original main version (`030f54b7`), the same test [fails](baseline-browser.txt) because the menu has only settings, binding and archive. Restoring the fixed component [passes](fixed-menu-browser.txt). This is a component source comparison against the same daemon/test fixture, not a claim that an entire old daemon was tested.
 
-No full local suite ran. The specified Reviewer first found a workspace picker callback lifetime regression and a newly added JSDOM hook test that violated repository rules. The callback now follows stable workspace identity and has the real browser refresh regression above; the JSDOM addition was removed. Final review is tracked in WORK-390.
+No full local suite ran. The specified Reviewer identified an unstable workspace picker callback, an invalid JSDOM hook test, and a context-loading gate that also locked out unsupported/error states. The callback follows stable workspace identity, the JSDOM addition was removed, and basic operations now remain available when context cannot load. The real browser refresh and capability/error regressions cover those findings. Final review is tracked in WORK-390.
 
 Multica's GitHub integration is not configured for this workspace, so the formal PR card is not linked. Root verified that platform gap and accepted the GitHub URL, remote source/base and complete diff as the review handoff. This delivery does not configure the integration, merge, deploy or restart the production daemon.
 
