@@ -1,5 +1,6 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { MagpieSurface } from "./client/magpie.js";
+import { registerComposerControls } from "./client/composer-extension.js";
 
 export default function contribute(client: PluginClientContext) {
   client.addSurface("main", MagpieSurface);
@@ -32,5 +33,5 @@ export default function contribute(client: PluginClientContext) {
     context: "workspace",
     onSubmit: ({ openPanel }) => openPanel("magpie"),
   });
-  return () => {};
+  return registerComposerControls(client);
 }

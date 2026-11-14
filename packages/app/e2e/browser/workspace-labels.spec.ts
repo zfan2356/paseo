@@ -2,6 +2,8 @@ import { expect, test } from "../support/fixtures";
 import { gotoAppShell } from "../support/helpers/app";
 import { getServerId } from "../support/helpers/server-id";
 import { seedWorkspace } from "../support/helpers/seed-client";
+import { loadSessionMessageReaders } from "../support/helpers/new-workspace";
+import { openDirectoryResources } from "../support/helpers/workspace-ui";
 import { waitForSidebarHydration } from "../support/helpers/workspace-ui";
 import { daemonWsRoutePattern } from "../support/helpers/daemon-port";
 
@@ -380,4 +382,90 @@ test.describe("Workspace labels", () => {
       }
     });
   });
+});
+
+test("workspace label pending and errors survive a same-target descriptor refresh", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  page.setDefaultTimeout(15_000);
+  const seeded = await seedWorkspace({ repoPrefix: "workspace-label-refresh-" });
+  try {
+    await seeded.client.setWorkspaceLabel({
+      workspaceId: seeded.workspaceId,
+      label: { name: "Refresh review", color: "red" },
+      assigned: true,
+    });
+    await seeded.client.setWorkspaceLabel({
+      workspaceId: seeded.workspaceId,
+      label: { name: "Refresh review", color: "red" },
+      assigned: false,
+    });
+    const readers = await loadSessionMessageReaders();
+    let reject: () => void = () => {
+      throw new Error("No pending label request");
+    };
+    let captured = 0;
+    let holding = true;
+    await page.routeWebSocket(daemonWsRoutePattern(), (browser) => {
+      const server = browser.connectToServer();
+      browser.onMessage((frame) => {
+        const request = readers.client(frame);
+        if (
+          holding &&
+          request?.type === "workspace.label.assignment.set.request" &&
+          request.workspaceId === seeded.workspaceId
+        ) {
+          captured++;
+          reject = () => {
+            holding = false;
+            browser.send(
+              JSON.stringify({
+                type: "session",
+                message: {
+                  type: "rpc_error",
+                  payload: {
+                    requestId: request.requestId,
+                    requestType: request.type,
+                    error: "Refresh preserved failure",
+                    code: "handler_error",
+                  },
+                },
+              }),
+            );
+          };
+          return;
+        }
+        server.send(frame);
+      });
+      server.onMessage((frame) => browser.send(frame));
+    });
+    await gotoAppShell(page);
+    await openDirectoryResources(page);
+    const row = page
+      .getByTestId(`sidebar-workspace-row-${getServerId()}:${seeded.workspaceId}`)
+      .first();
+    await row.click({ button: "right" });
+    await page
+      .getByTestId(`sidebar-workspace-menu-labels-${getServerId()}:${seeded.workspaceId}`)
+      .click();
+    const label = labelRow(page, "Refresh review");
+    await label.click();
+    await expect.poll(() => captured).toBe(1);
+    await expect(label).toBeDisabled();
+    await seeded.client.setWorkspaceTitle(seeded.workspaceId, "Refreshed title during assignment");
+    await expect(row).toContainText("Refreshed title during assignment");
+    await expect(label).toBeDisabled();
+    expect(captured).toBe(1);
+    reject();
+    await expect(page.getByTestId("workspace-label-picker-error")).toHaveText(
+      "Refresh preserved failure",
+    );
+    await expectAssigned(page, "Refresh review", false);
+    await label.click();
+    await expectAssigned(page, "Refresh review", true);
+    await expect.poll(readWorkspaceLabels.bind(null, seeded)).toEqual(["Refresh review"]);
+  } finally {
+    await seeded.cleanup();
+  }
 });

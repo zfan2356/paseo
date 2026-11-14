@@ -12,7 +12,9 @@ import type {
   PluginCommandCenterItemContribution as SDKPluginCommandCenterItemContribution,
   PluginClientSlashCommandContribution as SDKPluginClientSlashCommandContribution,
   PluginComposerPillContribution as SDKPluginComposerPillContribution,
+  PluginComposerExtensionContribution,
   PluginSidebarContribution as SDKPluginSidebarContribution,
+  PluginSidebarViewContribution,
   PluginSidebarItemContribution as SDKPluginSidebarItemContribution,
   PluginScreenContribution as SDKPluginScreenContribution,
   PluginSettingsScreenContribution as SDKPluginSettingsScreenContribution,
@@ -32,7 +34,10 @@ type PluginSidebarContribution = SDKPluginSidebarContribution<PluginText>;
 type PluginSidebarItemContribution = SDKPluginSidebarItemContribution<PluginText>;
 type PluginScreenContribution = SDKPluginScreenContribution<PluginText>;
 type PluginSettingsScreenContribution = SDKPluginSettingsScreenContribution<PluginText>;
-type PluginWorkspacePanelContribution = SDKPluginWorkspacePanelContribution<PluginText>;
+type WorkspacePanelInput = SDKPluginWorkspacePanelContribution<PluginText>;
+type PluginWorkspacePanelContribution =
+  | (Extract<WorkspacePanelInput, { context?: "workspace" }> & { context: "workspace" })
+  | Extract<WorkspacePanelInput, { context: "agent" }>;
 
 export type PluginSidebarSection = "header" | "footer";
 
@@ -41,10 +46,12 @@ export type EvaluatedPluginWorkspacePanelContribution = PluginWorkspacePanelCont
 };
 
 export interface EvaluatedPlugin {
+  composerExtensions?: PluginComposerExtensionContribution[];
   id: string;
   cleanup: PluginCleanup;
   surfaces: PluginScreenContribution[];
   settingsScreens: PluginSettingsScreenContribution[];
+  sidebarViews: PluginSidebarViewContribution<PluginText>[];
   sidebarItems: Record<PluginSidebarSection, PluginSidebarItemContribution[]>;
   // COMPAT(pluginSidebarAliases): added in v0.11.0, remove after 2027-03-29
   /** `addSidebarItem` registrations, so `/plugin/<id>/sidebar/<item>` routes keep resolving. */
@@ -68,6 +75,8 @@ export interface InstalledPlugin extends EvaluatedPlugin {
   paseo: PaseoApi;
   /** Calls one of the plugin's server RPC methods on its host. */
   invoke(method: string, input: unknown): Promise<unknown>;
+  /** Subscribes to one of the plugin's server subscriptions; released with the lifetime. */
+  subscribe: import("@getpaseo/plugin/client/host").PluginSubscribe;
   serverId: string;
   requirements?: PluginRequirements;
   clientBundle: string;

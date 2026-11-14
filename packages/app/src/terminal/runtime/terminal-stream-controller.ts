@@ -1,5 +1,5 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import type { SubscribeTerminalRequest, TerminalState } from "@getpaseo/protocol/messages";
+import type { SubscribeTerminalRequest } from "@getpaseo/protocol/messages";
 import type { TerminalOutputData } from "./terminal-emulator-runtime";
 import { restoreSubscriptionSendsFrame } from "./terminal-restore-options";
 import { i18n } from "@/i18n/i18next";
@@ -24,9 +24,11 @@ export interface TerminalStreamControllerOptions {
   client: TerminalStreamControllerClient;
   getPreferredSize: () => TerminalStreamControllerSize | null;
   onOutput: (input: { terminalId: string; data: TerminalOutputData }) => void;
-  onSnapshot: (input: { terminalId: string; state: TerminalState }) => void;
   onExit?: (terminalId: string) => void;
-  onRestore?: (input: { terminalId: string; data: TerminalOutputData }) => void;
+  onReplay?: (input: {
+    terminalId: string;
+    replay: import("@getpaseo/client").TerminalReplayEvent;
+  }) => void;
   getRestoreOptions?: () => SubscribeTerminalRequest["restore"] | undefined;
   onStatusChange?: (status: TerminalStreamControllerStatus) => void;
 }
@@ -45,18 +47,12 @@ export class TerminalStreamController {
     if (this.disposed || event.terminalId !== this.terminalId) {
       return;
     }
-    if (event.type === "snapshot") {
-      this.options.onSnapshot({ terminalId: event.terminalId, state: event.state });
+    if (event.type === "replay") {
+      this.options.onReplay?.({ terminalId: event.terminalId, replay: event.replay });
+      if (event.replay.type === "end") this.finishRestoreAttach(event.terminalId);
       return;
     }
-    if (event.type === "restore") {
-      if (event.data.length > 0) {
-        this.options.onRestore?.({ terminalId: event.terminalId, data: event.data });
-      }
-      this.finishRestoreAttach(event.terminalId);
-      return;
-    }
-    if (event.data.length > 0) {
+    if (event.type === "output" && event.data.length > 0) {
       this.options.onOutput({ terminalId: event.terminalId, data: event.data });
     }
   };
@@ -67,17 +63,18 @@ export class TerminalStreamController {
     }
     const nextTerminalId = input.terminalId;
     this.terminalId = nextTerminalId;
+    this.awaitingRestore = false;
     void this.subscription?.release().catch(console.error);
     this.subscription = null;
     if (!nextTerminalId) {
       this.options.onStatusChange?.({ terminalId: null, isAttaching: false, error: null });
       return;
     }
-    const restore = this.options.getRestoreOptions?.();
-    this.awaitingRestore = restoreSubscriptionSendsFrame(restore);
     this.options.onStatusChange?.({ terminalId: nextTerminalId, isAttaching: true, error: null });
     let subscription: ReturnType<DaemonClient["observeTerminal"]>;
     try {
+      const restore = this.options.getRestoreOptions?.();
+      this.awaitingRestore = restoreSubscriptionSendsFrame(restore);
       const preferredSize = restore?.size ?? this.options.getPreferredSize();
       if (preferredSize)
         this.options.client.sendTerminalInput(nextTerminalId, {
@@ -140,6 +137,7 @@ export class TerminalStreamController {
 
   private failAttach(terminalId: string, error: unknown): void {
     this.terminalId = null;
+    this.awaitingRestore = false;
     void this.subscription?.release().catch(console.error);
     this.subscription = null;
     this.options.onStatusChange?.({

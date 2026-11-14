@@ -18,7 +18,8 @@ Code's own transcript folding — on both desktop and mobile.
 A **render-only projection** over the agent stream — canonical timeline data,
 fork context, pagination, and tool-call detail data are untouched:
 
-- `packages/app/src/agent-stream/intermediate-process/` (model + view) groups
+- Upstream `agent-stream/turn-collapse/model.ts` owns the grouping and
+  `turn-collapse/summary-line.tsx` owns the summary. Its process policy groups
   everything between the user message and the turn's final assistant answer:
   progress messages, reasoning, tool calls, todo lists.
 - Phase-scoped expansion: a live group is expanded by default; an explicit
@@ -37,6 +38,19 @@ fork context, pagination, and tool-call detail data are untouched:
 Upstream plugin timeline transforms run before intermediate-process folding;
 the folded result feeds the history window and render layout. Plugin-owned
 timeline items therefore keep their transforms instead of bypassing them.
+
+Collapse process is an explicit chat display mode and the fork default. Full
+now means unfolded chat. The old Full/Detailed choice migrates once to process
+folding; a later explicit Full choice survives reloads and unrelated saves.
+The upstream engine owns canonical turn boundaries, search-to-host mapping,
+reading-position replacements and virtualized rows in every collapse mode.
+Opening a process exposes ordinary rows rather than a second nested list.
+An automatic new turn cannot swallow the preceding turn's final answer.
+
+The November 8 upstream merge gives summaries their own virtualized rows.
+Process state travels on those rows, which reuse their identity while the
+work and expansion phase stay unchanged. Report badges use upstream's row
+disclosure hold so expanding them preserves the reader's position.
 
 The projection sits on top of stream virtualization, so item identity and
 tail/live-head boundary handling in `agent-stream/view.tsx` are the sensitive
