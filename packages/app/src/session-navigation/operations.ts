@@ -47,7 +47,6 @@ export function sessionOperationCapabilities({
     connected && contextReady && permitsSessionOperation(permissions, "workspace.manage");
   const canArchive =
     connected &&
-    contextReady &&
     (permitsSessionOperation(permissions, "workspace.write") ||
       permitsSessionOperation(permissions, "hub.execute"));
   const canRead =

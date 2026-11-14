@@ -176,7 +176,7 @@ export function SessionArchiveButton({
 }) {
   const { t } = useTranslation();
   const style = useMemo(() => [styles.archive, !visible && styles.hidden], [visible]);
-  const disabled = !visible || !actions.canArchive || actions.pending !== null;
+  const disabled = !actions.ready || !visible || !actions.canArchive || actions.pending !== null;
   return (
     <View style={style} pointerEvents={visible ? "auto" : "none"}>
       <SidebarRowArchiveButton

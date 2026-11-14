@@ -244,9 +244,11 @@ const SessionRow = memo(function SessionRow({
   activeDirectoryPath,
   permissions,
   labelCreateSupported,
+  actionsReady,
 }: {
   permissions: import("@/stores/session-store").DaemonServerInfo["permissions"];
   labelCreateSupported: boolean;
+  actionsReady: boolean;
   selected: boolean;
   activeDirectoryPath?: string;
   shortcutNumber?: number;
@@ -323,7 +325,7 @@ const SessionRow = memo(function SessionRow({
   const markRead = useCallback(() => mutation.mutate({ kind: "read" }), [mutation]);
   const actions = useMemo<SessionMenuActions>(
     () => ({
-      ready: context !== null,
+      ready: actionsReady,
       canWrite,
       canManage,
       canArchive,
@@ -343,6 +345,7 @@ const SessionRow = memo(function SessionRow({
       canArchive,
       canRead,
       context,
+      actionsReady,
       pending,
       renameSession,
       togglePin,
@@ -838,6 +841,7 @@ function ProjectedSessionRow({
       supported={hostActions.supported === true}
       permissions={hostActions.permissions}
       labelCreateSupported={hostActions.labelCreateSupported}
+      actionsReady={hostActions.supported === false || snapshot !== undefined}
       projects={projects}
       dismiss={dismiss}
       hostBadge={model.badges.get(agent.serverId)}

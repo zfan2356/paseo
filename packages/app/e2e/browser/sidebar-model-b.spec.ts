@@ -1040,13 +1040,18 @@ async function sessionMutationProbe(page: Page) {
   let offline = false;
   let permissionsOverride: ServerInfoStatusPayload["permissions"] | null = null;
   let labelCreateOverride: boolean | null = null;
+  let contextSupportedOverride: boolean | null = null;
+  let contextReadsFail = false;
   function withOverrides(info: ServerInfoStatusPayload): ServerInfoStatusPayload {
+    const features = {
+      ...info.features,
+      ...(labelCreateOverride === null ? {} : { workspaceLabelCreate: labelCreateOverride }),
+      ...(contextSupportedOverride === null ? {} : { sessionContext: contextSupportedOverride }),
+    };
     return {
       ...info,
       ...(permissionsOverride === null ? {} : { permissions: permissionsOverride }),
-      ...(labelCreateOverride === null
-        ? {}
-        : { features: { ...info.features, workspaceLabelCreate: labelCreateOverride } }),
+      features,
     };
   }
   const sockets = new Set<WebSocketRoute>();
@@ -1059,8 +1064,11 @@ async function sessionMutationProbe(page: Page) {
     const server = browser.connectToServer();
     browser.onMessage((frame) => {
       const message = readers.client(frame);
+      const contextFailure = contextReadsFail && message?.type === "agent.context.get.request";
+      const failRequest = contextFailure || message?.type === failType;
       if (
-        message?.type === failType &&
+        failRequest &&
+        message &&
         "requestId" in message &&
         typeof message.requestId === "string"
       ) {
@@ -1105,6 +1113,12 @@ async function sessionMutationProbe(page: Page) {
     },
     oldLabelsOnReconnect() {
       labelCreateOverride = false;
+    },
+    disableContextOnReconnect() {
+      contextSupportedOverride = false;
+    },
+    failContextReads() {
+      contextReadsFail = true;
     },
     disconnect() {
       offline = true;
@@ -1376,3 +1390,69 @@ test("session card authoritative archive survives a delayed RPC error and remain
     await mock.cleanup();
   }
 });
+
+const unavailableContextCases = [
+  {
+    state: "unsupported",
+    configure: "disableContextOnReconnect",
+    hint: /to use session directories/,
+  },
+  { state: "error", configure: "failContextReads", hint: /Session operation rejected for test/ },
+] as const;
+
+for (const scenario of unavailableContextCases) {
+  test(`session card ${scenario.state} context preserves basic session actions`, async ({
+    page,
+  }, info) => {
+    test.setTimeout(90_000);
+    page.setDefaultTimeout(15_000);
+    const mock = await seedMockAgentWorkspace({
+      repoPrefix: `session-card-context-${scenario.state}-`,
+      title: "Basic session actions",
+    });
+    try {
+      const probe = await sessionMutationProbe(page);
+      probe[scenario.configure]();
+      await page.setViewportSize({ width: 1200, height: 1000 });
+      await openAgentRoute(page, mock);
+      const row = page.getByTestId(`session-row-${mock.agentId}`).filter({ visible: true });
+      await expect(row).toBeVisible();
+      await expect(page.getByText(scenario.hint).filter({ visible: true }).first()).toBeVisible();
+      const trigger = row.getByRole("button", { name: "Session menu", exact: true });
+      await expect(trigger).toBeEnabled({ timeout: 5000 });
+      await trigger.click();
+      for (const id of ["rename", "read", "archive"])
+        await expect(page.getByTestId(`session-menu-${id}`)).toBeEnabled();
+      for (const id of ["pin", "labels"])
+        await expect(page.getByTestId(`session-menu-${id}`)).toBeDisabled();
+      await expectSessionMenuSettled(page.getByTestId("session-menu-archive"));
+      await page.screenshot({
+        path: info.outputPath(`session-context-${scenario.state}-1200.png`),
+        fullPage: true,
+      });
+      await page.getByRole("menuitem", { name: "Rename session", exact: true }).click();
+      await page.getByTestId("session-rename-input").fill(`${scenario.state} renamed session`);
+      await page.getByTestId("session-rename-submit").click();
+      await expect(row).toContainText(`${scenario.state} renamed session`);
+      await trigger.click();
+      await page.getByTestId("session-menu-read").click();
+      await expect(page.getByText("Session marked as read", { exact: true })).toBeVisible();
+      await row
+        .getByRole("button", { name: new RegExp(`${scenario.state} renamed session`) })
+        .hover();
+      await row.getByTestId("session-hover-archive").click();
+      await expect(row).toHaveCount(0);
+      await expect
+        .poll(() => mock.client.fetchAgent({ agentId: mock.agentId }))
+        .toMatchObject({ agent: { archivedAt: expect.any(String) } });
+      await expect(mock.client.fetchWorkspaces()).resolves.toMatchObject({
+        entries: expect.arrayContaining([expect.objectContaining({ id: mock.workspaceId })]),
+      });
+    } catch (error) {
+      await captureSessionFailure(page, info);
+      throw error;
+    } finally {
+      await mock.cleanup();
+    }
+  });
+}
