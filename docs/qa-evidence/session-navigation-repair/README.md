@@ -1,6 +1,6 @@
 # Session navigation repair (WORK-374)
 
-PR: <https://github.com/zfan2356/paseo/pull/13>. Base: `9d403c2b0b18b573eb6e12940a051b5cb72fdde5`. Contract v3.
+Implementation: [PR #13](https://github.com/zfan2356/paseo/pull/13), merged as `dbd5138f1c4ea0e7ff66a5211a0c5575270cdcba`. Sidebar evidence follow-up: <https://github.com/zfan2356/paseo/pull/14>. Contract v3.
 
 Sessions and Directories and terminals switch at the top and each own the list area. Pinned sessions have one independent, ordered, collapsible section, subject to the same filters as ordinary sessions. Main-checkout and linked-worktree sessions default to the primary repository project; explicit project choices and execution cwd stay independent. The composer folder button shows a short distinct name and reveals the full execution path on click or desktop hover.
 
@@ -32,10 +32,12 @@ The combination creates a primary checkout on `trunk` with no remote, two extern
 | Compact execution folder button         | [1200px](execution-directory-1200.png)         | [390px](execution-directory-390.png)         |
 | Execution path on click                 | [1200px](execution-directory-details-1200.png) | [390px](execution-directory-details-390.png) |
 
-[Desktop hover](execution-directory-hover-1200.png) also exposes the full execution path. Captures were inspected after modal close settled, with pins collapsed for the repository-group captures.
+[Desktop hover](execution-directory-hover-1200.png) also exposes the full execution path. The sidebar captures require the full list, both top segments, the Pinned title and the New workspace button/icon to be inside the viewport. Six consecutive animation frames then confirm identical list geometry at the left anchor `x = 0`. [Wide geometry](sidebar-geometry-1200.json) and [narrow geometry](sidebar-geometry-390.json) preserve the opening bounds and settled samples. The sidebars in both Pinned captures were visually checked, including their left edges. Directory details wait for a settled, fully visible path; repository-group captures collapse pins.
+
+The [prior narrow capture](https://github.com/zfan2356/paseo/blob/25a452dfacc95f05ff78b0a74f823804c982a632/docs/qa-evidence/session-navigation-repair/pinned-sessions-390.png) caught the overlay moving into place. The same scenario with the geometry assertions shows the complete panel at rest. This correction changes the test and evidence; production layout remains unchanged from `25a452df`.
 
 ## Compatibility and coverage
 
 The accepted legacy assignment boundary is defined in [the session navigation design](../../session-context.md). You can select a project or ungroup a session from its session settings; later automatic reads preserve that choice.
 
-Native iOS/Android and packaged Electron were not exercised. Narrow-browser evidence proves the compact web flow. No full local test suite, merge, deployment or production daemon restart was performed. Independent review is recorded on WORK-380 and PR #13 for the delivered revision. Remote CI is blocked: explicit workflow dispatch returned HTTP 422, `Actions has been disabled for this repository`; the branch has no checks or runs. See [remote CI output](remote-ci.txt). Multica PR-card association returned 404 twice because PR #13 has not been synced into the platform index; the GitHub PR exists and is Ready.
+Native iOS/Android and packaged Electron were not exercised. Narrow-browser evidence proves the compact web flow. No full local test suite, merge, deployment or production daemon restart was performed. Independent review is recorded on WORK-380 and the evidence follow-up PR for the delivered revision. Remote CI is blocked: explicit workflow dispatch returned HTTP 422, `Actions has been disabled for this repository`; the branch has no checks or runs. See [remote CI output](remote-ci.txt). Multica PR-card association returned 404 for the implementation PR because it has not been synced into the platform index. The follow-up PR records its current association status separately.

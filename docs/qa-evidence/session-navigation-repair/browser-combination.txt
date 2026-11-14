@@ -2,25 +2,25 @@
 > @getpaseo/app@0.15.3 test:e2e
 > playwright test --project=browser --config playwright.work-374.config.ts e2e/browser/sidebar-model-b.spec.ts --grep restores nine
 
-(node:4080941) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:67293) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 [metro] Skipping web setup: EXPO_NO_WEB_SETUP is enabled.
 [metro] Using src/app as the root directory for Expo Router.
-[metro] Waiting on http://localhost:36023
+[metro] Waiting on http://localhost:37469
 [metro] Logs for your project will appear below.
-[metro] Web Bundled 4847ms packages/app/index.ts (5893 modules)
-[e2e] Metro warmed on port 36023
+[metro] Web Bundled 5029ms packages/app/index.ts (5893 modules)
+[e2e] Metro warmed on port 37469
 
 Running 1 test using 1 worker
 
-(node:4084558) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(node:70798) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:4084558) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
-(node:4084558) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(node:70798) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:70798) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
-[e2e] Worker 0 daemon started on port 41717, home: /tmp/multica-task-1839065999/paseo-e2e-worker-0-rdJSrP
-[metro] Web Bundled 255ms packages/app/index.ts (1 module)
-[metro] Web Bundled 75ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[e2e] Worker 0 daemon started on port 45453, home: /tmp/multica-task-3004329929/paseo-e2e-worker-0-Ytlo7Y
+[metro] Web Bundled 350ms packages/app/index.ts (1 module)
+[metro] Web Bundled 66ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
 [metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
 [metro] Web  LOG  Running application "main" with appParams:
 [metro]  {"hydrate": undefined, "rootTag": "#root"} 
@@ -50,8 +50,8 @@ Running 1 test using 1 worker
 [metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
 [metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
 [metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
-[metro] Web Bundled 258ms packages/app/index.ts (1 module)
-[metro] Web Bundled 5ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web Bundled 283ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
 [metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
 [metro] Web  LOG  Running application "main" with appParams:
 [metro]  {"hydrate": undefined, "rootTag": "#root"} 
@@ -82,8 +82,8 @@ Running 1 test using 1 worker
 [metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
 [metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
 
-  ✓  1 [browser] › e2e/browser/sidebar-model-b.spec.ts:381:5 › session navigation restores nine pins and swaps complete lists without changing execution (26.9s)
+  ✓  1 [browser] › e2e/browser/sidebar-model-b.spec.ts:408:5 › session navigation restores nine pins and swaps complete lists without changing execution (29.6s)
 [e2e] Worker 0 daemon stopped
 [e2e] Metro stopped
 
-  1 passed (54.8s)
+  1 passed (58.3s)
