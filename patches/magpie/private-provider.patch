@@ -1,0 +1,955 @@
+diff --git a/docs/subsystems/README.md b/docs/subsystems/README.md
+index b9cbfb2..e222658 100644
+--- a/docs/subsystems/README.md
++++ b/docs/subsystems/README.md
+@@ -11,6 +11,7 @@ These pages describe current responsibilities, runtime paths, state, and contrac
+ | Plugins that await context recall and observe completed replies | [Asynchronous gateway request hooks](gateway-request-hooks.md) |
+ | Claude subscription turns across Claude Code runs | [Claude subscription bridge](claude-subscription-bridge.md) |
+ | How the gateway picks a provider, key or account, and falls back | [Gateway routing and fallback](gateway-routing.md) |
++| Bearer providers whose endpoints and credentials stay in a local YAML file | [Host-local provider configuration](private-provider.md) |
+ | Gateway Session Aggregation | [Gateway Session Aggregation](gateway-sessions.md) |
+ | Connecting an agent's config to the gateway, drift, disconnect, WSL twins | [Agent wiring](agent-wiring.md) |
+ | Providers, keys, subscription accounts, refresh and allowance | [Providers and accounts](providers-accounts.md) |
+diff --git a/docs/subsystems/private-provider.md b/docs/subsystems/private-provider.md
+new file mode 100644
+index 0000000..cc73e6b
+--- /dev/null
++++ b/docs/subsystems/private-provider.md
+@@ -0,0 +1,49 @@
++# Host-local provider configuration
++
++A plain provider may set `privateConfig` to an absolute YAML path or a path
++starting with `~/`. The provider's ordinary protocol URLs remain logical bases;
++the private file replaces their destinations at signing time. Only the file
++reference is serialized. Credentials and destinations are not copied into
++providers.json, GUI payloads, sync or source control. The file must be regular,
++at most 1 MiB and owner-only on Unix. Unknown fields, missing files and malformed
++files fail closed. Windows owners must enforce equivalent ACLs themselves.
++
++```yaml
++bearer: REPLACE_LOCALLY
++headers:
++  X-Source: local-tag
++endpoints:
++  chat: https://api.example.invalid/external
++  responses: https://api.example.invalid/external
++  anthropic: https://api.example.invalid/messages-api
++normalize_errors: true
++model_apis:
++  - prefix: alternate-
++    protocol: chat
++exclude_models: []
++```
++
++Each endpoint is a base before its protocol's usual suffix. For example,
++`chat` gets `/chat/completions` and `responses` gets `/responses`. The model
++list uses `/models` on the chat base, or the Responses base if chat is absent.
++The first matching model prefix selects its upstream protocol. The gateway
++still translates requests and replies. Keep one credential per private file;
++this adapter does not implement HMAC or a second account pool.
++
++`private_config.go` owns validation, request signing and direct transport.
++Redirects are returned without following them. A failed transport does not
++expose its private URL in the error. Files are read on each signing attempt,
++so credential rotation does not require a restart. Model refresh uses the same
++authentication and catalog pagination; excluded models are removed before saving.
++
++`private_errors.go` optionally normalizes wrapped HTTP/SSE error objects and
++turns an unfinished Responses stream into an explicit failure. This adapter
++does not retry, buffer whole generations or execute tools. The existing gateway
++owns retries, cooldowns, output commitment, cancellation and route tracing.
++The numeric status of a normalized SSE error participates in that classification.
++The adapter supports Bearer authentication only; do not point it at another
++authentication scheme or assume a server-side search bridge is provided.
++
++Verification: `TestPrivate*` in `internal/provider` and `internal/gateway`
++covers private serialization, permissions, redirects, cancellation, model
++pagination, credential rotation, wrapped errors and the replay boundary.
+diff --git a/internal/catalog/live.go b/internal/catalog/live.go
+index cc8671c..f7c217d 100644
+--- a/internal/catalog/live.go
++++ b/internal/catalog/live.go
+@@ -397,7 +397,12 @@ func Versioned(base string) bool {
+ 
+ // FetchURL asks for the model list at exactly url.
+ func FetchURL(ctx context.Context, url, key string, anthropic bool, headers map[string]string) ([]Model, error) {
+-	ms, err := fetchOne(ctx, strings.TrimSpace(url), key, anthropic, headers)
++	return FetchURLWithClient(ctx, url, key, anthropic, headers, http.DefaultClient)
++}
++
++// FetchURLWithClient keeps catalog parsing and pagination on a caller's transport.
++func FetchURLWithClient(ctx context.Context, url, key string, anthropic bool, headers map[string]string, client *http.Client) ([]Model, error) {
++	ms, err := fetchOneWithClient(ctx, strings.TrimSpace(url), key, anthropic, headers, client)
+ 	if err == nil && len(ms) == 0 {
+ 		err = errors.New(url + ": no models listed")
+ 	}
+@@ -420,11 +425,15 @@ const PageLimit = 1000
+ // page — a base whose only list is a paged one (Anthropic's own) has no
+ // other answer to fall back on, and was left with none (#1006).
+ func fetchOne(ctx context.Context, url, key string, anthropic bool, headers map[string]string) ([]Model, error) {
++	return fetchOneWithClient(ctx, url, key, anthropic, headers, http.DefaultClient)
++}
++
++func fetchOneWithClient(ctx context.Context, url, key string, anthropic bool, headers map[string]string, client *http.Client) ([]Model, error) {
+ 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+ 	defer cancel()
+ 	var out []Model
+ 	err := Paged(url, func(at string) (bool, string, error) {
+-		ms, more, last, err := fetchPage(ctx, at, key, anthropic, headers)
++		ms, more, last, err := fetchPageWithClient(ctx, at, key, anthropic, headers, client)
+ 		if err != nil {
+ 			return false, "", err
+ 		}
+@@ -493,6 +502,10 @@ func Paged(list string, page func(at string) (more bool, last string, err error)
+ // time a whole list may take (fetchOne), and which key header to ask with
+ // is learned once and kept for the list that learned it (listAuth).
+ func fetchPage(ctx context.Context, url, key string, anthropic bool, headers map[string]string) ([]Model, bool, string, error) {
++	return fetchPageWithClient(ctx, url, key, anthropic, headers, http.DefaultClient)
++}
++
++func fetchPageWithClient(ctx context.Context, url, key string, anthropic bool, headers map[string]string, client *http.Client) ([]Model, bool, string, error) {
+ 	auth := listAuthOf(ctx)
+ 	ask := func(only string) (*http.Response, []byte, error) {
+ 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+@@ -515,7 +528,7 @@ func fetchPage(ctx context.Context, url, key string, anthropic bool, headers map
+ 		for k, v := range headers {
+ 			PutUserHeader(req.Header, k, v)
+ 		}
+-		res, err := http.DefaultClient.Do(req)
++		res, err := client.Do(req)
+ 		if err != nil {
+ 			return nil, nil, err
+ 		}
+diff --git a/internal/gateway/fallback.go b/internal/gateway/fallback.go
+index e127f39..2335f4f 100644
+--- a/internal/gateway/fallback.go
++++ b/internal/gateway/fallback.go
+@@ -3209,6 +3209,12 @@ func refusedReply(b []byte) (string, bool) {
+ // streamStatus is the status an error in a stream stands for, as a vendor
+ // would have answered it before streaming.
+ func streamStatus(msg string) int {
++	var structured struct {
++		Status int `json:"status"`
++	}
++	if json.Unmarshal([]byte(msg), &structured) == nil && structured.Status >= 400 && structured.Status <= 599 && !tooLong(http.StatusBadRequest, msg) {
++		return structured.Status
++	}
+ 	l := strings.ToLower(msg)
+ 	switch {
+ 	case tooLong(http.StatusBadRequest, msg):
+diff --git a/internal/gateway/private_provider_test.go b/internal/gateway/private_provider_test.go
+new file mode 100644
+index 0000000..d8eebfd
+--- /dev/null
++++ b/internal/gateway/private_provider_test.go
+@@ -0,0 +1,90 @@
++package gateway
++
++import (
++	"fmt"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/yetone/magpie/internal/provider"
++)
++
++func privateGatewayProvider(t *testing.T, id string, upstream *scripted) {
++	t.Helper()
++	server := httptest.NewServer(upstream)
++	t.Cleanup(server.Close)
++	path := filepath.Join(t.TempDir(), "provider.yaml")
++	config := "bearer: fixture-only\nnormalize_errors: true\nendpoints:\n  responses: " + server.URL + "/external\n"
++	if err := os.WriteFile(path, []byte(config), 0600); err != nil {
++		t.Fatal(err)
++	}
++	if err := provider.Save(provider.Provider{ID: id, Name: id, Key: "local-placeholder", PrivateConfig: path, Responses: "https://example.invalid/v1", Models: []string{"m"}}); err != nil {
++		t.Fatal(err)
++	}
++}
++
++func TestPrivateProviderGatewayReplayBoundary(t *testing.T) {
++	lead := "data: {\"type\":\"response.created\",\"response\":{\"id\":\"r\"}}\n\n"
++	content := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"keep this output\"}\n\n"
++	errEvent := "data: {\"type\":\"error\",\"error\":{\"message\":\"Error code: 503 - {'error': {'message': 'busy'}}\"}}\n\n"
++	good := content + "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"status\":\"completed\"}}\n\n"
++	for _, tc := range []struct {
++		name, first string
++		fallback    bool
++	}{
++		{"prelude-error", lead + errEvent, true},
++		{"prelude-eof", lead, true},
++		{"output-error", lead + content + errEvent, false},
++		{"output-eof", lead + content, false},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			fresh(t)
++			a := &scripted{replies: []reply{{200, "text/event-stream", tc.first}}}
++			b := &scripted{replies: []reply{{200, "text/event-stream", good}}}
++			privateGatewayProvider(t, "a", a)
++			privateGatewayProvider(t, "b", b)
++			if err := provider.SaveGroup(provider.Group{Name: "Private", Members: []string{"a/m", "b/m"}, Routing: provider.Ordered}); err != nil {
++				t.Fatal(err)
++			}
++			rec := httptest.NewRecorder()
++			New().Handler().ServeHTTP(rec, httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{"model":"group/private","stream":true,"input":"hi"}`)))
++			if rec.Code != 200 || a.n != 1 || (b.n == 1) != tc.fallback || !strings.Contains(rec.Body.String(), "keep this output") {
++				t.Fatalf("status=%d a=%d b=%d body=%s", rec.Code, a.n, b.n, rec.Body)
++			}
++		})
++	}
++}
++
++func TestPrivateProviderGatewayErrorClassification(t *testing.T) {
++	for _, status := range []int{400, 401, 429, 503} {
++		if got := streamStatus(`{"status":` + fmt.Sprint(status) + `,"message":"wrapped failure"}`); got != status {
++			t.Fatalf("status: %d != %d", got, status)
++		}
++	}
++}
++
++func TestPrivateProviderGatewayRateAndInvalidRequest(t *testing.T) {
++	fresh(t)
++	good := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"done\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"
++	a := &scripted{replies: []reply{{429, "application/json", `{"error":{"message":"Error code: 429 - {'error': {'message': 'rate limited'}}"}}`}, {200, "text/event-stream", good}}, limited: http.Header{"Retry-After": []string{"1"}}}
++	privateGatewayProvider(t, "a", a)
++	s := New()
++	start := time.Now()
++	rec := httptest.NewRecorder()
++	s.Handler().ServeHTTP(rec, httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{"model":"a/m","stream":true,"input":"hi"}`)))
++	if a.n != 2 || time.Since(start) < time.Second || !strings.Contains(rec.Body.String(), "done") {
++		t.Fatalf("retry: attempts=%d body=%s", a.n, rec.Body)
++	}
++	fresh(t)
++	a = &scripted{replies: []reply{{500, "application/json", `{"error":{"message":"Error code: 400 - {'error': {'message': 'bad argument', 'type': 'invalid_request_error'}}"}}`}}}
++	privateGatewayProvider(t, "a", a)
++	rec = httptest.NewRecorder()
++	New().Handler().ServeHTTP(rec, httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{"model":"a/m","stream":true,"input":"hi"}`)))
++	if a.n != 1 || rec.Code != 400 {
++		t.Fatalf("invalid request: attempts=%d status=%d body=%s", a.n, rec.Code, rec.Body)
++	}
++}
+diff --git a/internal/gui/private_provider_test.go b/internal/gui/private_provider_test.go
+new file mode 100644
+index 0000000..26e8732
+--- /dev/null
++++ b/internal/gui/private_provider_test.go
+@@ -0,0 +1,39 @@
++package gui
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/yetone/magpie/internal/provider"
++)
++
++func TestPrivateProviderReferenceSurvivesWebSave(t *testing.T) {
++	t.Setenv("HOME", t.TempDir())
++	t.Setenv("USERPROFILE", os.Getenv("HOME"))
++	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
++	t.Setenv("XDG_CACHE_HOME", t.TempDir())
++	path := filepath.Join(t.TempDir(), "private.yaml")
++	if err := provider.Save(provider.Provider{ID: "relay", Name: "Relay", Chat: "https://example.invalid/v1", Key: "placeholder", PrivateConfig: path, Models: []string{"m"}}); err != nil {
++		t.Fatal(err)
++	}
++	mux := http.NewServeMux()
++	providerRoutes(mux, nil)
++	w := httptest.NewRecorder()
++	mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/provider/save", strings.NewReader(`{"id":"relay","from":"relay","name":"Renamed","chat":"https://example.invalid/v1","models":["m"]}`)))
++	if w.Code != 200 {
++		t.Fatalf("save: %d %s", w.Code, w.Body)
++	}
++	p, err := provider.Find("relay")
++	if err != nil || p.PrivateConfig != path {
++		t.Fatal("web save dropped private reference")
++	}
++	w = httptest.NewRecorder()
++	mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/providers", nil))
++	if strings.Contains(w.Body.String(), path) {
++		t.Fatal("web response exposed the local config path")
++	}
++}
+diff --git a/internal/gui/providers.go b/internal/gui/providers.go
+index 9408676..b2bce33 100644
+--- a/internal/gui/providers.go
++++ b/internal/gui/providers.go
+@@ -1615,7 +1615,8 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
+ 					// its list's schedule and rules are set on their own, from
+ 					// the CLI (#2135)
+ 					in.RefreshEvery, in.AutoInclude = old.RefreshEvery, old.AutoInclude
+-					in.KeepLogin = old.KeepLogin // set on its own, with keeplogin
++					in.KeepLogin = old.KeepLogin         // set on its own, with keeplogin
++					in.PrivateConfig = old.PrivateConfig // host-local; not edited by the web form
+ 					in.KeepLoginAs = old.KeepLoginAs
+ 					in.SwitchOnly = old.SwitchOnly
+ 					in.Off = old.Off // and this with off and on
+diff --git a/internal/provider/account.go b/internal/provider/account.go
+index 56372d4..ce31af7 100644
+--- a/internal/provider/account.go
++++ b/internal/provider/account.go
+@@ -119,6 +119,15 @@ type Account struct {
+ // the provider speaks may be tried. One the user set for the model
+ // (SetModelAPI) is the only one.
+ func (p Provider) APIs(model string) []Protocol {
++	if p.PrivateConfig != "" {
++		if cfg, err := p.privateSettings(); err == nil {
++			for _, rule := range cfg.ModelAPIs {
++				if strings.HasPrefix(model, rule.Prefix) {
++					return []Protocol{rule.Protocol}
++				}
++			}
++		}
++	}
+ 	// the one the user said it is asked on, whatever the list says
+ 	if proto, ok := p.ModelAPI(model); ok {
+ 		return []Protocol{proto}
+@@ -183,6 +192,9 @@ func (p Provider) ListedAPIs(model string) []Protocol {
+ // Sign authenticates a request to the provider, refreshing what needs it.
+ // Plain providers get their key; accounts get the agent's tokens.
+ func (p Provider) Sign(ctx context.Context, req *http.Request, proto Protocol, body []byte) error {
++	if p.PrivateConfig != "" {
++		return p.signPrivate(req, proto)
++	}
+ 	if p.Account != nil && settings.AccountDiscoveryOff() {
+ 		return errAccountDiscoveryOff
+ 	}
+diff --git a/internal/provider/models.go b/internal/provider/models.go
+index ff394a8..c052c82 100644
+--- a/internal/provider/models.go
++++ b/internal/provider/models.go
+@@ -357,6 +357,13 @@ func relistPicks(q *Provider, now map[string]bool) bool {
+ 
+ // fetch is Fetch without the picks looked after.
+ func (p Provider) fetch(ctx context.Context) ([]catalog.Model, error) {
++	if p.PrivateConfig != "" {
++		ms, err := p.listPrivate(ctx)
++		if err != nil {
++			return nil, err
++		}
++		return catalog.Chat(ms), catalog.SaveLive(p.ID, p.Chat, ms)
++	}
+ 	ctx = p.Via(ctx)
+ 	if p.DecideOnly() {
+ 		return p.fetchDecide(ctx)
+@@ -407,6 +414,9 @@ func (p Provider) fetch(ctx context.Context) ([]catalog.Model, error) {
+ // nothing: a provider still being added (#578, the add form's Fetch models)
+ // is shown its vendor's list to pick from before it is saved.
+ func (p Provider) List(ctx context.Context) ([]catalog.Model, error) {
++	if p.PrivateConfig != "" {
++		return p.listPrivate(ctx)
++	}
+ 	ctx = p.Via(ctx)
+ 	if pr := Preset(p.Preset); pr != nil && pr.NoList && strings.TrimSpace(p.ModelsURL) == "" && !p.listRegion(pr) {
+ 		return catalog.Chat(p.planModels(nil)), nil
+diff --git a/internal/provider/plugins.go b/internal/provider/plugins.go
+index 96dc33c..6f65a96 100644
+--- a/internal/provider/plugins.go
++++ b/internal/provider/plugins.go
+@@ -645,6 +645,9 @@ func firstOf(ss ...string) string {
+ // plugin's), the client the account asks for this request when it asks
+ // for one (ZCode's Start Plan: zcodeStartClient), and client otherwise.
+ func (p Provider) Do(client *http.Client, req *http.Request) (*http.Response, error) {
++	if p.PrivateConfig != "" {
++		return p.doPrivate(client, req)
++	}
+ 	if p.Account != nil && p.Account.transport != nil {
+ 		return p.Account.transport(req)
+ 	}
+diff --git a/internal/provider/private_config.go b/internal/provider/private_config.go
+new file mode 100644
+index 0000000..d88bdef
+--- /dev/null
++++ b/internal/provider/private_config.go
+@@ -0,0 +1,206 @@
++package provider
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"io"
++	"net/http"
++	"net/url"
++	"os"
++	"path/filepath"
++	"runtime"
++	"slices"
++	"strings"
++
++	"github.com/yetone/magpie/internal/catalog"
++	"gopkg.in/yaml.v3"
++)
++
++type privateConfig struct {
++	Endpoints       map[Protocol]string `yaml:"endpoints"`
++	Bearer          string              `yaml:"bearer"`
++	Headers         map[string]string   `yaml:"headers"`
++	NormalizeErrors bool                `yaml:"normalize_errors"`
++	ExcludeModels   []string            `yaml:"exclude_models"`
++	ModelAPIs       []struct {
++		Prefix   string   `yaml:"prefix"`
++		Protocol Protocol `yaml:"protocol"`
++	} `yaml:"model_apis"`
++}
++
++type privateRequestKey struct{}
++
++type privateListTransport struct {
++	provider Provider
++	protocol Protocol
++}
++
++func (t privateListTransport) RoundTrip(req *http.Request) (*http.Response, error) {
++	req = req.Clone(req.Context())
++	if err := t.provider.Sign(req.Context(), req, t.protocol, nil); err != nil {
++		return nil, err
++	}
++	return t.provider.Do(http.DefaultClient, req)
++}
++
++func (p Provider) listPrivate(ctx context.Context) ([]catalog.Model, error) {
++	cfg, err := p.privateSettings()
++	if err != nil {
++		return nil, err
++	}
++	proto := Chat
++	if p.Chat == "" {
++		proto = Responses
++	}
++	if p.Base(proto) == "" || cfg.Endpoints[proto] == "" {
++		return nil, errPrivateConfig
++	}
++	client := &http.Client{Transport: privateListTransport{p, proto}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
++	ms, err := catalog.FetchURLWithClient(ctx, strings.TrimRight(p.Base(proto), "/")+"/models", "", false, nil, client)
++	if err != nil {
++		return nil, errors.New("private provider model list could not be read")
++	}
++	ms = slices.DeleteFunc(ms, func(m catalog.Model) bool { return slices.Contains(cfg.ExcludeModels, m.ID) })
++	return catalog.Chat(ms), nil
++}
++
++// Errors must not contain YAML values, filenames or upstream addresses.
++var errPrivateConfig = errors.New("private provider configuration is missing, invalid, or not owner-only")
++
++func (p Provider) privateSettings() (*privateConfig, error) {
++	path := p.PrivateConfig
++	if strings.HasPrefix(path, "~/") {
++		home, err := os.UserHomeDir()
++		if err != nil {
++			return nil, errPrivateConfig
++		}
++		path = filepath.Join(home, path[2:])
++	}
++	if !filepath.IsAbs(path) || p.Account != nil || len(p.Keys) != 0 {
++		return nil, errPrivateConfig
++	}
++	f, err := os.Open(path)
++	if err != nil {
++		return nil, errPrivateConfig
++	}
++	defer f.Close()
++	info, err := f.Stat()
++	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 || runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
++		return nil, errPrivateConfig
++	}
++	var cfg privateConfig
++	d := yaml.NewDecoder(io.LimitReader(f, 1<<20))
++	d.KnownFields(true)
++	if d.Decode(&cfg) != nil || cfg.Bearer == "" || strings.ContainsAny(cfg.Bearer, " \t\r\n") {
++		return nil, errPrivateConfig
++	}
++	var extra any
++	if d.Decode(&extra) != io.EOF {
++		return nil, errPrivateConfig
++	}
++	for proto, endpoint := range cfg.Endpoints {
++		if proto != Chat && proto != Responses && proto != Anthropic {
++			return nil, errPrivateConfig
++		}
++		u, err := url.Parse(endpoint)
++		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
++			return nil, errPrivateConfig
++		}
++	}
++	for k, v := range cfg.Headers {
++		if !privateHeader(k) || strings.ContainsAny(v, "\r\n") {
++			return nil, errPrivateConfig
++		}
++	}
++	for _, rule := range cfg.ModelAPIs {
++		if rule.Prefix == "" || cfg.Endpoints[rule.Protocol] == "" {
++			return nil, errPrivateConfig
++		}
++	}
++	return &cfg, nil
++}
++
++func privateHeader(k string) bool {
++	if k == "" {
++		return false
++	}
++	for _, c := range k {
++		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", c)) {
++			return false
++		}
++	}
++	switch strings.ToLower(k) {
++	case "authorization", "x-api-key", "host", "content-length", "transfer-encoding", "connection", "proxy-authorization":
++		return false
++	}
++	return true
++}
++
++func (p Provider) signPrivate(req *http.Request, proto Protocol) error {
++	cfg, err := p.privateSettings()
++	if err != nil {
++		return err
++	}
++	base, err := url.Parse(p.Base(proto))
++	if err != nil || base.Host != req.URL.Host || base.Scheme != req.URL.Scheme || cfg.Endpoints[proto] == "" {
++		return errPrivateConfig
++	}
++	prefix := strings.TrimRight(base.Path, "/") + "/"
++	if !strings.HasPrefix(req.URL.Path, prefix) {
++		return errPrivateConfig
++	}
++	u, err := url.Parse(strings.TrimRight(cfg.Endpoints[proto], "/") + "/" + strings.TrimPrefix(req.URL.Path, prefix))
++	if err != nil {
++		return errPrivateConfig
++	}
++	u.RawQuery = req.URL.RawQuery
++	req.URL, req.Host = u, ""
++	req.Header.Del("Authorization")
++	req.Header.Del("X-Api-Key")
++	req.Header.Set("Authorization", "Bearer "+cfg.Bearer)
++	for k, v := range cfg.Headers {
++		req.Header.Set(k, v)
++	}
++	*req = *req.WithContext(context.WithValue(req.Context(), privateRequestKey{}, cfg))
++	return nil
++}
++
++func (p Provider) doPrivate(client *http.Client, req *http.Request) (*http.Response, error) {
++	cfg, ok := req.Context().Value(privateRequestKey{}).(*privateConfig)
++	if !ok {
++		return nil, errPrivateConfig
++	}
++	// A redirect must never carry private authentication to a different endpoint.
++	c := *client
++	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
++	res, err := c.Do(req)
++	if err != nil {
++		if req.Context().Err() != nil {
++			return nil, req.Context().Err()
++		}
++		return nil, errors.New("private provider transport failed")
++	}
++	if !cfg.NormalizeErrors {
++		return res, nil
++	}
++	if strings.Contains(res.Header.Get("Content-Type"), "text/event-stream") {
++		res.Body = newPrivateStream(res.Body, strings.HasSuffix(req.URL.Path, "/responses"))
++		res.ContentLength = -1
++		res.Header.Del("Content-Length")
++	} else if res.StatusCode >= 400 {
++		body, err := io.ReadAll(io.LimitReader(res.Body, (1<<20)+1))
++		res.Body.Close()
++		if err != nil || len(body) > 1<<20 {
++			return nil, errors.New("private provider error response could not be read")
++		}
++		body, status := normalizePrivateError(body)
++		if status != 0 {
++			res.StatusCode = status
++		}
++		res.Body = io.NopCloser(bytes.NewReader(body))
++		res.ContentLength = int64(len(body))
++		res.Header.Del("Content-Length")
++	}
++	return res, nil
++}
+diff --git a/internal/provider/private_config_test.go b/internal/provider/private_config_test.go
+new file mode 100644
+index 0000000..f2c3dc3
+--- /dev/null
++++ b/internal/provider/private_config_test.go
+@@ -0,0 +1,176 @@
++package provider
++
++import (
++	"context"
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"runtime"
++	"strings"
++	"testing"
++)
++
++func privateFixture(t *testing.T, endpoint string) Provider {
++	t.Helper()
++	file := filepath.Join(t.TempDir(), "provider.yaml")
++	body := "bearer: fixture-only\nheaders:\n  X-Source: fixture-source\nnormalize_errors: true\nendpoints:\n  responses: " + endpoint + "/external\n  chat: " + endpoint + "/external\n  anthropic: " + endpoint + "/messages-api\nmodel_apis:\n  - prefix: alternate-\n    protocol: chat\n"
++	if err := os.WriteFile(file, []byte(body), 0600); err != nil {
++		t.Fatal(err)
++	}
++	return Provider{ID: "private-fixture", PrivateConfig: file, Responses: "https://example.invalid/v1", Chat: "https://example.invalid/v1", Anthropic: "https://example.invalid"}
++}
++
++func TestPrivateProviderDirectAndSerialized(t *testing.T) {
++	calls := 0
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		calls++
++		if r.Header.Get("Authorization") != "Bearer fixture-only" || r.Header.Get("X-Source") != "fixture-source" || r.Header.Get("X-Api-Key") != "" {
++			t.Error("wrong upstream authentication")
++		}
++		if r.URL.Path != "/external/responses" || r.URL.RawQuery != "q=1" {
++			t.Errorf("path: %s", r.URL)
++		}
++		w.Header().Set("Content-Type", "text/event-stream")
++		io.WriteString(w, "data: {\"type\":\"response.completed\"}\n\n")
++	}))
++	defer server.Close()
++	p := privateFixture(t, server.URL)
++	req, _ := http.NewRequest("POST", p.Responses+"/responses?q=1", strings.NewReader(`{"model":"m"}`))
++	req.Header.Set("X-Api-Key", "client-value")
++	if err := p.Sign(context.Background(), req, Responses, nil); err != nil {
++		t.Fatal(err)
++	}
++	res, err := p.Do(server.Client(), req)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer res.Body.Close()
++	body, err := io.ReadAll(res.Body)
++	if err != nil || calls != 1 || strings.Contains(string(body), "failed") {
++		t.Fatalf("calls=%d body=%s err=%v", calls, body, err)
++	}
++	saved, _ := json.Marshal(p)
++	for _, secret := range []string{"fixture-only", "fixture-source", server.URL} {
++		if strings.Contains(string(saved), secret) {
++			t.Fatal("private material reached serialized provider")
++		}
++	}
++	if apis := p.APIs("alternate-m"); len(apis) != 1 || apis[0] != Chat {
++		t.Fatalf("protocol: %v", apis)
++	}
++}
++
++func TestPrivateProviderFailsClosed(t *testing.T) {
++	p := privateFixture(t, "https://example.invalid")
++	for _, text := range []string{"bearer: [private-secret", "bearer: private-secret\nunknown: private-value", "bearer: private-secret\n---\nbearer: second"} {
++		os.WriteFile(p.PrivateConfig, []byte(text), 0600)
++		_, err := p.privateSettings()
++		if err == nil || strings.Contains(err.Error(), "private-secret") || strings.Contains(err.Error(), p.PrivateConfig) {
++			t.Fatal("invalid config was accepted or disclosed")
++		}
++	}
++	p = privateFixture(t, "https://example.invalid")
++	os.Chmod(p.PrivateConfig, 0644)
++	if _, err := p.privateSettings(); err == nil && runtime.GOOS != "windows" {
++		t.Fatal("world-readable credentials accepted")
++	}
++	os.Remove(p.PrivateConfig)
++	req, _ := http.NewRequest("POST", p.Responses+"/responses", nil)
++	if err := p.Sign(context.Background(), req, Responses, nil); err == nil {
++		t.Fatal("missing config accepted")
++	}
++	if _, err := p.Do(http.DefaultClient, req); err == nil {
++		t.Fatal("unsigned request sent")
++	}
++}
++
++func TestPrivateProviderRedirectAndCancellation(t *testing.T) {
++	leaked := false
++	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { leaked = true }))
++	defer other.Close()
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, other.URL, 307) }))
++	defer server.Close()
++	p := privateFixture(t, server.URL)
++	req, _ := http.NewRequest("POST", p.Responses+"/responses", nil)
++	p.Sign(context.Background(), req, Responses, nil)
++	res, err := p.Do(server.Client(), req)
++	if err != nil {
++		t.Fatal(err)
++	}
++	res.Body.Close()
++	if leaked || res.StatusCode != 307 {
++		t.Fatal("followed private redirect")
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	req, _ = http.NewRequestWithContext(ctx, "POST", p.Responses+"/responses", nil)
++	p.Sign(ctx, req, Responses, nil)
++	if _, err := p.Do(server.Client(), req); err != context.Canceled {
++		t.Fatalf("cancel: %v", err)
++	}
++}
++
++func TestPrivateErrorsAndStream(t *testing.T) {
++	for _, tc := range []struct {
++		body     string
++		status   int
++		contains string
++	}{
++		{`{"error":{"message":"Error code: 429 - {'error': {'message': 'try later', 'code': 'rate_limit'}}"}}`, 429, `"code":"rate_limit"`},
++		{`{"error":{"message":"Error code: 400 - {\"error\":{\"message\":\"bad argument\",\"code\":\"invalid_prompt\"}}"}}`, 400, `"code":"invalid_prompt"`},
++		{`{"error":{"message":"Your input exceeds the context window of this model."}}`, 400, "context_length_exceeded"},
++		{`{"type":"error","error":{"message":"bad argument"}}`, 0, `"type":"error"`},
++	} {
++		b, status := normalizePrivateError([]byte(tc.body))
++		if status != tc.status || !strings.Contains(string(b), tc.contains) {
++			t.Fatalf("%d %s", status, b)
++		}
++	}
++	for _, tc := range []struct {
++		input     string
++		responses bool
++		want      string
++		unchanged bool
++	}{
++		{"data: {\"type\":\"response.created\"}\r\n\r\n", true, "response.failed", false},
++		{"data: {\"type\":\"response.completed\"}\n\n", true, "response.completed", true},
++		{"data: {\"type\":\"response.output_text.delta\",\"delta\":\"keep me\"}\n\n", true, "keep me", false},
++		{"event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"Error code: 429 - {'error': {'message': 'busy'}}\"}}\n\n", true, `"status":429`, false},
++		{"event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"busy\"}}\n\n", false, `"type":"error"`, false},
++	} {
++		r := newPrivateStream(io.NopCloser(strings.NewReader(tc.input)), tc.responses)
++		b, err := io.ReadAll(r)
++		r.Close()
++		if err != nil || !strings.Contains(string(b), tc.want) || tc.unchanged && string(b) != tc.input {
++			t.Fatalf("stream: %s %v", b, err)
++		}
++	}
++}
++
++func TestPrivateProviderModelPagesAndRotation(t *testing.T) {
++	calls := 0
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		calls++
++		if r.URL.Path != "/external/models" || r.Header.Get("Authorization") != "Bearer rotated-fixture" {
++			t.Errorf("model request: %s", r.URL.Path)
++		}
++		w.Header().Set("Content-Type", "application/json")
++		if r.URL.Query().Get("after_id") == "m1" {
++			io.WriteString(w, `{"data":[{"id":"m2"}],"has_more":false}`)
++		} else {
++			io.WriteString(w, `{"data":[{"id":"m1"}],"has_more":true,"last_id":"m1"}`)
++		}
++	}))
++	defer server.Close()
++	p := privateFixture(t, server.URL)
++	b, _ := os.ReadFile(p.PrivateConfig)
++	b = []byte(strings.ReplaceAll(string(b), "fixture-only", "rotated-fixture") + "exclude_models: [m2]\n")
++	os.WriteFile(p.PrivateConfig, b, 0600)
++	ms, err := p.List(context.Background())
++	if err != nil || len(ms) != 1 || ms[0].ID != "m1" || calls != 2 {
++		t.Fatalf("models=%v calls=%d err=%v", ms, calls, err)
++	}
++}
+diff --git a/internal/provider/private_errors.go b/internal/provider/private_errors.go
+new file mode 100644
+index 0000000..3b9d5d1
+--- /dev/null
++++ b/internal/provider/private_errors.go
+@@ -0,0 +1,169 @@
++package provider
++
++import (
++	"bufio"
++	"bytes"
++	"encoding/json"
++	"io"
++	"regexp"
++	"strconv"
++	"strings"
++)
++
++var privateWrapped = regexp.MustCompile(`(?s)^Error code: ([45][0-9]{2}) - (.*)$`)
++var privateFields = regexp.MustCompile(`['"](code|type|message)['"]\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')`)
++
++// Read only string error fields from a repr-like wrapper; never evaluate it.
++func privateErrorFields(text string) map[string]any {
++	var v map[string]any
++	if json.Unmarshal([]byte(text), &v) == nil {
++		if inner, ok := v["error"].(map[string]any); ok {
++			return inner
++		}
++		return v
++	}
++	v = map[string]any{}
++	for _, m := range privateFields.FindAllStringSubmatch(text, -1) {
++		s := m[2]
++		if s[0] == '\'' {
++			s = `"` + strings.ReplaceAll(strings.ReplaceAll(s[1:len(s)-1], `\'`, `'`), `"`, `\"`) + `"`
++		}
++		if value, err := strconv.Unquote(s); err == nil {
++			v[m[1]] = value
++		}
++	}
++	return v
++}
++
++func normalizePrivateError(body []byte) ([]byte, int) {
++	var root map[string]any
++	if json.Unmarshal(body, &root) != nil {
++		return body, 0
++	}
++	parent := root
++	if response, ok := root["response"].(map[string]any); ok {
++		parent = response
++	}
++	e, ok := parent["error"].(map[string]any)
++	if !ok {
++		return body, 0
++	}
++	status := 0
++	msg, _ := e["message"].(string)
++	if m := privateWrapped.FindStringSubmatch(msg); m != nil {
++		status, _ = strconv.Atoi(m[1])
++		fields := privateErrorFields(m[2])
++		if len(fields) > 0 {
++			e = fields
++		}
++		e["status"] = status
++	}
++	msg, _ = e["message"].(string)
++	if strings.HasPrefix(msg, "Your input exceeds the context window of this model.") {
++		e["code"] = "context_length_exceeded"
++		e["status"], status = 400, 400
++	}
++	parent["error"] = e
++	out, err := json.Marshal(root)
++	if err != nil {
++		return body, 0
++	}
++	return out, status
++}
++
++type privateStream struct {
++	source    io.ReadCloser
++	scan      *bufio.Scanner
++	left      []byte
++	responses bool
++	terminal  bool
++	ended     bool
++}
++
++func newPrivateStream(source io.ReadCloser, responses bool) *privateStream {
++	s := bufio.NewScanner(source)
++	s.Buffer(make([]byte, 4096), 1<<20)
++	s.Split(func(data []byte, eof bool) (int, []byte, error) {
++		n := bytes.Index(data, []byte("\n\n"))
++		r := bytes.Index(data, []byte("\r\n\r\n"))
++		if r >= 0 && (n < 0 || r < n) {
++			return r + 4, data[:r+4], nil
++		}
++		if n >= 0 {
++			return n + 2, data[:n+2], nil
++		}
++		if eof && len(data) > 0 {
++			return len(data), data, nil
++		}
++		return 0, nil, nil
++	})
++	return &privateStream{source: source, scan: s, responses: responses}
++}
++
++func (s *privateStream) Read(p []byte) (int, error) {
++	if len(p) == 0 {
++		return 0, nil
++	}
++	for len(s.left) == 0 {
++		if s.ended {
++			return 0, io.EOF
++		}
++		if !s.scan.Scan() {
++			s.ended = true
++			if s.responses && !s.terminal {
++				s.left = []byte("event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"message\":\"upstream stream ended before completion\",\"status\":502}}}\n\n")
++				break
++			}
++			if s.scan.Err() != nil {
++				return 0, io.ErrUnexpectedEOF
++			}
++			return 0, io.EOF
++		}
++		raw := bytes.Clone(s.scan.Bytes())
++		var data []byte
++		var eventName string
++		for _, line := range bytes.Split(raw, []byte("\n")) {
++			line = bytes.TrimSuffix(line, []byte("\r"))
++			if bytes.HasPrefix(line, []byte("event:")) {
++				eventName = strings.TrimSpace(string(line[6:]))
++			}
++			if bytes.HasPrefix(line, []byte("data:")) {
++				if len(data) > 0 {
++					data = append(data, '\n')
++				}
++				data = append(data, bytes.TrimPrefix(line[5:], []byte(" "))...)
++			}
++		}
++		var ev struct {
++			Type string `json:"type"`
++		}
++		json.Unmarshal(data, &ev)
++		if ev.Type == "" {
++			ev.Type = eventName
++		}
++		switch ev.Type {
++		case "response.completed", "response.failed", "response.cancelled", "response.incomplete", "error":
++			s.terminal = true
++		}
++		if ev.Type == "response.failed" || ev.Type == "error" {
++			out, _ := normalizePrivateError(data)
++			if s.responses && ev.Type == "error" {
++				var v map[string]any
++				json.Unmarshal(out, &v)
++				out, _ = json.Marshal(map[string]any{"type": "response.failed", "response": map[string]any{"status": "failed", "object": "response", "error": v["error"]}})
++			}
++			name := ev.Type
++			if s.responses {
++				name = "response.failed"
++			}
++			raw = append([]byte("event: "+name+"\ndata: "), out...)
++			raw = append(raw, '\n', '\n')
++		}
++		s.left = raw
++	}
++	n := copy(p, s.left)
++	s.left = s.left[n:]
++	return n, nil
++}
++
++func (s *privateStream) Close() error { return s.source.Close() }
+diff --git a/internal/provider/provider.go b/internal/provider/provider.go
+index a36e7df..85828e0 100644
+--- a/internal/provider/provider.go
++++ b/internal/provider/provider.go
+@@ -50,10 +50,11 @@ type Provider struct {
+ 	Name string `json:"name"`
+ 	// Was are ids the provider had before it was renamed (see Rename):
+ 	// a model still picked by one of them reaches it.
+-	Was    []string `json:"was,omitempty"`
+-	Icon   string   `json:"icon,omitempty"`
+-	Preset string   `json:"preset,omitempty"` // preset this was created from, if any
+-	Key    string   `json:"key"`              // API key, as typed by the user
++	Was           []string `json:"was,omitempty"`
++	Icon          string   `json:"icon,omitempty"`
++	Preset        string   `json:"preset,omitempty"`        // preset this was created from, if any
++	Key           string   `json:"key"`                     // API key, as typed by the user
++	PrivateConfig string   `json:"privateConfig,omitempty"` // Host-local YAML; never inline its contents in this provider.
+ 
+ 	// AccessKeyID and SecretAccessKey are a Volcengine account's access
+ 	// key (TakesVolcAccessKey), what Ark tells its Coding or Agent Plan's

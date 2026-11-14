@@ -40,6 +40,16 @@ it("collects a message's occurrences across its block rows in row order", () => 
   expect(findMessageMatches(root, "message-2", "alpha")).toHaveLength(1);
   expect(findMessageMatches(null, "message-1", "alpha")).toEqual([]);
 });
+it("counts each nested report entry only under its own message identity", () => {
+  const root = message("report", "report needle");
+  const completion = document.createElement("div");
+  completion.dataset.messageId = "completion";
+  completion.innerHTML = '<div data-message-text="true">completion needle</div>';
+  root.firstElementChild!.append(completion);
+  expect(findMessageMatches(root, "report", "needle")).toHaveLength(1);
+  expect(findMessageMatches(root, "completion", "needle")).toHaveLength(1);
+  expect(findMessageMatches(root, "report", "completion")).toEqual([]);
+});
 it("finds each actual occurrence across inline formatting with original Unicode offsets", () => {
   const row = content(
     '<div data-paseo-markdown-tag="p">İ😀hello <strong>world</strong> then <em>hello</em> world</div>',

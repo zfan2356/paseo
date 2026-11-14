@@ -61,13 +61,18 @@ import { ContextMenu, ContextMenuTrigger, useContextMenu } from "@/components/ui
 import { useFileDownload } from "@/hooks/use-file-download";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
-import { buildWorkspaceExplorerStateKey } from "@/hooks/use-file-explorer-actions";
+import { buildWorkspaceExplorerStateKey } from "@/file-explorer/scope";
 import { usePanelStore, type ExpandedPathsUpdate, type SortOption } from "@/stores/panel-store";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
+import {
+  DIRECTORY_LISTING_INVALIDATED,
+  type DirectoryListingResult,
+} from "@/file-explorer/directory-listings";
 import { isHiddenExplorerPath } from "@/file-explorer/visibility";
 import {
   flattenExplorerTree,
   reconcileRestoredExpandedPaths,
+  refreshExplorerDirectories,
   restoreExpandedDirectories,
   setExpandedDirectoryPath,
   showHiddenFilesAndRestoreExpandedDirectories,
@@ -77,6 +82,7 @@ import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-dra
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { useToast } from "@/contexts/toast-context";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
+import { useWorkspaceFields } from "@/stores/session-store-hooks";
 import { useOpenDirectoryInEditor } from "@/workspace/open-in-editor/directory";
 
 const SORT_OPTIONS: { value: SortOption }[] = [
@@ -103,6 +109,7 @@ function DirectoryChevronIcon({ loading, expanded }: { loading: boolean; expande
 }
 
 interface TreeRowItemProps {
+  workspaceRoot: string;
   serverId: string;
   workspaceId?: string | null;
   entry: ExplorerEntry;
@@ -229,6 +236,7 @@ function EntryNameInputRow({
 }
 
 function TreeRowItem({
+  workspaceRoot,
   serverId,
   workspaceId,
   entry,
@@ -262,7 +270,7 @@ function TreeRowItem({
     enabled: !isDirectory,
     serverId,
     workspaceId,
-    path: entry.path,
+    path: buildAbsoluteExplorerPath({ workspaceRoot, entryPath: entry.path }),
   });
 
   const handlePress = useCallback(() => {
@@ -397,6 +405,7 @@ function TreeRowItem({
 }
 
 interface FileExplorerPaneProps {
+  sessionAgentId?: string;
   serverId: string;
   workspaceId?: string | null;
   workspaceRoot: string;
@@ -406,6 +415,7 @@ interface FileExplorerPaneProps {
 }
 
 export function FileExplorerPane({
+  sessionAgentId,
   serverId,
   workspaceId,
   workspaceRoot,
@@ -420,10 +430,12 @@ export function FileExplorerPane({
   const workspaceStateKey = useMemo(
     () =>
       buildWorkspaceExplorerStateKey({
+        serverId,
         workspaceId,
+        sessionAgentId,
         workspaceRoot: normalizedWorkspaceRoot,
       }),
-    [normalizedWorkspaceRoot, workspaceId],
+    [serverId, normalizedWorkspaceRoot, workspaceId, sessionAgentId],
   );
   const hasWorkspaceScope = Boolean(workspaceStateKey && normalizedWorkspaceRoot);
   const explorerState = useSessionStore((state) =>
@@ -434,6 +446,7 @@ export function FileExplorerPane({
 
   const {
     requestDirectoryListing,
+    invalidateDirectoryListings,
     createEntry,
     renameEntry,
     duplicateEntry,
@@ -441,6 +454,7 @@ export function FileExplorerPane({
     selectExplorerEntry,
   } = useFileExplorerActions({
     serverId,
+    sessionAgentId,
     workspaceId,
     workspaceRoot: normalizedWorkspaceRoot,
   });
@@ -450,9 +464,15 @@ export function FileExplorerPane({
     isLocalExecution: isLocalDaemon,
   });
   const fileManagerTarget = desktopOpenTargets.find((target) => target.kind === "file-manager");
+  const projectId = useWorkspaceFields(
+    serverId,
+    workspaceId ?? null,
+    (workspace) => workspace.projectId,
+  );
   const openDirectoryInEditor = useOpenDirectoryInEditor({
     serverId,
     workspaceDirectory: normalizedWorkspaceRoot,
+    projectId,
   });
   // COMPAT(fsEntryOps): added in v0.3.0, remove gate after 2027-02-08.
   const fsEntryOpsEnabled = useSessionStore(
@@ -879,9 +899,11 @@ export function FileExplorerPane({
       refreshExplorerDirectories({
         hasWorkspaceScope,
         expandedPaths,
+        showHiddenFiles: usePanelStore.getState().explorerShowHiddenFiles,
         requestDirectoryListing,
+        invalidateDirectoryListings,
       }),
-    [expandedPaths, hasWorkspaceScope, requestDirectoryListing],
+    [invalidateDirectoryListings, expandedPaths, hasWorkspaceScope, requestDirectoryListing],
   );
   const { refetch: refetchExplorer, isFetching: isRefreshFetching } = useQuery({
     queryKey: ["fileExplorerRefresh", serverId, workspaceStateKey],
@@ -968,6 +990,7 @@ export function FileExplorerPane({
       }
       return (
         <TreeRowDispatcher
+          workspaceRoot={workspaceRoot}
           serverId={serverId}
           workspaceId={workspaceId}
           row={info.item.row}
@@ -1021,6 +1044,7 @@ export function FileExplorerPane({
       onOpenFileToSide,
       serverId,
       workspaceId,
+      workspaceRoot,
     ],
   );
 
@@ -1417,7 +1441,7 @@ function toggleDirectory({
   requestDirectoryListing: (
     path: string,
     opts?: { recordHistory?: boolean; setCurrentPath?: boolean },
-  ) => Promise<ExplorerDirectory | null>;
+  ) => Promise<DirectoryListingResult>;
   setExpandedPathsForWorkspace: (workspaceStateKey: string, paths: ExpandedPathsUpdate) => void;
 }): void {
   if (!workspaceStateKey) {
@@ -1440,6 +1464,7 @@ function toggleDirectory({
 }
 
 function TreeRowDispatcher({
+  workspaceRoot,
   serverId,
   workspaceId,
   row,
@@ -1466,6 +1491,7 @@ function TreeRowDispatcher({
 }: {
   serverId: string;
   workspaceId?: string | null;
+  workspaceRoot: string;
   row: ExplorerTreeRow;
   index: number;
   expandedPaths: Set<string>;
@@ -1497,6 +1523,7 @@ function TreeRowDispatcher({
 
   return (
     <TreeRowItem
+      workspaceRoot={workspaceRoot}
       serverId={serverId}
       workspaceId={workspaceId}
       entry={entry}
@@ -1554,7 +1581,7 @@ async function initializeExplorer({
   requestDirectoryListing: (
     path: string,
     opts?: { recordHistory?: boolean; setCurrentPath?: boolean },
-  ) => Promise<ExplorerDirectory | null>;
+  ) => Promise<DirectoryListingResult>;
   setExpandedPathsForWorkspace: (workspaceStateKey: string, paths: ExpandedPathsUpdate) => void;
 }): Promise<void> {
   if (!hasWorkspaceScope || hasInitializedRef.current) {
@@ -1565,6 +1592,7 @@ async function initializeExplorer({
     recordHistory: false,
     setCurrentPath: false,
   });
+  if (rootDirectory === DIRECTORY_LISTING_INVALIDATED) return;
   if (!rootDirectory) {
     hasInitializedRef.current = false;
     return;
@@ -1586,7 +1614,10 @@ async function initializeExplorer({
   const hiddenPersistedPaths = showHiddenFiles
     ? []
     : Array.from(persistedExpandedPaths).filter(isHiddenExplorerPath);
-  const restoredPathsWithHidden = [...restoredPaths, ...hiddenPersistedPaths];
+  const restoredPathsWithHidden =
+    restoredPaths === DIRECTORY_LISTING_INVALIDATED
+      ? DIRECTORY_LISTING_INVALIDATED
+      : [...restoredPaths, ...hiddenPersistedPaths];
   setExpandedPathsForWorkspace(workspaceStateKey, (currentPaths) =>
     reconcileRestoredExpandedPaths({
       persistedExpandedPaths,
@@ -1594,39 +1625,6 @@ async function initializeExplorer({
       restoredExpandedPaths: restoredPathsWithHidden,
     }),
   );
-}
-
-async function refreshExplorerDirectories({
-  hasWorkspaceScope,
-  expandedPaths,
-  requestDirectoryListing,
-}: {
-  hasWorkspaceScope: boolean;
-  expandedPaths: Set<string>;
-  requestDirectoryListing: (
-    path: string,
-    opts?: { recordHistory?: boolean; setCurrentPath?: boolean },
-  ) => Promise<ExplorerDirectory | null>;
-}): Promise<null> {
-  if (!hasWorkspaceScope) {
-    return null;
-  }
-  const showHiddenFiles = usePanelStore.getState().explorerShowHiddenFiles;
-  const directoryPaths = Array.from(expandedPaths).filter(
-    (path) => showHiddenFiles || !isHiddenExplorerPath(path),
-  );
-  if (!directoryPaths.includes(".")) {
-    directoryPaths.unshift(".");
-  }
-  await Promise.all(
-    directoryPaths.map((path) =>
-      requestDirectoryListing(path, {
-        recordHistory: false,
-        setCurrentPath: false,
-      }),
-    ),
-  );
-  return null;
 }
 
 function getErrorRecoveryPath(state: AgentFileExplorerState | undefined): string {

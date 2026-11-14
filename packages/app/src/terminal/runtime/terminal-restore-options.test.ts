@@ -7,18 +7,20 @@ import {
 
 describe("terminal restore options", () => {
   it("omits restore options for daemons without terminal restore modes", () => {
-    expect(
+    expect(() =>
       resolveTerminalRestoreOptions({
+        scrollbackLines: 10000,
         supportsTerminalRestoreModes: false,
         canClaimSize: true,
         size: { rows: 24, cols: 80 },
       }),
-    ).toBeUndefined();
+    ).toThrow("Update the host to view terminals.");
   });
 
   it("requests a viewport-only visible snapshot so reopen does not replay scrollback", () => {
     expect(
       resolveTerminalRestoreOptions({
+        scrollbackLines: 10000,
         supportsTerminalRestoreModes: true,
         canClaimSize: true,
         size: { rows: 24, cols: 80 },
@@ -33,6 +35,7 @@ describe("terminal restore options", () => {
   it("omits size until the terminal has been measured", () => {
     expect(
       resolveTerminalRestoreOptions({
+        scrollbackLines: 10000,
         supportsTerminalRestoreModes: true,
         canClaimSize: true,
         size: null,
@@ -46,6 +49,7 @@ describe("terminal restore options", () => {
   it("does not let a background attach resize the PTY", () => {
     expect(
       resolveTerminalRestoreOptions({
+        scrollbackLines: 10000,
         supportsTerminalRestoreModes: true,
         canClaimSize: false,
         size: { rows: 24, cols: 80 },
@@ -63,3 +67,17 @@ describe("terminal restore options", () => {
     expect(restoreSubscriptionSendsFrame({ mode: "full-snapshot" })).toBe(true);
   });
 });
+
+it.each([0, 5, 400, 10000])(
+  "keeps restore viewport-only with %s configured history rows",
+  (scrollbackLines) => {
+    expect(
+      resolveTerminalRestoreOptions({
+        supportsTerminalRestoreModes: true,
+        scrollbackLines,
+        canClaimSize: false,
+        size: null,
+      }),
+    ).toEqual({ mode: "visible-snapshot", scrollbackLines: 0 });
+  },
+);

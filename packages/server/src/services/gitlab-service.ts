@@ -728,6 +728,7 @@ function toCurrentPullRequestStatus(
     state: mapMergeRequestState(mr.state),
     baseRefName: mr.target_branch,
     headRefName: mr.source_branch,
+    ...(mr.sha ? { headSha: mr.sha } : {}),
     isMerged: mr.state === "merged" || mr.merged_at != null,
     isDraft: mr.draft ?? mr.work_in_progress ?? false,
     mergeable: mapMergeable(mr),
@@ -987,6 +988,7 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
         (mr) =>
           mapMergeRequestState(mr.state) !== "open" && headSha !== undefined && mr.sha === headSha,
       ) ??
+      candidates[0] ??
       null;
     return match ? viewMergeRequest(cwd, String(match.iid)) : null;
   }
@@ -1147,6 +1149,49 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
       } catch {
         return false;
       }
+    },
+
+    async getPullRequestStatus(input) {
+      const repo = `https://${input.host}/${input.projectPath}`;
+      const mr = await runJson(
+        ["mr", "view", String(input.number), "--repo", repo, "-F", "json"],
+        { cwd: input.cwd },
+        GitLabMergeRequestSchema,
+      );
+      const approvals = await runJson(
+        [
+          "api",
+          "--hostname",
+          input.host,
+          `projects/${encodeURIComponent(input.projectPath)}/merge_requests/${input.number}/approvals`,
+        ],
+        { cwd: input.cwd },
+        GitLabApprovalsSchema,
+      ).catch(() => null);
+      const pipeline =
+        mr.head_pipeline?.id === undefined
+          ? null
+          : await runJson(
+              [
+                "ci",
+                "get",
+                "--repo",
+                repo,
+                "--merge-request",
+                String(input.number),
+                "--with-job-details",
+                "-F",
+                "json",
+              ],
+              { cwd: input.cwd },
+              GitLabPipelineDetailsSchema,
+            );
+      return toCurrentPullRequestStatus(
+        mr,
+        approvals,
+        pipeline ? toPullRequestChecks(pipeline) : [],
+        pipeline?.status ?? null,
+      );
     },
 
     async getCurrentPullRequestStatus(input): Promise<CurrentPullRequestStatus | null> {

@@ -1,0 +1,13 @@
+
+> @getpaseo/app@0.15.3 test:browser
+> vitest run --project browser src/agent-stream/chat-find/viewport.browser.test.ts --bail=1 --config ../../artifacts/material-vitest.config.mts
+
+
+ RUN  v4.1.7 /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-408-4546b7162005/worktree/packages/app
+
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  22:18:55
+   Duration  3.23s (transform 0ms, setup 0ms, import 16ms, tests 100ms, environment 0ms)
+

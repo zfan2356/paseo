@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useCallback, useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
@@ -65,7 +66,7 @@ export function CompactHeader({
 
   return (
     <IconButtonChromeProvider value="header-island">
-      <View style={rootStyle}>
+      <View style={rootStyle} dataSet={MATERIAL_SLOTS.header}>
         <View style={styles.row}>
           <View style={styles.island}>
             {navigation === "menu" ? <SidebarMenuToggle /> : <BackButton onBack={onBack} />}
