@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
-import { openAttachmentMenu } from "../support/helpers/composer";
+import { dropFileOnComposer, openAttachmentMenu } from "../support/helpers/composer";
 // Real renderer/daemon coverage and raw scroll samples for default materials.
 test("default material evidence", async ({ page }, testInfo) => {
   test.skip(process.env.E2E_PERFORMANCE !== "1", "Explicit visual/performance evidence capture");
@@ -539,5 +539,208 @@ test("material header leaves terminal content below workspace chrome", async ({
     await page.screenshot({ path: `${out}/chat-find-after-fix.png` });
   } finally {
     await session.cleanup();
+  }
+});
+
+declare global {
+  interface Window {
+    materialFileCommand(command: string, args: Record<string, unknown>): Promise<unknown>;
+  }
+}
+
+// Exercise the actual Mac gate; wallpaper stands in for the native vibrancy plane.
+test("Mac transparent window reproduction", async ({ page }, testInfo) => {
+  test.setTimeout(240_000);
+  const previousHome = process.env.PASEO_HOME;
+  process.env.PASEO_HOME = testInfo.outputPath("desktop-home");
+  const attachmentModule = testInfo.outputPath("attachments.cjs");
+  await (
+    await import("esbuild")
+  ).build({
+    entryPoints: ["../desktop/src/features/attachments.ts"],
+    outfile: attachmentModule,
+    alias: {
+      "@getpaseo/server/daemon-control": (await import("node:path")).resolve(
+        "../server/src/server/paseo-home.ts",
+      ),
+    },
+    platform: "node",
+    format: "cjs",
+    bundle: true,
+    packages: "external",
+  });
+  const attachments: typeof import("../../../desktop/src/features/attachments") = (
+    await import("node:module")
+  ).createRequire(process.cwd() + "/package.json")(attachmentModule);
+  const fileCommand = async (command: string, args: Record<string, unknown>) => {
+    if (command === "write_attachment_base64") return attachments.writeAttachmentBase64(args);
+    if (command === "write_attachment_bytes") return attachments.writeAttachmentBytes(args);
+    if (command === "garbage_collect_attachment_files")
+      return attachments.garbageCollectManagedAttachmentFiles(args);
+    if (command === "read_file_base64") return attachments.readManagedFileBase64(args);
+    return null;
+  };
+  await page.exposeFunction("materialFileCommand", fileCommand);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.addInitScript(() => {
+    window.paseoDesktop = {
+      platform: "darwin",
+      events: { on: () => () => {} },
+      invoke: async (command: string, args: Record<string, unknown> = {}) =>
+        command === "get_desktop_settings"
+          ? {
+              releaseChannel: "stable",
+              daemon: { manageBuiltInDaemon: false, keepRunningAfterQuit: true },
+            }
+          : window.materialFileCommand(command, args),
+    };
+    localStorage.setItem(
+      "@paseo:app-settings",
+      JSON.stringify({ theme: "dark", chatDisplay: "full" }),
+    );
+  });
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "mac-material-",
+    title: "Mac material reproduction",
+    initialPrompt: "Review the workspace",
+    featureValues: { mockAssistantResponse: "A paragraph for scrolling.\n\n".repeat(100) },
+  });
+  try {
+    await session.client.waitForFinish(session.agentId, 30_000);
+    await openAgentRoute(page, session);
+    await expect(page.getByTestId("message-input-root")).toBeVisible({ timeout: 60_000 });
+    await page.waitForFunction(() => document.querySelector("[data-material-styles]"));
+    const { readFile, writeFile } = await import("node:fs/promises");
+    const wallpaper = await readFile("../../docs/qa-evidence/materials/wallpaper.svg", "utf8");
+    await page.addStyleTag({
+      content: `html { background: url("data:image/svg+xml;base64,${Buffer.from(wallpaper).toString("base64")}") center / cover fixed; } body { background: transparent; }`,
+    });
+    const scroll = page.getByTestId("agent-chat-scroll").filter({ visible: true });
+    await scroll.evaluate((el) => {
+      el.scrollTop = el.scrollHeight / 2;
+    });
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: testInfo.outputPath("mac-before.png") });
+    const paint = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("[data-material]")).map((el) => {
+        const css = getComputedStyle(el);
+        return {
+          role: el.getAttribute("data-material"),
+          rect: el.getBoundingClientRect().toJSON(),
+          background: css.backgroundColor,
+          shadow: css.boxShadow,
+          position: css.position,
+          transform: css.transform,
+          clearance: css.getPropertyValue("--paseo-composer-clearance"),
+          html: el.outerHTML.slice(0, 400),
+        };
+      }),
+    );
+    await writeFile(testInfo.outputPath("mac-paint.json"), JSON.stringify(paint, null, 2));
+    const jump = page.getByTestId("scroll-to-bottom-button").filter({ visible: true });
+    await expect(jump).toBeVisible();
+    const button = await jump.boundingBox();
+    const composer = await page.locator('[data-material="composer"]:visible').first().boundingBox();
+    if (!button || !composer) throw new Error("Missing visible controls");
+    expect(button.y + button.height).toBeLessThan(composer.y);
+    await dropFileOnComposer(page, {
+      name: "coast.png",
+      mimeType: "image/png",
+      buffer: await readFile("../../docs/qa-evidence/materials/detail-dark-composer-default.png"),
+    });
+    await expect(page.getByRole("button", { name: "Open image attachment" }).first()).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("mac-attachment.png") });
+    await openAttachmentMenu(page);
+    await page.screenshot({ path: testInfo.outputPath("mac-menu.png") });
+    await page.keyboard.press("Escape");
+    await page.mouse.click(1100, 220);
+    await page.keyboard.press("Shift+?");
+    await expect(page.getByTestId("keyboard-shortcuts-dialog")).toBeVisible();
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: testInfo.outputPath("mac-dialog.png") });
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("keyboard-shortcuts-dialog")).toBeHidden();
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: testInfo.outputPath("mac-dismissed.png") });
+    if (process.env.E2E_MAC_ELECTRON === "1") {
+      const main = testInfo.outputPath("transparent-window.cjs");
+      await writeFile(
+        main,
+        `const {app, BrowserWindow}=require("electron"); app.commandLine.appendSwitch("force-device-scale-factor","1"); app.commandLine.appendSwitch("use-angle","swiftshader"); app.commandLine.appendSwitch("enable-unsafe-swiftshader"); app.whenReady().then(()=>{new BrowserWindow({width:1200,height:900,frame:false,transparent:true,backgroundColor:"#00000000",webPreferences:{sandbox:true}}).loadURL("about:blank");});`,
+      );
+      const { _electron } = await import("playwright");
+      const electron = await _electron.launch({ args: ["--no-sandbox", main] });
+      try {
+        const electronPage = await electron.firstWindow();
+        await electron.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].setBounds({ x: 0, y: 0, width: 1200, height: 900 }),
+        );
+        await electronPage.setViewportSize({ width: 1200, height: 900 });
+        await electronPage.exposeFunction("materialFileCommand", fileCommand);
+        const storage = await page.evaluate(() => ({ ...localStorage }));
+        await electron.context().addInitScript((values) => {
+          for (const [key, value] of Object.entries(values)) localStorage.setItem(key, value);
+          window.paseoDesktop = {
+            platform: "darwin",
+            events: { on: () => () => {} },
+            invoke: (command, args = {}) => window.materialFileCommand(command, args),
+          };
+        }, storage);
+        await electronPage.goto(page.url());
+        await expect(electronPage.getByTestId("message-input-root")).toBeVisible({
+          timeout: 60000,
+        });
+        await electronPage.addStyleTag({
+          content: `html { background: url("data:image/svg+xml;base64,${Buffer.from(wallpaper).toString("base64")}") center / cover fixed; } body { background: transparent; }`,
+        });
+        await electronPage
+          .getByTestId("agent-chat-scroll")
+          .filter({ visible: true })
+          .evaluate((el) => {
+            el.scrollTop = el.scrollHeight / 2;
+          });
+        await electronPage.waitForTimeout(1000);
+        await electronPage.screenshot({ path: testInfo.outputPath("electron-transparent.png") });
+        const electronJump = electronPage
+          .getByTestId("scroll-to-bottom-button")
+          .filter({ visible: true });
+        await expect(electronJump).toBeVisible();
+        await electronJump.click();
+        await expect(electronJump).toHaveCount(0);
+        await openAttachmentMenu(electronPage);
+        await electronPage.waitForTimeout(350);
+        await electronPage.screenshot({ path: testInfo.outputPath("electron-menu.png") });
+        await electronPage.keyboard.press("Escape");
+        await electronPage.mouse.click(1100, 220);
+        await electronPage.keyboard.press("Shift+?");
+        await expect(electronPage.getByTestId("keyboard-shortcuts-dialog")).toBeVisible();
+        await electronPage.waitForTimeout(350);
+        await electronPage.screenshot({ path: testInfo.outputPath("electron-dialog.png") });
+        await electronPage.keyboard.press("Escape");
+        await expect(electronPage.getByTestId("keyboard-shortcuts-dialog")).toBeHidden();
+        await electronPage.waitForTimeout(350);
+        await electronPage.screenshot({ path: testInfo.outputPath("electron-dismissed.png") });
+        await writeFile(
+          testInfo.outputPath("electron-environment.json"),
+          JSON.stringify(
+            await electron.evaluate(({ BrowserWindow }) => ({
+              versions: process.versions,
+              windows: BrowserWindow.getAllWindows().map((win) => ({
+                background: win.getBackgroundColor(),
+                bounds: win.getBounds(),
+              })),
+            })),
+            null,
+            2,
+          ),
+        );
+      } finally {
+        await electron.close();
+      }
+    }
+  } finally {
+    await session.cleanup();
+    if (previousHome === undefined) delete process.env.PASEO_HOME;
+    else process.env.PASEO_HOME = previousHome;
   }
 });

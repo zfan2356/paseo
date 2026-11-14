@@ -1,0 +1,44 @@
+
+> paseo@0.15.3 format:check
+> oxfmt --check .
+
+Checking formatting...
+
+.turbo/cache/0e2128003cf84525-manifest.json (65ms)
+.turbo/cache/0e2128003cf84525-meta.json (122ms)
+.turbo/cache/19a58a776c7a9b50-manifest.json (60ms)
+.turbo/cache/19a58a776c7a9b50-meta.json (60ms)
+.turbo/cache/207870649ac6e4a3-manifest.json (14ms)
+.turbo/cache/207870649ac6e4a3-meta.json (70ms)
+.turbo/cache/21ed657f3bb50e87-manifest.json (65ms)
+.turbo/cache/21ed657f3bb50e87-meta.json (20ms)
+.turbo/cache/2dab59d68f5b6be7-manifest.json (9ms)
+.turbo/cache/2dab59d68f5b6be7-meta.json (19ms)
+.turbo/cache/36984127d1a00194-manifest.json (20ms)
+.turbo/cache/36984127d1a00194-meta.json (55ms)
+.turbo/cache/37b412f750b4c227-manifest.json (18ms)
+.turbo/cache/37b412f750b4c227-meta.json (9ms)
+.turbo/cache/5277ecb6ffc31495-manifest.json (38ms)
+.turbo/cache/5277ecb6ffc31495-meta.json (8ms)
+.turbo/cache/6f4451c7bd03c1de-manifest.json (71ms)
+.turbo/cache/6f4451c7bd03c1de-meta.json (74ms)
+.turbo/cache/875e315c833f749d-manifest.json (107ms)
+.turbo/cache/875e315c833f749d-meta.json (36ms)
+.turbo/cache/90e5e750cbd85cd5-manifest.json (70ms)
+.turbo/cache/90e5e750cbd85cd5-meta.json (81ms)
+.turbo/cache/92f59f4a6bcc2321-manifest.json (9ms)
+.turbo/cache/92f59f4a6bcc2321-meta.json (4ms)
+.turbo/cache/9990945fcd60cfe1-manifest.json (16ms)
+.turbo/cache/9990945fcd60cfe1-meta.json (58ms)
+.turbo/cache/ab9e4fbdd690dedf-manifest.json (12ms)
+.turbo/cache/ab9e4fbdd690dedf-meta.json (18ms)
+.turbo/cache/b3fdbf229faf004e-manifest.json (56ms)
+.turbo/cache/b3fdbf229faf004e-meta.json (60ms)
+.turbo/cache/ec1e720734efd0f9-manifest.json (61ms)
+.turbo/cache/ec1e720734efd0f9-meta.json (10ms)
+.turbo/cache/f4fdb419d5f63bbf-manifest.json (58ms)
+.turbo/cache/f4fdb419d5f63bbf-meta.json (158ms)
+CLAUDE.md (455ms)
+
+Format issues found in above 35 files. Run without `--check` to fix.
+Finished in 2483ms on 6152 files using 32 threads.

@@ -1,0 +1,134 @@
+
+> @getpaseo/app@0.15.3 test:e2e
+> playwright test --project=browser materials.spec.ts -g Mac transparent window reproduction
+
+(node:982842) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[metro] Skipping web setup: EXPO_NO_WEB_SETUP is enabled.
+[metro] Using src/app as the root directory for Expo Router.
+[metro] Waiting on http://localhost:41997
+[metro] Logs for your project will appear below.
+[metro] Web Bundled 4278ms packages/app/index.ts (5902 modules)
+[e2e] Metro warmed on port 41997
+
+Running 1 test using 1 worker
+
+(node:986059) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:986059) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:986059) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[e2e] Worker 0 daemon started on port 36005, home: /tmp/multica-task-1051454198/paseo-e2e-worker-0-DoUlnD
+[metro] Web Bundled 282ms packages/app/index.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-group-toggle-row.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  [DesktopUpdater] Silent update check failed Unexpected response while checking desktop updates.
+[metro] Web Bundled 71ms packages/app/src/desktop/attachments/desktop-attachment-store.ts (1 module)
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+[metro] Web Bundled 68ms packages/app/src/desktop/attachments/desktop-attachment-bridge.ts (1 module)
+[metro] Web  ERROR  [useDropListeners] Failed to process dropped files: [TypeError: Cannot read properties of null (reading 'path')] 
+[metro] Code: service.ts
+[metro] [0m [90m 23 |[39m   [36mconst[39m pending [33m=[39m ([36masync[39m () [33m=>[39m {
+[metro]  [90m 24 |[39m     [36mconst[39m store [33m=[39m [36mawait[39m getAttachmentStore()[33m;[39m
+[metro] [31m[1m>[22m[39m[90m 25 |[39m     [36mconst[39m attachment [33m=[39m [36mawait[39m store[33m.[39msave(input)[33m;[39m
+[metro]  [90m    |[39m                        [31m[1m^[22m[39m
+[metro]  [90m 26 |[39m     [36mif[39m (pendingGarbageCollections [33m>[39m [35m0[39m) {
+[metro]  [90m 27 |[39m       persistedDuringGarbageCollection[33m.[39madd(attachment[33m.[39mid)[33m;[39m
+[metro]  [90m 28 |[39m     }[0m
+[metro] Call Stack
+[metro]   <anonymous> (packages/app/src/attachments/service.ts:25:24)
+[metro]   persistAttachment (packages/app/src/attachments/service.ts:33:12)
+[metro]   persistAttachmentFromBlob (packages/app/src/attachments/service.ts:45:10)
+[metro]   fileToImageAttachment (packages/app/src/components/file-drop/use-drop-listeners.ts:42:10)
+[metro]   handleDrop (packages/app/src/components/file-drop/use-drop-listeners.ts:272:31)
+[metro] Web  WARN  [DesktopIdle] Invalid system idle time null
+[metro] Web  WARN  [DesktopIdle] Invalid system idle time null
+[metro] Web  WARN  [DesktopWindow] Chrome bridge unavailable; window controls may overlap UI
+[e2e] Worker 0 daemon stopped
+  ✘  1 [browser] › e2e/browser/materials.spec.ts:546:5 › Mac transparent window reproduction (20.4s)
+[e2e] Metro stopped
+
+
+  1) [browser] › e2e/browser/materials.spec.ts:546:5 › Mac transparent window reproduction ─────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('button', { name: 'Open image attachment' }).first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByRole('button', { name: 'Open image attachment' }).first()[22m
+
+
+      613 |           position: css.position,
+      614 |           transform: css.transform,
+    > 615 |           clearance: css.getPropertyValue("--paseo-composer-clearance"),
+          |                                                                         ^
+      616 |           html: el.outerHTML.slice(0, 400),
+      617 |         };
+      618 |       }),
+        at /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-418-f9ca5e843691/worktree/packages/app/e2e/browser/materials.spec.ts:615:87
+
+    [31mTest timeout of 60000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/materials-Mac-transparent-window-reproduction-browser/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: browser-console (text/plain) ────────────────────────────────────────────────────
+    [console:info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+    [console:log] Running application "main" with appParams:
+     {rootTag: #root, hydrate: undefined} 
+    Development-level warnings: ON.
+    Performance optimizations: OFF.
+    [co...
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/materials-Mac-transparent-window-reproduction-browser/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/materials-Mac-transparent-window-reproduction-browser/error-context.md
+
+  1 failed
+    [browser] › e2e/browser/materials.spec.ts:546:5 › Mac transparent window reproduction ──────────
+npm error Lifecycle script `test:e2e` failed with error:
+npm error code 1
+npm error path /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-418-f9ca5e843691/worktree/packages/app
+npm error workspace @getpaseo/app@0.15.3
+npm error location /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-418-f9ca5e843691/worktree/packages/app
+npm error command failed
+npm error command sh -c playwright test --project=browser materials.spec.ts -g 'Mac transparent window reproduction'

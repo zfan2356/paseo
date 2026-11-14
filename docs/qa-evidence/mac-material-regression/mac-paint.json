@@ -1,0 +1,249 @@
+[
+  {
+    "role": "window",
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 900,
+      "top": 0,
+      "right": 1200,
+      "bottom": 900,
+      "left": 0
+    },
+    "background": "rgba(0, 0, 0, 0)",
+    "shadow": "none",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "",
+    "html": "<div data-material=\"window\" class=\"css-view-g5y9jx unistyles_j2k2iilhfz \"><div class=\"css-view-g5y9jx\" style=\"flex: 1 1 0%;\"><div class=\"css-view-g5y9jx r-left-1d2f490 r-position-u8s1d r-right-zchlnj r-pointerEvents-12vffkv\" style=\"top: 0px; bottom: 0px; overflow: hidden;\"></div><div style=\"display: contents;\"><div data-material=\"window\" class=\"css-view-g5y9jx unistyles_j2k2iilhfz \" data-testid=\"w"
+  },
+  {
+    "role": "window",
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 900,
+      "top": 0,
+      "right": 1200,
+      "bottom": 900,
+      "left": 0
+    },
+    "background": "rgba(0, 0, 0, 0)",
+    "shadow": "none",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "",
+    "html": "<div data-material=\"window\" class=\"css-view-g5y9jx unistyles_j2k2iilhfz \" data-testid=\"wide-shell\"><div class=\"css-view-g5y9jx unistyles_zinq959mp7 \"><div data-material=\"window\" class=\"css-view-g5y9jx unistyles_j2k2iilhfz \"><div class=\"css-view-g5y9jx unistyles_276nl6bs879 \"><div style=\"display: contents;\"><div style=\"display: contents;\"><div class=\"css-view-g5y9jx unistyles_5lar594ufg  r-pointerE"
+  },
+  {
+    "role": "window",
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 900,
+      "top": 0,
+      "right": 1200,
+      "bottom": 900,
+      "left": 0
+    },
+    "background": "rgba(0, 0, 0, 0)",
+    "shadow": "none",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "",
+    "html": "<div data-material=\"window\" class=\"css-view-g5y9jx unistyles_j2k2iilhfz \"><div class=\"css-view-g5y9jx unistyles_276nl6bs879 \"><div style=\"display: contents;\"><div style=\"display: contents;\"><div class=\"css-view-g5y9jx unistyles_5lar594ufg  r-pointerEvents-105ug2t\" id=\"agent-list-gesture-host-_r_1_\"><div class=\"css-view-g5y9jx unistyles_crplmcrs8f \"><div tabindex=\"0\" class=\"css-view-g5y9jx r-cursor"
+  },
+  {
+    "role": "session-row",
+    "rect": {
+      "x": 8,
+      "y": 283,
+      "width": 303,
+      "height": 44,
+      "top": 283,
+      "right": 311,
+      "bottom": 327,
+      "left": 8
+    },
+    "background": "rgb(39, 42, 41)",
+    "shadow": "none",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "",
+    "html": "<div data-material=\"session-row\" class=\"css-view-g5y9jx unistyles_1przhhjyolm \"><div class=\"css-view-g5y9jx unistyles_flv9ygb71b \"><div class=\"css-view-g5y9jx unistyles_1hnw0w1fj6w \"><div tabindex=\"0\" class=\"css-view-g5y9jx r-cursor-1loqt21 r-touchAction-1otgn73 unistyles_7a8jchhpen \"><div aria-label=\"Done\" role=\"img\" class=\"css-view-g5y9jx\" data-testid=\"session-status-952203b8-ea2a-4d7d-aa1e-6ecf"
+  },
+  {
+    "role": "banner",
+    "rect": {
+      "x": 12,
+      "y": 699,
+      "width": 295,
+      "height": 148,
+      "top": 699,
+      "right": 307,
+      "bottom": 847,
+      "left": 12
+    },
+    "background": "color(srgb 0.0705882 0.101961 0.0862745 / 0.76)",
+    "shadow": "rgba(0, 0, 0, 0.38) 0px 12px 36px 0px, rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "",
+    "html": "<div role=\"alert\" data-material=\"banner\" class=\"css-view-g5y9jx unistyles_5mniy94tkw \" data-testid=\"worktree-setup-callout-prj_fde4292f19bdfd71\"><div class=\"css-view-g5y9jx unistyles_1i025lsk888 \"><div class=\"css-view-g5y9jx unistyles_qm7t12itzn \"><div class=\"css-view-g5y9jx unistyles_23i91830a22 \"><div dir=\"auto\" class=\"css-text-146c3p1 r-WebkitBoxOrient-8akbws r-display-krxsd3 r-maxWidth-dnmrzs "
+  },
+  {
+    "role": "chrome",
+    "rect": {
+      "x": 320,
+      "y": 0,
+      "width": 880,
+      "height": 72,
+      "top": 0,
+      "right": 1200,
+      "bottom": 72,
+      "left": 320
+    },
+    "background": "color(srgb 0.0705882 0.101961 0.0862745 / 0.76)",
+    "shadow": "none",
+    "position": "absolute",
+    "transform": "none",
+    "clearance": "",
+    "html": "<div data-material=\"chrome\" class=\"css-view-g5y9jx\"><div data-material=\"header\" class=\"css-view-g5y9jx unistyles_nogfuyy1a \" data-testid=\"composer-dock-header\"><div class=\"css-view-g5y9jx unistyles_4zckdms9tk \"><div class=\"css-view-g5y9jx unistyles_1j6i792rox4 \"><div style=\"cursor: default; app-region: drag; top: 0px; left: 0px; display: block; position: absolute; width: 100%; height: 100%;\"></div"
+  },
+  {
+    "role": "header",
+    "rect": {
+      "x": 320,
+      "y": 0,
+      "width": 880,
+      "height": 36,
+      "top": 0,
+      "right": 1200,
+      "bottom": 36,
+      "left": 320
+    },
+    "background": "rgba(0, 0, 0, 0)",
+    "shadow": "none",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "",
+    "html": "<div data-material=\"header\" class=\"css-view-g5y9jx unistyles_nogfuyy1a \" data-testid=\"composer-dock-header\"><div class=\"css-view-g5y9jx unistyles_4zckdms9tk \"><div class=\"css-view-g5y9jx unistyles_1j6i792rox4 \"><div style=\"cursor: default; app-region: drag; top: 0px; left: 0px; display: block; position: absolute; width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 0px; width: 10"
+  },
+  {
+    "role": "header",
+    "rect": {
+      "x": 320,
+      "y": 36,
+      "width": 880,
+      "height": 36,
+      "top": 36,
+      "right": 1200,
+      "bottom": 72,
+      "left": 320
+    },
+    "background": "rgba(0, 0, 0, 0)",
+    "shadow": "none",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "",
+    "html": "<div data-material=\"header\" class=\"css-view-g5y9jx unistyles_26ce41xdksl \" data-testid=\"workspace-tabs-row\"><div class=\"css-view-g5y9jx unistyles_16znx9tr7bk  r-pointerEvents-633pao\"><div dir=\"auto\" class=\"css-text-146c3p1 r-maxWidth-dnmrzs r-overflow-1udh08x r-textOverflow-1udbk01 r-whiteSpace-3s2u2q r-wordWrap-1iln25a unistyles_1ob91o85kiz \">Mac material reproduction</div></div><div class=\"css-v"
+  },
+  {
+    "role": "dock",
+    "rect": {
+      "x": 320,
+      "y": 0,
+      "width": 880,
+      "height": 900,
+      "top": 0,
+      "right": 1200,
+      "bottom": 900,
+      "left": 320
+    },
+    "background": "rgb(23, 30, 27)",
+    "shadow": "none",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "148px",
+    "html": "<div data-material=\"dock\" class=\"css-view-g5y9jx unistyles_j7v7ex0dmv \" style=\"--paseo-composer-clearance: 148px;\"><div class=\"css-view-g5y9jx unistyles_2gno4si8jss \"><div class=\"css-view-g5y9jx unistyles_2ec8su20qaf \"><div class=\"css-view-g5y9jx unistyles_2cbmgf0mtjt \"><div tabindex=\"-1\" style=\"display: flex; flex: 1 1 0%; min-height: 0px; position: relative; outline: none;\"><style>::highlight(pa"
+  },
+  {
+    "role": "scroll-controls",
+    "rect": {
+      "x": 320,
+      "y": 652,
+      "width": 880,
+      "height": 48,
+      "top": 652,
+      "right": 1200,
+      "bottom": 700,
+      "left": 320
+    },
+    "background": "rgba(0, 0, 0, 0)",
+    "shadow": "none",
+    "position": "absolute",
+    "transform": "matrix(1, 0, 0, 1, 0, -148)",
+    "clearance": "148px",
+    "html": "<div data-material=\"scroll-controls\" class=\"css-view-g5y9jx unistyles_d1b25cglpd  r-pointerEvents-12vffkv\"><div class=\"css-view-g5y9jx unistyles_1lb4tam4d3l \" style=\"animation-name: FadeIn; animation-duration: 0.2s; animation-delay: 0s; animation-timing-function: cubic-bezier(0, 0, 1, 1); visibility: initial;\"><button aria-label=\"Scroll to bottom\" role=\"button\" tabindex=\"0\" class=\"css-view-g5y9jx "
+  },
+  {
+    "role": "dock-composer",
+    "rect": {
+      "x": 320,
+      "y": 752,
+      "width": 880,
+      "height": 148,
+      "top": 752,
+      "right": 1200,
+      "bottom": 900,
+      "left": 320
+    },
+    "background": "rgba(0, 0, 0, 0)",
+    "shadow": "none",
+    "position": "absolute",
+    "transform": "none",
+    "clearance": "148px",
+    "html": "<div data-material=\"dock-composer\" class=\"css-view-g5y9jx unistyles_pkyp1rv7p9 \"><div class=\"css-view-g5y9jx unistyles_108hkou18ss \"><div class=\"css-view-g5y9jx unistyles_215k9ufn2fp \"><div class=\"css-view-g5y9jx unistyles_2cbegw3jgte \"><div class=\"css-view-g5y9jx unistyles_1xvnqkf5bq7 \"><div class=\"css-view-g5y9jx unistyles_23s5t0otfni \"><div class=\"css-view-g5y9jx unistyles_x7v1048xf7 \" data-tes"
+  },
+  {
+    "role": "composer",
+    "rect": {
+      "x": 350,
+      "y": 752,
+      "width": 820,
+      "height": 132,
+      "top": 752,
+      "right": 1170,
+      "bottom": 884,
+      "left": 350
+    },
+    "background": "color(srgb 0.0705882 0.101961 0.0862745 / 0.76)",
+    "shadow": "rgba(0, 0, 0, 0.48) 0px 20px 56px 0px",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "148px",
+    "html": "<div data-material=\"composer\" class=\"css-view-g5y9jx unistyles_1uf0s1n4ezm  r-pointerEvents-105ug2t\"><div class=\"css-view-g5y9jx unistyles_x7v1048xf7 \"><div class=\"css-view-g5y9jx unistyles_x7v1048xf7 \"><div class=\"unistyles_22gws0tv36n\" style=\"display: contents;\"><textarea placeholder=\"Message the agent, tag @files, or use /commands and /skills\" autocapitalize=\"sentences\" autocomplete=\"on\" autoco"
+  },
+  {
+    "role": "header",
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0,
+      "top": 0,
+      "right": 0,
+      "bottom": 0,
+      "left": 0
+    },
+    "background": "color(srgb 0.0705882 0.101961 0.0862745 / 0.76)",
+    "shadow": "none",
+    "position": "relative",
+    "transform": "none",
+    "clearance": "",
+    "html": "<div data-material=\"header\" class=\"css-view-g5y9jx unistyles_lo11ymdy5f \" data-testid=\"workspace-tabs-row\"><div class=\"css-view-g5y9jx unistyles_16znx9tr7bk  r-pointerEvents-633pao\"><div dir=\"auto\" class=\"css-text-146c3p1 r-maxWidth-dnmrzs r-overflow-1udh08x r-textOverflow-1udbk01 r-whiteSpace-3s2u2q r-wordWrap-1iln25a unistyles_1ob91o85kiz \">Files</div><div dir=\"auto\" class=\"css-text-146c3p1 r-ma"
+  }
+]
