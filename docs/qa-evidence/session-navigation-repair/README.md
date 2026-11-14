@@ -1,6 +1,6 @@
 # Session navigation repair (WORK-374)
 
-PR: <https://github.com/zfan2356/paseo/pull/13>. Base: `9d403c2b0b18b573eb6e12940a051b5cb72fdde5`. Contract v3.
+Implementation: [PR #13](https://github.com/zfan2356/paseo/pull/13), merged as `dbd5138f1c4ea0e7ff66a5211a0c5575270cdcba`. Sidebar evidence follow-up: <https://github.com/zfan2356/paseo/pull/14>. Contract v3.
 
 Sessions and Directories and terminals switch at the top and each own the list area. Pinned sessions have one independent, ordered, collapsible section, subject to the same filters as ordinary sessions. Main-checkout and linked-worktree sessions default to the primary repository project; explicit project choices and execution cwd stay independent. The composer folder button shows a short distinct name and reveals the full execution path on click or desktop hover.
 
@@ -40,4 +40,4 @@ The [prior narrow capture](https://github.com/zfan2356/paseo/blob/25a452dfacc95f
 
 The accepted legacy assignment boundary is defined in [the session navigation design](../../session-context.md). You can select a project or ungroup a session from its session settings; later automatic reads preserve that choice.
 
-Native iOS/Android and packaged Electron were not exercised. Narrow-browser evidence proves the compact web flow. No full local test suite, merge, deployment or production daemon restart was performed. Independent review is recorded on WORK-380 and PR #13 for the delivered revision. Remote CI is blocked: explicit workflow dispatch returned HTTP 422, `Actions has been disabled for this repository`; the branch has no checks or runs. See [remote CI output](remote-ci.txt). Multica PR-card association returned 404 twice because PR #13 has not been synced into the platform index; the GitHub PR exists and is Ready.
+Native iOS/Android and packaged Electron were not exercised. Narrow-browser evidence proves the compact web flow. No full local test suite, merge, deployment or production daemon restart was performed. Independent review is recorded on WORK-380 and the evidence follow-up PR for the delivered revision. Remote CI is blocked: explicit workflow dispatch returned HTTP 422, `Actions has been disabled for this repository`; the branch has no checks or runs. See [remote CI output](remote-ci.txt). Multica PR-card association returned 404 for the implementation PR because it has not been synced into the platform index. The follow-up PR records its current association status separately.
