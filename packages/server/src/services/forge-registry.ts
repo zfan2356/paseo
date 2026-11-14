@@ -5,6 +5,8 @@ import type { ForgeService } from "./forge-service.js";
 import { createGiteaService, resolveGiteaFamilyForge } from "./gitea-service.js";
 import { createGitLabService, probeGitLabHost } from "./gitlab-service.js";
 
+import { createTgitService } from "./tgit-service.js";
+
 export type ForgeServiceFactory = () => ForgeService;
 
 export interface ForgeAdapterRegistration {
@@ -166,6 +168,7 @@ export const defaultForgeRegistry = new ForgeRegistry([
       probeHost: async (host) => (await resolveGiteaFamilyForge(host)) === "forgejo",
     },
   ],
+  ["tgit", { createService: createTgitService, matchesHost: matchesCloudHost("tgit") }],
   ["codeberg", { createService: createGiteaService, matchesHost: matchesCloudHost("codeberg") }],
 ]);
 

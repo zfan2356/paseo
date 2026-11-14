@@ -1,3 +1,4 @@
+import { codexPalette } from "../../../../plugins/codex-theme/shared/palette";
 import { Platform } from "react-native";
 import { darkHighlightColors, lightHighlightColors } from "@getpaseo/highlight";
 
@@ -517,25 +518,8 @@ const midnightDarkColors = buildDarkSemanticColors({
   terminalBrightBlack: "#3c3e4c",
 });
 
-// Codex — charcoal desktop from the Codex app
-const codexDarkColors = buildDarkSemanticColors({
-  surface0: "#212121",
-  surface1: "#262626",
-  surface2: "#2f2f2f",
-  surface3: "#3d3d3d",
-  surface4: "#4a4a4a",
-  surfaceDiffEmpty: "#282828",
-  surfaceSidebar: "#171717",
-  foregroundMuted: "#9b9b9b",
-  foregroundExtraMuted: "#6e6e6e",
-  border: "#2a2a2a",
-  borderAccent: "#333333",
-  accent: "#52a06f",
-  accentBright: "#6fba88",
-  destructive: "#d65d5e",
-  terminalBlack: "#171717",
-  terminalBrightBlack: "#3d3d3d",
-});
+// COMPAT(codexTheme): saved built-in choices and offline clients use the same plugin palette.
+const codexDarkColors = buildDarkSemanticColors(codexPalette);
 
 // Claude — warm neutral with subtle orange undertone
 const claudeDarkColors = buildDarkSemanticColors({
@@ -570,7 +554,7 @@ const ghosttyDarkColors = buildDarkSemanticColors({
   foregroundExtraMuted: "#a0a4b2",
   border: "#353a47",
   borderAccent: "#3f4454",
-  accent: "#89b4fa",
+  accent: "#3570e0", // dark enough to carry white text on filled buttons
   accentBright: "#b4d0fc",
   destructive: "#c44a55", // red with slight cool lean against the slate-blue surfaces
   terminalBlack: "#21252d",
@@ -584,8 +568,10 @@ export const SPACING = {
   1.5: 6,
   2: 8,
   3: 12,
+  3.5: 14,
   4: 16,
   6: 24,
+  7: 28,
   8: 32,
   12: 48,
   16: 64,

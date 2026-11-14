@@ -40,7 +40,8 @@ interface TestPaseoDaemonOptions {
   cleanup?: boolean;
   preserveTerminalsOnClose?: boolean;
   openai?: PaseoOpenAIConfig;
-  speech?: PaseoSpeechConfig;
+  // localModelsDir defaults to the local provider's modelsDir, then to a dir under paseoHome.
+  speech?: Omit<PaseoSpeechConfig, "localModelsDir"> & { localModelsDir?: string };
   voiceLlmProvider?: PaseoDaemonConfig["voiceLlmProvider"];
   voiceLlmProviderExplicit?: boolean;
   voiceLlmModel?: string | null;
@@ -52,6 +53,8 @@ interface TestPaseoDaemonOptions {
   trustedProxies?: PaseoDaemonConfig["trustedProxies"];
   agentProfiles?: AgentProfile[];
   autoArchiveAfterMerge?: boolean;
+  resumeOnStartup?: boolean;
+  resumePrompt?: string;
   pluginsEnabled?: PaseoDaemonConfig["pluginsEnabled"];
   builtinPlugins?: BuiltinPluginLoader;
   plugins?: PaseoDaemonConfig["plugins"];
@@ -120,10 +123,7 @@ export async function createTestPaseoDaemon(
       }
 
       const close = async (): Promise<void> => {
-        if (options.preserveTerminalsOnClose !== true) {
-          daemon.terminalManager.killAll();
-        }
-        await daemon.stop().catch(() => undefined);
+        await daemon.stop({ keepTerminals: options.preserveTerminalsOnClose === true });
         await daemon.agentManager.flush().catch(() => undefined);
         if (options.cleanup ?? true) {
           await new Promise((r) => setTimeout(r, 50));
@@ -213,7 +213,15 @@ async function prepareTestDaemonConfig(
     webUi: options.webUi,
     trustedProxies: options.trustedProxies,
     openai: options.openai,
-    speech: options.speech,
+    speech: options.speech
+      ? {
+          ...options.speech,
+          localModelsDir:
+            options.speech.localModelsDir ??
+            options.speech.local?.modelsDir ??
+            path.join(paseoHome, "models", "local-speech"),
+        }
+      : undefined,
     voiceLlmProvider: options.voiceLlmProvider ?? null,
     voiceLlmProviderExplicit: options.voiceLlmProviderExplicit ?? false,
     voiceLlmModel: options.voiceLlmModel ?? null,
@@ -221,6 +229,8 @@ async function prepareTestDaemonConfig(
     downloadTokenTtlMs: options.downloadTokenTtlMs,
     agentProfiles: options.agentProfiles,
     autoArchiveAfterMerge: options.autoArchiveAfterMerge,
+    resumeOnStartup: options.resumeOnStartup,
+    resumePrompt: options.resumePrompt,
     pluginsEnabled: options.pluginsEnabled,
     plugins: options.plugins,
   };

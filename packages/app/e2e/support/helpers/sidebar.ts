@@ -1,3 +1,4 @@
+import { openDirectoryResources } from "./workspace-ui";
 import { expect, type Page } from "@playwright/test";
 import { getServerId } from "./server-id";
 import { projectEquivalenceViewKey } from "./project-view-key";
@@ -38,6 +39,7 @@ async function expectContextMenuAtPointer(
 }
 
 export async function openWorkspaceContextMenu(page: Page, workspaceId: string): Promise<void> {
+  await openDirectoryResources(page);
   const workspaceKey = `${getServerId()}:${workspaceId}`;
   const menuTestID = `sidebar-workspace-context-menu-${workspaceKey}`;
   const anchor = await openContextMenuAtRowPoint(
@@ -49,6 +51,7 @@ export async function openWorkspaceContextMenu(page: Page, workspaceId: string):
 }
 
 export async function showWorkspaceHoverCard(page: Page, workspaceId: string): Promise<void> {
+  await openDirectoryResources(page);
   const workspaceKey = `${getServerId()}:${workspaceId}`;
   await page.getByTestId(`sidebar-workspace-row-${workspaceKey}`).hover();
   await expect(page.getByTestId("workspace-hover-card")).toBeVisible();
@@ -64,6 +67,7 @@ export async function focusWorkspaceRowWithKeyboard(
   page: Page,
   workspaceId: string,
 ): Promise<void> {
+  await openDirectoryResources(page);
   const row = page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspaceId}`);
   await row.focus();
   await page.keyboard.press("Shift+Tab");
@@ -71,14 +75,59 @@ export async function focusWorkspaceRowWithKeyboard(
   await expect(row).toBeFocused();
 }
 
+export async function scrollWorkspaceList(page: Page): Promise<void> {
+  await openDirectoryResources(page);
+  const list = page.getByTestId("sidebar-project-workspace-list-scroll");
+  const before = await list.evaluate((element) => element.scrollTop);
+  await list.evaluate((element) =>
+    element.scrollBy({ top: element.scrollTop > 0 ? -40 : 40, behavior: "instant" }),
+  );
+  await expect.poll(() => list.evaluate((element) => element.scrollTop)).not.toBe(before);
+}
+
 export async function expectWorkspaceHoverCardOpen(page: Page): Promise<void> {
-  await expect(page.getByTestId("workspace-hover-card")).toBeVisible();
+  const cards = page.getByTestId("workspace-hover-card");
+  // Keyboard navigation can leave the previous card closing while the next opens.
+  // Retry both checks together: another card may mount between count and visibility.
+  await expect(async () => {
+    expect(await cards.count()).toBe(1);
+    expect(await cards.isVisible()).toBe(true);
+  }).toPass({ timeout: 10_000 });
 }
 
 export async function expectWorkspaceHoverCardStaysOpen(page: Page): Promise<void> {
   // Longer than the hover card's close grace period.
   await page.waitForTimeout(300);
   await expectWorkspaceHoverCardOpen(page);
+}
+
+/** Scans the rows in the given order at about a user's pace, then rests on the last one. */
+export async function sweepPointerAcrossWorkspaceRows(
+  page: Page,
+  workspaceIds: string[],
+): Promise<void> {
+  const centers: Array<{ x: number; y: number }> = [];
+  for (const workspaceId of workspaceIds) {
+    const row = page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspaceId}`);
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    const bounds = await row.boundingBox();
+    if (!bounds) throw new Error(`Could not measure the row of ${workspaceId}`);
+    centers.push({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 });
+  }
+  const [first, ...rest] = centers;
+  await page.mouse.move(first!.x, first!.y);
+  for (const center of rest) {
+    await page.mouse.move(center.x, center.y, { steps: 3 });
+  }
+}
+
+export async function expectOnlyWorkspaceHoverCardFor(
+  page: Page,
+  workspaceName: string,
+): Promise<void> {
+  const cards = page.getByTestId("workspace-hover-card");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.getByTestId("hover-card-workspace-name")).toHaveText(workspaceName);
 }
 
 export async function expectWorkspaceHoverCardClosed(page: Page): Promise<void> {
@@ -115,6 +164,7 @@ export async function expectWorkspaceContextMenuActions(
 }
 
 export async function openProjectContextMenu(page: Page, projectViewKey: string): Promise<void> {
+  await openDirectoryResources(page);
   const menuTestID = `sidebar-project-context-menu-${projectViewKey}`;
   const anchor = await openContextMenuAtRowPoint(
     page,
@@ -138,6 +188,7 @@ export async function expectProjectContextMenuActions(
 }
 
 export async function selectWorkspaceInSidebar(page: Page, workspaceId: string): Promise<void> {
+  await openDirectoryResources(page);
   const row = page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspaceId}`);
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
@@ -157,6 +208,7 @@ async function openWorkspaceSidebarKebab(page: Page, workspaceId: string) {
 }
 
 export async function expectWorkspaceListed(page: Page, name: string): Promise<void> {
+  await openDirectoryResources(page);
   await expect(
     page.locator('[data-testid^="sidebar-workspace-row-"]').filter({ hasText: name }).first(),
   ).toBeVisible({ timeout: 30_000 });
@@ -202,6 +254,7 @@ export async function expectWorkspaceAbsentFromSidebar(
 // row. Every caller has to walk the same path, so it lives here: when the menu's shape moves
 // again, this is the only place that has to follow.
 export async function openSidebarDisplayPage(page: Page, branchTestID: string): Promise<void> {
+  await openDirectoryResources(page);
   await page.getByTestId("sidebar-display-preferences-menu").click();
   await page.getByTestId(branchTestID).click();
 }
@@ -252,16 +305,9 @@ export async function expectMobileAgentSidebarHidden(page: Page): Promise<void> 
   await expect(page.getByTestId("sidebar-sessions")).not.toBeInViewport({ timeout: 5_000 });
 }
 
-/** Drag from the left edge: the only way to open the list while fullscreen hides the header. */
-export async function swipeOpenMobileAgentSidebar(page: Page): Promise<void> {
-  const viewport = page.viewportSize();
-  if (!viewport) throw new Error("viewport size is required");
-  const y = Math.round(viewport.height / 2);
-  await page.mouse.move(8, y);
-  await page.mouse.down();
-  await page.mouse.move(40, y, { steps: 4 });
-  await page.mouse.move(Math.round(viewport.width * 0.7), y, { steps: 12 });
-  await page.mouse.up();
+/** Opens navigation without moving focus to the header, including over a fullscreen editor. */
+export async function openMobileAgentSidebarWithKeyboard(page: Page): Promise<void> {
+  await page.keyboard.press("ControlOrMeta+b");
 }
 
 /** Drag from the right edge to open the compact Explorer over the agent. */

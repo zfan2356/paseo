@@ -1,3 +1,5 @@
+import type { SessionContextStore } from "../../session-context-store.js";
+import type { SessionContext } from "@getpaseo/protocol/session-context";
 import {
   normalizeWorkspaceLabelName,
   workspaceLabelKey,
@@ -49,6 +51,7 @@ export class WorkspaceLabelService {
   constructor(
     private readonly catalog: WorkspaceLabelCatalogStore,
     private readonly sequence = new WorkspaceLabelSequence(),
+    private readonly contexts?: SessionContextStore,
   ) {}
 
   async initialize(): Promise<void> {
@@ -179,6 +182,7 @@ export class WorkspaceLabelService {
         return {
           labels: catalog.map((candidate) => (candidate === existing ? label : candidate)),
           workspaceUpdates,
+          ...(nameChanged ? { labelRewrite: { from: fromKey, to: label.name } } : {}),
           result: {
             label,
             affectedWorkspaceCount: workspaceUpdates.length,
@@ -217,6 +221,7 @@ export class WorkspaceLabelService {
         return {
           labels: catalog.filter((label) => label !== existing),
           workspaceUpdates,
+          labelRewrite: { from: key },
           result: {
             affectedWorkspaceCount: workspaceUpdates.length,
             deletedName: existing.name,
@@ -240,6 +245,40 @@ export class WorkspaceLabelService {
           .length,
       }));
     });
+  }
+
+  async setSessionAssignment(input: {
+    agentId: string;
+    name: string;
+    assigned: boolean;
+  }): Promise<SessionContext> {
+    if (!this.contexts) throw new Error("Session contexts unavailable");
+    return this.exclusive(async () =>
+      this.catalog.commit((catalog, _workspaces, contexts) => {
+        const name = requireName(input.name);
+        const key = workspaceLabelKey(name);
+        const definition = catalog.find((label) => workspaceLabelKey(label.name) === key);
+        if (input.assigned && !definition)
+          throw new WorkspaceLabelError("label_not_found", "Label not found");
+        const current = contexts.find((context) => context.agentId === input.agentId);
+        if (!current) throw new Error("Session context not found");
+        const context = {
+          ...current,
+          sidebarLabelNames: updateAssignmentLabels(
+            current.sidebarLabelNames,
+            key,
+            definition?.name ?? name,
+            input.assigned,
+          ),
+        };
+        return {
+          labels: [...catalog],
+          workspaceUpdates: [],
+          contextUpdates: [context],
+          result: context,
+        };
+      }, input.agentId),
+    );
   }
 
   private async exclusive<T>(operation: () => Promise<T>): Promise<T> {

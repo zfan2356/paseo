@@ -5,7 +5,7 @@ import { StyleSheet } from "react-native-unistyles";
 import invariant from "tiny-invariant";
 import { MessageCircleQuestionMark } from "lucide-react-native";
 
-import { AgentPanelContent } from "@/panels/agent-panel";
+import { SideChatAgentContent } from "@/panels/agent-panel";
 import { usePaneContext, usePaneFocus } from "@/panels/pane-context";
 import { definePanel, type PanelDescriptor } from "@/panels/panel-registry";
 import { SideChatContent } from "./content";
@@ -38,13 +38,12 @@ function SideChatPanel() {
   const parentAgentId = target.parentAgentId;
   const renderAgent = useCallback(
     (sideAgentId: string) => (
-      <AgentPanelContent
+      <SideChatAgentContent
         serverId={serverId}
         workspaceId={workspaceId}
         agentId={sideAgentId}
         isPaneFocused={isInteractive}
         onOpenWorkspaceFile={openFileInWorkspace}
-        showSideChat={false}
       />
     ),
     [serverId, workspaceId, isInteractive, openFileInWorkspace],

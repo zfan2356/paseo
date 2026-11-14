@@ -1,0 +1,371 @@
+
+> @getpaseo/app@0.15.3 test:e2e
+> playwright test --project=browser --config playwright.work-374.config.ts e2e/browser/sidebar-model-b.spec.ts
+
+(node:3934033) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[metro] Skipping web setup: EXPO_NO_WEB_SETUP is enabled.
+[metro] Using src/app as the root directory for Expo Router.
+[metro] Waiting on http://localhost:33365
+[metro] Logs for your project will appear below.
+[metro] | (node:3934122) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[metro] | (Use `node --trace-warnings ...` to show where the warning was created)
+[metro] Web Bundled 4450ms packages/app/index.ts (5893 modules)
+[e2e] Metro warmed on port 33365
+
+Running 9 tests using 1 worker
+
+(node:3935881) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3935881) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:3935881) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[e2e] Worker 0 daemon started on port 38451, home: /tmp/multica-task-1839065999/paseo-e2e-worker-0-iMeqH0
+[metro] Web Bundled 246ms packages/app/index.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web Bundled 72ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+  ✓  1 [browser] › e2e/browser/sidebar-model-b.spec.ts:39:7 › Model B sidebar shape › git and non-git projects both render as expandable parents, both show a per-row New workspace icon, and the global button covers both (7.3s)
+[metro] Web Bundled 255ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+  ✓  2 [browser] › e2e/browser/sidebar-model-b.spec.ts:86:7 › Model B sidebar shape › no tab, agent, or terminal ever renders as a sidebar row (8.6s)
+[metro] Web Bundled 239ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+  ✓  3 [browser] › e2e/browser/sidebar-model-b.spec.ts:119:7 › Model B sidebar shape › status grouping shows only workspace rows and moves a single row when its status changes (8.4s)
+[metro] Web Bundled 243ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+  ✓  4 [browser] › e2e/browser/sidebar-model-b.spec.ts:194:7 › session tree keeps shared-workspace sessions and explicit directories at width 1200 (9.7s)
+[metro] Web Bundled 242ms packages/app/index.ts (1 module)
+[metro] Web Bundled 5ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+  ✓  5 [browser] › e2e/browser/sidebar-model-b.spec.ts:194:7 › session tree keeps shared-workspace sessions and explicit directories at width 390 (12.6s)
+[metro] Web Bundled 249ms packages/app/index.ts (1 module)
+[metro] Web Bundled 5ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+  ✓  6 [browser] › e2e/browser/sidebar-model-b.spec.ts:267:5 › session tree keeps a non-Git launch directory and reports an expired binding (8.4s)
+[metro] Web Bundled 248ms packages/app/index.ts (1 module)
+[metro] Web Bundled 5ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+  ✓  7 [browser] › e2e/browser/sidebar-model-b.spec.ts:303:5 › session tree retains a terminal workspace with no root session (7.6s)
+[metro] Web Bundled 251ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+  ✓  8 [browser] › e2e/browser/sidebar-model-b.spec.ts:332:5 › session tree resolves nested directory changes against the checkout root (10.2s)
+[metro] Web Bundled 250ms packages/app/index.ts (1 module)
+[metro] Web Bundled 4ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[metro] Web  LOG  Running application "main" with appParams:
+[metro]  {"hydrate": undefined, "rootTag": "#root"} 
+[metro] Development-level warnings: ON.
+[metro] Performance optimizations: OFF.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/workspace-tabs/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/stores/navigation-active-workspace-store/index.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/connected-hosts.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/client-state/api.ts -> src/plugins/client-state/source.ts -> src/plugins/client-state/terminals.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/actions.ts -> src/plugins/workspace-panels/locations.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/client-runtime.ts -> src/plugins/navigation.ts -> src/stores/workspace-layout-store.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/desktop/browser/automation/handler.ts -> src/stores/workspace-layout-store.ts -> src/plugins/workspace-panels/locations.ts -> src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/react-native/ui.ts -> src/plugins/react-native/markdown.tsx -> src/components/markdown/renderer.tsx -> src/agent-commands/index.tsx -> src/agent-commands/use-query.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/plugins/registry.ts -> src/plugins/evaluate.ts -> src/plugins/themes/index.ts -> src/plugins/registry.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/runtime/host-runtime.ts -> src/runtime/directory-sync/index.ts -> src/runtime/directory-sync/agent-replica.ts -> src/hooks/use-archive-agent.ts -> src/runtime/host-runtime.ts
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  Require cycle: src/components/sidebar-workspace-list.tsx -> src/components/sidebar/sidebar-status-list.tsx -> src/components/sidebar/sidebar-workspace-row-content.tsx -> src/components/workspace-hover-card.tsx -> src/components/sidebar-workspace-list.tsx
+[metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
+[metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+[metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+[e2e] Worker 0 daemon stopped
+  ✘  9 [browser] › e2e/browser/sidebar-model-b.spec.ts:381:5 › session navigation restores nine pins and swaps complete lists without changing execution (28.2s)
+[e2e] Metro stopped
+
+
+  1) [browser] › e2e/browser/sidebar-model-b.spec.ts:381:5 › session navigation restores nine pins and swaps complete lists without changing execution 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveCount[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  getByTestId('session-sidebar').filter({ visible: true }).locator('[data-testid^="session-group-"]').filter({ has: getByTestId('session-sidebar').filter({ visible: true }).getByTestId('session-row-1ba80951-6a3e-453e-9a5e-ee3832d26cd5') }).locator('[data-testid^="session-row-"]')
+    Expected: [32m3[39m
+    Received: [31m0[39m
+    Timeout:  10000ms
+
+    Call log:
+    [2m  - Expect "toHaveCount" with timeout 10000ms[22m
+    [2m  - waiting for getByTestId('session-sidebar').filter({ visible: true }).locator('[data-testid^="session-group-"]').filter({ has: getByTestId('session-sidebar').filter({ visible: true }).getByTestId('session-row-1ba80951-6a3e-453e-9a5e-ee3832d26cd5') }).locator('[data-testid^="session-row-"]')[22m
+    [2m    14 × locator resolved to 0 elements[22m
+    [2m       - unexpected value "0"[22m
+
+
+      508 |         .locator('[data-testid^="session-group-"]')
+      509 |         .filter({ has: sidebar.getByTestId(`session-row-${ordinary.id}`) });
+    > 510 |       await expect(repositoryGroup.locator('[data-testid^="session-row-"]')).toHaveCount(3);
+          |                                                                              ^
+      511 |       for (const id of worktreeAgents)
+      512 |         await expect(repositoryGroup.getByTestId(`session-row-${id}`)).toBeVisible();
+      513 |
+        at /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-374-6a7559c252c5/worktree/packages/app/e2e/browser/sidebar-model-b.spec.ts:510:78
+
+    [31mTest timeout of 60000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/sidebar-model-b-session-na-df87e--without-changing-execution-browser/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: browser-console (text/plain) ────────────────────────────────────────────────────
+    [console:info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+    [console:log] Running application "main" with appParams:
+     {rootTag: #root, hydrate: undefined} 
+    Development-level warnings: ON.
+    Performance optimizations: OFF.
+    [co...
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/sidebar-model-b-session-na-df87e--without-changing-execution-browser/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/sidebar-model-b-session-na-df87e--without-changing-execution-browser/error-context.md
+
+  1 failed
+    [browser] › e2e/browser/sidebar-model-b.spec.ts:381:5 › session navigation restores nine pins and swaps complete lists without changing execution 
+  8 passed (3.2m)
+npm error Lifecycle script `test:e2e` failed with error:
+npm error code 1
+npm error path /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-374-6a7559c252c5/worktree/packages/app
+npm error workspace @getpaseo/app@0.15.3
+npm error location /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-374-6a7559c252c5/worktree/packages/app
+npm error command failed
+npm error command sh -c playwright test --project=browser --config playwright.work-374.config.ts e2e/browser/sidebar-model-b.spec.ts

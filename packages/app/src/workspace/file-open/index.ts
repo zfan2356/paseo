@@ -4,6 +4,8 @@ export type OpenFileDisposition = "main" | "preferred" | "side";
 
 export interface WorkspaceFileLocation {
   path: string;
+  directory?: string;
+  sessionAgentId?: string;
   lineStart?: number;
   lineEnd?: number;
   /** Heading id inside a Markdown preview. Line numbers stay on lineStart. */
@@ -34,6 +36,8 @@ export function normalizeWorkspaceFileLocation(
   const anchor = normalizeAnchor(location.anchor);
   return {
     path,
+    ...(location.directory ? { directory: location.directory } : {}),
+    ...(location.sessionAgentId ? { sessionAgentId: location.sessionAgentId } : {}),
     ...(lineStart ? { lineStart } : {}),
     ...(lineStart && lineEnd && lineEnd >= lineStart ? { lineEnd } : {}),
     ...(anchor ? { anchor } : {}),
@@ -46,6 +50,8 @@ export function workspaceFileLocationsEqual(
 ): boolean {
   return (
     left.path === right.path &&
+    left.directory === right.directory &&
+    left.sessionAgentId === right.sessionAgentId &&
     left.lineStart === right.lineStart &&
     left.lineEnd === right.lineEnd &&
     left.anchor === right.anchor
