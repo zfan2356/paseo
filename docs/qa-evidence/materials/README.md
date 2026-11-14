@@ -1,6 +1,6 @@
 # Default desktop materials — WORK-408
 
-The selected medium recipe is now the Web/desktop default: 76% tint and 20px blur, with the approved L1/L2/L3 borders, shadows and radii. There is no strength selector, material localStorage setting or launch flag. macOS main windows use sidebar vibrancy; Web, Linux and Windows keep an opaque sidebar. Reduce Transparency makes raised surfaces opaque and removes blur. Native rendering is unchanged.
+The selected medium recipe is now the Web/desktop default: 76% tint and 20px blur, with the approved L1/L2/L3 borders, shadows and radii. There is no strength selector, material localStorage setting or launch flag. macOS main windows use sidebar vibrancy; Web, Linux and Windows keep an opaque sidebar. Reduce Transparency makes raised surfaces opaque and removes blur. Native rendering is unchanged. The workspace header floats only over agent tabs; terminal, file, plugin and draft surfaces retain normal header flow.
 
 ## Visual evidence
 
@@ -21,7 +21,7 @@ The approved visual study remains in [PR #19](https://github.com/zfan2356/paseo/
 
 ## Elevation inventory
 
-[Generated inventory](floating-inventory.json): 128 caller files, zero unmapped slots, zero deferred files. Regenerate with `node docs/qa-evidence/materials/inventory.mjs`. The five previously deferred files (`left-sidebar.tsx`, `sidebar-workspace-list.tsx`, `session-navigation/actions.tsx`, `session-navigation/menu.tsx`, `session-navigation/sidebar.tsx`) inherit the shared menu/modal/hover-card renderers; none has a private floating renderer to patch. The session card itself receives a web-only 8px outer inset and 12px radius; hover/state/menu handlers remain owned by session navigation.
+[Generated inventory](floating-inventory.json): 146 caller/renderer files, zero unmapped slots, zero deferred files. Regenerate with `node docs/qa-evidence/materials/inventory.mjs`. The five previously deferred files (`left-sidebar.tsx`, `sidebar-workspace-list.tsx`, `session-navigation/actions.tsx`, `session-navigation/menu.tsx`, `session-navigation/sidebar.tsx`) inherit the shared menu/modal/hover-card renderers; none has a private floating renderer to patch. The session card itself receives a web-only 8px outer inset and 12px radius; hover/state/menu handlers remain owned by session navigation.
 
 | Tier | Radius | Owners                                                                                                   |
 | ---- | -----: | -------------------------------------------------------------------------------------------------------- |
@@ -29,7 +29,9 @@ The approved visual study remains in [PR #19](https://github.com/zfan2356/paseo/
 | L2   |   16px | Menus, context menus, comboboxes, autocomplete, hover cards, banners, callouts, expanded linked requests |
 | L3   |   24px | Dialogs, sheets, composer, fullscreen image/Mermaid surfaces, command center and add-project flow        |
 
-FloatingSurface defaults to L2; explicit dialog/fullscreen markers select L3. Menu and combobox compact presentations inherit the L3 sheet background. Native sheet adapters remain unchanged. The catalog captures all nine renderer families in both themes (`floating-*-default.png`). This proves renderer families, not every business dialog individually. The catalog records the existing HostPicker nested-button warning in both themes; [raw console records](floating-console.json) contain no uncaught page errors.
+FloatingSurface defaults to L2; explicit dialog/fullscreen markers select L3. Menu and combobox compact presentations inherit the L3 sheet background. Native sheet adapters remain unchanged. Additional direct owners are mapped: PaneFind (chat/terminal/editor search) and browser annotation cards use L2; chat-outline previews and download notices use L1; compact side-chat overlays use L3. The find and outline paths have focused browser regressions; [find after layout correction](chat-find-after-fix.png). Download/side-chat/annotation wiring has code evidence and shares the already exercised recipes. Persistent action buttons, switch thumbs, drag clones, device frames and injected guest-page annotations are controls or content, not popup surfaces; their existing geometry is retained.
+
+The catalog captures the original nine renderer families in both themes (`floating-*-default.png`). This proves renderer families, not every business dialog individually. The catalog records the existing HostPicker nested-button warning in both themes; [raw console records](floating-console.json) contain no uncaught page errors.
 
 ## Scroll performance
 
@@ -46,6 +48,9 @@ These are requestAnimationFrame intervals and synchronous scroll-write samples o
 
 Commands and terminal results are retained in the adjacent logs. No full local suite was run. The browser harness owns isolated daemons and never restarts port 6767.
 
+- [Layout/find/outline regressions](layout-controls-browser.txt): a real terminal begins below its chrome, switching back restores the agent overlay, the find widget stays below chrome, and closing Find retains keyboard scrolling. The [failing pre-fix run](terminal-before-fix.txt) measured a −72px overlap; [before](terminal-before-fix.png) / [after](terminal-after-fix.png) show the corrected first line.
+- [Find viewport](find-viewport-tests.txt): 5 passed. The runner uses the [temporary provider override](find-viewport-config.txt) to select installed Chromium 1187; the project configuration is otherwise unchanged. Real-DOM coverage includes a widget displaced by the workspace header, so match scrolling reserves its complete visible footprint.
+- [Scroll controls](browser-scroll-controls.txt): both widths place the jump-to-bottom button above the floating composer, can hit it and actually scroll to the bottom. The control preserves its existing track offset and adds the measured composer height.
 - [Window regression](window-tests.txt): 18 passed, including macOS activation policy, startup/live reduced transparency, latest opaque theme color, listener cleanup and non-Mac opacity.
 - [Final material browser](browser-final.txt): conversation, attachment menu, dialog/sheet, theme/viewport matrix, reduced-transparency assertions and scroll samples.
 - [Final catalog/sidebar run](browser-final-attempt1.txt): catalog and sidebar tests passed; its first test failed because the new assertion queried only a desktop dialog at 390px. The selector now covers the actual sheet, and the final material run above verifies the correction. The initial complete catalog run is also retained in [browser.txt](browser.txt).
@@ -53,7 +58,7 @@ Commands and terminal results are retained in the adjacent logs. No full local s
 - [Typecheck](typecheck.txt), [lint](lint.txt), [format](format.txt), [format check](format-check.txt).
 - [Sheet host](sheet-tests.txt): 6 passed.
 - [Main baseline capture](baseline-browser.txt): passed; 16 real comparison images.
-- [Server/app dependencies](build-server.txt), [desktop main](build-desktop-main.txt), [desktop package](build-desktop.txt), [final renderer export/repack](build-desktop-final.txt).
+- [Server/app dependencies](build-server.txt), [desktop main](build-desktop-main.txt), [desktop package](build-desktop.txt), [final renderer export/repack](build-desktop-final.txt), [layout-fix export/repack](build-layout-fixes.txt).
 - [Native code evidence](native-code.txt): unchanged native composer files and passthrough palette helpers; native Materials returns null. Shared markers carry no native style and DOM measurements are web-guarded. Zero-linked-request hiding is web-only.
 
 Reproduce material coverage with:

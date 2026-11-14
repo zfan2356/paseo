@@ -53,7 +53,9 @@ function MaterialStyles({ theme }: { theme: Theme }) {
         ${root} [data-material="chrome"] div { border-color: transparent !important; }
         ${root} [data-material="chrome"] div:not([role="button"]) { background-color: transparent !important; }
         ${root} [data-material="chrome"] [data-material="header"] { background: transparent !important; backdrop-filter: none; }
+        ${root} [data-chat-find-widget="true"] { transform: translateY(var(--paseo-chrome-clearance, 0px)); }
         ${root} [data-material="dock-composer"] { position: absolute; bottom: 0; }
+        ${root} [data-material="dock"] [data-material="scroll-controls"] { transform: translateY(calc(-1 * var(--paseo-composer-clearance, 0px))); }
         ${root} [data-testid="agent-chat-scroll"] > div::before {
           content: ""; display: block; flex-shrink: 0; height: calc(var(--paseo-chrome-clearance, 0px) + 40px);
         }

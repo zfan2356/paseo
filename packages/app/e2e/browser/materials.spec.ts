@@ -82,6 +82,16 @@ test("default material evidence", async ({ page }, testInfo) => {
           el.scrollTop = el.scrollHeight * 0.45 + 60;
         });
         await page.waitForTimeout(400);
+        const jump = page.getByTestId("scroll-to-bottom-button").filter({ visible: true });
+        await expect(jump).toBeVisible();
+        await jump.click({ trial: true });
+        const jumpBounds = await jump.boundingBox();
+        const composerBounds = await page
+          .locator('[data-material="composer"]:visible')
+          .first()
+          .boundingBox();
+        if (!jumpBounds || !composerBounds) throw new Error("Missing timeline controls");
+        expect(jumpBounds.y + jumpBounds.height).toBeLessThan(composerBounds.y);
         const scrollTop = await scroll.evaluate((el) => el.scrollTop);
         const capture = async (scene: string) => {
           for (const mode of ["default"]) {
@@ -195,6 +205,13 @@ test("default material evidence", async ({ page }, testInfo) => {
         await cdp.detach();
         await page.emulateMedia({ colorScheme: scheme });
         await page.waitForTimeout(350);
+        await jump.click();
+        await expect(jump).toHaveCount(0);
+        await expect
+          .poll(() =>
+            scroll.evaluate((el) => Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop)),
+          )
+          .toBeLessThan(2);
       }
     }
     await writeFile(`${out}paint.json`, JSON.stringify(paintEvidence, null, 2));
@@ -459,6 +476,66 @@ test("sidebar material preserves status, pin, context menu and hover archive", a
           (await session.client.fetchAgent({ agentId: session.agentId }))?.agent?.archivedAt,
       )
       .toBeTruthy();
+  } finally {
+    await session.cleanup();
+  }
+});
+
+test("material header leaves terminal content below workspace chrome", async ({ page }) => {
+  const { clickNewTerminal } = await import("../support/helpers/launcher");
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "material-terminal-",
+    title: "Chrome geometry",
+    initialPrompt: "Find the matching paragraph",
+    featureValues: { mockAssistantResponse: "A material search target." },
+  });
+  try {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await openAgentRoute(page, session);
+    await session.client.waitForFinish(session.agentId, 30_000);
+    await clickNewTerminal(page);
+    const terminal = page.getByTestId("terminal-surface").filter({ visible: true }).first();
+    await expect(terminal).toBeVisible();
+    await expect
+      .poll(async () => {
+        const content = await terminal.boundingBox();
+        const chrome = await page
+          .locator('[data-material="chrome"], [data-material="chrome-static"]')
+          .filter({ visible: true })
+          .first()
+          .boundingBox();
+        if (!content || !chrome) throw new Error("Missing workspace frame");
+        return content.y - (chrome.y + chrome.height);
+      })
+      .toBeGreaterThanOrEqual(0);
+    const out = (await import("node:path")).resolve(
+      process.cwd(),
+      "../../docs/qa-evidence/materials",
+    );
+    await page.screenshot({ path: `${out}/terminal-after-fix.png` });
+    await page
+      .getByTestId(`workspace-tab-agent_${session.agentId}`)
+      .filter({ visible: true })
+      .first()
+      .click();
+    await expect(
+      page.locator('[data-material="chrome"]').filter({ visible: true }).first(),
+    ).toHaveCSS("position", "absolute");
+    await page.getByTestId("assistant-message").filter({ visible: true }).last().click();
+    await page.keyboard.press("ControlOrMeta+f");
+    const find = page.getByRole("textbox", { name: "Find in pane", exact: true });
+    await expect(find).toBeFocused();
+    await find.fill("material");
+    const widget = await page.locator('[data-chat-find-widget="true"]').boundingBox();
+    const header = await page
+      .locator('[data-material="chrome"]')
+      .filter({ visible: true })
+      .first()
+      .boundingBox();
+    if (!widget || !header) throw new Error("Missing find widget or header");
+    expect(widget.y).toBeGreaterThanOrEqual(header.y + header.height);
+    await find.click({ trial: true });
+    await page.screenshot({ path: `${out}/chat-find-after-fix.png` });
   } finally {
     await session.cleanup();
   }

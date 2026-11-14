@@ -87,10 +87,12 @@ export function createFindViewport({
               const selected = row ? findRenderedMatches(row, query)[indexInRow] : undefined;
               if (!selected) return null;
               CSS.highlights.set(highlightName, new Highlight(selected));
-              const widget = getRoot()?.querySelector<HTMLElement>(
-                '[data-chat-find-widget="true"]',
-              );
-              const clearance = widget ? widget.getBoundingClientRect().height + 8 : 0;
+              const root = getRoot();
+              const widget = root?.querySelector<HTMLElement>('[data-chat-find-widget="true"]');
+              const clearance =
+                widget && root
+                  ? widget.getBoundingClientRect().bottom - root.getBoundingClientRect().top
+                  : 0;
               return selected.getBoundingClientRect().top - clearance;
             },
           });

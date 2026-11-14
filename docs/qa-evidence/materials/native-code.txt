@@ -4,3 +4,4 @@ sidebarMaterialColor: native passthrough passed
 materialMutedColor: native passthrough passed
 materialStatusColor: native passthrough passed
 Native Materials returns null; all CSS lives in .web.tsx. Shared dataSet markers do not change native style. DOM clearance writes are isWeb guarded. Zero-PR hiding is web-only. Native sheet background remains undefined. No native runtime executed.
+The scroll-control fix adds only a dataSet marker on native; translation is web CSS. Active-tab chrome selection only changes its web data marker; native layout remains in flow.

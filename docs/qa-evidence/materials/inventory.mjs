@@ -9,8 +9,13 @@ const files = execFileSync(
   .trim()
   .split("\n");
 const primitive =
-  /<(TooltipContent|Tooltip|ToastViewport|SidebarCallout|ArchivedAgentCallout|ParentAgentCallout|FloatingSurface|DropdownMenu|DropdownMenuContent|MenuSurface|ContextMenu|ContextMenuContent|Combobox|HoverCard|HoverCardContent|AutocompletePopover|Autocomplete|PluginPopoverSurface|SidebarPopoverSurface|AdaptiveModalSheet|AdaptiveRenameModal|IsolatedBottomSheetModal|Modal)\b/g;
+  /<(PaneFind|DownloadToast|SideChatOverlay|ChatOutlineRail|BrowserElementAnnotationCard|TooltipContent|Tooltip|ToastViewport|SidebarCallout|ArchivedAgentCallout|ParentAgentCallout|FloatingSurface|DropdownMenu|DropdownMenuContent|MenuSurface|ContextMenu|ContextMenuContent|Combobox|HoverCard|HoverCardContent|AutocompletePopover|Autocomplete|PluginPopoverSurface|SidebarPopoverSurface|AdaptiveModalSheet|AdaptiveRenameModal|IsolatedBottomSheetModal|Modal)\b/g;
 const tiers = {
+  PaneFind: "L2",
+  DownloadToast: "L1",
+  SideChatOverlay: "L3",
+  ChatOutlineRail: "L1 preview; structural rail",
+  BrowserElementAnnotationCard: "L2",
   Tooltip: "L1",
   TooltipContent: "L1",
   ToastViewport: "L1",
@@ -48,10 +53,12 @@ const structural = new Set([
   "window",
   "header",
   "chrome",
+  "chrome-static",
   "dock",
   "dock-composer",
   "solid",
   "session-row",
+  "scroll-controls",
 ]);
 const unmapped = Object.values(slots).filter(
   (slot) => !raised.has(slot.material) && !structural.has(slot.material),
@@ -59,13 +66,29 @@ const unmapped = Object.values(slots).filter(
 if (unmapped.length) throw new Error("Unmapped material slots: " + JSON.stringify(unmapped));
 const entries = [];
 for (const file of files.sort()) {
-  const matches = [...fs.readFileSync(file, "utf8").matchAll(primitive)];
-  if (!matches.length) continue;
+  const content = fs.readFileSync(file, "utf8");
+  const matches = [...content.matchAll(primitive)];
+  const markers = [...content.matchAll(/MATERIAL_SLOTS\.(\w+)/g)]
+    .map((match) => slots[match[1]]?.material)
+    .filter((role) => raised.has(role));
+  if (!matches.length && !markers.length) continue;
   const names = [...new Set(matches.map((match) => match[1]))];
   let status =
     "inherits shared material host; runtime screenshots cover renderer families, not every business action";
   if (file.includes(".native.")) status = "native path unchanged; code evidence";
-  entries.push({ file, surfaces: names.map((name) => ({ name, elevation: tiers[name] })), status });
+  entries.push({
+    file,
+    surfaces: [
+      ...names.map((name) => ({ name, elevation: tiers[name] })),
+      ...[...new Set(markers)].map((role) => ({
+        name: `material:${role}`,
+        elevation: { hint: "L1", popover: "L2", modal: "L3" }[
+          Object.entries(tokens.elevation).find(([, tier]) => tier.surfaces.includes(role))[0]
+        ],
+      })),
+    ],
+    status,
+  });
 }
 fs.writeFileSync(
   "docs/qa-evidence/materials/floating-inventory.json",

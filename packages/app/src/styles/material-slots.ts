@@ -1,5 +1,6 @@
 // Stable data attributes shared by web/desktop materials.
 export const MATERIAL_SLOTS = {
+  scrollControls: { material: "scroll-controls" },
   sessionRow: { material: "session-row" },
   tooltip: { material: "tooltip" },
   toast: { material: "toast" },
@@ -8,6 +9,7 @@ export const MATERIAL_SLOTS = {
   autocomplete: { material: "autocomplete" },
   hoverCard: { material: "hover-card" },
   fullscreen: { material: "fullscreen" },
+  chromeStatic: { material: "chrome-static" },
   chrome: { material: "chrome" },
   secondary: { material: "secondary" },
   secondaryExpanded: { material: "secondary-expanded" },

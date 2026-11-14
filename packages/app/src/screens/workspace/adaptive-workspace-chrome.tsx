@@ -1,3 +1,4 @@
+import type { WorkspaceTabDescriptor } from "./workspace-tabs-types";
 import { isWeb } from "@/constants/platform";
 import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useCallback, useRef, useState, type ReactNode } from "react";
@@ -7,9 +8,11 @@ import { WorkspaceTabMeasurementScope } from "./workspace-desktop-tabs-row";
 
 export function AdaptiveWorkspaceChrome({
   compactHeader,
+  activeTab,
   children,
 }: {
   compactHeader: ReactNode;
+  activeTab: WorkspaceTabDescriptor | null;
   children: ReactNode;
 }) {
   const chromeRef = useRef<View>(null);
@@ -26,7 +29,13 @@ export function AdaptiveWorkspaceChrome({
   }, []);
   return (
     <WorkspaceTabMeasurementScope>
-      <View ref={chromeRef} dataSet={MATERIAL_SLOTS.chrome} onLayout={measure}>
+      <View
+        ref={chromeRef}
+        dataSet={
+          isWeb && activeTab?.kind === "agent" ? MATERIAL_SLOTS.chrome : MATERIAL_SLOTS.chromeStatic
+        }
+        onLayout={measure}
+      >
         {selectWorkspaceChrome({ width, compact: compactHeader, full: children })}
       </View>
     </WorkspaceTabMeasurementScope>

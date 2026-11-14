@@ -139,3 +139,17 @@ it("waits for an asynchronous renderer before counting its matches", async () =>
   content.removeAttribute("aria-busy");
   expect(await reveal).toEqual({ occurrence: 0, count: 2 });
 });
+
+it("reveals a match below a find widget displaced by workspace chrome", async () => {
+  const root = transcript("message-1", ["needle"]);
+  root.style.position = "relative";
+  root.style.minHeight = "200px";
+  const widget = document.createElement("div");
+  widget.dataset.chatFindWidget = "true";
+  widget.style.cssText = "position:absolute;top:80px;height:40px;width:100px";
+  root.append(widget);
+  const capture: Capture = {};
+  await viewport(root, capture).reveal("message-1", "needle", 0, new AbortController().signal);
+  const selected = highlightedRanges()[0].getBoundingClientRect().top;
+  expect(capture.occurrence?.targetTop()).toBeCloseTo(selected - 120);
+});

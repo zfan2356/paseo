@@ -66,15 +66,31 @@
     "window",
     "header",
     "chrome",
+    "chrome-static",
     "dock",
     "dock-composer",
     "solid",
-    "session-row"
+    "session-row",
+    "scroll-controls"
   ],
   "unmapped": [],
-  "files": 128,
+  "files": 146,
   "deferred": 0,
   "entries": [
+    {
+      "file": "packages/app/src/agent-change-requests/section.tsx",
+      "surfaces": [
+        {
+          "name": "material:secondary-expanded",
+          "elevation": "L2"
+        },
+        {
+          "name": "material:secondary",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
     {
       "file": "packages/app/src/agent-profiles/settings/agent-profile-appearance-field.tsx",
       "surfaces": [
@@ -106,6 +122,46 @@
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
     },
     {
+      "file": "packages/app/src/agent-stream/chat-find/index.web.tsx",
+      "surfaces": [
+        {
+          "name": "PaneFind",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/agent-stream/chat-outline/rail.web.tsx",
+      "surfaces": [
+        {
+          "name": "material:tooltip",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/agent-stream/view.tsx",
+      "surfaces": [
+        {
+          "name": "ChatOutlineRail",
+          "elevation": "L1 preview; structural rail"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/app/_layout.tsx",
+      "surfaces": [
+        {
+          "name": "DownloadToast",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
       "file": "packages/app/src/changelog/internal/changelog-sheet.tsx",
       "surfaces": [
         {
@@ -125,6 +181,10 @@
         {
           "name": "Modal",
           "elevation": "L3 transport; see owner table for panel marker"
+        },
+        {
+          "name": "material:dialog",
+          "elevation": "L3"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -134,6 +194,14 @@
       "surfaces": [
         {
           "name": "IsolatedBottomSheetModal",
+          "elevation": "L3"
+        },
+        {
+          "name": "material:sheet",
+          "elevation": "L3"
+        },
+        {
+          "name": "material:dialog",
           "elevation": "L3"
         }
       ],
@@ -145,6 +213,10 @@
         {
           "name": "Modal",
           "elevation": "L3 transport; see owner table for panel marker"
+        },
+        {
+          "name": "material:dialog",
+          "elevation": "L3"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -155,6 +227,10 @@
         {
           "name": "Modal",
           "elevation": "L3 transport; see owner table for panel marker"
+        },
+        {
+          "name": "material:sheet",
+          "elevation": "L3"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -165,6 +241,16 @@
         {
           "name": "AdaptiveModalSheet",
           "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/archived-agent-callout.tsx",
+      "surfaces": [
+        {
+          "name": "material:callout",
+          "elevation": "L2"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -197,6 +283,10 @@
         {
           "name": "Modal",
           "elevation": "L3 transport; see owner table for panel marker"
+        },
+        {
+          "name": "material:fullscreen",
+          "elevation": "L3"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -247,6 +337,16 @@
         {
           "name": "HoverCardContent",
           "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/download-toast.tsx",
+      "surfaces": [
+        {
+          "name": "material:toast",
+          "elevation": "L1"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -339,6 +439,10 @@
         {
           "name": "Modal",
           "elevation": "L3 transport; see owner table for panel marker"
+        },
+        {
+          "name": "material:fullscreen",
+          "elevation": "L3"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -486,6 +590,16 @@
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
     },
     {
+      "file": "packages/app/src/components/sidebar-callout.tsx",
+      "surfaces": [
+        {
+          "name": "material:banner",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
       "file": "packages/app/src/components/sidebar-workspace-list.tsx",
       "surfaces": [
         {
@@ -600,10 +714,30 @@
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
     },
     {
+      "file": "packages/app/src/components/toast-host.tsx",
+      "surfaces": [
+        {
+          "name": "material:toast",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
       "file": "packages/app/src/components/ui/autocomplete-popover.tsx",
       "surfaces": [
         {
           "name": "Autocomplete",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/autocomplete.tsx",
+      "surfaces": [
+        {
+          "name": "material:autocomplete",
           "elevation": "L2"
         }
       ],
@@ -623,6 +757,14 @@
         {
           "name": "Modal",
           "elevation": "L3 transport; see owner table for panel marker"
+        },
+        {
+          "name": "material:sheet",
+          "elevation": "L3"
+        },
+        {
+          "name": "material:combobox",
+          "elevation": "L2"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -662,6 +804,16 @@
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
     },
     {
+      "file": "packages/app/src/components/ui/floating.tsx",
+      "surfaces": [
+        {
+          "name": "material:popover",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
       "file": "packages/app/src/components/ui/hover-card.tsx",
       "surfaces": [
         {
@@ -675,6 +827,20 @@
         {
           "name": "FloatingSurface",
           "elevation": "L2 default; explicit marker may override"
+        },
+        {
+          "name": "material:hover-card",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/isolated-bottom-sheet-modal/material-background.web.tsx",
+      "surfaces": [
+        {
+          "name": "material:sheet",
+          "elevation": "L3"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -759,6 +925,10 @@
         {
           "name": "FloatingSurface",
           "elevation": "L2 default; explicit marker may override"
+        },
+        {
+          "name": "material:tooltip",
+          "elevation": "L1"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -910,6 +1080,16 @@
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
     },
     {
+      "file": "packages/app/src/composer/input/presentation.tsx",
+      "surfaces": [
+        {
+          "name": "material:composer",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
       "file": "packages/app/src/composer/tracks.tsx",
       "surfaces": [
         {
@@ -957,6 +1137,14 @@
         {
           "name": "DropdownMenuContent",
           "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "BrowserElementAnnotationCard",
+          "elevation": "L2"
+        },
+        {
+          "name": "material:popover",
+          "elevation": "L2"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -987,6 +1175,16 @@
         {
           "name": "AdaptiveModalSheet",
           "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/file-panels/source/find/index.web.tsx",
+      "surfaces": [
+        {
+          "name": "PaneFind",
+          "elevation": "L2"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -1159,6 +1357,10 @@
         {
           "name": "Modal",
           "elevation": "L3 transport; see owner table for panel marker"
+        },
+        {
+          "name": "material:dialog",
+          "elevation": "L3"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
@@ -1184,11 +1386,25 @@
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
     },
     {
+      "file": "packages/app/src/pane-find/index.tsx",
+      "surfaces": [
+        {
+          "name": "material:popover",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
       "file": "packages/app/src/panels/agent-panel.tsx",
       "surfaces": [
         {
           "name": "ParentAgentCallout",
           "elevation": "L2"
+        },
+        {
+          "name": "SideChatOverlay",
+          "elevation": "L3"
         },
         {
           "name": "ArchivedAgentCallout",
@@ -1707,6 +1923,36 @@
         {
           "name": "AdaptiveModalSheet",
           "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/side-chat/panel.tsx",
+      "surfaces": [
+        {
+          "name": "material:fullscreen",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/subagents/parent/callout.tsx",
+      "surfaces": [
+        {
+          "name": "material:callout",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/terminal/find/index.tsx",
+      "surfaces": [
+        {
+          "name": "PaneFind",
+          "elevation": "L2"
         }
       ],
       "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
