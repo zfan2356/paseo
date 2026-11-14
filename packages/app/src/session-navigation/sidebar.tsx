@@ -5,7 +5,11 @@ import {
   SessionArchiveButton,
   type SessionMenuActions,
 } from "./menu";
-import { sessionOperationCapabilities, useSessionOperations } from "./operations";
+import {
+  sessionOperationErrorMessage,
+  sessionOperationCapabilities,
+  useSessionOperations,
+} from "./operations";
 import { useLabelMenuPages } from "@/workspace-labels/picker";
 import { usePointerCapabilities } from "@/hooks/pointer-capabilities";
 import {
@@ -268,7 +272,7 @@ const SessionRow = memo(function SessionRow({
   const [hovered, setHovered] = useState(false);
   const connected = useHostRuntimeIsConnected(agent.serverId);
   const { finePointer } = usePointerCapabilities();
-  const { mutation, assign, create } = useSessionOperations(agent.serverId, agent.id);
+  const { mutation, assign, create, pending } = useSessionOperations(agent.serverId, agent.id);
   const { canWrite, canManage, canArchive, canRead, readOnly } = sessionOperationCapabilities({
     connected,
     permissions,
@@ -302,7 +306,13 @@ const SessionRow = memo(function SessionRow({
   const renameSession = useCallback(() => setDialog("rename"), []);
   const submitRename = useCallback(
     async (name: string) => {
-      await mutation.mutateAsync({ kind: "rename", name: name.trim() });
+      try {
+        await mutation.mutateAsync({ kind: "rename", name: name.trim() });
+      } catch (error) {
+        if (error instanceof Error)
+          throw new Error(sessionOperationErrorMessage(error), { cause: error });
+        throw error;
+      }
     },
     [mutation],
   );
@@ -313,12 +323,13 @@ const SessionRow = memo(function SessionRow({
   const markRead = useCallback(() => mutation.mutate({ kind: "read" }), [mutation]);
   const actions = useMemo<SessionMenuActions>(
     () => ({
+      ready: context !== null,
       canWrite,
       canManage,
       canArchive,
       canRead,
       pinned: !!context?.pinnedAt,
-      pending: mutation.isPending ? mutation.variables.kind : null,
+      pending,
       rename: renameSession,
       pin: togglePin,
       read: markRead,
@@ -331,9 +342,8 @@ const SessionRow = memo(function SessionRow({
       canManage,
       canArchive,
       canRead,
-      context?.pinnedAt,
-      mutation.isPending,
-      mutation.variables,
+      context,
+      pending,
       renameSession,
       togglePin,
       markRead,
@@ -447,7 +457,7 @@ function SessionActionFeedback({
     <>
       {error ? (
         <Text style={styles.error} accessibilityRole="alert">
-          {error.message}
+          {sessionOperationErrorMessage(error)}
         </Text>
       ) : null}
       {!connected ? <Text style={styles.hint}>{t("sessionNavigation.offline")}</Text> : null}

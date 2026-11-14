@@ -53,7 +53,7 @@ export function SessionRowMenuFrame({
 }) {
   return (
     <ContextMenu>
-      <ContextMenuTrigger contextOnly enabledOnMobile={false}>
+      <ContextMenuTrigger contextOnly enabledOnMobile={false} disabled={!actions.ready}>
         <SessionRowHover onHoverChange={onHoverChange}>{children}</SessionRowHover>
       </ContextMenuTrigger>
       <ContextMenuContent width={260} pages={pages}>
@@ -64,6 +64,7 @@ export function SessionRowMenuFrame({
 }
 
 export interface SessionMenuActions {
+  ready: boolean;
   canWrite: boolean;
   canRead: boolean;
   canManage: boolean;
@@ -89,7 +90,7 @@ export function SessionMenuItems({ actions }: { actions: SessionMenuActions }) {
         onSelect={actions.rename}
         testID="session-menu-rename"
       >
-        {t("sidebar.workspace.actions.rename")}
+        {t("sessionNavigation.rename")}
       </MenuItem>
       <MenuItem
         leading={actions.pinned ? unpinIcon : pinIcon}
@@ -146,6 +147,7 @@ export function SessionMenu({
   return (
     <DropdownMenu compactMode="sheet">
       <DropdownMenuTrigger
+        disabled={!actions.ready}
         accessibilityRole="button"
         accessibilityLabel={t("sessionNavigation.sessionMenu")}
         style={styles.trigger}

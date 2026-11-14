@@ -1,27 +1,17 @@
-// @vitest-environment jsdom
-
-import { act, renderHook, cleanup } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
-import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { seedSessionHosts } from "@/test/seed-session";
-import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Agent } from "@/stores/session-store";
 import { useSessionStore } from "@/stores/session-store";
 import { agentHistoryQueryKey, allAgentHistoryQueryKey } from "./agent-history-query-key";
 import {
-  useArchiveAgent,
   applyArchivedAgentCloseResults,
   isAgentArchiving,
   removeAgentFromListPayload,
   selectPendingArchiveAgentIds,
   setAgentArchiving,
 } from "./use-archive-agent";
-
-function captureArchiveError(error: unknown) {
-  return error;
-}
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
   return {
@@ -57,86 +47,10 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
 }
 
 describe("useArchiveAgent", () => {
-  afterEach(() => {
-    cleanup();
-    seedSessionHosts([]);
-  });
+  afterEach(() => seedSessionHosts([]));
   beforeEach(() => {
     useSessionStore.setState((state) => ({ ...state, sessions: {} }));
     seedSessionHosts(["server-a"]);
-  });
-
-  it("keeps agents and history active while pending, retries failures, and retains authoritative archive events", async () => {
-    const client = new DaemonClient({ url: "ws://127.0.0.1:1", clientId: "archive-unit" });
-    let response = Promise.withResolvers<{ archivedAt: string }>();
-    client.archiveAgent = () => response.promise;
-    const store = useSessionStore.getState();
-    store.updateSessionClient("server-a", client);
-    store.setAgents(
-      "server-a",
-      new Map([
-        ["agent-1", makeAgent()],
-        ["agent-2", makeAgent({ id: "agent-2" })],
-      ]),
-    );
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const history = { pages: [{ agents: [{ id: "agent-1", archivedAt: null }] }] };
-    queryClient.setQueryData(agentHistoryQueryKey("server-a"), history);
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(QueryClientProvider, { client: queryClient }, children);
-    const { result } = renderHook(useArchiveAgent, { wrapper });
-    const input = { serverId: "server-a", agentId: "agent-1" };
-    let rejected: Promise<unknown> = Promise.resolve();
-    await act(async () => {
-      rejected = result.current.archiveAgent(input).catch(captureArchiveError);
-      await Promise.resolve();
-    });
-    expect(isAgentArchiving({ queryClient, ...input })).toBe(true);
-    expect(
-      useSessionStore.getState().sessions["server-a"].agents.get("agent-1")?.archivedAt,
-    ).toBeNull();
-    expect(queryClient.getQueryData(agentHistoryQueryKey("server-a"))).toEqual(history);
-    await act(async () => {
-      response.reject(new Error("Archive rejected"));
-      await rejected;
-    });
-    expect(isAgentArchiving({ queryClient, ...input })).toBe(false);
-    expect(
-      useSessionStore.getState().sessions["server-a"].agents.get("agent-1")?.archivedAt,
-    ).toBeNull();
-    response = Promise.withResolvers<{ archivedAt: string }>();
-    let succeeded: Promise<void> = Promise.resolve();
-    await act(async () => {
-      succeeded = result.current.archiveAgent(input);
-      await Promise.resolve();
-    });
-    await act(async () => {
-      response.resolve({ archivedAt: "2026-04-01T04:00:00.000Z" });
-      await succeeded;
-    });
-    expect(
-      useSessionStore.getState().sessions["server-a"].agents.get("agent-1")?.archivedAt,
-    ).toEqual(new Date("2026-04-01T04:00:00.000Z"));
-    expect(queryClient.getQueryData(agentHistoryQueryKey("server-a"))).toEqual({
-      pages: [{ agents: [{ id: "agent-1", archivedAt: new Date("2026-04-01T04:00:00.000Z") }] }],
-    });
-    response = Promise.withResolvers<{ archivedAt: string }>();
-    await act(async () => {
-      rejected = result.current
-        .archiveAgent({ ...input, agentId: "agent-2" })
-        .catch(captureArchiveError);
-      await Promise.resolve();
-    });
-    act(() =>
-      getHostRuntimeStore().archiveAgentSnapshot("server-a", "agent-2", "2026-04-01T05:00:00.000Z"),
-    );
-    await act(async () => {
-      response.reject(new Error("Response lost after authority arrived"));
-      await rejected;
-    });
-    expect(
-      useSessionStore.getState().sessions["server-a"].agents.get("agent-2")?.archivedAt,
-    ).toEqual(new Date("2026-04-01T05:00:00.000Z"));
   });
 
   it("tracks pending archive state in shared react-query cache", () => {

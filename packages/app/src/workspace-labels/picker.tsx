@@ -72,13 +72,16 @@ const NO_PAGES: readonly MenuPageDefinition[] = [];
 export function useWorkspaceLabelMenuPages(
   target: WorkspaceLabelTarget | null,
 ): readonly MenuPageDefinition[] {
+  const serverId = target?.serverId;
+  const workspaceId = target?.workspaceId;
   const assign = useCallback(
     (label: WorkspaceLabelDefinition, assigned: boolean) => {
-      if (!target) throw new Error("Label target unavailable");
-      return workspaceLabels.setAssignment({ ...target, label, assigned });
+      if (!serverId || !workspaceId) throw new Error("Label target unavailable");
+      return workspaceLabels.setAssignment({ serverId, workspaceId, label, assigned });
     },
-    [target],
+    [serverId, workspaceId],
   );
+  const create = useCallback((label: WorkspaceLabelDefinition) => assign(label, true), [assign]);
   const picker = useMemo(
     () =>
       target
@@ -86,12 +89,12 @@ export function useWorkspaceLabelMenuPages(
             serverId: target.serverId,
             labels: target.labels,
             assign,
-            create: (label: WorkspaceLabelDefinition) => assign(label, true),
+            create,
             enabled: true,
             createSupported: true,
           }
         : null,
-    [target, assign],
+    [target, assign, create],
   );
   return useLabelMenuPages(picker);
 }
@@ -240,7 +243,7 @@ function WorkspaceLabelCreatePage({ target }: { target: LabelPickerTarget }): Re
 
   const submit = useCallback(() => {
     const trimmed = normalizeWorkspaceLabelName(name);
-    if (!trimmed || pending) return;
+    if (offline || !target.createSupported || !trimmed || pending) return;
     setPending(true);
     setError(null);
     target
@@ -248,7 +251,7 @@ function WorkspaceLabelCreatePage({ target }: { target: LabelPickerTarget }): Re
       .then(() => menu.goBack())
       .catch((cause: unknown) => setError(workspaceLabelErrorMessage(cause)))
       .finally(() => setPending(false));
-  }, [color, menu, name, pending, target]);
+  }, [color, menu, name, pending, target, offline]);
 
   return (
     <>
@@ -270,7 +273,7 @@ function WorkspaceLabelCreatePage({ target }: { target: LabelPickerTarget }): Re
       </View>
       <MenuSeparator />
       <MenuItem
-        disabled={offline || !normalizeWorkspaceLabelName(name)}
+        disabled={offline || !target.createSupported || !normalizeWorkspaceLabelName(name)}
         status={pending ? "pending" : "idle"}
         pendingLabel={t("workspaceLabels.creating")}
         closeOnSelect={false}

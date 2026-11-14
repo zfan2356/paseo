@@ -28,6 +28,13 @@ interface SeedProjectDescriptor {
  * prefer those wrappers over reaching for this client directly.
  */
 export interface SeedDaemonClient {
+  getSessionContext(
+    agentId: string,
+  ): Promise<{ context: import("@getpaseo/protocol/session-context").SessionContext }>;
+  listWorkspaceLabels(): Promise<{
+    labels: import("@getpaseo/protocol/workspace-labels").WorkspaceLabelDefinition[];
+  }>;
+
   mutateSessionContext(
     agentId: string,
     mutation: import("@getpaseo/protocol/session-context").SessionContextMutation,

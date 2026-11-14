@@ -26,6 +26,11 @@ export function permitsSessionOperation(
   return permissions === undefined || permissions.includes(permission);
 }
 
+export function sessionOperationErrorMessage(error: Error): string {
+  if ("userMessage" in error && typeof error.userMessage === "string") return error.userMessage;
+  return error.message;
+}
+
 export function sessionOperationCapabilities({
   connected,
   permissions,
@@ -42,6 +47,7 @@ export function sessionOperationCapabilities({
     connected && contextReady && permitsSessionOperation(permissions, "workspace.manage");
   const canArchive =
     connected &&
+    contextReady &&
     (permitsSessionOperation(permissions, "workspace.write") ||
       permitsSessionOperation(permissions, "hub.execute"));
   const canRead =
@@ -54,7 +60,7 @@ export function useSessionOperations(serverId: string, agentId: string) {
   const { t } = useTranslation();
   const cache = useQueryClient();
   const toast = useToast();
-  const { archiveAgent } = useArchiveAgent();
+  const { archiveAgent, isArchivingAgent } = useArchiveAgent();
   const clientFor = useCallback(
     (permission: SessionPermission): DaemonClient => {
       const runtime = getHostRuntimeStore().getSnapshot(serverId);
@@ -98,7 +104,7 @@ export function useSessionOperations(serverId: string, agentId: string) {
         await client.clearAgentAttention(agentId);
       }
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toast.error(sessionOperationErrorMessage(error)),
     onSuccess: (_result, operation) => {
       if (operation.kind === "read") toast.show(t("sessionNavigation.markedRead"));
     },
@@ -124,7 +130,8 @@ export function useSessionOperations(serverId: string, agentId: string) {
       try {
         await assign(created.label, true);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message =
+          error instanceof Error ? sessionOperationErrorMessage(error) : String(error);
         throw new Error(
           t("sessionNavigation.labelCreatedAssignmentFailed", {
             name: created.label.name,
@@ -136,5 +143,7 @@ export function useSessionOperations(serverId: string, agentId: string) {
     },
     [clientFor, assign, t],
   );
-  return { mutation, assign, create };
+  const activeOperation = mutation.isPending ? mutation.variables.kind : null;
+  const pending = isArchivingAgent({ serverId, agentId }) ? "archive" : activeOperation;
+  return { mutation, assign, create, pending };
 }
