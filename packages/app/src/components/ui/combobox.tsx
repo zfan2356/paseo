@@ -1218,7 +1218,7 @@ function DesktopComboboxBody(props: DesktopBodyProps): ReactElement | null {
         <Pressable style={styles.desktopBackdrop} onPress={props.handleClose} />
         <FloatingSurface
           testID="combobox-desktop-container"
-          dataSet={MATERIAL_SLOTS.menu}
+          dataSet={MATERIAL_SLOTS.combobox}
           entering={props.shouldUseDesktopFade ? FadeIn.duration(100) : undefined}
           exiting={props.shouldUseDesktopFade ? FadeOut.duration(100) : undefined}
           style={styles.desktopContainer}

@@ -1,3 +1,3 @@
-Native palette functions preserve every input color. Native MaterialPreview returns null; CSS and selector live only in .web.tsx.
-(node:2998171) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+Native palette functions preserve input colors; native default sheet background stays undefined (Gorhom default). Native MaterialPreview returns null; CSS and selector live only in .web.tsx.
+(node:3239745) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
 (Use `node --trace-deprecation ...` to show where the warning was created)

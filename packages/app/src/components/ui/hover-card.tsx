@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import {
   createContext,
@@ -389,6 +390,7 @@ function HoverCardSurface({
       style={[styles.portalOverlay, { zIndex: layer }]}
     >
       <FloatingSurface
+        dataSet={MATERIAL_SLOTS.hoverCard}
         ref={contentRef}
         entering={FadeIn.duration(80)}
         exiting={FadeOut.duration(80)}

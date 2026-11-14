@@ -1,8 +1,16 @@
 // Stable data attributes shared by the opt-in web material study.
 export const MATERIAL_SLOTS = {
+  tooltip: { material: "tooltip" },
+  toast: { material: "toast" },
+  popover: { material: "popover" },
+  combobox: { material: "combobox" },
+  autocomplete: { material: "autocomplete" },
+  hoverCard: { material: "hover-card" },
+  fullscreen: { material: "fullscreen" },
   chrome: { material: "chrome" },
   secondary: { material: "secondary" },
   secondaryExpanded: { material: "secondary-expanded" },
+  callout: { material: "callout" },
   banner: { material: "banner" },
   window: { material: "window" },
   header: { material: "header" },

@@ -1,3 +1,4 @@
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { openAttachmentMenu } from "../support/helpers/composer";
@@ -148,7 +149,7 @@ test("material preview evidence", async ({ page }, testInfo) => {
               for (const role of roles) {
                 const surface = page.locator(`[data-material="${role}"]:visible`).first();
                 if (await surface.count())
-                  await surface.screenshot({ path: `${out}detail-${scheme}-${role}-${mode}.png` });
+                  await captureSurface(page, surface, `${out}detail-${scheme}-${role}-${mode}.png`);
               }
             }
             await page.screenshot({ path: `${out}${scheme}-${width}-${scene}-${mode}.png` });
@@ -297,3 +298,134 @@ test("material preview evidence", async ({ page }, testInfo) => {
     await session.cleanup();
   }
 });
+
+test("floating inventory captures", async ({ page }) => {
+  test.skip(process.env.PASEO_MATERIAL_QA !== "1", "Visual preview capture only");
+  test.setTimeout(180_000);
+  page.setDefaultTimeout(12_000);
+  const { writeFile, readFile } = await import("node:fs/promises");
+  const out =
+    (await import("node:path")).resolve(process.cwd(), "../../docs/qa-evidence/material-preview") +
+    "/";
+  const wallpaper = await readFile(out + "wallpaper.svg", "utf8");
+  await page.route("https://material-study.test/wallpaper.svg", (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: wallpaper }),
+  );
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "floating-study-",
+    title: "Surface inventory",
+    initialPrompt: "Show the coastal study",
+    featureValues: {
+      mockAssistantResponse:
+        "# Coastal study\n\n![Coast](https://material-study.test/wallpaper.svg)\n\nKeep temporary controls distinct from the work beneath them.",
+    },
+  });
+  await writeFile(session.cwd + "/material-notes.md", "Coastal study notes\n");
+  try {
+    await session.client.waitForFinish(session.agentId, 30_000);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.addInitScript(() => localStorage.setItem("paseo:material-preview", "balanced"));
+    for (const theme of ["light", "dark"] as const) {
+      await openAgentRoute(page, session);
+      await page.evaluate(
+        (value) =>
+          localStorage.setItem(
+            "@paseo:app-settings",
+            JSON.stringify({ theme: value, chatDisplay: "full" }),
+          ),
+        theme,
+      );
+      await page.reload();
+      await expect(page.getByTestId("message-input-root")).toBeVisible({ timeout: 60_000 });
+      await page.getByTestId("material-preview-switch").evaluate((element) => {
+        element.style.visibility = "hidden";
+      });
+      const shoot = async (name: string, selector: string, prepare?: () => Promise<void>) => {
+        for (const mode of ["solid", "balanced"]) {
+          await page.evaluate((value) => {
+            document.documentElement.dataset.materialPreview = value;
+          }, mode);
+          if (prepare) await prepare();
+          const surface = page.locator(selector).filter({ visible: true }).first();
+          await expect(surface).toBeVisible({ timeout: 10_000 });
+          await page.waitForTimeout(250);
+          await captureSurface(page, surface, `${out}floating-${theme}-${name}-${mode}.png`);
+        }
+      };
+      const attach = page
+        .getByTestId("message-input-attach-button")
+        .filter({ visible: true })
+        .first();
+      await shoot("tooltip", '[role="tooltip"]', () => attach.hover());
+      await page.mouse.move(700, 400);
+      const meter = page.getByTestId("context-window-meter").filter({ visible: true }).first();
+      await shoot("hover-card", '[data-testid="context-window-details"]', () => meter.hover());
+      await page.mouse.move(700, 400);
+      await page.waitForTimeout(400);
+      await page.getByTestId("sidebar-hosts-trigger").filter({ visible: true }).first().click();
+      await shoot("combobox", '[data-testid="combobox-desktop-container"]');
+      await page.keyboard.press("Escape");
+      const input = page.getByRole("textbox", { name: "Message agent..." }).first();
+      await input.fill("@");
+      await expect(page.getByTestId("composer-autocomplete-popover")).toBeVisible();
+      await shoot("autocomplete", '[data-material="autocomplete"]');
+      await input.fill("");
+      await input.blur();
+      await page.getByTestId(`workspace-tab-agent_${session.agentId}`).click({ button: "right" });
+      await expect(page.getByRole("menuitem", { name: /Copy agent id/ })).toBeVisible();
+      await shoot("context-menu", '[data-material="menu"]');
+      await page.getByRole("menuitem", { name: /Copy agent id/ }).click();
+      await expect(page.getByTestId("app-toast-message")).toBeVisible();
+      await page.getByTestId("app-toast-message").hover();
+      await shoot("toast", '[data-material="toast"]');
+      await page.mouse.move(700, 400);
+      await page.keyboard.press("Control+k");
+      await expect(page.getByTestId("command-center-panel")).toBeVisible();
+      await shoot("command-center", '[data-testid="command-center-panel"]');
+      await page.keyboard.press("Escape");
+      await page.locator('img[src*="material-study.test"]').first().click();
+      await expect(page.locator('[data-material="fullscreen"]')).toBeVisible();
+      await shoot("lightbox", '[data-material="fullscreen"]');
+      await page.keyboard.press("Escape");
+      await page
+        .getByRole("button", { name: "Add project", exact: true })
+        .filter({ visible: true })
+        .first()
+        .click();
+      await expect(page.getByTestId("add-project-flow")).toBeVisible();
+      await shoot("add-project", '[data-testid^="add-project-flow-page-"]');
+      await page.getByTestId("add-project-flow-backdrop").click({ position: { x: 5, y: 5 } });
+    }
+    await writeFile(
+      `${out}floating-console.json`,
+      JSON.stringify({ consoleErrors, pageErrors }, null, 2),
+    );
+    expect(pageErrors).toEqual([]);
+  } finally {
+    await session.cleanup();
+  }
+});
+
+async function captureSurface(page: Page, surface: Locator, path: string) {
+  const rect = await surface.boundingBox();
+  const viewport = page.viewportSize();
+  if (!rect || !viewport) throw new Error("Visible surface and fixed viewport required");
+  const x = Math.max(0, rect.x - 24);
+  const y = Math.max(0, rect.y - 24);
+  await page.screenshot({
+    path,
+    clip: {
+      x,
+      y,
+      width: Math.min(viewport.width, rect.x + rect.width + 24) - x,
+      height: Math.min(viewport.height, rect.y + rect.height + 24) - y,
+    },
+  });
+}

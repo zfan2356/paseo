@@ -9,3 +9,7 @@ export function materialMutedColor(color: string): string {
 export function materialStatusColor(color: string, role: string): string {
   return `var(--paseo-status-${role}, ${color})`;
 }
+
+export function materialBorderColor(color: string): string {
+  return `var(--paseo-structural-border, ${color})`;
+}

@@ -1,0 +1,1735 @@
+{
+  "scope": "Repository JSX callers of shared floating primitives; renderer owners and raw modal exceptions are enumerated in README. Files owned by WORK-396 are listed only.",
+  "elevation": {
+    "hint": {
+      "surfaces": ["tooltip", "toast", "secondary"],
+      "radius": 10,
+      "shadow": {
+        "light": "0 4px 16px rgba(24,46,34,0.14)",
+        "dark": "0 4px 16px rgba(0,0,0,0.38)"
+      },
+      "border": {
+        "light": "1px solid rgba(24,46,34,0.10)",
+        "dark": "1px solid rgba(255,255,255,0.16)"
+      },
+      "material": {
+        "name": "protected",
+        "minimumOpacity": 0.96,
+        "maximumBlur": 8
+      }
+    },
+    "popover": {
+      "surfaces": [
+        "menu",
+        "popover",
+        "combobox",
+        "autocomplete",
+        "hover-card",
+        "banner",
+        "callout",
+        "secondary-expanded"
+      ],
+      "radius": 16,
+      "shadow": {
+        "light": "0 12px 36px rgba(24,46,34,0.14), inset 0 1px 0 rgba(255,255,255,0.65)",
+        "dark": "0 12px 36px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.12)"
+      },
+      "border": {
+        "light": "1px solid rgba(255,255,255,0.65)",
+        "dark": "1px solid rgba(255,255,255,0.18)"
+      },
+      "material": {
+        "name": "glass",
+        "minimumOpacity": 0,
+        "maximumBlur": 28
+      }
+    },
+    "modal": {
+      "surfaces": ["composer", "dialog", "sheet", "fullscreen"],
+      "radius": 24,
+      "shadow": {
+        "light": "0 20px 56px rgba(24,46,34,0.20)",
+        "dark": "0 20px 56px rgba(0,0,0,0.48)"
+      },
+      "border": {
+        "light": "1px solid rgba(255,255,255,0.65)",
+        "dark": "1px solid rgba(255,255,255,0.18)"
+      },
+      "material": {
+        "name": "glass",
+        "minimumOpacity": 0,
+        "maximumBlur": 28
+      }
+    }
+  },
+  "structuralSlots": ["window", "header", "chrome", "dock", "dock-composer", "solid"],
+  "unmapped": [],
+  "files": 124,
+  "deferred": 5,
+  "entries": [
+    {
+      "file": "packages/app/src/agent-profiles/settings/agent-profile-appearance-field.tsx",
+      "surfaces": [
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/agent-profiles/settings/agent-profile-edit-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/agent-skills/selection-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/changelog/internal/changelog-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/command-center/command-center.tsx",
+      "surfaces": [
+        {
+          "name": "IsolatedBottomSheetModal",
+          "elevation": "L3"
+        },
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/adaptive-modal-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "IsolatedBottomSheetModal",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/add-project-flow.tsx",
+      "surfaces": [
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/agent-list.tsx",
+      "surfaces": [
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/app-diagnostic-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/assistant-fork-menu.tsx",
+      "surfaces": [
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/attachment-lightbox.tsx",
+      "surfaces": [
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/branch-switcher.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/combined-model-selector.tsx",
+      "surfaces": [
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/context-window-meter.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "HoverCard",
+          "elevation": "L2"
+        },
+        {
+          "name": "HoverCardContent",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/file-actions-menu.tsx",
+      "surfaces": [
+        {
+          "name": "ContextMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/file-explorer-pane.tsx",
+      "surfaces": [
+        {
+          "name": "ContextMenu",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/headers/header-toggle-button.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/hosts/host-picker.tsx",
+      "surfaces": [
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/import-session-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        },
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/keyboard-shortcuts-dialog.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/left-sidebar.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "待 WORK-396 合入后接入"
+    },
+    {
+      "file": "packages/app/src/components/markdown/fence/mermaid/fullscreen-viewer.web.tsx",
+      "surfaces": [
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/markdown/fence/mermaid/host.native.tsx",
+      "surfaces": [
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        }
+      ],
+      "status": "native path unchanged; code evidence"
+    },
+    {
+      "file": "packages/app/src/components/markdown/renderers.web.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/model-browser.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/project-edit-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/provider-diagnostic-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/rename-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/rewind/rewind-menu.tsx",
+      "surfaces": [
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/schedules/schedule-form-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/schedules/schedule-row.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/settings/headings/settings-info-tip.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/settings/index.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/sidebar-workspace-list.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "ContextMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "ContextMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "待 WORK-396 合入后接入"
+    },
+    {
+      "file": "packages/app/src/components/sidebar/display-preferences/menu.tsx",
+      "surfaces": [
+        {
+          "name": "MenuSurface",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/sidebar/sidebar-footer-menu-trigger.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/sidebar/sidebar-footer-overflow-menu.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/sidebar/sidebar-help-menu.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/sidebar/sidebar-popover.tsx",
+      "surfaces": [
+        {
+          "name": "PluginPopoverSurface",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/sidebar/sidebar-workspace-menu.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "ContextMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "ContextMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/autocomplete-popover.tsx",
+      "surfaces": [
+        {
+          "name": "Autocomplete",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/combobox.tsx",
+      "surfaces": [
+        {
+          "name": "IsolatedBottomSheetModal",
+          "elevation": "L3"
+        },
+        {
+          "name": "FloatingSurface",
+          "elevation": "L2 default; explicit marker may override"
+        },
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/context-menu.tsx",
+      "surfaces": [
+        {
+          "name": "MenuSurface",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/dropdown-menu.tsx",
+      "surfaces": [
+        {
+          "name": "MenuSurface",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/external-link.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/hover-card.tsx",
+      "surfaces": [
+        {
+          "name": "HoverCard",
+          "elevation": "L2"
+        },
+        {
+          "name": "HoverCardContent",
+          "elevation": "L2"
+        },
+        {
+          "name": "FloatingSurface",
+          "elevation": "L2 default; explicit marker may override"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/menu/menu-item.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/menu/menu-overlay.tsx",
+      "surfaces": [
+        {
+          "name": "FloatingSurface",
+          "elevation": "L2 default; explicit marker may override"
+        },
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/menu/menu-surface.tsx",
+      "surfaces": [
+        {
+          "name": "MenuSurface",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "IsolatedBottomSheetModal",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/pane-content-toolbar.tsx",
+      "surfaces": [
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/select-field.tsx",
+      "surfaces": [
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/ui/tooltip.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        },
+        {
+          "name": "FloatingSurface",
+          "elevation": "L2 default; explicit marker may override"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/workspace-hover-card.tsx",
+      "surfaces": [
+        {
+          "name": "HoverCard",
+          "elevation": "L2"
+        },
+        {
+          "name": "HoverCardContent",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/components/workspace-setup-dialog.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/composer/agent-controls/index.tsx",
+      "surfaces": [
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/composer/agent-controls/mode-control.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/composer/agent-controls/model-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/composer/execution-directory.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/composer/index.tsx",
+      "surfaces": [
+        {
+          "name": "AutocompletePopover",
+          "elevation": "L2"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/composer/input/input.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/composer/tracks.tsx",
+      "surfaces": [
+        {
+          "name": "MenuSurface",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/contexts/sidebar-callout-context.tsx",
+      "surfaces": [
+        {
+          "name": "SidebarCallout",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/contexts/toast-context.tsx",
+      "surfaces": [
+        {
+          "name": "ToastViewport",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/desktop/browser/pane/index.electron.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/desktop/components/desktop-updates-section.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/desktop/components/pair-device-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/file-panels/choice/picker.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/git/actions-split-button.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/git/diff-document/surface.web.tsx",
+      "surfaces": [
+        {
+          "name": "ContextMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "ContextMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/git/diff-folder-row.tsx",
+      "surfaces": [
+        {
+          "name": "ContextMenu",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/git/diff-pane.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/git/file-header.tsx",
+      "surfaces": [
+        {
+          "name": "ContextMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/git/jump-to-file/index.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/git/pull-request-panel/pane.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/git/workspace-base-branch-picker.tsx",
+      "surfaces": [
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/hosts/add-host/index.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/hosts/add-host/internal/add-host-method-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/hosts/add-host/internal/add-host-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/hosts/add-host/internal/add-remote-ssh-host-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/hosts/add-host/internal/pair-link-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/hosts/host-chooser.tsx",
+      "surfaces": [
+        {
+          "name": "Modal",
+          "elevation": "L3 transport; see owner table for panel marker"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/hosts/host-confirmation-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/onboarding/internal/onboarding-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/panels/agent-panel.tsx",
+      "surfaces": [
+        {
+          "name": "ParentAgentCallout",
+          "elevation": "L2"
+        },
+        {
+          "name": "ArchivedAgentCallout",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/panels/provider-subagent-panel.tsx",
+      "surfaces": [
+        {
+          "name": "ParentAgentCallout",
+          "elevation": "L2"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/plugins/attachments/picker.tsx",
+      "surfaces": [
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/plugins/buttons/view.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "PluginPopoverSurface",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/plugins/popover.tsx",
+      "surfaces": [
+        {
+          "name": "MenuSurface",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/plugins/react-native/modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/plugins/sidebar-items/index.tsx",
+      "surfaces": [
+        {
+          "name": "SidebarPopoverSurface",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/review/comment-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/review/feedback/surface.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/new-workspace/form/field-trigger.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/new-workspace/form/index.tsx",
+      "surfaces": [
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/new-workspace/form/launch-control.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/project-settings-screen.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings-screen.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/appearance/appearance-section.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/files-section.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/host-appearance-section.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/host-page.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/keyboard-shortcuts-section.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/plugins-page.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/providers-section.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/restart-recovery-card.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/terminal-profile-edit-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/settings/voice/speech-provider-sheet.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/workspace/compact-workspace-header/tab-switcher.tsx",
+      "surfaces": [
+        {
+          "name": "Combobox",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/workspace/scripts/workspace-scripts-button.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/workspace/sheet-tabs.tsx",
+      "surfaces": [
+        {
+          "name": "IsolatedBottomSheetModal",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/workspace/workspace-desktop-tabs-row.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "ContextMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        },
+        {
+          "name": "ContextMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/workspace/workspace-header-menu.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/workspace/workspace-new-tab-menu.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/workspace/workspace-route-state-views.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/screens/workspace/workspace-tab-trailing-accessory.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/session-navigation/actions.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        },
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "待 WORK-396 合入后接入"
+    },
+    {
+      "file": "packages/app/src/session-navigation/menu.tsx",
+      "surfaces": [
+        {
+          "name": "ContextMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "ContextMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "待 WORK-396 合入后接入"
+    },
+    {
+      "file": "packages/app/src/session-navigation/sidebar.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "待 WORK-396 合入后接入"
+    },
+    {
+      "file": "packages/app/src/timeline/sync-status.tsx",
+      "surfaces": [
+        {
+          "name": "ToastViewport",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/usage/options.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/usage/usage-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/usage/window-bar.tsx",
+      "surfaces": [
+        {
+          "name": "Tooltip",
+          "elevation": "L1"
+        },
+        {
+          "name": "TooltipContent",
+          "elevation": "L1"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/workspace-labels/manager-modal.tsx",
+      "surfaces": [
+        {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    },
+    {
+      "file": "packages/app/src/workspace/open-in-editor/button.tsx",
+      "surfaces": [
+        {
+          "name": "DropdownMenu",
+          "elevation": "L2 wide / L3 sheet"
+        },
+        {
+          "name": "DropdownMenuContent",
+          "elevation": "L2 wide / L3 sheet"
+        }
+      ],
+      "status": "inherits shared material host; runtime screenshots cover renderer families, not every business action"
+    }
+  ]
+}

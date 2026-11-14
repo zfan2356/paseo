@@ -10,3 +10,7 @@ export function materialStatusColor(color: string, role: string): string {
   void role;
   return color;
 }
+
+export function materialBorderColor(color: string): string {
+  return color;
+}

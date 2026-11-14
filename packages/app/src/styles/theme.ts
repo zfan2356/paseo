@@ -2,6 +2,7 @@ import {
   sidebarMaterialColor,
   materialMutedColor,
   materialStatusColor,
+  materialBorderColor,
 } from "./sidebar-material-color";
 import { codexPalette } from "../../../../plugins/codex-theme/shared/palette";
 import { Platform } from "react-native";
@@ -282,7 +283,7 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     foregroundMuted: materialMutedColor(tint.foregroundMuted),
     foregroundExtraMuted: tint.foregroundExtraMuted,
 
-    border: tint.border,
+    border: materialBorderColor(tint.border),
     borderAccent: tint.borderAccent,
 
     accent: tint.accent,
@@ -417,7 +418,7 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
     foregroundMuted: materialMutedColor(tint.foregroundMuted),
     foregroundExtraMuted: tint.foregroundExtraMuted,
 
-    border: tint.border,
+    border: materialBorderColor(tint.border),
     borderAccent: tint.borderAccent,
 
     accent: tint.accent,
@@ -587,8 +588,48 @@ export const MATERIAL_PREVIEW = {
     },
     pronounced: { label: "明显", opacity: 0.64, sidebarOpacity: 0.64, blur: 28, saturation: 1.5 },
   },
-  hairline: 1,
-  radius: { composer: 24, menu: 16, dialog: 24, banner: 16 },
+  elevation: {
+    hint: {
+      surfaces: ["tooltip", "toast", "secondary"],
+      radius: 10,
+      shadow: { light: "0 4px 16px rgba(24,46,34,0.14)", dark: "0 4px 16px rgba(0,0,0,0.38)" },
+      border: { light: "1px solid rgba(24,46,34,0.10)", dark: "1px solid rgba(255,255,255,0.16)" },
+      material: { name: "protected", minimumOpacity: 0.96, maximumBlur: 8 },
+    },
+    popover: {
+      surfaces: [
+        "menu",
+        "popover",
+        "combobox",
+        "autocomplete",
+        "hover-card",
+        "banner",
+        "callout",
+        "secondary-expanded",
+      ],
+      radius: 16,
+      shadow: {
+        light: "0 12px 36px rgba(24,46,34,0.14), inset 0 1px 0 rgba(255,255,255,0.65)",
+        dark: "0 12px 36px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.12)",
+      },
+      border: {
+        light: "1px solid rgba(255,255,255,0.65)",
+        dark: "1px solid rgba(255,255,255,0.18)",
+      },
+      material: { name: "glass", minimumOpacity: 0, maximumBlur: 28 },
+    },
+    modal: {
+      surfaces: ["composer", "dialog", "sheet", "fullscreen"],
+      radius: 24,
+      shadow: { light: "0 20px 56px rgba(24,46,34,0.20)", dark: "0 20px 56px rgba(0,0,0,0.48)" },
+      border: {
+        light: "1px solid rgba(255,255,255,0.65)",
+        dark: "1px solid rgba(255,255,255,0.18)",
+      },
+      material: { name: "glass", minimumOpacity: 0, maximumBlur: 28 },
+    },
+  },
+  menuMinWidth: 240,
   spacing: { composer: 20, menu: 6, banner: 12, secondary: 8 },
   icon: { size: 16, action: 20, stroke: 1.5 },
   font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif",
@@ -599,10 +640,6 @@ export const MATERIAL_PREVIEW = {
     content: "#f7f9f6",
     foreground: "#151b18",
     foregroundMuted: "#303a33",
-    border: "rgba(255,255,255,0.65)",
-    shadow: "0 12px 36px rgba(24,46,34,0.14), inset 0 1px 0 rgba(255,255,255,0.65)",
-    dialogShadow: "0 32px 96px rgba(24,46,34,0.24)",
-    banner: "rgba(255,255,255,0.74)",
     control: "rgba(24,46,34,0.08)",
   },
   dark: {
@@ -611,10 +648,6 @@ export const MATERIAL_PREVIEW = {
     content: "#171e1b",
     foreground: "#ffffff",
     foregroundMuted: "#f0f4f1",
-    border: "rgba(255,255,255,0.18)",
-    shadow: "0 12px 36px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.12)",
-    dialogShadow: "0 32px 96px rgba(0,0,0,0.55)",
-    banner: "rgba(18,26,22,0.74)",
     control: "rgba(255,255,255,0.12)",
   },
 } as const;

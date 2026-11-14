@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { useAddHost } from "@/hosts/add-host";
 import { Modal } from "@/components/ui/modal";
@@ -238,7 +239,7 @@ export function HostChooserModal() {
       <OverlayLayerProvider layer={modalLayer}>
         <View style={styles.overlay}>
           <Pressable style={styles.backdrop} onPress={close} />
-          <View ref={setOverlayScope} style={styles.panel}>
+          <View dataSet={MATERIAL_SLOTS.dialog} ref={setOverlayScope} style={styles.panel}>
             <View style={styles.header}>
               <Text style={styles.title}>{request.title}</Text>
               <TextInput
