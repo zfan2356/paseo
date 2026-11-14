@@ -565,3 +565,102 @@ test("material header leaves terminal content below workspace chrome", async ({
     await session.cleanup();
   }
 });
+
+// The dock composer floats over the transcript, so the pill track must lift by the same clearance.
+for (const platform of ["darwin", "web"] as const) {
+  test(`composer pills stay above the floating composer (${platform})`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(180_000);
+    const { writeFile } = await import("node:fs/promises");
+    const path = await import("node:path");
+    if (platform === "darwin") {
+      await page.addInitScript(() => {
+        (window as unknown as { paseoDesktop: unknown }).paseoDesktop = {
+          platform: "darwin",
+          events: { on: () => () => {} },
+          invoke: async (command: string) =>
+            command === "get_desktop_settings"
+              ? {
+                  releaseChannel: "stable",
+                  daemon: { manageBuiltInDaemon: false, keepRunningAfterQuit: true },
+                }
+              : null,
+        };
+      });
+    }
+    const session = await seedMockAgentWorkspace({
+      repoPrefix: "material-pills-",
+      title: "Composer pills",
+      initialPrompt: "Review the workspace",
+      featureValues: { mockAssistantResponse: "A paragraph for scrolling.\n\n".repeat(60) },
+      repo: { withRemote: true, files: [{ path: ".gitignore", content: "/remote.git/\n" }] },
+    });
+    try {
+      await writeFile(path.join(session.cwd, "README.md"), "# Temp Repo\nexport const one = 1;\n");
+      await session.client.checkoutRefresh(session.cwd);
+      await session.client.waitForFinish(session.agentId, 30_000);
+      await page.setViewportSize({ width: 1200, height: 900 });
+      await openAgentRoute(page, session);
+      const pill = page.getByTestId("composer-diff-stat-pill").filter({ visible: true });
+      await expect(pill).toBeVisible({ timeout: 60_000 });
+      await page.waitForFunction(() => document.querySelector("[data-material-styles]"));
+      const composer = page.locator('[data-material="composer"]:visible').first();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: testInfo.outputPath(`pills-${platform}.png`) });
+      await expect
+        .poll(
+          async () => {
+            const pillBox = await pill.boundingBox();
+            const composerBox = await composer.boundingBox();
+            if (!pillBox || !composerBox) return Number.NEGATIVE_INFINITY;
+            return composerBox.y - (pillBox.y + pillBox.height);
+          },
+          { timeout: 10_000 },
+        )
+        .toBeGreaterThanOrEqual(0);
+      const hit = await pill.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const target = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return Boolean(target && el.contains(target));
+      });
+      expect(hit).toBe(true);
+    } finally {
+      await session.cleanup();
+    }
+  });
+}
+
+test("header icon sizing leaves the tab close scrim at full width", async ({ page }) => {
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "material-tab-scrim-",
+    title: "A fairly long tab title for hover",
+    initialPrompt: "hello",
+    featureValues: { mockAssistantResponse: "ok" },
+  });
+  try {
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await openAgentRoute(page, session);
+    const tab = page
+      .getByTestId(`workspace-tab-agent_${session.agentId}`)
+      .filter({ visible: true })
+      .first();
+    await expect(tab).toBeVisible({ timeout: 60_000 });
+    await tab.hover();
+    const close = page
+      .getByTestId(`workspace-agent-close-${session.agentId}`)
+      .filter({ visible: true })
+      .first();
+    await expect(close).toBeVisible();
+    const sizes = await close.evaluate((button) => {
+      const overlay = button.parentElement!;
+      const scrim = overlay.querySelector("svg")!;
+      const a = overlay.getBoundingClientRect();
+      const b = scrim.getBoundingClientRect();
+      return { overlay: [a.width, a.height], scrim: [b.width, b.height] };
+    });
+    expect(sizes.scrim).toEqual(sizes.overlay);
+  } finally {
+    await session.cleanup();
+  }
+});

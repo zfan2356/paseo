@@ -4,6 +4,8 @@ import { withUnistyles } from "react-native-unistyles";
 import { MATERIAL, type Theme } from "./theme";
 
 type MaterialLevel = typeof MATERIAL.glass;
+// Fixed-size glyphs only; a percentage-sized svg (a scrim or fill) takes its box from its parent.
+const ICON = 'svg:not([width$="%"])';
 
 function elevationCss(root: string, scheme: Theme["colorScheme"], material: MaterialLevel): string {
   const palette = MATERIAL[scheme];
@@ -50,7 +52,7 @@ function MaterialStyles({ theme }: { theme: Theme }) {
         ${root} [data-material="chrome"] [data-material="header"] { background: transparent !important; backdrop-filter: none; }
         ${root} [data-chat-find-widget="true"] { transform: translateY(var(--paseo-chrome-clearance, 0px)); }
         ${root} [data-material="dock-composer"] { position: absolute; bottom: 0; }
-        ${root} [data-material="dock"] [data-material="scroll-controls"] { transform: translateY(calc(-1 * var(--paseo-composer-clearance, 0px))); }
+        ${root} [data-material="dock"] [data-material="scroll-controls"], ${root} [data-material="dock"] [data-material="composer-tracks"] { transform: translateY(calc(-1 * var(--paseo-composer-clearance, 0px))); }
         ${root} [data-testid="agent-chat-scroll"] > div::before {
           content: ""; display: block; flex-shrink: 0; height: calc(var(--paseo-chrome-clearance, 0px) + 40px);
         }
@@ -78,9 +80,9 @@ function MaterialStyles({ theme }: { theme: Theme }) {
         ${root} [data-material="dialog"] { max-width: 560px; }
         ${root} [data-material="dialog"] > div { border-color: transparent !important; }
         ${root} [data-material="header"] svg, ${root} [data-material="menu"] svg, ${root} [data-material="banner"] svg, ${root} [data-material="composer"] svg { stroke-width: ${t.icon.stroke}; }
-        ${root} [data-material="header"] svg, ${root} [data-material="menu"] svg,
-        ${root} [data-material="banner"] svg { width: ${t.icon.size}px; height: ${t.icon.size}px; }
-        ${root} [data-material="composer"] svg { width: ${t.icon.action}px; height: ${t.icon.action}px; }
+        ${root} [data-material="header"] ${ICON}, ${root} [data-material="menu"] ${ICON},
+        ${root} [data-material="banner"] ${ICON} { width: ${t.icon.size}px; height: ${t.icon.size}px; }
+        ${root} [data-material="composer"] ${ICON} { width: ${t.icon.action}px; height: ${t.icon.action}px; }
         ${root} [data-material="chrome"] div, ${root} [data-material="menu"] div, ${root} [data-material="banner"] div, ${root} [data-material="composer"] textarea, ${root} [data-material="dialog"] div {
           font-family: ${t.font};
         }
