@@ -1,3 +1,4 @@
+import { getServerId } from "../support/helpers/server-id";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
@@ -435,19 +436,29 @@ test("sidebar material preserves status, pin, context menu and hover archive", a
         theme,
       );
       await page.reload();
-      const row = page.getByTestId(`session-row-${session.agentId}`).filter({ visible: true });
+      const row = page
+        .getByTestId(`sidebar-workspace-row-${getServerId()}:${session.workspaceId}`)
+        .filter({ visible: true });
       await expect(row).toBeVisible();
-      await expect(row.getByTestId(`session-status-${session.agentId}`)).toBeVisible();
+      await expect(row.getByTestId("workspace-status-indicator-done")).toBeVisible();
+      await expect(row).toHaveCSS("min-height", "36px");
       await row.hover();
-      await expect(row.getByTestId("session-hover-archive")).toBeVisible();
-      await expect(row.locator('[data-material="session-row"]')).toHaveCSS("border-radius", "12px");
-      await expect(row.locator('[data-material="session-row"]')).toHaveCSS("margin-left", "8px");
-      await row.click({ button: "right" });
-      await expect(page.getByTestId("session-menu-pin")).toBeVisible();
-      await page.screenshot({ path: `${out}/sidebar-${theme}-1440-context.png` });
-      await page.getByTestId("session-menu-pin").click();
       await expect(
-        page.getByTestId("session-pinned-section").getByTestId(`session-row-${session.agentId}`),
+        row.getByTestId(`sidebar-workspace-archive-button-${getServerId()}:${session.workspaceId}`),
+      ).toBeVisible();
+      await expect(row).toHaveAttribute("aria-selected", "true");
+      await row.click({ button: "right" });
+      await expect(
+        page.getByTestId(`sidebar-workspace-menu-pin-${getServerId()}:${session.workspaceId}`),
+      ).toBeVisible();
+      await page.screenshot({ path: `${out}/sidebar-${theme}-1440-context.png` });
+      await page
+        .getByTestId(`sidebar-workspace-menu-pin-${getServerId()}:${session.workspaceId}`)
+        .click();
+      await expect(
+        page
+          .getByTestId("sidebar-pinned-section")
+          .getByTestId(`sidebar-workspace-row-${getServerId()}:${session.workspaceId}`),
       ).toBeVisible();
       await page.mouse.move(800, 400);
       await page.screenshot({ path: `${out}/sidebar-${theme}-1440-selected.png` });
@@ -456,27 +467,40 @@ test("sidebar material preserves status, pin, context menu and hover archive", a
       await expect(row).toBeVisible();
       await page.waitForTimeout(500);
       await page.screenshot({ path: `${out}/sidebar-${theme}-390-selected.png` });
-      await row.getByTestId("session-menu-trigger").click();
-      await expect(page.getByTestId("session-menu-pin")).toBeVisible();
+      await page
+        .getByTestId(`sidebar-workspace-kebab-${getServerId()}:${session.workspaceId}`)
+        .click();
+      await expect(
+        page.getByTestId(`sidebar-workspace-menu-pin-${getServerId()}:${session.workspaceId}`),
+      ).toBeVisible();
       await page.waitForTimeout(500);
       await page.screenshot({ path: `${out}/sidebar-${theme}-390-menu.png` });
-      await page.getByTestId("session-menu-pin").click();
+      await page
+        .getByTestId(`sidebar-workspace-menu-pin-${getServerId()}:${session.workspaceId}`)
+        .click();
       await expect(
-        page.getByTestId("session-pinned-section").getByTestId(`session-row-${session.agentId}`),
+        page
+          .getByTestId("sidebar-pinned-section")
+          .getByTestId(`sidebar-workspace-row-${getServerId()}:${session.workspaceId}`),
       ).toHaveCount(0);
       await page.getByTestId("sidebar-close").click();
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
-    const row = page.getByTestId(`session-row-${session.agentId}`).filter({ visible: true });
+    const row = page
+      .getByTestId(`sidebar-workspace-row-${getServerId()}:${session.workspaceId}`)
+      .filter({ visible: true });
     await row.hover();
-    await row.getByTestId("session-hover-archive").click();
+    await row
+      .getByTestId(`sidebar-workspace-archive-button-${getServerId()}:${session.workspaceId}`)
+      .click();
     await expect(row).toHaveCount(0);
     await expect
-      .poll(
-        async () =>
-          (await session.client.fetchAgent({ agentId: session.agentId }))?.agent?.archivedAt,
+      .poll(async () =>
+        (await session.client.fetchWorkspaces()).entries.some(
+          (workspace) => workspace.id === session.workspaceId,
+        ),
       )
-      .toBeTruthy();
+      .toBe(false);
   } finally {
     await session.cleanup();
   }

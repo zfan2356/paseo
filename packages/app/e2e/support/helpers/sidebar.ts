@@ -255,7 +255,10 @@ export async function expectWorkspaceAbsentFromSidebar(
 // again, this is the only place that has to follow.
 export async function openSidebarDisplayPage(page: Page, branchTestID: string): Promise<void> {
   await openDirectoryResources(page);
-  await page.getByTestId("sidebar-display-preferences-menu").click();
+  await page
+    .getByTestId("workspace-resource-list")
+    .getByTestId("sidebar-display-preferences-menu")
+    .click();
   await page.getByTestId(branchTestID).click();
 }
 

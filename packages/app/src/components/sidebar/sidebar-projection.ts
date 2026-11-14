@@ -20,6 +20,96 @@ import {
   type SidebarShortcutSection,
 } from "@/utils/sidebar-shortcuts";
 import { statusWorkspaceGroups, type SidebarWorkspaceGroup } from "./sidebar-labels";
+import { executionDirectoryLabel } from "@/session-navigation/model";
+import { applyStoredOrdering } from "@/hooks/sidebar-workspaces-view-model";
+import {
+  compareWorkspaceStructureItems,
+  compareWorkspaceTimes,
+  workspaceSortTime,
+  type WorkspaceSort,
+} from "@/projects/workspace-structure";
+
+export function orderSidebarWorktreeGroups(
+  projects: SidebarProjectEntry[],
+  entries: ReadonlyMap<string, SidebarWorkspaceEntry>,
+  sort: WorkspaceSort | undefined,
+  workspaceOrders: Readonly<Record<string, string[]>>,
+): SidebarProjectEntry[] {
+  return projects.map((project) => {
+    if (!project.workspaces.some((workspace) => workspace.projectViewKey !== project.viewKey))
+      return project;
+    const sorted = project.workspaces
+      .map((workspace) => ({
+        workspace,
+        workspaceKey: workspace.workspaceKey,
+        workspaceName: entries.get(workspace.workspaceKey)?.name ?? workspace.name,
+        sortTime: workspaceSortTime(entries.get(workspace.workspaceKey) ?? {}, sort),
+      }))
+      .sort(sort ? compareWorkspaceTimes : compareWorkspaceStructureItems)
+      .map(({ workspace }) => workspace);
+    const workspaces =
+      sort === "manual"
+        ? applyStoredOrdering({
+            items: sorted,
+            storedOrder: workspaceOrders[project.viewKey] ?? [],
+            getKey: (workspace) => workspace.workspaceKey,
+          })
+        : sorted;
+    return { ...project, workspaces };
+  });
+}
+
+export type SidebarCheckoutIdentity =
+  | { isGit: false }
+  | { isGit: true; repoRoot: string; mainRepoRoot?: string | null };
+
+export function sidebarCheckoutIdentityKey(serverId: string, directory: string): string {
+  return JSON.stringify([serverId, directory]);
+}
+
+export function groupSidebarWorktrees(
+  projects: SidebarProjectEntry[],
+  checkouts: ReadonlyMap<string, SidebarCheckoutIdentity>,
+): SidebarProjectEntry[] {
+  const groups = new Map<string, SidebarProjectEntry>();
+  const paths = projects.flatMap((project) => project.hosts.map((host) => host.iconWorkingDir));
+  for (const project of projects) {
+    const host = project.hosts.length === 1 ? project.hosts[0] : undefined;
+    const checkout = host
+      ? checkouts.get(sidebarCheckoutIdentityKey(host.serverId, host.iconWorkingDir))
+      : undefined;
+    // A repository subdirectory is an independent project, not a linked worktree.
+    const mainRoot =
+      checkout?.isGit && checkout.repoRoot === host?.iconWorkingDir
+        ? (checkout.mainRepoRoot ?? checkout.repoRoot)
+        : null;
+    const mainProject = mainRoot
+      ? projects.find((candidate) =>
+          candidate.hosts.some(
+            (target) => target.serverId === host?.serverId && target.iconWorkingDir === mainRoot,
+          ),
+        )
+      : undefined;
+    const key =
+      mainProject?.viewKey ??
+      (mainRoot && host ? sidebarCheckoutIdentityKey(host.serverId, mainRoot) : project.viewKey);
+    const existing = groups.get(key);
+    if (existing) {
+      groups.set(key, { ...existing, workspaces: [...existing.workspaces, ...project.workspaces] });
+      continue;
+    }
+    const representative = mainProject ?? project;
+    groups.set(key, {
+      ...representative,
+      projectName:
+        mainRoot && !mainProject
+          ? executionDirectoryLabel(mainRoot, paths)
+          : representative.projectName,
+      workspaces: project.workspaces,
+    });
+  }
+  return [...groups.values()];
+}
 
 export interface SidebarProjection {
   pinnedGroups: PinnedSidebarGroups;

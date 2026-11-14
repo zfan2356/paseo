@@ -1,4 +1,5 @@
 import { useHostFeatureMap } from "@/runtime/host-features";
+import type { WorkspaceSort } from "@/projects/workspace-structure";
 import { useCallback, useEffect, useMemo } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
@@ -86,6 +87,7 @@ const EMPTY_WORKSPACES: SidebarWorkspacePlacement[] = [];
 const EMPTY_PROJECT_NAMES = new Map<string, string>();
 
 export interface SidebarWorkspacesListResult {
+  workspaceSort?: WorkspaceSort;
   workspaceSortSupported: boolean;
   workspacePlacements: SidebarWorkspacePlacement[];
   projects: SidebarProjectEntry[];
@@ -200,6 +202,7 @@ export function useSidebarWorkspacesList(options?: {
   });
 
   return {
+    workspaceSort: sort,
     workspaceSortSupported,
     workspacePlacements,
     projects,

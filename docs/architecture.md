@@ -408,12 +408,11 @@ initializing → idle ⇄ running
 
 ## Navigation and resource identity
 
-The default sidebar projects root agents through their SessionContext. Its collection owner also
-supplies keyboard targets, so session project, label and pin changes cannot leave shortcuts on the
-old workspace projection. Projects merge through the existing opaque projectKey across hosts.
-Workspace rows remain in the Workspaces and terminals sheet, including containers without a
-visible root agent. Its entry points live in Explorer and on Open project. The [session navigation design](session-context.md) owns
-the product and compatibility rules.
+Use the same workspace list and keyboard projection for both sidebar views. By directory retains
+the original directory sections. By project moves linked worktrees into their Git main checkout's
+section; Git identity includes the host, and a branch named `main` carries no grouping authority.
+Keep workspace IDs, operation targets and persisted pins independent of these display sections.
+The Workspaces and terminals sheet in Explorer and Open project retains the same resource list.
 
 Keep shared directory facts separate from browsing state:
 

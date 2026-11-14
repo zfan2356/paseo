@@ -5,7 +5,13 @@ import type {
   SidebarWorkspaceEntry,
   SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
-import { buildSidebarProjection } from "./sidebar-projection";
+import {
+  buildSidebarProjection,
+  groupSidebarWorktrees,
+  orderSidebarWorktreeGroups,
+  sidebarCheckoutIdentityKey,
+  type SidebarCheckoutIdentity,
+} from "./sidebar-projection";
 
 function makeWorkspace(
   id: string,
@@ -63,6 +69,158 @@ function makeProject(
     workspaces,
   };
 }
+
+describe("worktree sidebar grouping", () => {
+  function project(directory: string, serverId = "srv") {
+    const viewKey = `${serverId}:${directory}`;
+    return {
+      ...makeProject([makeWorkspace(viewKey, "running", [], viewKey).placement], viewKey),
+      projectName: directory.split("/").at(-1) ?? directory,
+      iconWorkingDir: directory,
+      hosts: [
+        {
+          serverId,
+          projectId: viewKey,
+          iconWorkingDir: directory,
+          worktreeSupport: "supported" as const,
+        },
+      ],
+    };
+  }
+  function facts(entries: Array<[string, string, SidebarCheckoutIdentity]>) {
+    return new Map(
+      entries.map(([host, directory, status]) => [
+        sidebarCheckoutIdentityKey(host, directory),
+        status,
+      ]),
+    );
+  }
+
+  it("applies the existing time sorts across merged directories", () => {
+    const main = makeWorkspace("main", "done", [], "main");
+    const older = makeWorkspace("older", "done", [], "linked");
+    const newer = makeWorkspace("newer", "done", [], "linked");
+    const grouped = [makeProject([main.placement, older.placement, newer.placement], "main")];
+    const entries = new Map([
+      [
+        main.entry.workspaceKey,
+        { ...main.entry, createdAt: new Date(2000), lastUserMessageAt: new Date(3000) },
+      ],
+      [
+        older.entry.workspaceKey,
+        { ...older.entry, createdAt: new Date(1000), lastUserMessageAt: new Date(5000) },
+      ],
+      [
+        newer.entry.workspaceKey,
+        { ...newer.entry, createdAt: new Date(3000), lastUserMessageAt: new Date(4000) },
+      ],
+    ]);
+    expect(
+      orderSidebarWorktreeGroups(grouped, entries, "created", {})[0].workspaces.map(
+        (workspace) => workspace.workspaceId,
+      ),
+    ).toEqual(["newer", "main", "older"]);
+    expect(
+      orderSidebarWorktreeGroups(grouped, entries, "lastPrompt", {})[0].workspaces.map(
+        (workspace) => workspace.workspaceId,
+      ),
+    ).toEqual(["older", "newer", "main"]);
+  });
+
+  it("honors the saved merged drag order without writing directory orders", () => {
+    const main = makeWorkspace("main", "done", [], "main");
+    const linked = makeWorkspace("linked", "done", [], "linked");
+    const grouped = [makeProject([main.placement, linked.placement], "main")];
+    const orders = {
+      main: [linked.entry.workspaceKey, main.entry.workspaceKey],
+      linked: [linked.entry.workspaceKey],
+    };
+    const before = structuredClone(orders);
+    expect(orderSidebarWorktreeGroups(grouped, new Map(), "manual", orders)[0].workspaces).toEqual([
+      linked.placement,
+      main.placement,
+    ]);
+    expect(orders).toEqual(before);
+    expect(grouped[0].workspaces).toEqual([main.placement, linked.placement]);
+  });
+
+  it("only moves linked worktrees into the main checkout's existing list, keeping row identities", () => {
+    const linked = project("/outside/fix");
+    const main = project("/repo");
+    const second = project("/outside/feature");
+    const before = structuredClone([linked, main, second]);
+    const grouped = groupSidebarWorktrees(
+      [linked, main, second],
+      facts([
+        ["srv", "/outside/fix", { isGit: true, repoRoot: "/outside/fix", mainRepoRoot: "/repo" }],
+        ["srv", "/repo", { isGit: true, repoRoot: "/repo" }],
+        [
+          "srv",
+          "/outside/feature",
+          { isGit: true, repoRoot: "/outside/feature", mainRepoRoot: "/repo" },
+        ],
+      ]),
+    );
+    expect(grouped).toEqual([
+      { ...main, workspaces: [linked.workspaces[0], main.workspaces[0], second.workspaces[0]] },
+    ]);
+    expect(grouped[0].workspaces[0]).toBe(linked.workspaces[0]);
+    expect([linked, main, second]).toEqual(before);
+  });
+
+  it("keeps names, path prefixes, repository subdirectories, unavailable facts and hosts independent", () => {
+    const projects = [
+      project("/a/repo"),
+      project("/b/repo"),
+      project("/a/repo/sub"),
+      project("/notes"),
+      project("/unknown"),
+      project("/a/repo", "other"),
+    ];
+    const grouped = groupSidebarWorktrees(
+      projects,
+      facts([
+        ["srv", "/a/repo", { isGit: true, repoRoot: "/a/repo" }],
+        ["srv", "/b/repo", { isGit: true, repoRoot: "/b/repo" }],
+        ["srv", "/a/repo/sub", { isGit: true, repoRoot: "/a/repo" }],
+        ["srv", "/notes", { isGit: false }],
+        ["other", "/a/repo", { isGit: true, repoRoot: "/a/repo" }],
+      ]),
+    );
+    expect(grouped).toEqual(projects);
+  });
+
+  it("uses the Git main checkout even when it has no registered project or a branch named main", () => {
+    const first = project("/fix");
+    const second = project("/main");
+    expect(
+      groupSidebarWorktrees(
+        [first, second],
+        facts([
+          ["srv", "/fix", { isGit: true, repoRoot: "/fix", mainRepoRoot: "/real-checkout" }],
+          ["srv", "/main", { isGit: true, repoRoot: "/main", mainRepoRoot: "/real-checkout" }],
+        ]),
+      ),
+    ).toEqual([
+      {
+        ...first,
+        projectName: "real-checkout",
+        workspaces: [...first.workspaces, ...second.workspaces],
+      },
+    ]);
+  });
+
+  it("does not duplicate a main project while its own Git facts are still loading", () => {
+    const linked = project("/fix");
+    const main = project("/repo");
+    expect(
+      groupSidebarWorktrees(
+        [linked, main],
+        facts([["srv", "/fix", { isGit: true, repoRoot: "/fix", mainRepoRoot: "/repo" }]]),
+      ),
+    ).toEqual([{ ...main, workspaces: [...linked.workspaces, ...main.workspaces] }]);
+  });
+});
 
 function projectionInput(options?: {
   groupMode?: "project" | "status";

@@ -1,0 +1,74 @@
+import { tmpdir } from "node:os";
+import { test, expect } from '../../packages/app/e2e/support/fixtures';
+import { connectSeedClient } from '../../packages/app/e2e/support/helpers/seed-client';
+import { getServerId } from '../../packages/app/e2e/support/helpers/server-id';
+import { execFileSync } from 'node:child_process';
+import { mkdir, writeFile, access, readFile } from 'node:fs/promises';
+import path from 'node:path';
+
+const fixture = path.join(tmpdir(), 'work-416-fixed-sidebar');
+const repo = path.join(fixture, 'paseo');
+const worktrees = ['theme-fix', 'sidebar-fix'].map(name => path.join(fixture, name));
+const notes = path.join(fixture, 'notes');
+const git = (args: string[], cwd = repo) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+
+test('capture fixed Chinese dark sidebar fixture', async ({ page }) => {
+  await mkdir(repo, { recursive: true });
+  await mkdir(notes, { recursive: true });
+  try { await access(path.join(repo, '.git')); } catch {
+    git(['init', '-b', 'development']);
+    git(['config', 'user.name', 'Paseo E2E']);
+    git(['config', 'user.email', 'e2e@paseo.test']);
+    await writeFile(path.join(repo, 'README.md'), '# Sidebar fixture\n');
+    git(['add', 'README.md']);
+    git(['-c', 'commit.gpgsign=false', 'commit', '-m', 'Initial fixture']);
+    for (const [index, directory] of worktrees.entries()) git(['worktree', 'add', '-b', index ? 'main' : 'theme', directory]);
+  }
+  expect(() => git(['rev-parse', '--is-inside-work-tree'], notes)).toThrow();
+  const client = await connectSeedClient();
+  const records: Array<{ id: string; directory: string; projectId: string; agentId: string }> = [];
+  try {
+    for (const [index, directory] of [repo, ...worktrees, notes].entries()) {
+      const added = await client.addProject(directory);
+      if (!added.project) throw new Error(added.error ?? 'no project');
+      await client.renameProject(added.project.projectId, ['Paseo 演示项目', '主题修复 worktree', '侧栏修复 worktree', '独立笔记'][index]);
+      const result = await client.createWorkspace({ source: { kind: 'directory', path: directory, projectId: added.project.projectId }, title: ['恢复原版目录列表', '检查主题与间距', '验证后台等待', '整理设计笔记'][index] });
+      if (!result.workspace) throw new Error(result.error ?? 'no workspace');
+      const agent = await client.createAgent({ provider: 'mock', cwd: directory, workspaceId: result.workspace.id, title: ['恢复原版目录列表', '检查主题与间距', '验证后台等待', '整理设计笔记'][index], modeId: 'load-test', model: 'e2e-fast-stream' });
+      records.push({ id: result.workspace.id, directory, projectId: added.project.projectId, agentId: agent.id });
+    }
+    await client.setWorkspacePinned(records[3].id, true);
+    await client.sendAgentMessage(records[1].agentId, 'Withhold synthetic user message until interrupted.');
+    await page.addInitScript(() => localStorage.setItem('@paseo:app-settings', JSON.stringify({ theme: 'dark', language: 'zh-CN', chatDisplay: 'full' })));
+    await page.goto(`/h/${getServerId()}/workspace/${records[0].id}`);
+    const rowId = (id: string) => `sidebar-workspace-row-${getServerId()}:${id}`;
+    await expect(page.getByTestId(rowId(records[0].id))).toBeVisible({ timeout: 60000 });
+    await expect(page.getByTestId('message-input-root')).toBeVisible({ timeout: 60000 });
+    const compare = process.env.CAPTURE_COMPARE === '1';
+    const baselineOnly = process.env.CAPTURE_BASELINE === '1';
+    for (const mode of compare ? ['original', 'directory', 'project'] : baselineOnly ? ['original'] : ['directory', 'project']) {
+      if (compare && mode === 'directory') {
+        for (const [snapshot, target] of [['final-left-sidebar.tsx', 'components/left-sidebar.tsx'], ['final-sidebar-model.tsx', 'components/sidebar/sidebar-model.tsx']]) {
+          await writeFile(path.resolve(__dirname, '../../packages/app/src', target), await readFile(path.resolve(__dirname, snapshot)));
+        }
+        await page.reload();
+      }
+      if (mode !== 'original') await page.getByTestId(`session-group-by-${mode}`).click();
+      expect((await client.listProjects()).projects).toHaveLength(4);
+      await expect(page.getByTestId(rowId(records[1].id))).toBeVisible();
+      // Let layout, icons and font rasterization settle after the real directory snapshot.
+      await expect.poll(async () => page.locator('[data-testid^="sidebar-project-row-"]').count()).toBe(mode === 'project' ? 2 : 4);
+      await page.screenshot({ path: path.resolve(__dirname, `${mode}-desktop.png`) });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.getByTestId('menu-button').click();
+      await expect(page.getByTestId(rowId(records[0].id))).toBeVisible();
+      await expect.poll(async () => (await page.getByTestId(rowId(records[0].id)).boundingBox())?.x).toBe(8);
+      await page.screenshot({ path: path.resolve(__dirname, `${mode}-narrow.png`) });
+      await page.setViewportSize({ width: 1440, height: 1000 });
+    }
+    await writeFile(path.resolve(__dirname, compare ? 'comparison-fixture.json' : baselineOnly ? 'original-fixture.json' : 'updated-fixture.json'), JSON.stringify(records, null, 2));
+  } finally {
+    for (const record of records) await client.removeProject(record.projectId).catch(() => undefined);
+    await client.close();
+  }
+});

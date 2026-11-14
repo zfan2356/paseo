@@ -1,8 +1,10 @@
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import type { Page, TestInfo } from "@playwright/test";
 import { test, expect } from "../support/fixtures";
 import { gotoAppShell } from "../support/helpers/app";
 import {
+  archiveWorkspaceFromSidebar,
   closeMobileAgentSidebar,
   expectMobileAgentSidebarHidden,
   expectMobileAgentSidebarVisible,
@@ -25,6 +27,7 @@ import { projectEquivalenceViewKey } from "../support/helpers/project-view-key";
 import { escapeRegex } from "../support/helpers/regex";
 import { openFilesPanel } from "../support/helpers/workspace-tabs";
 import { seedMockAgentWorkspace } from "../support/helpers/mock-agent";
+import { loadSessionMessageReaders } from "../support/helpers/new-workspace";
 
 const GITHUB_REMOTE_URL = "https://github.com/test-owner/test-repo.git";
 
@@ -313,6 +316,141 @@ async function expectRecoveredWorkspacesAfterReload(
 }
 
 test.describe("Sidebar workspace list", () => {
+  test("groups only linked worktrees while preserving original rows, pins and selection", async ({
+    page,
+  }) => {
+    const frames = await loadSessionMessageReaders();
+    const requests: string[] = [];
+    const recordFrame = ({ payload }: { payload: string | Buffer }) => {
+      const message = frames.client(payload);
+      if (message) requests.push(message.type);
+    };
+    page.on("websocket", (socket) => socket.on("framesent", recordFrame));
+    const project = await seedWorkspace({ repoPrefix: "sidebar-original-" });
+    const linkedPath = `${project.repoPath}-linked`;
+    let linkedProjectId: string | undefined;
+    try {
+      execFileSync("git", ["worktree", "add", "-b", "sidebar-linked", linkedPath], {
+        cwd: project.repoPath,
+      });
+      const linkedProject = await project.client.addProject(linkedPath);
+      if (!linkedProject.project) throw new Error(linkedProject.error ?? "Missing linked project");
+      linkedProjectId = linkedProject.project.projectId;
+      await project.client.renameProject(project.projectId, "Main checkout");
+      await project.client.renameProject(linkedProjectId, "Linked checkout");
+      await project.client.setWorkspaceTitle(project.workspaceId, "Original main row");
+      const linked = await project.client.createWorkspace({
+        source: { kind: "directory", path: linkedPath, projectId: linkedProjectId },
+        title: "Original linked row",
+      });
+      if (!linked.workspace) throw new Error(linked.error ?? "Missing linked workspace");
+      await project.client.setWorkspacePinned(project.workspaceId, true);
+      const agent = await project.client.createAgent({
+        provider: "mock",
+        cwd: linkedPath,
+        workspaceId: linked.workspace.id,
+        title: "Keep execution directory",
+        modeId: "load-test",
+        model: "e2e-fast-stream",
+      });
+      const persistedRows = (
+        entries: Awaited<ReturnType<typeof project.client.fetchWorkspaces>>["entries"],
+      ) =>
+        entries.map(({ id, name, workspaceDirectory, pinnedAt, archivingAt }) => ({
+          id,
+          name,
+          workspaceDirectory,
+          pinnedAt,
+          archivingAt,
+        }));
+      const workspacesBefore = persistedRows((await project.client.fetchWorkspaces()).entries);
+      await page.goto(`/h/${getServerId()}/workspace/${project.workspaceId}`);
+      await page.getByTestId("session-group-by-directory").click();
+      const projectRows = page.locator('[data-testid^="sidebar-project-row-"]');
+      await expect(projectRows).toHaveCount(2);
+      await expect(
+        page
+          .getByTestId("sidebar-pinned-section")
+          .getByTestId(getWorkspaceRowTestId(project.workspaceId)),
+      ).toBeVisible();
+      const linkedRow = page.getByTestId(getWorkspaceRowTestId(linked.workspace.id));
+      await expect(linkedRow).toBeVisible();
+      const originalBounds = await linkedRow.boundingBox();
+      const originalUrl = page.url();
+      const preferencesBefore = await page.evaluate(
+        () => JSON.parse(localStorage.getItem("session-navigation") ?? "{}").state,
+      );
+      await page.getByTestId("session-group-by-project").click();
+      await expect(projectRows).toHaveCount(1);
+      await expect(projectRows.first()).toContainText("Main checkout");
+      await expect(linkedRow).toBeVisible();
+      const groupedBounds = await linkedRow.boundingBox();
+      expect(groupedBounds?.height).toBe(originalBounds?.height);
+      expect(groupedBounds?.width).toBe(originalBounds?.width);
+      await expect(page).toHaveURL(originalUrl);
+      await page.getByTestId("session-group-by-directory").click();
+      await expect(projectRows).toHaveCount(2);
+      const preferencesAfter = await page.evaluate(
+        () => JSON.parse(localStorage.getItem("session-navigation") ?? "{}").state,
+      );
+      expect(preferencesAfter).toEqual(preferencesBefore);
+      expect(requests.filter((type) => type === "checkout_status_request").length).toBeGreaterThan(
+        0,
+      );
+      expect(requests.filter((type) => type === "checkout_refresh_request")).toEqual([]);
+      expect(persistedRows((await project.client.fetchWorkspaces()).entries)).toEqual(
+        workspacesBefore,
+      );
+      await expect(
+        page
+          .getByTestId("sidebar-pinned-section")
+          .getByTestId(getWorkspaceRowTestId(project.workspaceId)),
+      ).toBeVisible();
+      expect(
+        (await project.client.fetchAgents()).entries.map(({ agent: entry }) => ({
+          id: entry.id,
+          cwd: entry.cwd,
+        })),
+      ).toContainEqual({ id: agent.id, cwd: linkedPath });
+      await linkedRow.hover();
+      await page
+        .getByTestId(`sidebar-workspace-kebab-${getServerId()}:${linked.workspace.id}`)
+        .click();
+      await expect(
+        page.getByTestId(`sidebar-workspace-menu-pin-${getServerId()}:${linked.workspace.id}`),
+      ).toBeVisible();
+      await expect(
+        page.getByTestId(`sidebar-workspace-menu-archive-${getServerId()}:${linked.workspace.id}`),
+      ).toBeVisible();
+      await page
+        .getByTestId(`sidebar-workspace-menu-pin-${getServerId()}:${linked.workspace.id}`)
+        .click();
+      await expect(
+        page
+          .getByTestId("sidebar-pinned-section")
+          .getByTestId(getWorkspaceRowTestId(linked.workspace.id)),
+      ).toBeVisible();
+      await linkedRow.click();
+      await expect(page).toHaveURL(new RegExp(`/workspace/${linked.workspace.id}$`));
+      await openFilesPanel(page);
+      await expect(
+        page.getByTestId("session-directory-select").filter({ visible: true }),
+      ).toContainText(path.basename(linkedPath));
+      await page.getByTestId("workspace-resources-open").filter({ visible: true }).click();
+      const resources = page.getByTestId("workspace-resource-list");
+      await expect(resources).toBeVisible();
+      await resources.getByTestId(getWorkspaceRowTestId(project.workspaceId)).click();
+      await expect(resources).toHaveCount(0);
+      await expect(page).toHaveURL(new RegExp(`/workspace/${project.workspaceId}$`));
+      await archiveWorkspaceFromSidebar(page, linked.workspace.id);
+      await expect(linkedRow).toHaveCount(0);
+    } finally {
+      if (linkedProjectId) await project.client.removeProject(linkedProjectId);
+      execFileSync("git", ["worktree", "remove", "--force", linkedPath], { cwd: project.repoPath });
+      await project.cleanup();
+    }
+  });
+
   test("recovers missing workspaces from a damaged legacy cache after reload", async ({
     page,
   }, testInfo) => {
