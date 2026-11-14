@@ -1553,6 +1553,8 @@ advertise `server_info.features.pluginTimelineItems`.
 
 Plugin UI runs on desktop, browser, iOS, and Android, across every Paseo theme. `theme` is a typed `PluginTheme` mapped from the active host theme. Color and spacing must come from those props. Hardcoded colors and unstyled `Text` break when the host theme changes.
 
+Use `theme.colorScheme` (`"light" | "dark"`) for embedded content that needs the host's resolved appearance. It includes custom themes and updates with the active client theme. Updating only the daemon does not update this client API. On older clients without the field, keep the page usable and prompt to update the client; do not infer appearance from color values or the OS.
+
 Recreate styles when `theme` or `layout.compact` changes.
 
 | Key                             | Required for               | Use it for                          |
