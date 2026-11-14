@@ -1,3 +1,5 @@
+import { isWeb } from "@/constants/platform";
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { getForgeDefinitionOrNeutral } from "@getpaseo/protocol/forge-manifest";
 import { ControlSizeProvider } from "@/components/ui/control-size";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -103,8 +105,12 @@ export function ChangeRequestsView({
   const { t } = useTranslation();
   const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
   const count = state.snapshot?.items.length ?? 0;
+  if (isWeb && count === 0) return null;
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      dataSet={expanded ? MATERIAL_SLOTS.secondaryExpanded : MATERIAL_SLOTS.secondary}
+    >
       <Button
         variant="ghost"
         style={styles.headerButton}

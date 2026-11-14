@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { AdaptiveRenameModal } from "@/components/rename-modal";
 import {
   SessionMenu,
@@ -326,7 +327,10 @@ const SessionRow = memo(function SessionRow({
   return (
     <View testID={`session-row-${agent.id}`}>
       <SessionRowMenuFrame actions={actions} pages={pages} onHoverChange={setHovered}>
-        <View style={[styles.card, hovered && styles.hovered, selected && styles.selected]}>
+        <View
+          dataSet={MATERIAL_SLOTS.sessionRow}
+          style={[styles.card, hovered && styles.hovered, selected && styles.selected]}
+        >
           <SidebarCardContent
             onPress={openChat}
             selected={selected}

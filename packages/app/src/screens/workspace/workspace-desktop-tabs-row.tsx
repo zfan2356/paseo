@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import React, {
   Fragment,
@@ -1405,6 +1406,7 @@ function ResolvedWorkspaceDesktopTabsRow({
     <View
       style={[styles.tabsContainer, onSidebar && styles.tabsContainerSidebar]}
       testID="workspace-tabs-row"
+      dataSet={MATERIAL_SLOTS.header}
       onLayout={handleTabsContainerLayout}
     >
       <View

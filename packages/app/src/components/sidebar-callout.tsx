@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { X } from "lucide-react-native";
 import { useCallback, useMemo, type ReactNode } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
@@ -51,7 +52,12 @@ export function SidebarCallout({
   );
 
   return (
-    <View style={containerStyle} testID={testID} accessibilityRole="alert">
+    <View
+      dataSet={MATERIAL_SLOTS.banner}
+      style={containerStyle}
+      testID={testID}
+      accessibilityRole="alert"
+    >
       <View style={styles.body}>
         {hasHeader || onDismiss ? (
           <View style={styles.topRow}>

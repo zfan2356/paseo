@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { useAddHost } from "@/hosts/add-host";
 import { Modal } from "@/components/ui/modal";
@@ -859,6 +860,7 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
       <View style={styles.overlay} testID="add-project-flow">
         <Pressable style={styles.backdrop} onPress={onClose} testID="add-project-flow-backdrop" />
         <View
+          dataSet={MATERIAL_SLOTS.dialog}
           ref={setOverlayScope}
           style={styles.panel}
           testID={`add-project-flow-page-${page.kind}`}
