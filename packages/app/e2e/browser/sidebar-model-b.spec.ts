@@ -1709,3 +1709,325 @@ test("session grouping shares compact cards and pins while right panels retain d
     await trees.cleanup();
   }
 });
+
+test("Explorer resource action leaves Files and Changes readable at minimum dock width", async ({
+  page,
+}, info) => {
+  test.setTimeout(90_000);
+  page.setDefaultTimeout(15_000);
+  const mock = await seedMockAgentWorkspace({
+    repoPrefix: "resource-rail-width-",
+    title: "Toolbar width check",
+  });
+  try {
+    await page.setViewportSize({ width: 1200, height: 1000 });
+    await openAgentRoute(page, mock);
+    const { ensureExplorerSidebar } = await import("../support/helpers/workspace-tabs");
+    const explorer = await ensureExplorerSidebar(page);
+    const handle = page
+      .getByTestId("workspace-explorer-sidebar-resize-handle")
+      .getByRole("separator");
+    const box = await handle.boundingBox();
+    if (!box) throw new Error("Missing Explorer resize handle");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(1190, box.y + box.height / 2, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(async () => Math.round((await explorer.boundingBox())?.width ?? 0)).toBe(240);
+    await page.mouse.move(600, 900);
+    await waitForSettledPosition(explorer);
+    await page.screenshot({
+      path: info.outputPath("explorer-minimum-width-1200.png"),
+      fullPage: true,
+    });
+    for (const [id, label] of [
+      ["files", "Files"],
+      ["changes_tree", "Changes"],
+    ]) {
+      const tab = explorer.getByTestId(`workspace-tab-${id}`);
+      await expect(tab.getByText(label, { exact: true })).toBeInViewport({ ratio: 1 });
+      const captionFits = await tab.getByText(label, { exact: true }).evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const text = range.getBoundingClientRect();
+        const clip = element.getBoundingClientRect();
+        return text.width <= clip.width + 1;
+      });
+      expect(captionFits).toBe(true);
+      await tab.click();
+      await expect(tab).toHaveAttribute("aria-selected", "true");
+    }
+    const entry = explorer.getByTestId("workspace-resources-open");
+    await expect(entry).toBeInViewport({ ratio: 1 });
+    await entry.click();
+    await expect(page.getByTestId("workspace-resources-sheet")).toBeVisible();
+    await page
+      .getByTestId("workspace-resources-sheet")
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+  } catch (error) {
+    await captureSessionFailure(page, info);
+    throw error;
+  } finally {
+    await mock.cleanup();
+  }
+});
+
+test("Chinese dark previews keep mixed session states and Explorer entry visible on wide and compact layouts", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  page.setDefaultTimeout(15_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "@paseo:app-settings",
+      JSON.stringify({ theme: "dark", language: "zh-CN", chatDisplay: "full" }),
+    );
+  });
+  await page.emulateMedia({ colorScheme: "dark" });
+  const mock = await seedMockAgentWorkspace({
+    repoPrefix: "preview-states-",
+    title: "原会话：目录与状态核验",
+    model: "five-minute-stream",
+  });
+  const target = await seedWorkspace({
+    repoPrefix: "preview-target-",
+    repo: { files: [{ path: "preview-target.txt", content: "before\n" }] },
+  });
+  const agents: string[] = [];
+  let terminalId: string | undefined;
+  try {
+    const { context } = await mock.client.getSessionContext(mock.agentId);
+    if (!context.projectId) throw new Error("Missing session project");
+    await mock.client.renameProject(context.projectId, "会话导航");
+    for (const title of ["置顶：正在实现", "置顶：等待审批", "普通：验证失败"]) {
+      const agent = await mock.client.createAgent({
+        provider: "mock",
+        cwd: mock.cwd,
+        workspaceId: mock.workspaceId,
+        title,
+        modeId: "load-test",
+        model: "five-minute-stream",
+      });
+      agents.push(agent.id);
+    }
+    const [running, waiting, failed] = agents;
+    await mock.client.mutateSessionContext(running, { kind: "pin", pinned: true });
+    await mock.client.mutateSessionContext(waiting, { kind: "pin", pinned: true });
+    await mock.client.sendAgentMessage(running, "Implement the toolbar");
+    await mock.client.sendAgentMessage(waiting, "Emit synthetic plan approval");
+    await mock.client.sendAgentMessage(failed, "Emit synthetic turn failure");
+    await mock.client.mutateSessionContext(mock.agentId, { kind: "link", path: target.repoPath });
+    await writeFailureEvidence(`${target.repoPath}/preview-target.txt`, "after\n");
+    const created = await target.client.createTerminal(target.repoPath, "无会话终端", undefined, {
+      workspaceId: target.workspaceId,
+    });
+    if (!created.terminal) throw new Error(created.error ?? "Missing independent terminal");
+    terminalId = created.terminal.id;
+    await page.setViewportSize({ width: 1200, height: 1000 });
+    await openAgentRoute(page, mock);
+    const { ensureExplorerSidebar, openFilesPanel, openChangesTreePanel } =
+      await import("../support/helpers/workspace-tabs");
+    for (const width of [1200, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      if (width === 390) await page.getByRole("button", { name: "打开菜单", exact: true }).click();
+      const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+      await expect(
+        page.getByTestId("session-group-by-project").filter({ visible: true }),
+      ).toHaveText("按项目");
+      for (const [id, label] of [
+        [running, "运行中"],
+        [waiting, "需要输入"],
+        [failed, "失败"],
+        [mock.agentId, "已完成"],
+      ]) {
+        const state = sidebar.getByTestId(`session-status-${id}`);
+        await expect(state).toHaveAttribute("aria-label", label);
+        const icon = state.getByTestId(`session-project-icon-${id}`);
+        await expect(icon).toBeInViewport({ ratio: 1 });
+        const badge = icon.getByTestId("project-status-badge");
+        await expect(badge).toHaveCount(label === "已完成" ? 0 : 1);
+        if (label !== "已完成") await expect(badge).toBeInViewport({ ratio: 1 });
+      }
+      await expect(
+        sidebar.getByTestId("session-pinned-section").getByTestId(`session-row-${running}`),
+      ).toBeVisible();
+      await expect(
+        sidebar.getByTestId("session-pinned-section").getByTestId(`session-row-${waiting}`),
+      ).toBeVisible();
+      await expect(
+        sidebar.getByTestId("session-pinned-section").getByTestId(`session-row-${failed}`),
+      ).toHaveCount(0);
+      await page.mouse.move(width - 1, 950);
+      await waitForSettledPosition(sidebar);
+      await page.screenshot({
+        path: info.outputPath(`mixed-states-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      const saved = (await mock.client.getSessionContext(mock.agentId)).context;
+      await page.getByTestId("session-group-by-directory").filter({ visible: true }).click();
+      await expect(sidebar.locator('[data-testid^="session-row-"]')).toHaveCount(4);
+      expect((await mock.client.getSessionContext(mock.agentId)).context).toEqual(saved);
+      await expect(sidebar.getByTestId(`session-status-${running}`)).toHaveAttribute(
+        "aria-label",
+        "运行中",
+      );
+      await expect(sidebar.getByTestId(`session-status-${waiting}`)).toHaveAttribute(
+        "aria-label",
+        "需要输入",
+      );
+      await expect(sidebar.getByTestId(`session-status-${failed}`)).toHaveAttribute(
+        "aria-label",
+        "失败",
+      );
+      await waitForSettledPosition(sidebar);
+      await page.screenshot({
+        path: info.outputPath(`mixed-directory-states-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await page.getByTestId("session-group-by-project").filter({ visible: true }).click();
+      if (width === 390) await page.getByTestId("sidebar-close").click();
+      await openFilesPanel(page);
+      const explorer = await ensureExplorerSidebar(page);
+      await expect(
+        explorer.getByTestId("workspace-tab-files").getByText("文件", { exact: true }),
+      ).toBeInViewport({ ratio: 1 });
+      await expect(
+        explorer.getByTestId("workspace-tab-changes_tree").getByText("更改", { exact: true }),
+      ).toBeInViewport({ ratio: 1 });
+      const entry = explorer.getByTestId("workspace-resources-open");
+      await expect(entry).toHaveAttribute("aria-label", "工作区与终端");
+      await expect(entry).toBeInViewport({ ratio: 1 });
+      await page.mouse.move(width === 1200 ? 600 : 1, 900);
+      await waitForSettledPosition(explorer);
+      await page.screenshot({
+        path: info.outputPath(`explorer-entry-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await explorer.getByTestId("session-directory-select").filter({ visible: true }).click();
+      const directoryChoice = page.getByRole("menuitem", { name: target.repoPath, exact: true });
+      await expect(directoryChoice).toBeInViewport({ ratio: 1 });
+      await expectSessionMenuSettled(directoryChoice);
+      await page.screenshot({
+        path: info.outputPath(`directory-select-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await directoryChoice.click();
+      await expect(explorer.getByText("preview-target.txt", { exact: true })).toBeVisible();
+      await explorer.getByTestId("session-directory-actions").filter({ visible: true }).click();
+      const addDirectory = page.getByRole("menuitem", { name: "+ 绑定目录", exact: true });
+      const removeDirectory = page.getByRole("menuitem", { name: "移除绑定", exact: true });
+      await expect(addDirectory).toBeEnabled();
+      await expect(removeDirectory).toBeEnabled();
+      await expect(addDirectory).toBeInViewport({ ratio: 1 });
+      await expect(removeDirectory).toBeInViewport({ ratio: 1 });
+      await expectSessionMenuSettled(removeDirectory);
+      await page.screenshot({
+        path: info.outputPath(`directory-actions-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      if (width === 390)
+        await page
+          .getByRole("button", { name: "底部面板背景", exact: true })
+          .last()
+          .click({ position: { x: 5, y: 5 } });
+      else await page.keyboard.press("Escape");
+      await expect(removeDirectory).not.toBeVisible();
+      await openChangesTreePanel(page);
+      const changes = explorer.getByTestId("changes-tree-panel").filter({ visible: true });
+      if (width === 1200) await expect(changes).toContainText("preview-target.txt");
+      else {
+        await changes.getByTestId("changes-jump-to-file").click();
+        const changedFile = page.getByTestId("diff-tree-file-0-toggle").filter({ visible: true });
+        await expect(changedFile).toContainText("preview-target.txt");
+        await expect(changedFile).toBeInViewport({ ratio: 1 });
+        await expectSessionMenuSettled(changedFile);
+        await page.screenshot({
+          path: info.outputPath("git-file-list-zh-dark-390.png"),
+          fullPage: true,
+        });
+        await changedFile.click();
+        await expect(page.getByTestId("changes-jump-to-file-sheet")).not.toBeVisible();
+      }
+      await expect(
+        changes.getByText(`检出根目录：${target.repoPath}`, { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
+        "aria-label",
+        `执行：${mock.cwd}`,
+      );
+      await page.screenshot({
+        path: info.outputPath(`git-target-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await entry.click();
+      await expectSessionMenuSettled(page.getByTestId("workspace-resources-sheet"));
+      await page.screenshot({
+        path: info.outputPath(`resources-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await page
+        .getByTestId("workspace-resource-list")
+        .getByTestId(`sidebar-workspace-title-${getServerId()}:${target.workspaceId}`)
+        .click();
+      await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
+      await expect(
+        page
+          .getByRole("textbox", { name: "Terminal input", exact: true })
+          .filter({ visible: true }),
+      ).toBeInViewport({ ratio: 1 });
+      await page.screenshot({
+        path: info.outputPath(`independent-terminal-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      if (width === 390) await page.getByRole("button", { name: "打开菜单", exact: true }).click();
+      await page
+        .getByTestId(`session-row-${mock.agentId}`)
+        .filter({ visible: true })
+        .getByRole("button", { name: "原会话：目录与状态核验", exact: true })
+        .click();
+      const composer = page.locator("textarea[data-composer-input]").filter({ visible: true });
+      await expect(composer).toBeEditable();
+      if (width === 390) await expect(sidebar).not.toBeInViewport();
+      await expect(composer).toBeInViewport({ ratio: 1 });
+      await waitForSettledPosition(composer);
+      await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
+        "aria-label",
+        `执行：${mock.cwd}`,
+      );
+      await page.screenshot({
+        path: info.outputPath(`return-to-session-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+    }
+    for (const id of [mock.agentId, ...agents]) await mock.client.archiveAgent(id);
+    for (const width of [1200, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/open-project");
+      await expect(page.getByTestId("open-project-workspace-resources")).toBeVisible();
+      await page.screenshot({
+        path: info.outputPath(`empty-home-zh-dark-${width}.png`),
+        fullPage: true,
+      });
+      await page.getByTestId("open-project-workspace-resources").click();
+      await page
+        .getByTestId("workspace-resource-list")
+        .getByTestId(`sidebar-workspace-title-${getServerId()}:${target.workspaceId}`)
+        .click();
+      await expect(page.getByTestId("workspace-resources-sheet")).not.toBeVisible();
+      await expect(
+        page
+          .getByRole("textbox", { name: "Terminal input", exact: true })
+          .filter({ visible: true }),
+      ).toBeInViewport({ ratio: 1 });
+    }
+  } catch (error) {
+    await captureSessionFailure(page, info);
+    throw error;
+  } finally {
+    await Promise.allSettled(agents.map((id) => mock.client.cancelAgent(id)));
+    if (terminalId) await target.client.killTerminal(terminalId);
+    await mock.cleanup();
+    await target.cleanup();
+  }
+});

@@ -10,7 +10,8 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { AdaptiveModalSheet, FULL_SHEET_SNAP_POINTS } from "@/components/adaptive-modal-sheet";
 import { SidebarModelProvider, useSidebarModel } from "@/components/sidebar/sidebar-model";
 import { SidebarWorkspaceList } from "@/components/sidebar-workspace-list";
-import { Button } from "@/components/ui/button";
+import { ToolbarButton } from "@/components/ui/pane-content-toolbar";
+import { iconButtonChromeGlyphSize } from "@/components/ui/icon-button-chrome";
 import { useIsCompactFormFactor } from "@/constants/layout";
 
 const ResourceIcon = withUnistyles(PanelsTopLeft);
@@ -27,19 +28,14 @@ export function WorkspaceResourcesButton() {
   const close = useCallback(() => setVisible(false), []);
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
+      <ToolbarButton
+        label={t("sessionNavigation.workspaceResources")}
+        compact={compact}
         onPress={open}
-        accessibilityLabel={t("sessionNavigation.workspaceResources")}
         testID="workspace-resources-open"
       >
-        {compact ? (
-          <ResourceIcon size={18} uniProps={iconProps} />
-        ) : (
-          t("sessionNavigation.workspaceResources")
-        )}
-      </Button>
+        <ResourceIcon size={iconButtonChromeGlyphSize("small", compact)} uniProps={iconProps} />
+      </ToolbarButton>
       {visible ? <WorkspaceResourcesSheet onClose={close} /> : null}
     </>
   );
