@@ -463,6 +463,17 @@ export const ko: TranslationResources = {
       otherPlaceholder: "기타...",
     },
     backgroundWork: {
+      cancelLocal: "로컬 대기 취소",
+      unavailable: "백그라운드 소스를 사용할 수 없음",
+      unknownStart: "시작 시간 알 수 없음",
+      deadline: "마감 시간",
+      finished: "종료",
+      freshness: {
+        ready: "마지막 동기화",
+        loading: "불러오는 중",
+        stale: "오래된 데이터",
+        unavailable: "사용 불가",
+      },
       pillOne: "백그라운드 작업 1개",
       pillMany: "백그라운드 작업 {{count}}개",
       notRunning: "더 이상 실행 중이 아님",

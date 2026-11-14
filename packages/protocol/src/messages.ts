@@ -875,7 +875,12 @@ export const AgentSnapshotPayloadSchema = z.object({
   updatedAt: z.string(),
   lastUserMessageAt: z.string().nullable(),
   status: AgentStatusSchema,
-  backgroundWork: z.object({ count: z.number().int().nonnegative() }).optional(),
+  backgroundWork: z
+    .object({
+      count: z.number().int().nonnegative(),
+      runningCount: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
   activeTurn: AgentActiveTurnPayloadSchema.nullable().optional(),
   capabilities: AgentCapabilityFlagsSchema,
   currentModeId: z.string().nullable(),
@@ -910,7 +915,12 @@ export const AgentListItemPayloadSchema = z.object({
   thinkingOptionId: z.string().nullable().optional(),
   effectiveThinkingOptionId: z.string().nullable().optional(),
   status: AgentStatusSchema,
-  backgroundWork: z.object({ count: z.number().int().nonnegative() }).optional(),
+  backgroundWork: z
+    .object({
+      count: z.number().int().nonnegative(),
+      runningCount: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
   cwd: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -4082,6 +4092,7 @@ export const ServerInfoStatusPayloadSchema = z
         agentBackgroundWork: z.boolean().optional(),
         // COMPAT(agentBackgroundWorkStop): added after v0.15.0, remove after 2027-05-03.
         agentBackgroundWorkStop: z.boolean().optional(),
+        externalBackgroundWork: z.boolean().optional(),
         // COMPAT(projectedSubagentTimeline): added after v0.8.0, remove gates after 2027-03-14; retain wire field.
         projectedSubagentTimeline: z.boolean().optional(),
         wholeTurnTimeline: z.boolean().optional(),
@@ -5198,7 +5209,21 @@ export const ProviderSubagentListResponseMessageSchema = z.object({
   }),
 });
 
+export const AgentExternalBackgroundWorkSchema = z.object({
+  source: z.string(),
+  label: z.string(),
+  freshness: z.enum(["loading", "ready", "stale", "unavailable"]),
+  observedAt: z.string().nullable(),
+  status: z.string(),
+  running: z.boolean(),
+  deadline: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+  issue: z.object({ label: z.string(), url: z.string() }).nullable(),
+});
+export type AgentExternalBackgroundWorkPayload = z.infer<typeof AgentExternalBackgroundWorkSchema>;
+
 export const AgentBackgroundWorkItemSchema = z.object({
+  external: AgentExternalBackgroundWorkSchema.optional(),
   id: z.string(),
   // Open string: known kinds include "shell" and "monitor".
   // Clients treat unknown values as "other".

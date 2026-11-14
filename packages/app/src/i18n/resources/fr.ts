@@ -469,6 +469,17 @@ export const fr: TranslationResources = {
       otherPlaceholder: "Autre…",
     },
     backgroundWork: {
+      cancelLocal: "Annuler l’attente locale",
+      unavailable: "Source en arrière-plan indisponible",
+      unknownStart: "Heure de début inconnue",
+      deadline: "Échéance",
+      finished: "Terminé",
+      freshness: {
+        ready: "Dernière synchronisation",
+        loading: "Chargement",
+        stale: "Données périmées",
+        unavailable: "Indisponible",
+      },
       pillOne: "1 tâche en arrière-plan",
       pillMany: "{{count}} tâches en arrière-plan",
       notRunning: "N’est plus en cours",

@@ -467,6 +467,17 @@ export const ru: TranslationResources = {
       otherPlaceholder: "Другой ответ...",
     },
     backgroundWork: {
+      cancelLocal: "Отменить локальное ожидание",
+      unavailable: "Источник фоновых задач недоступен",
+      unknownStart: "Время начала неизвестно",
+      deadline: "Срок",
+      finished: "Завершено",
+      freshness: {
+        ready: "Последняя синхронизация",
+        loading: "Загрузка",
+        stale: "Устаревшие данные",
+        unavailable: "Недоступно",
+      },
       pillOne: "1 фоновая задача",
       pillMany: "Фоновые задачи: {{count}}",
       notRunning: "Больше не выполняется",

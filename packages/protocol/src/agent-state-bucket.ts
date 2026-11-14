@@ -9,7 +9,7 @@ export interface AgentStateBucketInput {
   pendingPermissionCount?: number;
   requiresAttention?: boolean;
   attentionReason?: AgentAttentionReason;
-  backgroundWork?: { count: number } | null;
+  backgroundWork?: { count: number; runningCount?: number } | null;
 }
 
 const WORKSPACE_STATE_BUCKET_PRIORITY = {
@@ -26,6 +26,11 @@ function hasUnreadError(input: AgentStateBucketInput): boolean {
   return input.requiresAttention === true && input.attentionReason === "error";
 }
 
+export function runningBackgroundWorkCount(work: AgentStateBucketInput["backgroundWork"]): number {
+  // COMPAT(externalBackgroundWork): added after v0.15.3, remove after 2027-05-14.
+  return work?.runningCount ?? work?.count ?? 0;
+}
+
 export function deriveAgentStateBucket(input: AgentStateBucketInput): WorkspaceStateBucket {
   if ((input.pendingPermissionCount ?? 0) > 0 || input.attentionReason === "permission") {
     return "needs_input";
@@ -33,7 +38,7 @@ export function deriveAgentStateBucket(input: AgentStateBucketInput): WorkspaceS
   if (hasUnreadError(input)) {
     return "failed";
   }
-  if (input.status === "running" || (input.backgroundWork?.count ?? 0) > 0) {
+  if (input.status === "running" || runningBackgroundWorkCount(input.backgroundWork) > 0) {
     return "running";
   }
   if (input.requiresAttention) {
@@ -53,7 +58,7 @@ export function getAgentStatusPriority(input: AgentStateBucketInput): number {
   if (hasUnreadError(input)) {
     return 1;
   }
-  if (input.status === "running" || (input.backgroundWork?.count ?? 0) > 0) {
+  if (input.status === "running" || runningBackgroundWorkCount(input.backgroundWork) > 0) {
     return 2;
   }
   if (input.status === "initializing") {

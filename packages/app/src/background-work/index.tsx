@@ -1,3 +1,4 @@
+import { openExternalUrl } from "@/utils/open-external-url";
 import { useCallback, useSyncExternalStore } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
@@ -33,18 +34,23 @@ export function BackgroundWorkTrack({
   );
   const rows = [...(items ?? []), ...missing.map((entry) => entry.item)];
   if (count === 0 && rows.length === 0) return null;
-  const visibleCount = items?.length || count;
+  const visibleCount = items ? items.filter((item) => item.kind !== "source").length : count;
+  const unavailable = rows.some((item) => item.external && item.external.freshness !== "ready");
+  let pillText = t("message.backgroundWork.pillMany", { count: visibleCount });
+  if (visibleCount === 1) pillText = t("message.backgroundWork.pillOne");
+  if (unavailable && visibleCount === 0) pillText = t("message.backgroundWork.unavailable");
   return (
     <ComposerTrackPill
       testID="background-work"
       panelTitle={t("message.backgroundWork.title")}
       segments={[
         {
-          bucket: "running",
-          text:
-            visibleCount === 1
-              ? t("message.backgroundWork.pillOne")
-              : t("message.backgroundWork.pillMany", { count: visibleCount }),
+          bucket: rows.some((item) =>
+            item.external ? item.external.running : item.kind !== "source",
+          )
+            ? "running"
+            : "attention",
+          text: pillText,
         },
       ]}
     >
@@ -72,7 +78,9 @@ export function BackgroundWorkTrack({
           key={item.stopToken ?? item.id}
           item={item}
           model={model}
-          live={Boolean(items?.some((entry) => entry.stopToken === item.stopToken))}
+          live={Boolean(
+            items?.some((entry) => entry.id === item.id && entry.stopToken === item.stopToken),
+          )}
           ready={status === "ready"}
           stopStatus={stops?.[item.stopToken ?? ""]?.status}
         />
@@ -106,24 +114,29 @@ function BackgroundWorkRow({
   let detail = t("message.backgroundWork.notRunning");
   if (stopStatus === "pending") detail = t("message.backgroundWork.stopping");
   const { title, command } = backgroundWorkText(item, kind);
-  const action = item.canStop && ready && live;
-  const label =
-    stopStatus === "pending"
-      ? t("message.backgroundWork.stopping")
-      : t("message.backgroundWork.stop");
+  const external = item.external;
+  const action = item.canStop && ready && live && (!external || external.freshness === "ready");
+  const stopLabel = external
+    ? t("message.backgroundWork.cancelLocal")
+    : t("message.backgroundWork.stop");
+  const label = stopStatus === "pending" ? t("message.backgroundWork.stopping") : stopLabel;
   return (
     <ComposerTrackRow>
       <View style={styles.row}>
         <Text style={styles.title}>{title}</Text>
         {command ? <Text style={styles.facts}>{command}</Text> : null}
-        <Text style={styles.facts}>
-          {kind} ·{" "}
-          {live ? (
-            <LiveElapsed startedAt={new Date(item.startedAt)} active style={styles.facts} />
-          ) : (
-            detail
-          )}
-        </Text>
+        {external ? (
+          <ExternalWorkFacts item={item} ready={ready} />
+        ) : (
+          <Text style={styles.facts}>
+            {kind} ·{" "}
+            {live ? (
+              <LiveElapsed startedAt={new Date(item.startedAt)} active style={styles.facts} />
+            ) : (
+              detail
+            )}
+          </Text>
+        )}
         {stopStatus === "error" ? (
           <Text style={styles.facts}>{t("message.backgroundWork.stopError")}</Text>
         ) : null}
@@ -132,7 +145,7 @@ function BackgroundWorkRow({
         <Button
           variant="ghost"
           size="sm"
-          accessibilityLabel={`${t("message.backgroundWork.stop")} ${title}`}
+          accessibilityLabel={`${stopLabel} ${title}`}
           disabled={stopStatus === "pending"}
           onPress={stop}
         >
@@ -145,6 +158,61 @@ function BackgroundWorkRow({
         </Button>
       ) : null}
     </ComposerTrackRow>
+  );
+}
+
+function ExternalWorkFacts({
+  item,
+  ready,
+}: {
+  item: PaseoAgentBackgroundWorkItem;
+  ready: boolean;
+}) {
+  const { t } = useTranslation();
+  const issue = item.external?.issue;
+  const openIssue = useCallback(() => {
+    if (issue) void openExternalUrl(issue.url);
+  }, [issue]);
+  const external = item.external;
+  if (!external) return null;
+  let start = t("message.backgroundWork.unknownStart");
+  if (item.startedAt) start = new Date(item.startedAt).toLocaleString();
+  const ticking =
+    ready && external.freshness === "ready" && external.running && Boolean(item.startedAt);
+  return (
+    <>
+      <Text style={styles.facts}>
+        {external.label} · {external.status}
+      </Text>
+      {item.kind !== "source" ? (
+        <Text style={styles.facts}>
+          {ticking ? (
+            <LiveElapsed startedAt={new Date(item.startedAt)} active style={styles.facts} />
+          ) : (
+            start
+          )}
+        </Text>
+      ) : null}
+      <Text style={styles.facts}>
+        {t(`message.backgroundWork.freshness.${external.freshness}`)}
+        {external.observedAt ? ` · ${new Date(external.observedAt).toLocaleString()}` : ""}
+      </Text>
+      {external.deadline ? (
+        <Text style={styles.facts}>
+          {t("message.backgroundWork.deadline")} · {new Date(external.deadline).toLocaleString()}
+        </Text>
+      ) : null}
+      {external.finishedAt ? (
+        <Text style={styles.facts}>
+          {t("message.backgroundWork.finished")} · {new Date(external.finishedAt).toLocaleString()}
+        </Text>
+      ) : null}
+      {issue ? (
+        <Button variant="ghost" size="sm" onPress={openIssue}>
+          {issue.label}
+        </Button>
+      ) : null}
+    </>
   );
 }
 

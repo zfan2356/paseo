@@ -1,3 +1,4 @@
+import { projectBackgroundWork } from "./agent/background-work/projection.js";
 import type { SessionContextStore } from "./session-context-store.js";
 import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
 import type { AgentChangeRequests } from "./agent-change-requests/service.js";
@@ -767,7 +768,7 @@ export class Session {
         return this.onBinaryMessageToSource(source, frame);
       } else this.emitBinary(frame);
     },
-    (source, message) => this.workspaceSetupMessageForClient(message, source),
+    (source, message) => this.messageForClient(message, source),
     (request, message) =>
       this.sessionLogger.warn(
         {
@@ -2421,7 +2422,10 @@ export class Session {
     if (agent?.internal) return;
     this.emit({
       type: "agent.background_work.update",
-      payload: { agentId: event.agentId, items: event.items },
+      payload: {
+        agentId: event.agentId,
+        items: this.agentManager.listAgentBackgroundWork(event.agentId),
+      },
     });
     if (agent) void this.agentUpdates.forwardLiveAgent(agent);
   }
@@ -9082,6 +9086,8 @@ export class Session {
     if (record.archivedAt) {
       throw new Error(`Agent is archived: ${agentId}`);
     }
+    if (this.agentManager.getAgentBackgroundWorkSummary(agentId))
+      return this.agentManager.listAgentBackgroundWork(agentId);
     throw new Error("Background work inventory is unavailable");
   }
 
@@ -9752,10 +9758,27 @@ export class Session {
           !this.delivery.isModern(source) &&
           this.wantsEvent(event, source)
         )
-          this.onMessageToSource(source, this.workspaceSetupMessageForClient(message, source));
+          this.onMessageToSource(source, this.messageForClient(message, source));
       }
-    } else if (delivered.size === 0 && this.wantsEvent(event)) this.onMessage(message);
+    } else if (delivered.size === 0 && this.wantsEvent(event))
+      this.onMessage(this.projectBackgroundWorkMessage(message));
     return true;
+  }
+
+  private projectBackgroundWorkMessage(
+    message: SessionOutboundMessage,
+    source?: object,
+  ): SessionOutboundMessage {
+    return projectBackgroundWork(message, {
+      external: source
+        ? this.supportsForSource(CLIENT_CAPS.externalBackgroundWork, source)
+        : this.supports(CLIENT_CAPS.externalBackgroundWork),
+      canStop:
+        this.authorization.allowsPermission("workspace.write") ||
+        this.authorization.allowsPermission("hub.execute"),
+      nativeSummary: (id) =>
+        this.agentManager.getAgentBackgroundWorkSummary(id, { includeExternal: false }),
+    });
   }
 
   private emit(msg: SessionOutboundMessage): void {
@@ -9782,20 +9805,21 @@ export class Session {
     if (msg.type === "workspace_setup_status_response") {
       if (this.clientSources.size > 0 && this.onMessageToSource) {
         for (const [source] of this.clientSources) {
-          this.onMessageToSource(source, this.workspaceSetupMessageForClient(msg, source));
+          this.onMessageToSource(source, this.messageForClient(msg, source));
         }
         return;
       }
-      msg = this.workspaceSetupMessageForClient(msg);
+      msg = this.messageForClient(msg);
     }
-    this.onMessage(msg);
+    this.onMessage(this.projectBackgroundWorkMessage(msg));
   }
 
   // COMPAT(workspaceSetupBlocked): added in v0.8.0, remove after 2027-03-07 once client floor >= v0.8.0.
-  private workspaceSetupMessageForClient(
+  private messageForClient(
     message: SessionOutboundMessage,
     source?: object,
   ): SessionOutboundMessage {
+    message = this.projectBackgroundWorkMessage(message, source);
     if (
       message.type !== "workspace_setup_progress" &&
       message.type !== "workspace_setup_status_response"

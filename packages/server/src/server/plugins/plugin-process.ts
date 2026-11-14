@@ -1,3 +1,4 @@
+import type { BackgroundWorkSourceRegistration } from "@getpaseo/plugin/server";
 import { PluginAgentTools } from "./agent-tools.js";
 import { PluginHookHandlers } from "./lifecycle/index.js";
 import { evaluateBundle } from "./bundle-evaluator.js";
@@ -81,6 +82,7 @@ export function createPluginWorker(options: {
   const handlers = new Map<string, RegisteredRpc>();
   const subscriptions = new PluginSubscriptionHandlers({ send, sendAndWait });
   const providers = new Map<string, ProviderRegistration>();
+  const backgroundSources = new Map<string, BackgroundWorkSourceRegistration>();
   const usageSources = new Map<string, UsageSourceRegistration>();
   const providerConnections = new Map<
     string,
@@ -325,6 +327,15 @@ export function createPluginWorker(options: {
       handle,
       registerProvider,
       registerUsageSource,
+      registerBackgroundWorkSource(source) {
+        if (
+          !/^[a-z][a-z0-9._-]*$/.test(source.id) ||
+          !source.label.trim() ||
+          backgroundSources.has(source.id)
+        )
+          throw new Error("Invalid or duplicate background source");
+        backgroundSources.set(source.id, source);
+      },
       registerSettings,
       addHook: hooks.addHook,
       on: hooks.on,
@@ -354,6 +365,7 @@ export function createPluginWorker(options: {
         .sort((left, right) => left.id.localeCompare(right.id))
         .map(providerMetadata),
       usageSources: usageSourceMetadata,
+      backgroundSources: [...backgroundSources.values()].map(({ id, label }) => ({ id, label })),
     });
   }
 
@@ -399,10 +411,51 @@ export function createPluginWorker(options: {
     );
   }
 
+  function isTransportMessage(
+    message: PluginProcessRequest,
+  ): message is Extract<PluginProcessRequest, { type: "paseo_frame" | "paseo_close" }> {
+    return message.type === "paseo_frame" || message.type === "paseo_close";
+  }
+
+  function isBackgroundMessage(
+    message: PluginProcessRequest,
+  ): message is Extract<PluginProcessRequest, { type: "background.fetch" | "background.stop" }> {
+    return message.type === "background.fetch" || message.type === "background.stop";
+  }
+
+  function handleBackgroundRequest(
+    message: Extract<PluginProcessRequest, { type: "background.fetch" | "background.stop" }>,
+  ): void {
+    void (async () => {
+      const source = backgroundSources.get(message.sourceId);
+      if (!source || !paseo) throw new Error("Background source unavailable");
+      if (message.type === "background.fetch") {
+        const snapshot = await source.fetch({ paseo });
+        if (snapshot.status !== "ready") return snapshot;
+        for (const entry of snapshot.items)
+          entry.canStop = entry.canStop && typeof source.stop === "function";
+        return snapshot;
+      }
+      if (!source.stop) throw new Error("Background source cannot cancel work");
+      await source.stop(message.entry, { paseo });
+      return null;
+    })().then(
+      (output) => send({ type: "result", requestId: message.requestId, output }),
+      () =>
+        send({
+          type: "error",
+          requestId: message.requestId,
+          error: "Background source request failed",
+        }),
+    );
+  }
+
   function rejectWhileStopping(message: PluginProcessRequest): void {
     if (
       message.type === "provider.status" ||
       message.type === "provider.catalog_key" ||
+      message.type === "background.fetch" ||
+      message.type === "background.stop" ||
       message.type === "usage.fetch" ||
       message.type === "usage.discover" ||
       message.type === "subscribe"
@@ -537,6 +590,10 @@ export function createPluginWorker(options: {
       );
       return;
     }
+    if (isBackgroundMessage(message)) {
+      handleBackgroundRequest(message);
+      return;
+    }
     if (message.type === "usage.fetch" || message.type === "usage.discover") {
       handleUsageRequest(message);
       return;
@@ -568,7 +625,7 @@ export function createPluginWorker(options: {
       void closeProviderConnection(message.connectionId);
       return;
     }
-    if (message.type === "paseo_frame" || message.type === "paseo_close") return;
+    if (isTransportMessage(message)) return;
     if (isHookMessage(message)) {
       handleHookMessage(message);
       return;

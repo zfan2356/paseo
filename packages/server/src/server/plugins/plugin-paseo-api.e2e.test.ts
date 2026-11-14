@@ -537,3 +537,119 @@ test("keeps reload and enable responsive while compiling a real plugin", async (
     .parse(JSON.parse(stdout));
   for (const result of results) expect(result.blockingMs).toBeLessThan(20);
 });
+
+test("external background sources poll in subprocesses, isolate sessions, cancel locally and reload", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "paseo-background-source-"));
+  roots.push(directory);
+  const inventoryPath = path.join(directory, "inventory.json");
+  await writeFile(
+    path.join(directory, "paseo-plugin.json"),
+    JSON.stringify({ id: "background-fixture", requirements: { paseo: ">=0.15.3" } }),
+  );
+  await writeFile(inventoryPath, JSON.stringify([]));
+  await writeFile(
+    path.join(directory, "index.server.ts"),
+    `
+import { readFile, writeFile } from "node:fs/promises";
+export default function contribute(server) {
+  server.registerBackgroundWorkSource({
+    id: "waits", label: "Multica fixture",
+    async fetch({ paseo }) {
+      await paseo.hosts.list();
+      return {status: "ready", observedAt: new Date().toISOString(), items: JSON.parse(await readFile(${JSON.stringify(inventoryPath)}, "utf8"))};
+    },
+    async stop(entry) {
+      const items = JSON.parse(await readFile(${JSON.stringify(inventoryPath)}, "utf8"));
+      for (const item of items) if (item.id === entry.id && item.agentId === entry.agentId) {
+        item.canStop = false; item.external.running = false; item.external.status = "Cancelled · awaiting handling";
+      }
+      await writeFile(${JSON.stringify(inventoryPath)}, JSON.stringify(items));
+    },
+  });
+  return () => {};
+}`,
+  );
+  const daemon = await createTestPaseoDaemon({ pluginsEnabled: true });
+  const url = `ws://127.0.0.1:${daemon.port}/ws`;
+  const client = new DaemonClient({ url });
+  const legacy = new DaemonClient({
+    url,
+    clientId: "background-legacy",
+    capabilities: { external_background_work: false },
+  });
+  const reader = new DaemonClient({
+    url,
+    clientId: "background-reader",
+    sessionPermissions: ["workspace.read"],
+  });
+  try {
+    await client.connect();
+    await legacy.connect();
+    await reader.connect();
+    const a = await daemon.daemon.agentManager.createAgent(
+      { provider: "claude", cwd: directory },
+      undefined,
+      { workspaceId: undefined },
+    );
+    const b = await daemon.daemon.agentManager.createAgent(
+      { provider: "codex", cwd: directory },
+      undefined,
+      { workspaceId: undefined },
+    );
+    const entry = {
+      agentId: a.id,
+      id: "same-id",
+      kind: "monitor",
+      description: "CI wait",
+      startedAt: null,
+      canStop: true,
+      external: { status: "Running", running: true, deadline: null, finishedAt: null, issue: null },
+    };
+    await writeFile(inventoryPath, JSON.stringify([entry, { ...entry, agentId: b.id }]));
+    await client.installDirectoryPlugin(directory, "background-fixture");
+    await expect
+      .poll(
+        async () =>
+          (await client.listAgentBackgroundWork(a.id, { timeout: 2000 })).filter(
+            (item) => item.kind !== "source",
+          ).length,
+      )
+      .toBe(1);
+    const [item] = await client.listAgentBackgroundWork(a.id, { timeout: 2000 });
+    expect(item?.external?.label).toBe("Multica fixture");
+    expect((await client.listAgentBackgroundWork(b.id, { timeout: 2000 }))[0]?.id).toBe(item?.id);
+    expect(await legacy.listAgentBackgroundWork(a.id, { timeout: 2000 })).toEqual([]);
+    expect((await client.fetchAgent(a.id))?.agent.backgroundWork).toEqual({
+      count: 1,
+      runningCount: 1,
+    });
+    expect((await legacy.fetchAgent(a.id))?.agent.backgroundWork).toBeUndefined();
+    const readItem = (await reader.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]!;
+    expect(readItem.canStop).toBeUndefined();
+    expect(readItem.stopToken).toBeUndefined();
+    await client.stopAgentBackgroundWork(a.id, item!);
+    expect(
+      (await client.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]?.external?.status,
+    ).toContain("Cancelled");
+    expect(
+      (await client.listAgentBackgroundWork(b.id, { timeout: 2000 }))[0]?.external?.status,
+    ).toBe("Running");
+    await client.reloadPlugin("background-fixture");
+    await expect
+      .poll(
+        async () =>
+          (await client.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]?.external?.freshness,
+      )
+      .toBe("ready");
+    expect(
+      (await client.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]?.external?.status,
+    ).toContain("Cancelled");
+    await client.removePlugin("background-fixture");
+    await expect
+      .poll(async () => daemon.daemon.agentManager.getAgentBackgroundWorkSummary(a.id))
+      .toBeUndefined();
+  } finally {
+    await Promise.all([client.close(), legacy.close(), reader.close()]);
+    await daemon.close();
+  }
+}, 60_000);

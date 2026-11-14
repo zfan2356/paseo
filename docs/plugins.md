@@ -575,6 +575,29 @@ It must resolve inside that directory to a regular file that passes the shared S
 (see [Plugin icons](#plugin-icons)). Paseo reads and validates the file when the plugin starts; the
 string is never inline SVG or a URL.
 
+## Background work sources
+
+Use `server.registerBackgroundWorkSource` for work owned outside an agent provider. Return a complete
+host snapshot from `fetch({ paseo })`, with each entry addressed to an existing Paseo agent ID.
+Resolve ownership from the external system's frozen return address; titles, current assignees and
+provider session pins do not establish a Paseo address.
+
+The daemon fetches immediately and every five seconds, including when no app is connected. Each
+installation/source owns its inventory independently of provider updates. A failed fetch retains the
+previous snapshot, marks it stale and revokes stop tokens. Return `unavailable` with a safe, actionable
+message for missing configuration or capabilities; return an empty ready snapshot only after a
+successful complete read. Do not include credentials, full argv, output or log paths.
+
+The daemon authorizes stop requests using the host's existing background-work permissions before
+calling `stop(entry, { paseo })`. Recheck the external target there and cancel only the owned local
+wait. The UI keeps terminal entries until the source removes them, so a source can retain an ended
+wait until its delivery is handled. Use null for unknown times; observation time is not start time.
+Plugin teardown revokes its inventory and controls without stopping external work. A reloaded
+instance must reconstruct from the external authority.
+
+Old clients receive provider inventory only. New clients declare `external_background_work` and
+require `server_info.features.externalBackgroundWork` for the external source contract.
+
 ## Usage sources
 
 Register a usage source from `index.server.ts` with `server.registerUsageSource()`. Import `UsageSourceRegistration` and normalization helpers from `@getpaseo/plugin/server/usage`. The plugin owns account discovery, harness labels, and credential-store reads; the daemon owns account grouping and the fetch cache. Agent popovers use only the agent's own login. The host-wide Usage modal falls back across an account's logins; any success shows usage only, and all failures show every login's labeled error and remedy. Follow the [usage source discovery contract](../public-docs/plugins/reference.md#usage-sources). The resolved launch environment crosses into the trusted, unsandboxed plugin subprocess for session discovery. Usage queries never run lifecycle hooks. Inputs are validated in the plugin process and remain daemon-side. `icon` uses the same SVG file rules as provider icons.
