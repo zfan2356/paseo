@@ -1,9 +1,10 @@
+import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { isWeb } from "@/constants/platform";
 import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { getForgeDefinitionOrNeutral } from "@getpaseo/protocol/forge-manifest";
 import { ControlSizeProvider } from "@/components/ui/control-size";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -55,18 +56,50 @@ function ConnectedChangeRequests({ client, agentId }: { client: DaemonClient; ag
   );
 }
 
+export function ChangeRequestsDialog({
+  client,
+  agentId,
+  onClose,
+}: {
+  client: DaemonClient;
+  agentId: string;
+  onClose(): void;
+}) {
+  const { t } = useTranslation();
+  const header = useMemo(() => ({ title: t("agentChangeRequests.link") }), [t]);
+  return (
+    <AdaptiveModalSheet
+      visible
+      onClose={onClose}
+      header={header}
+      testID="agent-change-requests-dialog"
+    >
+      <ChangeRequestsList
+        client={client}
+        agentId={agentId}
+        expanded
+        toggle={onClose}
+        label={header.title}
+        inDialog
+      />
+    </AdaptiveModalSheet>
+  );
+}
+
 export function ChangeRequestsList({
   client,
   agentId,
   expanded,
   toggle,
   label,
+  inDialog = false,
 }: {
   client: DaemonClient;
   agentId: string;
   expanded: boolean;
   toggle: () => void;
   label: string;
+  inDialog?: boolean;
 }) {
   const [model] = useState(() => {
     const api = createPaseoApi(client);
@@ -88,7 +121,15 @@ export function ChangeRequestsList({
     model.start();
     return model.close;
   }, [model]);
-  return <ChangeRequestsView model={model} expanded={expanded} toggle={toggle} label={label} />;
+  return (
+    <ChangeRequestsView
+      model={model}
+      expanded={expanded}
+      toggle={toggle}
+      label={label}
+      inDialog={inDialog}
+    />
+  );
 }
 
 export function ChangeRequestsView({
@@ -96,32 +137,34 @@ export function ChangeRequestsView({
   expanded,
   toggle,
   label,
+  inDialog = false,
 }: {
   model: ReturnType<typeof openChangeRequests>;
   expanded: boolean;
   toggle: () => void;
   label: string;
+  inDialog?: boolean;
 }) {
   const { t } = useTranslation();
   const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
   const count = state.snapshot?.items.length ?? 0;
-  if (isWeb && count === 0) return null;
+  const material = expanded ? MATERIAL_SLOTS.secondaryExpanded : MATERIAL_SLOTS.secondary;
+  if (isWeb && !inDialog && count === 0) return null;
   return (
-    <View
-      style={styles.container}
-      dataSet={expanded ? MATERIAL_SLOTS.secondaryExpanded : MATERIAL_SLOTS.secondary}
-    >
-      <Button
-        variant="ghost"
-        style={styles.headerButton}
-        onPress={toggle}
-        testID="agent-change-requests-toggle"
-      >
-        {label} · {count}
-      </Button>
+    <View style={inDialog ? undefined : styles.container} dataSet={inDialog ? undefined : material}>
+      {inDialog ? null : (
+        <Button
+          variant="ghost"
+          style={styles.headerButton}
+          onPress={toggle}
+          testID="agent-change-requests-toggle"
+        >
+          {label} · {count}
+        </Button>
+      )}
       {expanded ? (
         <ScrollView style={styles.list}>
-          <View style={styles.body}>
+          <View style={[styles.body, inDialog && styles.dialogBody]}>
             {state.error ? (
               <Text accessibilityRole="alert" style={styles.error}>
                 {state.error}
@@ -262,6 +305,7 @@ const styles = StyleSheet.create((theme) => ({
   inputRow: { flexDirection: "row", alignItems: "flex-end", gap: theme.spacing[2] },
   list: { maxHeight: 340 },
   body: { padding: theme.spacing[4], gap: theme.spacing[3] },
+  dialogBody: { padding: 0 },
   row: {
     flexDirection: "row",
     alignItems: "center",

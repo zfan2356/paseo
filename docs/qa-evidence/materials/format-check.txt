@@ -5,4 +5,4 @@
 Checking formatting...
 
 All matched files use the correct format.
-Finished in 2462ms on 6113 files using 32 threads.
+Finished in 2529ms on 6112 files using 32 threads.

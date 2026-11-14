@@ -1,3 +1,4 @@
+import { waitForSettledPosition } from "../support/helpers/sheet-layout";
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 
@@ -15,7 +16,22 @@ for (const width of [1200, 390]) {
     });
     try {
       await openAgentRoute(page, agent);
-      await page.getByTestId("agent-change-requests-toggle").click();
+      await expect(page.getByTestId("message-input-root")).toBeVisible();
+      await expect(page.getByTestId("agent-change-requests-toggle")).toHaveCount(0);
+      if (width === 390) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+      const row = page.getByTestId(`session-row-${agent.agentId}`).filter({ visible: true });
+      await expect(row.getByTestId("session-menu-trigger")).toBeEnabled();
+      await waitForSettledPosition(row);
+      await row.getByTestId("session-menu-trigger").click();
+      await expect(page.getByTestId("session-menu-link-change-request")).toBeVisible();
+      await waitForSettledPosition(page.getByTestId("session-menu-link-change-request"));
+      await page.screenshot({ path: info.outputPath(`link-menu-${width}.png`) });
+      await page.getByTestId("session-menu-link-change-request").click();
+      await expect(page.getByTestId("agent-change-requests-dialog")).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "PR/MR URL" })).toBeVisible();
+      await waitForSettledPosition(page.getByTestId("agent-change-requests-dialog"));
+      await page.screenshot({ path: info.outputPath(`link-form-${width}.png`) });
+
       const input = page.getByRole("textbox", { name: "PR/MR URL" });
       await input.fill("https://git.woa.com/team/first/merge_requests/7?tab=changes#note_9");
       await page.getByTestId("agent-change-requests-add").click();
@@ -27,6 +43,9 @@ for (const width of [1200, 390]) {
       ).toBeVisible();
       await expect(page.getByText("Sign in to this forge", { exact: false }).first()).toBeVisible();
       await page.getByRole("switch", { name: "Add automatically" }).click();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("agent-change-requests-dialog")).toBeHidden();
+      if (width === 390) await page.getByTestId("sidebar-close").click();
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.getByTestId("agent-change-requests-toggle").click();
       await expect(page.getByRole("button", { name: "team/first !7", exact: true })).toBeVisible();
@@ -42,6 +61,13 @@ for (const width of [1200, 390]) {
       await expect(
         page.getByRole("button", { name: "another/second !8", exact: true }),
       ).toBeVisible();
+      await page.getByRole("button", { name: "Remove another/second !8", exact: true }).click();
+      await expect(page.getByTestId("agent-change-requests-toggle")).toHaveCount(0);
+      if (width === 390) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+      await row.getByTestId("session-menu-trigger").click();
+      await page.getByTestId("session-menu-link-change-request").click();
+      await expect(page.getByRole("textbox", { name: "PR/MR URL" })).toBeVisible();
+      await expect(page.getByRole("switch", { name: "Add automatically" })).not.toBeChecked();
     } finally {
       await agent.cleanup();
     }

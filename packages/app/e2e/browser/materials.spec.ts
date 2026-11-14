@@ -4,10 +4,10 @@ import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-
 import { openAttachmentMenu } from "../support/helpers/composer";
 // Real renderer/daemon coverage and raw scroll samples for default materials.
 test("default material evidence", async ({ page }, testInfo) => {
+  test.skip(process.env.E2E_PERFORMANCE !== "1", "Explicit visual/performance evidence capture");
   test.setTimeout(480_000);
   const { mkdir, writeFile, readFile } = await import("node:fs/promises");
-  const out =
-    (await import("node:path")).resolve(process.cwd(), "../../docs/qa-evidence/materials") + "/";
+  const out = testInfo.outputPath("materials") + "/";
   await mkdir(out, { recursive: true });
   const browser = page.context().browser();
   if (!browser) throw new Error("Chromium is required for material evidence");
@@ -32,7 +32,7 @@ test("default material evidence", async ({ page }, testInfo) => {
     ),
   );
   await browserCdp.detach();
-  const wallpaper = await readFile(out + "wallpaper.svg", "utf8");
+  const wallpaper = await readFile("../../docs/qa-evidence/materials/wallpaper.svg", "utf8");
   await page.route("https://material-study.test/wallpaper.svg", (route) =>
     route.fulfill({ contentType: "image/svg+xml", body: wallpaper }),
   );
@@ -292,13 +292,14 @@ test("default material evidence", async ({ page }, testInfo) => {
   }
 });
 
-test("floating inventory captures", async ({ page }) => {
+test("floating inventory captures", async ({ page }, testInfo) => {
+  test.skip(process.env.E2E_PERFORMANCE !== "1", "Explicit visual evidence capture");
   test.setTimeout(180_000);
   page.setDefaultTimeout(12_000);
   const { writeFile, readFile } = await import("node:fs/promises");
-  const out =
-    (await import("node:path")).resolve(process.cwd(), "../../docs/qa-evidence/materials") + "/";
-  const wallpaper = await readFile(out + "wallpaper.svg", "utf8");
+  const out = testInfo.outputPath("materials") + "/";
+  await (await import("node:fs/promises")).mkdir(out, { recursive: true });
+  const wallpaper = await readFile("../../docs/qa-evidence/materials/wallpaper.svg", "utf8");
   await page.route("https://material-study.test/wallpaper.svg", (route) =>
     route.fulfill({ contentType: "image/svg+xml", body: wallpaper }),
   );
@@ -415,12 +416,12 @@ async function captureSurface(page: Page, surface: Locator, path: string) {
   });
 }
 
-test("sidebar material preserves status, pin, context menu and hover archive", async ({ page }) => {
+test("sidebar material preserves status, pin, context menu and hover archive", async ({
+  page,
+}, testInfo) => {
   test.setTimeout(180_000);
-  const out = (await import("node:path")).resolve(
-    process.cwd(),
-    "../../docs/qa-evidence/materials",
-  );
+  const out = testInfo.outputPath("materials");
+  await (await import("node:fs/promises")).mkdir(out, { recursive: true });
   const session = await seedMockAgentWorkspace({
     repoPrefix: "material-sidebar-",
     title: "Material session",
@@ -481,7 +482,9 @@ test("sidebar material preserves status, pin, context menu and hover archive", a
   }
 });
 
-test("material header leaves terminal content below workspace chrome", async ({ page }) => {
+test("material header leaves terminal content below workspace chrome", async ({
+  page,
+}, testInfo) => {
   const { clickNewTerminal } = await import("../support/helpers/launcher");
   const session = await seedMockAgentWorkspace({
     repoPrefix: "material-terminal-",
@@ -508,10 +511,8 @@ test("material header leaves terminal content below workspace chrome", async ({ 
         return content.y - (chrome.y + chrome.height);
       })
       .toBeGreaterThanOrEqual(0);
-    const out = (await import("node:path")).resolve(
-      process.cwd(),
-      "../../docs/qa-evidence/materials",
-    );
+    const out = testInfo.outputPath("materials");
+    await (await import("node:fs/promises")).mkdir(out, { recursive: true });
     await page.screenshot({ path: `${out}/terminal-after-fix.png` });
     await page
       .getByTestId(`workspace-tab-agent_${session.agentId}`)

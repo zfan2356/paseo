@@ -81,6 +81,10 @@
       "file": "packages/app/src/agent-change-requests/section.tsx",
       "surfaces": [
         {
+          "name": "AdaptiveModalSheet",
+          "elevation": "L3"
+        },
+        {
           "name": "material:secondary-expanded",
           "elevation": "L2"
         },

@@ -44,9 +44,13 @@ The catalog captures the original nine renderer families in both themes (`floati
 
 These are requestAnimationFrame intervals and synchronous scroll-write samples on a shared Linux VM. They do not measure GPU execution time or prove zero blur cost on Mac.
 
+## Review corrections
+
+Shared theme colors remain their original hex values for diff palette math, canvas and plugin consumers. Only the left-sidebar View background uses the web CSS variable; no shared theme token does. The existing palette/plugin/theme tests pass (35 tests). Zero-count rows stay hidden; the session menu opens the same linking model/form in a dialog, retaining automatic linking and manual additions, as Root approved in WORK-408. [Wide menu](link-menu-1200.png) / [form](link-form-1200.png), [compact menu](link-menu-390.png) / [form](link-form-390.png).
+
 ## Validation
 
-Commands and terminal results are retained in the adjacent logs. No full local suite was run. The browser harness owns isolated daemons and never restarts port 6767.
+Commands and terminal results are retained in the adjacent logs. The latest review-fix run is [review visual/link capture](review-visual-browser-final.txt); it refreshes the conversation/catalog and linking screenshots. [Default suite](default-browser.txt) ran without GPU/performance flags: 2 normal regressions passed, 2 capture cases skipped, and tracked evidence was unchanged. [Theme consumers](theme-consumer-tests.txt) passed 35 tests. [Link and diff first run](link-diff-browser-attempt1.txt) passed the wide link flow and real diff panel but caught a compact startup race in the test; [corrected linking regression](link-browser.txt) waits for the composer and stable menu before interacting and passed both widths. No full local suite was run. The browser harness owns isolated daemons and never restarts port 6767.
 
 - [Layout/find/outline regressions](layout-controls-browser.txt): a real terminal begins below its chrome, switching back restores the agent overlay, the find widget stays below chrome, and closing Find retains keyboard scrolling. The [failing pre-fix run](terminal-before-fix.txt) measured a −72px overlap; [before](terminal-before-fix.png) / [after](terminal-after-fix.png) show the corrected first line.
 - [Find viewport](find-viewport-tests.txt): 5 passed. The runner uses the [temporary provider override](find-viewport-config.txt) to select installed Chromium 1187; the project configuration is otherwise unchanged. Real-DOM coverage includes a widget displaced by the workspace header, so match scrolling reserves its complete visible footprint.
@@ -58,8 +62,8 @@ Commands and terminal results are retained in the adjacent logs. No full local s
 - [Typecheck](typecheck.txt), [lint](lint.txt), [format](format.txt), [format check](format-check.txt).
 - [Sheet host](sheet-tests.txt): 6 passed.
 - [Main baseline capture](baseline-browser.txt): passed; 16 real comparison images.
-- [Server/app dependencies](build-server.txt), [desktop main](build-desktop-main.txt), [desktop package](build-desktop.txt), [final renderer export/repack](build-desktop-final.txt), [layout-fix export/repack](build-layout-fixes.txt).
-- [Native code evidence](native-code.txt): unchanged native composer files and passthrough palette helpers; native Materials returns null. Shared markers carry no native style and DOM measurements are web-guarded. Zero-linked-request hiding is web-only.
+- [Server/app dependencies](build-server.txt), [desktop main](build-desktop-main.txt), [desktop package](build-desktop.txt), [final renderer export/repack](build-desktop-final.txt), [layout-fix export/repack](build-layout-fixes.txt), [latest review-fix export/repack](review-build-desktop.txt).
+- [Native code evidence](native-code.txt): unchanged native composer files, unchanged shared semantic palette and the sidebar background passthrough; native Materials returns null. Shared markers carry no native style and DOM measurements are web-guarded. Zero-linked-request hiding is web-only.
 
 Reproduce material coverage with:
 
@@ -67,7 +71,7 @@ Reproduce material coverage with:
 E2E_GPU_COMPOSITING=1 E2E_PERFORMANCE=1 npm run test:e2e --workspace=@getpaseo/app -- materials.spec.ts
 ```
 
-Set `E2E_CHROMIUM_EXECUTABLE_PATH` when using an installed Chromium. Performance mode disables trace/video recording; it does not change product rendering.
+Set `E2E_CHROMIUM_EXECUTABLE_PATH` when using an installed Chromium. `E2E_PERFORMANCE=1` explicitly enables the visual/scroll and catalog captures and disables trace/video recording. It does not change product rendering. Without it, those two capture cases skip; the ordinary sidebar and terminal/find regressions still run without GPU requirements. Every capture writes to `testInfo.outputPath("materials")` under Playwright test output, never to this tracked report directory. Copy selected results here explicitly when refreshing evidence.
 
 ## Platform limits and Mac follow-up
 

@@ -32,7 +32,7 @@
       "glWsVersion": "1.5 (ANGLE 2.1.1 git hash: 1357cf3a5a90)",
       "hardwareSupportsVulkan": false,
       "inProcessGpu": false,
-      "initializationTime": 0.017245,
+      "initializationTime": 0.016397,
       "isAsan": false,
       "isClangCoverage": false,
       "jpegDecodeAcceleratorSupported": false,

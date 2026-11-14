@@ -76,6 +76,7 @@ export interface SessionMenuActions {
   read(): void;
   archive(): void;
   settings(): void;
+  linkChangeRequests?: () => void;
 }
 
 export function SessionMenuItems({ actions }: { actions: SessionMenuActions }) {
@@ -116,6 +117,15 @@ export function SessionMenuItems({ actions }: { actions: SessionMenuActions }) {
       >
         {t("sessionNavigation.markRead")}
       </MenuItem>
+      {actions.linkChangeRequests ? (
+        <MenuItem
+          disabled={!actions.canWrite || busy}
+          onSelect={actions.linkChangeRequests}
+          testID="session-menu-link-change-request"
+        >
+          {t("agentChangeRequests.link")}
+        </MenuItem>
+      ) : null}
       <MenuItem disabled={!actions.canManage || busy} onSelect={actions.settings}>
         {t("sessionNavigation.settings")}
       </MenuItem>

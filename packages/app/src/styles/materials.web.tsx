@@ -40,11 +40,6 @@ function MaterialStyles({ theme }: { theme: Theme }) {
     const material = t.glass;
     const root = "html";
     style.textContent = `
-        ${root} { --paseo-material-muted: ${palette.foregroundMuted}; ${Object.entries(
-          palette.status,
-        )
-          .map(([role, color]) => `--paseo-status-${role}: ${color};`)
-          .join(" ")} }
         ${root} [data-material="window"] { background: ${getIsElectronMac() ? "transparent" : palette.content} !important; }
         ${root} [data-material="dock"], ${root} [data-testid="agent-chat-scroll"] { background: ${palette.content}; }
         ${root} [data-material="chrome"] {

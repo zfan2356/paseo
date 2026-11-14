@@ -1,8 +1,3 @@
-import {
-  sidebarMaterialColor,
-  materialMutedColor,
-  materialStatusColor,
-} from "./sidebar-material-color";
 import { codexPalette } from "../../../../plugins/codex-theme/shared/palette";
 import { Platform } from "react-native";
 import { darkHighlightColors, lightHighlightColors } from "@getpaseo/highlight";
@@ -272,14 +267,14 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     surface3: tint.surface3,
     surface4: tint.surface4,
     surfaceDiffEmpty: tint.surfaceDiffEmpty,
-    surfaceSidebar: sidebarMaterialColor(tint.surfaceSidebar),
+    surfaceSidebar: tint.surfaceSidebar,
     surfaceSidebarHover: tint.surface3,
     surfaceSidebarSelected: tint.surface4,
     surfaceWorkspace: tint.surface0,
     interactionHighlight: "rgba(0, 0, 0, 0.06)",
 
     foreground: tint.foreground,
-    foregroundMuted: materialMutedColor(tint.foregroundMuted),
+    foregroundMuted: tint.foregroundMuted,
     foregroundExtraMuted: tint.foregroundExtraMuted,
 
     border: tint.border,
@@ -309,10 +304,6 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
 
     ...lightDiffColors,
     ...lightStatusColors,
-    statusSuccess: materialStatusColor(lightStatusColors.statusSuccess, "success"),
-    statusDanger: materialStatusColor(lightStatusColors.statusDanger, "danger"),
-    statusWarning: materialStatusColor(lightStatusColors.statusWarning, "warning"),
-    statusMerged: materialStatusColor(lightStatusColors.statusMerged, "merged"),
     ...lightStatusTints,
     ...lightStatusDotColors,
 
@@ -407,14 +398,14 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
     surface3: tint.surface3,
     surface4: tint.surface4,
     surfaceDiffEmpty: tint.surfaceDiffEmpty,
-    surfaceSidebar: sidebarMaterialColor(tint.surfaceSidebar),
+    surfaceSidebar: tint.surfaceSidebar,
     surfaceSidebarHover: tint.surface1,
     surfaceSidebarSelected: tint.surface2,
     surfaceWorkspace: tint.surface1,
     interactionHighlight: "rgba(255, 255, 255, 0.08)",
 
     foreground,
-    foregroundMuted: materialMutedColor(tint.foregroundMuted),
+    foregroundMuted: tint.foregroundMuted,
     foregroundExtraMuted: tint.foregroundExtraMuted,
 
     border: tint.border,
@@ -445,10 +436,6 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
 
     ...darkDiffColors,
     ...darkStatusColors,
-    statusSuccess: materialStatusColor(darkStatusColors.statusSuccess, "success"),
-    statusDanger: materialStatusColor(darkStatusColors.statusDanger, "danger"),
-    statusWarning: materialStatusColor(darkStatusColors.statusWarning, "warning"),
-    statusMerged: materialStatusColor(darkStatusColors.statusMerged, "merged"),
     ...darkStatusTints,
     ...darkStatusDotColors,
 
@@ -624,7 +611,6 @@ export const MATERIAL = {
   font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif",
   motion: { duration: 160, easing: "cubic-bezier(0.2, 0, 0, 1)" },
   light: {
-    status: { success: "#16331f", danger: "#571d18", warning: "#3f2b11", merged: "#3b225b" },
     surface: "#ffffff",
     content: "#f7f9f6",
     foreground: "#151b18",
@@ -632,7 +618,6 @@ export const MATERIAL = {
     control: "rgba(24,46,34,0.08)",
   },
   dark: {
-    status: { success: "#e6ffef", danger: "#fff1ee", warning: "#fff5e5", merged: "#faf3ff" },
     surface: "#121a16",
     content: "#171e1b",
     foreground: "#ffffff",
