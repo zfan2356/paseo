@@ -1,4 +1,6 @@
 import { ExecutionDirectory } from "./execution-directory";
+import { ComposerControlLayoutProvider } from "./agent-controls/layout-context";
+import { resolveComposerControlPresentation } from "./agent-controls/layout";
 import {
   useComposerEditingSession,
   useComposerFullscreen,
@@ -2254,9 +2256,16 @@ function ComposerContentImpl({
     [attachments, setSelectedAttachments, setGithubSearchQuery, setIsGithubPickerOpen],
   );
 
+  const toolbarControlLayout = useMemo(
+    () => ({
+      glyphs: toolbarGlyphsFor(controlSizing),
+      presentation: resolveComposerControlPresentation(isCompactLayout ? "compact" : "full"),
+    }),
+    [controlSizing, isCompactLayout],
+  );
   const leftContent = useMemo(
     () => (
-      <>
+      <ComposerControlLayoutProvider value={toolbarControlLayout}>
         <ExecutionDirectory serverId={serverId} cwd={cwd} compact={isCompactLayout} />
         {renderLeftContent({
           agentControls,
@@ -2266,9 +2275,18 @@ function ComposerContentImpl({
           isCompactLayout,
           showAgentControls: mode.showAgentControls,
         })}
-      </>
+      </ComposerControlLayoutProvider>
     ),
-    [agentControls, agentId, cwd, focusInput, isCompactLayout, mode.showAgentControls, serverId],
+    [
+      agentControls,
+      agentId,
+      cwd,
+      focusInput,
+      isCompactLayout,
+      mode.showAgentControls,
+      serverId,
+      toolbarControlLayout,
+    ],
   );
 
   const handleAttachButtonRef = useCallback((node: View | null) => {

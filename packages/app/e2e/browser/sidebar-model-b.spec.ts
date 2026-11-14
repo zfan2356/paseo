@@ -662,6 +662,13 @@ test("session toolbar stays inline and status dots follow each session independe
       await expect(directory).toHaveAttribute("aria-label", `Execution: ${mock.cwd}`);
       await expect(directory).toBeInViewport({ ratio: 1 });
       await expect(model).toBeInViewport({ ratio: 1 });
+      const directoryGlyph = directory.locator("svg");
+      await expect(directoryGlyph).toHaveAttribute("width", width === 390 ? "20" : "16");
+      const modelGlyphStroke = await model
+        .locator("svg")
+        .first()
+        .evaluate((node) => getComputedStyle(node).stroke);
+      await expect(directoryGlyph).toHaveCSS("stroke", modelGlyphStroke);
       const directoryBox = await directory.boundingBox();
       const attachBox = await attach.boundingBox();
       const inputBox = await input.boundingBox();
