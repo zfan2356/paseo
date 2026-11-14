@@ -8,6 +8,8 @@ import { createTempDirectory, createTempGitRepo } from "./workspace";
 export interface SeedWorkspaceDescriptor {
   id: string;
   name: string;
+  pinnedAt?: string | null;
+  archivingAt?: string | null;
   projectId: string;
   projectDisplayName: string;
   projectRootPath: string;

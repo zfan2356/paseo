@@ -1,4 +1,6 @@
-import { useSessionNavigationCollection } from "@/session-navigation/collection";
+import { useSessionNavigationPreferences } from "@/session-navigation/preferences";
+import { useSidebarWorktreeGroups } from "@/hooks/use-sidebar-worktree-groups";
+import { resolveSidebarProjectIconTargets } from "@/utils/sidebar-project-row-model";
 import { useTranslation } from "react-i18next";
 import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import {
@@ -27,7 +29,6 @@ import {
 } from "@/workspace-labels";
 
 interface SidebarModel extends SidebarWorkspacesListResult {
-  sessionNavigation: ReturnType<typeof useSessionNavigationCollection>;
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   /**
    * Every project the sidebar could show, before any filter narrows it.
@@ -48,8 +49,6 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   shortcutModel: SidebarShortcutModel;
 }
 
-const EMPTY_RESOURCE_SHORTCUT_INDEX = new Map<string, number>();
-
 const SidebarModelContext = createContext<SidebarModel | null>(null);
 
 export function SidebarModelProvider({
@@ -64,10 +63,6 @@ export function SidebarModelProvider({
   const { t } = useTranslation();
   const modelActive = active !== false || keyboardNavigationActive;
   const list = useSidebarWorkspacesList({ enabled: modelActive });
-  const sessionNavigation = useSessionNavigationCollection({
-    projects: list.projects,
-    enabled: modelActive,
-  });
   const showBackground = useSidebarViewStore((state) => state.showBackground);
   const groupMode = useSidebarViewStore((state) => state.groupMode);
   const labelFilter = useSidebarViewStore((state) => state.labelFilter);
@@ -160,9 +155,15 @@ export function SidebarModelProvider({
     visibleWorkspaceKeys,
   ]);
   const pinnedKeys = usePinnedSidebarKeys(filteredProjects);
+  const grouping = useSessionNavigationPreferences((state) => state.grouping ?? "project");
+  const repositoryProjects = useSidebarWorktreeGroups(
+    filteredProjects,
+    modelActive && grouping === "project",
+  );
+  const displayProjects = grouping === "project" ? repositoryProjects : filteredProjects;
   const projectionInput = useMemo(
     () => ({
-      projects: filteredProjects,
+      projects: displayProjects,
       pinnedKeys,
       pinnedWorkspaceOrder,
       workspaceEntriesByKey: filteredWorkspaceEntriesByKey,
@@ -178,7 +179,7 @@ export function SidebarModelProvider({
       collapsedWorkspaceGroupKeys,
       groupMode,
       list.projectNamesByViewKey,
-      filteredProjects,
+      displayProjects,
       pinnedCollapsed,
       pinnedKeys,
       pinnedWorkspaceOrder,
@@ -190,30 +191,26 @@ export function SidebarModelProvider({
   const value = useMemo(
     () => ({
       ...list,
-      sessionNavigation,
-      projects: filteredProjects,
+      projects: displayProjects,
       allProjects: list.projects,
       resolvedProjectFilters,
       hasProjectsBeforeFilter: list.projects.length > 0,
       workspaceEntriesByKey: filteredWorkspaceEntriesByKey,
       groupMode,
       workspaceGroups: projection.workspaceGroups,
-      projectIconTargets: projection.projectIconTargets,
+      projectIconTargets: resolveSidebarProjectIconTargets(filteredProjects),
       pinnedGroups: projection.pinnedGroups,
       collapsedProjectKeys,
       toggleProjectCollapsed,
-      shortcutModel: {
-        shortcutIndexByWorkspaceKey: EMPTY_RESOURCE_SHORTCUT_INDEX,
-        shortcutTargets: sessionNavigation.shortcutTargets,
-      },
+      shortcutModel: projection.shortcutModel,
     }),
     [
       resolvedProjectFilters,
-      sessionNavigation,
       collapsedProjectKeys,
       groupMode,
       list,
       filteredProjects,
+      displayProjects,
       projection,
       toggleProjectCollapsed,
       filteredWorkspaceEntriesByKey,

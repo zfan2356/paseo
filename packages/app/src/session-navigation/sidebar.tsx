@@ -38,6 +38,7 @@ import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { type Agent } from "@/stores/session-store";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
+import { useSessionNavigationCollection } from "./collection";
 import { useSessionNavigationPreferences } from "./preferences";
 import { SessionSettings } from "./actions";
 import { FormTextInput } from "@/components/ui/form-field";
@@ -49,7 +50,11 @@ import {
 import type { SidebarProjectEntry } from "@/hooks/sidebar-workspaces-view-model";
 export function SessionSidebar({ dismiss }: { dismiss?: () => void }) {
   const { t } = useTranslation();
-  const { sessionNavigation, allProjects } = useSidebarModel();
+  const { allProjects } = useSidebarModel();
+  const sessionNavigation = useSessionNavigationCollection({
+    projects: allProjects,
+    enabled: true,
+  });
   const view = useSessionNavigationPreferences((state) => state.grouping ?? "project");
   const setView = useSessionNavigationPreferences((state) => state.setGrouping);
   const iconTargets = useMemo(() => resolveSidebarProjectIconTargets(allProjects), [allProjects]);

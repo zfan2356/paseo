@@ -3,7 +3,7 @@ import { permitsSessionOperation } from "./operations";
 import { useTranslation } from "react-i18next";
 import { movePinnedSession } from "./model";
 import { useSessionNavigationPreferences } from "./preferences";
-import { useSidebarModel } from "@/components/sidebar/sidebar-model";
+import { useSessionNavigationCollection } from "./collection";
 import { openDirectoryForm } from "./directory-form";
 import {
   useDeferredValue,
@@ -68,7 +68,7 @@ export function SessionSettings({
 }) {
   const { t } = useTranslation();
   const mutation = useContextMutation(client, serverId, context.agentId);
-  const { sessionNavigation } = useSidebarModel();
+  const sessionNavigation = useSessionNavigationCollection({ projects, enabled: true });
   const pinnedGroup = sessionNavigation.groups.find((group) =>
     group.agents.some((agent) => agent.serverId === serverId && agent.id === context.agentId),
   );

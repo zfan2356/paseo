@@ -1,0 +1,3 @@
+import config from '../../packages/app/playwright.config';
+import path from 'node:path';
+export default { ...config, testDir: __dirname, globalSetup: path.resolve(__dirname, '../../packages/app/e2e/support/global-setup.ts'), projects: [{ name: 'browser', use: { browserName: 'chromium', launchOptions: { executablePath: '/data/home/jayjayzhang/.cache/ms-playwright/chromium_headless_shell-1187/chrome-linux/headless_shell' }, viewport: { width: 1440, height: 1000 } } }], outputDir: path.resolve(__dirname, 'test-results'), timeout: 120000 };
