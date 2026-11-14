@@ -3,13 +3,21 @@ import { Text, View } from "react-native";
 import { Folder } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/components/ui/button";
+import { AgentControlTrigger } from "@/composer/agent-controls/control";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { useSessionStore } from "@/stores/session-store";
 import { executionDirectoryLabel } from "@/session-navigation/model";
 
-export function ExecutionDirectory({ serverId, cwd }: { serverId: string; cwd: string }) {
+export function ExecutionDirectory({
+  serverId,
+  cwd,
+  compact,
+}: {
+  serverId: string;
+  cwd: string;
+  compact: boolean;
+}) {
   const { t } = useTranslation();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const agents = useSessionStore((state) => state.sessions[serverId]?.agents);
@@ -25,19 +33,15 @@ export function ExecutionDirectory({ serverId, cwd }: { serverId: string; cwd: s
     <View style={styles.container}>
       <Tooltip delayDuration={300} enabledOnDesktop enabledOnMobile={false}>
         <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            leftIcon={Folder}
+          <AgentControlTrigger
+            icon={Folder}
+            surface="toolbar"
+            label={label}
+            showToolbarLabel={!compact}
             onPress={openDetails}
             accessibilityLabel={fullLabel}
             testID="composer-execution-directory"
-            style={styles.button}
-          >
-            <Text numberOfLines={1} style={styles.label}>
-              {label}
-            </Text>
-          </Button>
+          />
         </TooltipTrigger>
         <TooltipContent side="top">
           <Text selectable style={styles.path}>
@@ -60,8 +64,6 @@ export function ExecutionDirectory({ serverId, cwd }: { serverId: string; cwd: s
 }
 
 const styles = StyleSheet.create((theme) => ({
-  container: { alignItems: "flex-start", paddingHorizontal: theme.spacing[2] },
-  button: { maxWidth: "100%", flexShrink: 1 },
-  label: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm, flexShrink: 1 },
+  container: { maxWidth: 144, flexShrink: 1 },
   path: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
 }));

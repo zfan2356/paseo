@@ -7,6 +7,7 @@ import { getServerId } from "../support/helpers/server-id";
 import { projectEquivalenceViewKey } from "../support/helpers/project-view-key";
 import { selectSidebarStatusGrouping } from "../support/helpers/sidebar";
 import { openDirectoryResources, waitForSidebarHydration } from "../support/helpers/workspace-ui";
+import { waitForSettledPosition } from "../support/helpers/sheet-layout";
 
 // Directory resources retain the workspace projection; the default tree owns sessions.
 
@@ -616,5 +617,169 @@ test("session navigation restores nine pins and swaps complete lists without cha
     await mock.cleanup();
     await other.cleanup();
     await notes.cleanup();
+  }
+});
+
+test("session toolbar stays inline and status dots follow each session independently", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  const mock = await seedMockAgentWorkspace({
+    repoPrefix: "session-toolbar-long-project-name-with-many-components-",
+    title: "Review current workspace",
+    model: "five-minute-stream",
+  });
+  const { openAgentRoute } = await import("../support/helpers/mock-agent");
+  const agents: string[] = [];
+  try {
+    for (const title of ["Implementing toolbar", "Waiting for approval", "Failed validation"]) {
+      const agent = await mock.client.createAgent({
+        provider: "mock",
+        cwd: mock.cwd,
+        workspaceId: mock.workspaceId,
+        title,
+        modeId: "load-test",
+        model: "five-minute-stream",
+      });
+      agents.push(agent.id);
+    }
+    const [running, waiting, failed] = agents;
+    await mock.client.mutateSessionContext(running, { kind: "pin", pinned: true });
+    await mock.client.mutateSessionContext(waiting, { kind: "pin", pinned: true });
+    await mock.client.sendAgentMessage(running, "Implement the toolbar");
+    await mock.client.sendAgentMessage(waiting, "Emit synthetic plan approval");
+    await mock.client.sendAgentMessage(failed, "Emit synthetic turn failure");
+
+    for (const width of [1200, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      if (width === 1200) await openAgentRoute(page, mock);
+      const directory = page.getByTestId("composer-execution-directory").filter({ visible: true });
+      const attach = page.getByTestId("message-input-attach-button").filter({ visible: true });
+      const model = page.getByTestId("combined-model-selector").filter({ visible: true });
+      const input = page
+        .getByRole("textbox", { name: "Message agent..." })
+        .filter({ visible: true });
+      await expect(directory).toHaveAttribute("aria-label", `Execution: ${mock.cwd}`);
+      await expect(directory).toBeInViewport({ ratio: 1 });
+      await expect(model).toBeInViewport({ ratio: 1 });
+      const directoryGlyph = directory.locator("svg");
+      await expect(directoryGlyph).toHaveAttribute("width", width === 390 ? "20" : "16");
+      const modelGlyphStroke = await model
+        .locator("svg")
+        .first()
+        .evaluate((node) => getComputedStyle(node).stroke);
+      await expect(directoryGlyph).toHaveCSS("stroke", modelGlyphStroke);
+      const directoryBox = await directory.boundingBox();
+      const attachBox = await attach.boundingBox();
+      const inputBox = await input.boundingBox();
+      expect(directoryBox).not.toBeNull();
+      expect(attachBox).not.toBeNull();
+      expect(inputBox).not.toBeNull();
+      expect(
+        Math.abs(directoryBox!.y + directoryBox!.height / 2 - attachBox!.y - attachBox!.height / 2),
+      ).toBeLessThan(2);
+      expect(directoryBox!.y).toBeGreaterThanOrEqual(inputBox!.y + inputBox!.height);
+      expect(directoryBox!.x + directoryBox!.width).toBeLessThanOrEqual(width);
+      if (width === 390) await expect(directory).toHaveText("");
+      else await expect(directory).toContainText("session-toolbar-long-project");
+      await input.fill("Inspect this workspace");
+      await expect(
+        page.getByRole("button", { name: "Send message", exact: true }).filter({ visible: true }),
+      ).toBeInViewport({ ratio: 1 });
+      await waitForSettledPosition(directory);
+      await page.screenshot({ path: info.outputPath(`toolbar-${width}.png`), fullPage: true });
+      await directory.click();
+      const fullPath = page.getByTestId("execution-directory-full-path");
+      await expect(fullPath).toHaveText(mock.cwd);
+      await waitForSettledPosition(fullPath);
+      await expect(fullPath).toBeInViewport({ ratio: 1 });
+      await page.screenshot({
+        path: info.outputPath(`directory-details-${width}.png`),
+        fullPage: true,
+      });
+      await page
+        .getByTestId("execution-directory-details")
+        .getByRole("button", { name: "Close", exact: true })
+        .click();
+      if (width === 1200) {
+        await directory.hover();
+        const tooltip = page.getByText(`Execution: ${mock.cwd}`, { exact: true });
+        await expect(tooltip).toBeInViewport({ ratio: 1 });
+        await waitForSettledPosition(tooltip);
+        await expect
+          .poll(() =>
+            tooltip.evaluate((element) => {
+              for (let node: Element | null = element; node; node = node.parentElement) {
+                if (Number(getComputedStyle(node).opacity) < 1) return false;
+              }
+              return true;
+            }),
+          )
+          .toBe(true);
+        await page.screenshot({
+          path: info.outputPath("directory-hover-1200.png"),
+          fullPage: true,
+        });
+        await page.mouse.move(0, 0);
+      }
+      if (width === 390) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+      const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+      await expectSessionSidebarSettled(page);
+      for (const [id, label] of [
+        [running, "Working"],
+        [waiting, "Needs input"],
+        [failed, "Failed"],
+        [mock.agentId, "Done"],
+      ]) {
+        const status = sidebar.getByTestId(`session-status-${id}`);
+        await expect(status).toHaveAttribute("aria-label", label);
+        await expect(status).toBeInViewport({ ratio: 1 });
+        await expect(status.locator(":scope > div")).toHaveCSS("width", "6px");
+      }
+      const colors = await Promise.all(
+        [running, waiting, failed, mock.agentId].map((id) =>
+          sidebar
+            .getByTestId(`session-status-${id}`)
+            .locator(":scope > div")
+            .evaluate((node) => getComputedStyle(node).backgroundColor),
+        ),
+      );
+      expect(new Set(colors).size).toBe(4);
+      await page.screenshot({
+        path: info.outputPath(`session-states-${width}.png`),
+        fullPage: true,
+      });
+    }
+
+    const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+    await mock.client.cancelAgent(agents[0]);
+    await expect(sidebar.getByTestId(`session-status-${agents[0]}`)).toHaveAttribute(
+      "aria-label",
+      "Ready to review",
+    );
+    await expect(sidebar.getByTestId(`session-status-${agents[1]}`)).toHaveAttribute(
+      "aria-label",
+      "Needs input",
+    );
+    await expect(sidebar.getByTestId(`session-status-${agents[2]}`)).toHaveAttribute(
+      "aria-label",
+      "Failed",
+    );
+    await mock.client.sendAgentMessage(agents[2], "Retry the validation");
+    await expect(sidebar.getByTestId(`session-status-${agents[2]}`)).toHaveAttribute(
+      "aria-label",
+      "Working",
+    );
+    await page.screenshot({
+      path: info.outputPath("session-states-transition-390.png"),
+      fullPage: true,
+    });
+    await mock.client.mutateSessionContext(agents[2], { kind: "pin", pinned: true });
+    await expect(
+      sidebar.getByTestId("session-pinned-section").getByTestId(`session-status-${agents[2]}`),
+    ).toHaveAttribute("aria-label", "Working");
+  } finally {
+    await Promise.allSettled(agents.map((id) => mock.client.cancelAgent(id)));
+    await mock.cleanup();
   }
 });
