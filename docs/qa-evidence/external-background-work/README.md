@@ -32,7 +32,7 @@ cancellation was performed.
 
 ## Results
 
-[Raw output](qa-output.log) and the [run manifest](run.json) record the executed
+[Raw output](qa-output.txt) and the [run manifest](run.json) record the executed
 revisions and test session/wait IDs. The manual harness is retained in the task
 checkout at `.dev/work401/bridge-qa.mts`.
 
@@ -83,7 +83,7 @@ Only focused tests were run. The full suite was not run.
 - Multica isolated plugin typecheck and existing service suite: passed, 35 tests.
 - The isolated Multica plugin workspace has no lint script; root frontend/mobile checks were not run for this plugin-only change.
 
-The [check output](checks.log) contains the local logs. The PRs had no
+The [check output](checks.txt) contains the local logs. The PRs had no
 reported GitHub checks; querying repository Actions policy returned 403 for the task credentials. Explicit Multica PR association returned 404 because the
 repositories were not connected/synced; the task links are not recorded PR cards.
 
