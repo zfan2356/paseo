@@ -3051,6 +3051,14 @@ export class DaemonClient {
     });
   }
 
+  createWorkspaceLabel(
+    label: Extract<SessionInboundMessage, { type: "workspace.label.create.request" }>["label"],
+  ) {
+    return this.sendNamespacedCorrelatedSessionRequest<"workspace.label.create.response">({
+      message: { type: "workspace.label.create.request", label },
+    });
+  }
+
   updateWorkspaceLabel(options: {
     name: string;
     newName?: string;

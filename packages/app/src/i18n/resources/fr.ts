@@ -3,6 +3,13 @@ import { pluginSettings } from "./plugin-settings";
 
 export const fr: TranslationResources = {
   sessionNavigation: {
+    labelCreatedAssignmentFailed:
+      "Label “{{name}}” was created, but assignment failed: {{message}}. Retry to use this label.",
+    markRead: "Mark as read",
+    markedRead: "Session marked as read",
+    readOnly: "Read only — session changes are unavailable",
+    rename: "Rename session",
+    updateHostLabels: "Update the host to create labels",
     checkoutRoot: "Racine de la copie : {{path}}",
     sessions: "Sessions",
     search: "Rechercher des sessions et des répertoires",

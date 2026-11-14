@@ -3,6 +3,13 @@ import { pluginSettings } from "./plugin-settings";
 
 export const ar: TranslationResources = {
   sessionNavigation: {
+    labelCreatedAssignmentFailed:
+      "Label “{{name}}” was created, but assignment failed: {{message}}. Retry to use this label.",
+    markRead: "Mark as read",
+    markedRead: "Session marked as read",
+    readOnly: "Read only — session changes are unavailable",
+    rename: "Rename session",
+    updateHostLabels: "Update the host to create labels",
     checkoutRoot: "جذر نسخة العمل: {{path}}",
     sessions: "الجلسات",
     search: "البحث في الجلسات والمجلدات",

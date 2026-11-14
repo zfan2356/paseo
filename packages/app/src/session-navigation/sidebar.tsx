@@ -1,3 +1,13 @@
+import { AdaptiveRenameModal } from "@/components/rename-modal";
+import {
+  SessionMenu,
+  SessionRowMenuFrame,
+  SessionArchiveButton,
+  type SessionMenuActions,
+} from "./menu";
+import { sessionOperationCapabilities, useSessionOperations } from "./operations";
+import { useLabelMenuPages } from "@/workspace-labels/picker";
+import { usePointerCapabilities } from "@/hooks/pointer-capabilities";
 import {
   useWorkspaceLayoutStore,
   selectExplorerSidebarPaneId,
@@ -12,7 +22,6 @@ import { useCompactTimeAgo } from "@/hooks/use-time-ago";
 import { Fragment, memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Text, View, ScrollView } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { useMutation } from "@tanstack/react-query";
 import { useFetchQueries } from "@/data/query";
 import type { SessionContext } from "@getpaseo/protocol/session-context";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -229,7 +238,11 @@ const SessionRow = memo(function SessionRow({
   shortcutNumber,
   selected,
   activeDirectoryPath,
+  permissions,
+  labelCreateSupported,
 }: {
+  permissions: import("@/stores/session-store").DaemonServerInfo["permissions"];
+  labelCreateSupported: boolean;
   selected: boolean;
   activeDirectoryPath?: string;
   shortcutNumber?: number;
@@ -251,13 +264,32 @@ const SessionRow = memo(function SessionRow({
   const key = `${agent.serverId}:${agent.id}`;
   const expanded = useSessionNavigationPreferences((state) => state.expanded[key] === true);
   const toggle = useSessionNavigationPreferences((state) => state.toggleExpanded);
-  const [dialog, setDialog] = useState<"settings" | "bind" | null>(null);
-  const archive = useMutation({
-    mutationFn: async () => {
-      if (!client) throw new Error(t("sessionNavigation.offline"));
-      return client.archiveAgent(agent.id);
-    },
+  const [dialog, setDialog] = useState<"settings" | "bind" | "rename" | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const connected = useHostRuntimeIsConnected(agent.serverId);
+  const { finePointer } = usePointerCapabilities();
+  const { mutation, assign, create } = useSessionOperations(agent.serverId, agent.id);
+  const { canWrite, canManage, canArchive, canRead, readOnly } = sessionOperationCapabilities({
+    connected,
+    permissions,
+    contextReady: !!context,
+    agent,
   });
+  const labelTarget = useMemo(
+    () =>
+      context
+        ? {
+            serverId: agent.serverId,
+            labels: context.sidebarLabelNames,
+            enabled: canManage,
+            createSupported: labelCreateSupported,
+            assign,
+            create,
+          }
+        : null,
+    [context, agent.serverId, canManage, labelCreateSupported, assign, create],
+  );
+  const pages = useLabelMenuPages(labelTarget);
   const openChat = useCallback(() => {
     useSessionNavigationPreferences.getState().selectSession(`${agent.serverId}:${agent.id}`);
     navigateToAgent({ serverId: agent.serverId, agentId: agent.id });
@@ -266,78 +298,102 @@ const SessionRow = memo(function SessionRow({
   const toggleSessionExpanded = useCallback(() => toggle(key), [toggle, key]);
   const openSettings = useCallback(() => setDialog("settings"), []);
   const openBindDirectory = useCallback(() => setDialog("bind"), []);
-  const archiveSession = useCallback(() => archive.mutate(), [archive]);
+  const archiveSession = useCallback(() => mutation.mutate({ kind: "archive" }), [mutation]);
+  const renameSession = useCallback(() => setDialog("rename"), []);
+  const submitRename = useCallback(
+    async (name: string) => {
+      await mutation.mutateAsync({ kind: "rename", name: name.trim() });
+    },
+    [mutation],
+  );
+  const togglePin = useCallback(
+    () => mutation.mutate({ kind: "pin", pinned: !context?.pinnedAt }),
+    [mutation, context?.pinnedAt],
+  );
+  const markRead = useCallback(() => mutation.mutate({ kind: "read" }), [mutation]);
+  const actions = useMemo<SessionMenuActions>(
+    () => ({
+      canWrite,
+      canManage,
+      canArchive,
+      canRead,
+      pinned: !!context?.pinnedAt,
+      pending: mutation.isPending ? mutation.variables.kind : null,
+      rename: renameSession,
+      pin: togglePin,
+      read: markRead,
+      archive: archiveSession,
+      settings: openSettings,
+      bind: openBindDirectory,
+    }),
+    [
+      canWrite,
+      canManage,
+      canArchive,
+      canRead,
+      context?.pinnedAt,
+      mutation.isPending,
+      mutation.variables,
+      renameSession,
+      togglePin,
+      markRead,
+      archiveSession,
+      openSettings,
+      openBindDirectory,
+    ],
+  );
   const closeDialog = useCallback(() => setDialog(null), []);
   return (
     <View testID={`session-row-${agent.id}`}>
-      <View style={rowStyle}>
-        <Button
-          variant="ghost"
-          size="sm"
-          accessibilityLabel={t(
-            expanded ? "sessionNavigation.collapse" : "sessionNavigation.expand",
-          )}
-          onPress={toggleSessionExpanded}
-          disabled={!supported}
-        >
-          {expanded ? "▾" : "▸"}
-        </Button>
-        <PressHighlight
-          style={styles.title}
-          onPress={openChat}
-          accessibilityRole="button"
-          accessibilityState={selectedState}
-          aria-selected={selected}
-        >
-          <View style={styles.titleLine}>
-            <View
-              testID={`session-status-${agent.id}`}
-              accessibilityRole="image"
-              accessibilityLabel={getStatusBucketLabel(sessionStatus(agent), t)}
-            >
-              <AgentStatusDot bucket={sessionStatus(agent)} showInactive />
-            </View>
-            <Text numberOfLines={1} style={styles.text}>
-              {agent.title ?? t("sessionNavigation.untitled")}
-            </Text>
-          </View>
-          <SessionMetadata
-            agent={agent}
-            context={context}
-            hostBadge={hostBadge}
-            showLabels={showLabels}
-            projectLabel={projectLabel}
-          />
-        </PressHighlight>
-        {shortcutNumber ? <Text style={styles.hint}>{shortcutNumber}</Text> : null}
-        {trailing === "timestamp" ? (
-          <SessionTimestamp date={agent.lastUserMessageAt ?? agent.createdAt} />
-        ) : null}
-        <DropdownMenu compactMode="sheet">
-          <DropdownMenuTrigger
-            accessibilityRole="button"
-            accessibilityLabel={t("sessionNavigation.sessionMenu")}
+      <SessionRowMenuFrame actions={actions} pages={pages} onHoverChange={setHovered}>
+        <View style={rowStyle}>
+          <Button
+            variant="ghost"
+            size="sm"
+            accessibilityLabel={t(
+              expanded ? "sessionNavigation.collapse" : "sessionNavigation.expand",
+            )}
+            onPress={toggleSessionExpanded}
+            disabled={!supported}
           >
-            <Text style={styles.menu}>⋯</Text>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent sheetTitle={t("sessionNavigation.session")}>
-            <DropdownMenuItem disabled={!context || !client} onSelect={openSettings}>
-              {t("sessionNavigation.settings")}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!context || !client} onSelect={openBindDirectory}>
-              {t("sessionNavigation.bind")}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={archive.isPending} onSelect={archiveSession}>
-              {t("sessionNavigation.archive")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </View>
-      {archive.error ? (
-        <Text style={styles.error} accessibilityRole="alert">
-          {archive.error.message}
-        </Text>
-      ) : null}
+            {expanded ? "▾" : "▸"}
+          </Button>
+          <PressHighlight
+            style={styles.title}
+            onPress={openChat}
+            accessibilityRole="button"
+            accessibilityState={selectedState}
+            aria-selected={selected}
+          >
+            <View style={styles.titleLine}>
+              <View
+                testID={`session-status-${agent.id}`}
+                accessibilityRole="image"
+                accessibilityLabel={getStatusBucketLabel(sessionStatus(agent), t)}
+              >
+                <AgentStatusDot bucket={sessionStatus(agent)} showInactive />
+              </View>
+              <Text numberOfLines={1} style={styles.text}>
+                {agent.title ?? t("sessionNavigation.untitled")}
+              </Text>
+            </View>
+            <SessionMetadata
+              agent={agent}
+              context={context}
+              hostBadge={hostBadge}
+              showLabels={showLabels}
+              projectLabel={projectLabel}
+            />
+          </PressHighlight>
+          {shortcutNumber ? <Text style={styles.hint}>{shortcutNumber}</Text> : null}
+          {trailing === "timestamp" ? (
+            <SessionTimestamp date={agent.lastUserMessageAt ?? agent.createdAt} />
+          ) : null}
+          {finePointer ? <SessionArchiveButton actions={actions} visible={hovered} /> : null}
+          <SessionMenu actions={actions} pages={pages} />
+        </View>
+      </SessionRowMenuFrame>
+      <SessionActionFeedback error={mutation.error} connected={connected} readOnly={readOnly} />
       {contextError ? (
         <Text style={styles.error} accessibilityRole="alert">
           {contextError}
@@ -356,8 +412,18 @@ const SessionRow = memo(function SessionRow({
           bind={openBindDirectory}
         />
       ) : null}
+      {dialog === "rename" ? (
+        <AdaptiveRenameModal
+          visible
+          title={t("sessionNavigation.rename")}
+          initialValue={agent.title ?? ""}
+          onSubmit={submitRename}
+          onClose={closeDialog}
+          testID="session-rename"
+        />
+      ) : null}
       <SessionDialog
-        dialog={dialog}
+        dialog={dialog === "rename" ? null : dialog}
         agent={agent}
         context={context}
         client={client}
@@ -367,6 +433,28 @@ const SessionRow = memo(function SessionRow({
     </View>
   );
 });
+function SessionActionFeedback({
+  error,
+  connected,
+  readOnly,
+}: {
+  error: Error | null;
+  connected: boolean;
+  readOnly: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {error ? (
+        <Text style={styles.error} accessibilityRole="alert">
+          {error.message}
+        </Text>
+      ) : null}
+      {!connected ? <Text style={styles.hint}>{t("sessionNavigation.offline")}</Text> : null}
+      {readOnly ? <Text style={styles.hint}>{t("sessionNavigation.readOnly")}</Text> : null}
+    </>
+  );
+}
 function SessionDirectories({
   agent,
   client,
@@ -709,6 +797,11 @@ function ProjectedSessionRow({
     (candidate) => candidate.serverId === agent.serverId && candidate.agentId === agent.id,
   );
   const source = model.roots.find((root) => root.source.serverId === agent.serverId)?.source;
+  const hostActions = source ?? {
+    supported: false,
+    permissions: undefined,
+    labelCreateSupported: false,
+  };
   const selected = Boolean(
     activeWorkspace &&
     agent.serverId === activeWorkspace.serverId &&
@@ -732,7 +825,9 @@ function ProjectedSessionRow({
       client={target?.client ?? null}
       context={context}
       contextError={snapshot?.status === "error" ? snapshot.message : null}
-      supported={source?.supported === true}
+      supported={hostActions.supported === true}
+      permissions={hostActions.permissions}
+      labelCreateSupported={hostActions.labelCreateSupported}
       projects={projects}
       dismiss={dismiss}
       hostBadge={model.badges.get(agent.serverId)}

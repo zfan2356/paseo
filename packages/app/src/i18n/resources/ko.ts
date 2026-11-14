@@ -3,6 +3,13 @@ import { pluginSettings } from "./plugin-settings";
 
 export const ko: TranslationResources = {
   sessionNavigation: {
+    labelCreatedAssignmentFailed:
+      "Label “{{name}}” was created, but assignment failed: {{message}}. Retry to use this label.",
+    markRead: "Mark as read",
+    markedRead: "Session marked as read",
+    readOnly: "Read only — session changes are unavailable",
+    rename: "Rename session",
+    updateHostLabels: "Update the host to create labels",
     checkoutRoot: "체크아웃 루트: {{path}}",
     sessions: "세션",
     search: "세션 및 디렉터리 검색",

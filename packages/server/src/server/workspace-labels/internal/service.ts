@@ -85,6 +85,30 @@ export class WorkspaceLabelService {
     });
   }
 
+  async create(input: WorkspaceLabelDefinition): Promise<{ label: WorkspaceLabelDefinition }> {
+    return this.exclusive(async () => {
+      const name = requireName(input.name);
+      const key = workspaceLabelKey(name);
+      const committed = await this.catalog.commit((catalog) => {
+        const existing = catalog.find((label) => workspaceLabelKey(label.name) === key);
+        if (existing && existing.color !== input.color) {
+          throw new WorkspaceLabelError(
+            "label_name_taken",
+            "A label with that name already exists",
+          );
+        }
+        const label = existing ?? { name, color: input.color };
+        return {
+          labels: existing ? [...catalog] : [...catalog, label],
+          workspaceUpdates: [],
+          result: { label, created: !existing },
+        };
+      });
+      if (committed.created) this.sequence.publish({ kind: "upsert", label: committed.label });
+      return { label: committed.label };
+    });
+  }
+
   async setAssignment(input: {
     workspaceId: string;
     label: WorkspaceLabelDefinition;
