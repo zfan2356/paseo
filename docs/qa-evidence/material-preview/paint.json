@@ -6,10 +6,10 @@
       {
         "tag": "DIV",
         "material": "composer",
-        "background": "color(srgb 1 1 1 / 0.9)",
+        "background": "color(srgb 1 1 1 / 0.76)",
         "opacity": "1",
         "filter": "none",
-        "backdropFilter": "blur(24px) saturate(1.15)",
+        "backdropFilter": "blur(20px) saturate(1.3)",
         "isolation": "auto",
         "mask": "none",
         "willChange": "auto",
@@ -126,7 +126,7 @@
       {
         "tag": "DIV",
         "material": "dock",
-        "background": "rgba(0, 0, 0, 0)",
+        "background": "rgb(247, 249, 246)",
         "opacity": "1",
         "filter": "none",
         "backdropFilter": "none",
@@ -658,7 +658,7 @@
         "opacity": "1",
         "filter": "none",
         "backdropFilter": "none",
-        "isolation": "auto",
+        "isolation": "isolate",
         "mask": "none",
         "willChange": "auto",
         "contain": "none"
@@ -684,10 +684,10 @@
       {
         "tag": "DIV",
         "material": "composer",
-        "background": "color(srgb 1 1 1 / 0.9)",
+        "background": "color(srgb 1 1 1 / 0.76)",
         "opacity": "1",
         "filter": "none",
-        "backdropFilter": "blur(24px) saturate(1.15)",
+        "backdropFilter": "blur(20px) saturate(1.3)",
         "isolation": "auto",
         "mask": "none",
         "willChange": "auto",
@@ -804,7 +804,7 @@
       {
         "tag": "DIV",
         "material": "dock",
-        "background": "rgba(0, 0, 0, 0)",
+        "background": "rgb(247, 249, 246)",
         "opacity": "1",
         "filter": "none",
         "backdropFilter": "none",
@@ -1276,7 +1276,7 @@
         "opacity": "1",
         "filter": "none",
         "backdropFilter": "none",
-        "isolation": "auto",
+        "isolation": "isolate",
         "mask": "none",
         "willChange": "auto",
         "contain": "none"
@@ -1302,10 +1302,10 @@
       {
         "tag": "DIV",
         "material": "composer",
-        "background": "color(srgb 0.0941176 0.105882 0.101961 / 0.9)",
+        "background": "color(srgb 0.0705882 0.101961 0.0862745 / 0.76)",
         "opacity": "1",
         "filter": "none",
-        "backdropFilter": "blur(24px) saturate(1.15)",
+        "backdropFilter": "blur(20px) saturate(1.3)",
         "isolation": "auto",
         "mask": "none",
         "willChange": "auto",
@@ -1422,7 +1422,7 @@
       {
         "tag": "DIV",
         "material": "dock",
-        "background": "rgba(0, 0, 0, 0)",
+        "background": "rgb(23, 30, 27)",
         "opacity": "1",
         "filter": "none",
         "backdropFilter": "none",
@@ -1954,7 +1954,7 @@
         "opacity": "1",
         "filter": "none",
         "backdropFilter": "none",
-        "isolation": "auto",
+        "isolation": "isolate",
         "mask": "none",
         "willChange": "auto",
         "contain": "none"
@@ -1980,10 +1980,10 @@
       {
         "tag": "DIV",
         "material": "composer",
-        "background": "color(srgb 0.0941176 0.105882 0.101961 / 0.9)",
+        "background": "color(srgb 0.0705882 0.101961 0.0862745 / 0.76)",
         "opacity": "1",
         "filter": "none",
-        "backdropFilter": "blur(24px) saturate(1.15)",
+        "backdropFilter": "blur(20px) saturate(1.3)",
         "isolation": "auto",
         "mask": "none",
         "willChange": "auto",
@@ -2100,7 +2100,7 @@
       {
         "tag": "DIV",
         "material": "dock",
-        "background": "rgba(0, 0, 0, 0)",
+        "background": "rgb(23, 30, 27)",
         "opacity": "1",
         "filter": "none",
         "backdropFilter": "none",
@@ -2572,7 +2572,7 @@
         "opacity": "1",
         "filter": "none",
         "backdropFilter": "none",
-        "isolation": "auto",
+        "isolation": "isolate",
         "mask": "none",
         "willChange": "auto",
         "contain": "none"

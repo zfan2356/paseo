@@ -1,5 +1,9 @@
 // Stable data attributes shared by the opt-in web material study.
 export const MATERIAL_SLOTS = {
+  chrome: { material: "chrome" },
+  secondary: { material: "secondary" },
+  secondaryExpanded: { material: "secondary-expanded" },
+  banner: { material: "banner" },
   window: { material: "window" },
   header: { material: "header" },
   menu: { material: "menu" },

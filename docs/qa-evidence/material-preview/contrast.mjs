@@ -1,66 +1,66 @@
 import fs from "node:fs";
-const rgb = (h) => h.match(/[0-9a-f]{2}/gi).map((v) => parseInt(v, 16));
-const luminance = (c) =>
-  c
+import { runInNewContext } from "node:vm";
+
+// Evaluate only this checkout's literal token object, not the RN module or its imports.
+const source = fs.readFileSync("packages/app/src/styles/theme.ts", "utf8");
+const literal = source.match(/export const MATERIAL_PREVIEW = (\{[\s\S]*?\n\}) as const;/)?.[1];
+if (!literal) throw new Error("Material token object not found");
+const tokens = runInNewContext(`(${literal})`);
+const rgb = (hex) => hex.match(/[a-f\d]{2}/gi).map((channel) => Number.parseInt(channel, 16));
+const luminance = (channels) =>
+  channels
     .map((v) => v / 255)
     .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
-    .reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
-const ratio = (a, b) => {
-  const [x, y] = [luminance(a), luminance(b)].sort((left, right) => right - left);
-  return (x + 0.05) / (y + 0.05);
+    .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+const contrast = (foreground, background) => {
+  const [high, low] = [luminance(rgb(foreground)), luminance(background)].sort(
+    (left, right) => right - left,
+  );
+  return (high + 0.05) / (low + 0.05);
 };
 const rows = [];
-for (const [scheme, surface, foregrounds, back] of [
-  [
-    "light",
-    "#ffffff",
-    {
-      foreground: "#1a1a1e",
-      foregroundMuted: "#5c605f",
-      statusSuccess: "#3e704a",
-      statusDanger: "#9d433b",
-      statusWarning: "#7b5d39",
-      statusMerged: "#7347af",
-    },
-    0,
-  ],
-  [
-    "dark",
-    "#181B1A",
-    {
-      foreground: "#fafafa",
-      foregroundMuted: "#b3b7b5",
-      statusSuccess: "#6cb17b",
-      statusDanger: "#d8847b",
-      statusWarning: "#c09664",
-      statusMerged: "#a890d5",
-    },
-    255,
-  ],
-]) {
-  const background = rgb(surface).map((v) => v * 0.9 + back * 0.1);
-  for (const [role, hex] of Object.entries(foregrounds))
-    rows.push({
-      scheme,
-      role,
-      foreground: hex,
-      surface,
-      opacity: 0.9,
-      backdrop: [back, back, back],
-      composited: background,
-      ratio: ratio(rgb(hex), background),
-    });
+for (const scheme of ["light", "dark"]) {
+  const palette = tokens[scheme];
+  const backdrop = scheme === "light" ? 0 : 255;
+  for (const [strength, level] of Object.entries(tokens.levels)) {
+    for (const [surface, opacity] of Object.entries({
+      floating: level.opacity,
+      sidebar: level.sidebarOpacity,
+    })) {
+      const composited = rgb(palette.surface).map(
+        (channel) => channel * opacity + backdrop * (1 - opacity),
+      );
+      const colors = {
+        body: scheme === "light" ? "#1a1a1e" : "#fafafa",
+        secondary: palette.foregroundMuted,
+        ...palette.status,
+      };
+      for (const [role, color] of Object.entries(colors))
+        rows.push({
+          scheme,
+          strength,
+          surface,
+          opacity,
+          role,
+          color,
+          backdrop,
+          composited,
+          ratio: contrast(color, composited),
+        });
+    }
+  }
 }
-fs.mkdirSync("docs/qa-evidence/material-preview", { recursive: true });
+if (rows.some((row) => row.ratio < 4.5)) throw new Error("Glass text fell below 4.5:1");
 fs.writeFileSync(
   "docs/qa-evidence/material-preview/contrast.json",
   JSON.stringify(
     {
       method:
-        "WCAG sRGB relative luminance, 90% surface over worst-case black (light) or white (dark), before rounding. Status text measured directly on glass; tinted badges retain their separate fills.",
+        "sRGB alpha composite over worst-case black/light and white/dark; WCAG relative luminance; values read from theme.ts",
       rows,
     },
     null,
     2,
   ),
 );
+console.log("minimum", Math.min(...rows.map((row) => row.ratio)).toFixed(2));

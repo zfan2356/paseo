@@ -1,4 +1,8 @@
-import { sidebarMaterialColor, materialMutedColor } from "./sidebar-material-color";
+import {
+  sidebarMaterialColor,
+  materialMutedColor,
+  materialStatusColor,
+} from "./sidebar-material-color";
 import { codexPalette } from "../../../../plugins/codex-theme/shared/palette";
 import { Platform } from "react-native";
 import { darkHighlightColors, lightHighlightColors } from "@getpaseo/highlight";
@@ -305,6 +309,10 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
 
     ...lightDiffColors,
     ...lightStatusColors,
+    statusSuccess: materialStatusColor(lightStatusColors.statusSuccess, "success"),
+    statusDanger: materialStatusColor(lightStatusColors.statusDanger, "danger"),
+    statusWarning: materialStatusColor(lightStatusColors.statusWarning, "warning"),
+    statusMerged: materialStatusColor(lightStatusColors.statusMerged, "merged"),
     ...lightStatusTints,
     ...lightStatusDotColors,
 
@@ -437,6 +445,10 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
 
     ...darkDiffColors,
     ...darkStatusColors,
+    statusSuccess: materialStatusColor(darkStatusColors.statusSuccess, "success"),
+    statusDanger: materialStatusColor(darkStatusColors.statusDanger, "danger"),
+    statusWarning: materialStatusColor(darkStatusColors.statusWarning, "warning"),
+    statusMerged: materialStatusColor(darkStatusColors.statusMerged, "merged"),
     ...darkStatusTints,
     ...darkStatusDotColors,
 
@@ -564,24 +576,46 @@ const ghosttyDarkColors = buildDarkSemanticColors({
 
 // Opt-in desktop material study. Keep geometry and material strength shared.
 export const MATERIAL_PREVIEW = {
-  blur: 24,
-  saturation: 1.15,
-  opacity: 0.9,
-  sidebarOpacity: 0.9,
+  levels: {
+    restrained: { label: "克制", opacity: 0.86, sidebarOpacity: 0.82, blur: 12, saturation: 1.12 },
+    balanced: {
+      label: "中等 · 推荐",
+      opacity: 0.76,
+      sidebarOpacity: 0.74,
+      blur: 20,
+      saturation: 1.3,
+    },
+    pronounced: { label: "明显", opacity: 0.64, sidebarOpacity: 0.64, blur: 28, saturation: 1.5 },
+  },
   hairline: 1,
-  radius: { composer: 20, menu: 12, dialog: 20 },
+  radius: { composer: 24, menu: 16, dialog: 24, banner: 16 },
+  spacing: { composer: 20, menu: 6, banner: 12, secondary: 8 },
+  icon: { size: 16, action: 20, stroke: 1.5 },
+  font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif",
   motion: { duration: 160, easing: "cubic-bezier(0.2, 0, 0, 1)" },
   light: {
-    foregroundMuted: "#5c605f",
-    border: "rgba(0,0,0,0.10)",
-    shadow: "0 8px 32px rgba(0,0,0,0.10)",
-    dialogShadow: "0 24px 80px rgba(0,0,0,0.18)",
+    status: { success: "#16331f", danger: "#571d18", warning: "#3f2b11", merged: "#3b225b" },
+    surface: "#ffffff",
+    content: "#f7f9f6",
+    foreground: "#151b18",
+    foregroundMuted: "#303a33",
+    border: "rgba(255,255,255,0.65)",
+    shadow: "0 12px 36px rgba(24,46,34,0.14), inset 0 1px 0 rgba(255,255,255,0.65)",
+    dialogShadow: "0 32px 96px rgba(24,46,34,0.24)",
+    banner: "rgba(255,255,255,0.74)",
+    control: "rgba(24,46,34,0.08)",
   },
   dark: {
-    foregroundMuted: "#b3b7b5",
-    border: "rgba(255,255,255,0.12)",
-    shadow: "0 8px 32px rgba(0,0,0,0.28)",
-    dialogShadow: "0 24px 80px rgba(0,0,0,0.42)",
+    status: { success: "#e6ffef", danger: "#fff1ee", warning: "#fff5e5", merged: "#faf3ff" },
+    surface: "#121a16",
+    content: "#171e1b",
+    foreground: "#ffffff",
+    foregroundMuted: "#f0f4f1",
+    border: "rgba(255,255,255,0.18)",
+    shadow: "0 12px 36px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.12)",
+    dialogShadow: "0 32px 96px rgba(0,0,0,0.55)",
+    banner: "rgba(18,26,22,0.74)",
+    control: "rgba(255,255,255,0.12)",
   },
 } as const;
 

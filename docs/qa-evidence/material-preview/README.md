@@ -1,117 +1,137 @@
-# Desktop material preview — WORK-397
+# Desktop material study — Contract v2
 
-This is an opt-in visual study for the macOS desktop app. The Draft PR is not a release candidate. The sidebar structure stays with WORK-396; this branch changes its color token and the window paint layers only. The layout, Paseo green accent, icons and typography remain Paseo's.
+Choose a visible material direction before production integration. This Draft PR keeps the renderer opt-in and the sidebar row structure owned by WORK-396. The recommended starting point is **balanced / 中等**: the wallpaper and moving illustration remain visible through the tint, while pronounced / 明显 deliberately exposes more color.
 
-## Run the preview
+**Every screenshot is the real App in Chromium. macOS vibrancy is 模拟 (simulated): an authored coastal wallpaper is blurred behind the window. The CSS backdrop blur over the transcript is real.** The 390px captures are responsive Web. Linux uses **DejaVu Sans**, not SF Pro.
 
-Build dependencies with `npm ci` and `npm run build:server`. Start the app using the existing development commands. In renderer DevTools, run `localStorage.setItem("paseo:material-preview", "glass")`, then reload. To return to the original surfaces, remove that storage key and reload. The marker can also switch between `document.documentElement.dataset.materialPreview = "solid"` and `"glass"` without replacing the conversation.
+## Compare the strengths
 
-On Mac, start the desktop development process with `PASEO_MATERIAL_PREVIEW=1 npm run dev:desktop`, then enable the renderer key above. The main window uses `sidebar` vibrancy and follows window activation. Without the environment variable it retains the existing opaque window. The IPC chrome-color update preserves a transparent window while the preview is enabled, and remembers the opaque theme color for accessibility fallback.
+All four columns use the same content, viewport and reading position. The artwork contains a bright sun, warm sky, teal water and dark foreground so material strength is visible. Geometry assertions require an image to overlap both the header and composer by more than 15px in the pronounced desktop capture.
 
-Run the evidence through the existing suite:
+| Theme       | Original                                    | Restrained / 克制                              | Balanced / 中等 — recommended                | Pronounced / 明显                              |
+| ----------- | ------------------------------------------- | ---------------------------------------------- | -------------------------------------------- | ---------------------------------------------- |
+| Light, 1440 | [before](light-1440-conversation-solid.png) | [12px](light-1440-conversation-restrained.png) | [20px](light-1440-conversation-balanced.png) | [28px](light-1440-conversation-pronounced.png) |
+| Dark, 1440  | [before](dark-1440-conversation-solid.png)  | [12px](dark-1440-conversation-restrained.png)  | [20px](dark-1440-conversation-balanced.png)  | [28px](dark-1440-conversation-pronounced.png)  |
+
+![Pronounced light — vibrancy 模拟](light-1440-conversation-pronounced.png)
+
+![Pronounced dark — vibrancy 模拟](dark-1440-conversation-pronounced.png)
+
+## Detail changes
+
+The crops are taken from the same rendered surfaces as the full screenshots. They are not redrawn mockups. Each change is active only in the material preview.
+
+| Detail            | Before                                                       | After                                                                                                | Comparison                                                                                                                           |
+| ----------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Surface hierarchy | White/zinc slabs and stacked hard rules                      | Quiet green-neutral content plane; tint separates the floating chrome; chrome dividers removed       | [chrome before](detail-light-chrome-solid.png) → [after](detail-light-chrome-balanced.png)                                           |
+| Secondary strip   | Full-width “Linked PRs/MRs · 0” row displaces the transcript | 28px contextual pill at the top right; the action still expands its panel                            | [before](detail-light-secondary-solid.png) → [after](detail-light-secondary-balanced.png)                                            |
+| Composer          | In-flow box, smaller padding                                 | Floating surface, 24px corners, 20px inset, shared shadow; measured bottom clearance                 | [before](detail-light-composer-solid.png) → [after](detail-light-composer-balanced.png)                                              |
+| Menus/popovers    | Tight 8px container corners                                  | 16px corners, 6px outer inset, common glass tint/elevation                                           | [before](detail-light-menu-solid.png) → [after](detail-light-menu-balanced.png)                                                      |
+| Dialogs           | 520px card, stronger header rule                             | 560px cap, 24px corners, softened header edge and deeper elevation                                   | [before](detail-light-dialog-solid.png) → [after](detail-light-dialog-balanced.png)                                                  |
+| Banner card       | Edge-to-edge strip and high-emphasis dark CTA                | Inset 16px-radius card, 12px outer spacing, 16px inset and tonal action                              | [before](detail-light-banner-solid.png) → [after](detail-light-banner-balanced.png)                                                  |
+| Icon rhythm       | Independent sizes across chrome/menu/composer                | Chrome/menu/banner glyphs 16px; composer actions 20px; 1.5px stroke                                  | [menu before](detail-light-menu-solid.png) → [after](detail-light-menu-balanced.png), [composer](detail-light-composer-balanced.png) |
+| Font stack        | General system-ui stack followed by vendor fallbacks         | Preview chrome starts with `-apple-system, BlinkMacSystemFont`; then Segoe UI, Noto Sans, sans-serif | [chrome before](detail-light-chrome-solid.png) → [after](detail-light-chrome-balanced.png)                                           |
+
+The font row records a priority change, not a claim to show SF Pro on Linux. Both system fallback routes can resolve to DejaVu Sans here. Markdown/code keep their own typography; the preview does not replace code fonts with the UI stack.
+
+## Recommended matrix and fallback
+
+| Theme / width | Conversation                                                                                | Menu                                                                        | Dialog                                                                          | Reduced transparency                          |
+| ------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------- |
+| Light 1440    | [before](light-1440-conversation-solid.png) → [after](light-1440-conversation-balanced.png) | [before](light-1440-menu-solid.png) → [after](light-1440-menu-balanced.png) | [before](light-1440-dialog-solid.png) → [after](light-1440-dialog-balanced.png) | [opaque](light-1440-reduced-transparency.png) |
+| Dark 1440     | [before](dark-1440-conversation-solid.png) → [after](dark-1440-conversation-balanced.png)   | [before](dark-1440-menu-solid.png) → [after](dark-1440-menu-balanced.png)   | [before](dark-1440-dialog-solid.png) → [after](dark-1440-dialog-balanced.png)   | [opaque](dark-1440-reduced-transparency.png)  |
+| Light 390     | [before](light-390-conversation-solid.png) → [after](light-390-conversation-balanced.png)   | [before](light-390-menu-solid.png) → [after](light-390-menu-balanced.png)   | [before](light-390-dialog-solid.png) → [after](light-390-dialog-balanced.png)   | [opaque](light-390-reduced-transparency.png)  |
+| Dark 390      | [before](dark-390-conversation-solid.png) → [after](dark-390-conversation-balanced.png)     | [before](dark-390-menu-solid.png) → [after](dark-390-menu-balanced.png)     | [before](dark-390-dialog-solid.png) → [after](dark-390-dialog-balanced.png)     | [opaque](dark-390-reduced-transparency.png)   |
+
+The “before” column also shows the default non-macOS opaque fallback. Non-Mac desktop never enables native vibrancy. Explicit Web preview can still show CSS glass. Reduced transparency removes blur and transparent window layers while retaining the preview's layout and geometry. The four fallback images capture a settled open dialog, not a closing animation.
+
+## Tokens and contrast
+
+`MATERIAL_PREVIEW` in `packages/app/src/styles/theme.ts` owns the values. `material-preview.web.tsx` generates the opt-in CSS and provides the [strength selector](switch-light.png). No row has its own backdrop filter.
+
+| Strength   | Floating opacity | Sidebar opacity | Blur | Saturation |
+| ---------- | ---------------: | --------------: | ---: | ---------: |
+| Restrained |              86% |             82% | 12px |       1.12 |
+| Balanced   |              76% |             74% | 20px |       1.30 |
+| Pronounced |              64% |             64% | 28px |       1.50 |
+
+| Shared token                               | Value                                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Glass base, light / dark                   | #ffffff / #121a16                                                                     |
+| Content plane, light / dark                | #f7f9f6 / #171e1b                                                                     |
+| Secondary text, light / dark               | #303a33 / #f0f4f1                                                                     |
+| Success / danger / warning / merged, light | #16331f / #571d18 / #3f2b11 / #3b225b                                                 |
+| Success / danger / warning / merged, dark  | #e6ffef / #fff1ee / #fff5e5 / #faf3ff                                                 |
+| Radius: composer / menu / dialog / banner  | 24 / 16 / 24 / 16px                                                                   |
+| Inset: composer / menu / banner            | 20 / 6 / 16px; banner outer spacing 12px                                              |
+| Icons: chrome / primary actions            | 16 / 20px, 1.5px stroke                                                               |
+| Border light / dark                        | white 65% / white 18%                                                                 |
+| Small elevation light / dark               | 0 12px 36px black-green 14% / black 38%, plus inner highlight                         |
+| Dialog elevation light / dark              | 0 32px 96px black-green 24% / black 55%                                               |
+| Motion                                     | 160ms cubic-bezier(0.2,0,0,1), preview timing applies only when reduced motion is off |
+
+The same tint serves composer, menus, popovers, dialogs and compact Web sheets. Headers use it without an outer shadow. Banner cards use a 74% protective base. The content plane remains opaque. Hover, pressed and selected fills retain the existing semantic interaction tokens; the sidebar rows themselves are unchanged.
+
+[Contrast source](contrast.mjs) reads the current literal tokens from theme.ts. [Raw results](contrast.json) composite each opacity over worst-case black in light mode and white in dark mode, then apply the WCAG sRGB relative-luminance formula. The calculation covers body, secondary and four semantic text colors on both floating and sidebar glass. Lowest ratios across those roles/surfaces:
+
+| Strength   |  Light |   Dark |
+| ---------- | -----: | -----: |
+| Restrained | 7.74:1 | 9.10:1 |
+| Balanced   | 6.26:1 | 6.81:1 |
+| Pronounced | 4.69:1 | 4.79:1 |
+
+## Native code evidence
+
+Contract v2 replaces native screenshots with code evidence. The native `material-preview.tsx` returns null; all CSS and preview controls live in `.web.tsx`. The base `sidebar-material-color.ts` returns each supplied color unchanged, including the new status-color helper. [The executable passthrough check](native-code.txt) verifies this. `composer/dock/index.native.tsx` and `composer/dock/internal/background.native.tsx` are identical to main `b60da86b`.
+
+Shared components receive stable `dataSet` markers only. Position, blur, spacing and font changes are CSS rules and do not enter native styles. The added chrome measurement's DOM write is guarded by `isWeb`; the existing width measurement is unchanged. No native blur package or dependency was added. This is code evidence, not a claim that a native device test ran.
+
+## Reproduce
+
+Build dependencies with `npm ci` and `npm run build:server`. In renderer DevTools set `localStorage.setItem("paseo:material-preview", "balanced")` and reload. Use the four-button selector to switch between original and the three strengths. Remove the key and reload to disable the study.
+
+On Mac, launch with `PASEO_MATERIAL_PREVIEW=1 npm run dev:desktop` and enable the renderer key. The main window uses sidebar vibrancy, follows activation, and restores the latest opaque chrome color on `nativeTheme.prefersReducedTransparency` changes.
 
 ```sh
-E2E_GPU_COMPOSITING=1 PASEO_MATERIAL_QA=1 E2E_WORKERS=1 npm run test:e2e --workspace=@getpaseo/app -- plan-card-markdown.spec.ts --grep 'material preview evidence'
+E2E_GPU_COMPOSITING=1 PASEO_MATERIAL_QA=1 E2E_WORKERS=1 npm run test:e2e --workspace=@getpaseo/app -- material-preview.spec.ts
+node docs/qa-evidence/material-preview/contrast.mjs
 ```
 
-Use an installed Playwright Chromium, or set `E2E_CHROMIUM_EXECUTABLE_PATH` to its executable. The local run selects Chromium headless shell 140 (cache revision 1187), disables video/trace, and runs one worker. `E2E_GPU_COMPOSITING=1` enables ANGLE/SwiftShader GPU compositing; the capture asserts it is enabled. The default Linux headless configuration reports the CSS blur property but does not paint it. The checked-in captures and timing samples use actual blur, not that configuration. Complete clean builds before starting Metro: the desktop build removes declarations and JS bundles that Metro consumes.
+Use installed Chromium or set `E2E_CHROMIUM_EXECUTABLE_PATH`. This run uses Chromium 140 / headless-shell 1187 with ANGLE/SwiftShader. GPU compositing is asserted enabled; default headless Linux can report the CSS property without actually painting blur. Video and trace recording are disabled for the measurement. Finish clean builds before starting Metro.
 
-## Materials and tokens
-
-`MATERIAL_PREVIEW` in `packages/app/src/styles/theme.ts` owns the study tokens. Native resolves separate modules that leave palette values and presentation unchanged. CSS is scoped to the opt-in root marker and semantic surface attributes. This CSS override layer is for comparing the direction before component integration, not a new permanent styling engine.
-
-| Token                                  | Value                               |
-| -------------------------------------- | ----------------------------------- |
-| blur / saturation                      | 24 px / 1.15                        |
-| opacity / sidebarOpacity               | 0.90 / 0.90                         |
-| hairline                               | 1 CSS px                            |
-| radius.composer / menu / dialog        | 20 / 12 / 20 px                     |
-| motion.duration / easing               | 160 ms / cubic-bezier(0.2, 0, 0, 1) |
-| light.foregroundMuted                  | #5c605f                             |
-| dark.foregroundMuted                   | #b3b7b5                             |
-| light.border / dark.border             | black 10% / white 12%               |
-| light.shadow / dark.shadow             | 0 8px 32px, black 10% / 28%         |
-| light.dialogShadow / dark.dialogShadow | 0 24px 80px, black 18% / 42%        |
-
-The existing `fontSize.base=14`, `fontSize.content=15`, system UI font stack, normal/medium weight tiers and `interactionHighlight` hover/press/selected fill remain the control language. State colors remain the existing semantic status palette. There is no per-row blur.
-
-| Surface                   | Material                                                                     |
-| ------------------------- | ---------------------------------------------------------------------------- |
-| Desktop window / sidebar  | OS vibrancy under 90% theme tint; transparent root paint layers              |
-| Conversation, code, files | Opaque existing surfaces                                                     |
-| Composer                  | 90% theme surface over conversation, 24px blur, hairline and small elevation |
-| Top bars                  | Same tint and blur, no shadow                                                |
-| Menus / combobox popovers | Same tint, hairline, 12px corners and small elevation                        |
-| Dialogs                   | Same tint, 20px corners and larger elevation                                 |
-| Compact Web sheets        | Same tint and blur; keep existing top corner geometry                        |
-| Native iOS/Android        | Existing opaque colors, dock geometry and sheet backgrounds                  |
-
-The composer reserves its measured height at the end of the transcript, so the last message can scroll above it. The layout event updates a CSS variable; streaming text does not trigger a document-wide observer.
-
-## Readability
-
-[Raw contrast calculations](contrast.json) composite the tint in sRGB over the worst possible backdrop: black for light mode and white for dark mode. Ratios use unrounded channel values and the WCAG relative-luminance formula. They apply to text directly on glass; status badges retain their own tinted backgrounds.
-
-| Text      |   Light |    Dark |
-| --------- | ------: | ------: |
-| Body      | 13.84:1 | 12.43:1 |
-| Secondary |  5.09:1 |  6.40:1 |
-| Success   |  4.62:1 |  5.07:1 |
-| Danger    |  5.08:1 |  4.64:1 |
-| Warning   |  4.83:1 |  4.81:1 |
-| Merged    |  5.15:1 |  4.71:1 |
-
-The initial 72% sidebar tint failed secondary/state-text contrast on extreme wallpapers. The preview uses 90% to preserve legibility without changing the status palette.
-
-## Screenshot matrix
-
-All images are real Chromium renders of the App with an isolated daemon and a deterministic provider response. The 36-section transcript is identical across captures. **macOS vibrancy is 模拟 (simulated)** by a synthetic gradient wallpaper behind the transparent app paint layers. Chromium CSS backdrop blur is real; OS desktop sampling, SF Pro and native window activation are not represented. The 390px images are responsive Web, not native device captures.
-
-| Theme / width | Conversation before → after                                                              | Menu before → after                                                      | Dialog before → after                                                        | Reduced transparency                          |
-| ------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------- |
-| Light 1440    | [before](light-1440-conversation-solid.png) → [after](light-1440-conversation-glass.png) | [before](light-1440-menu-solid.png) → [after](light-1440-menu-glass.png) | [before](light-1440-dialog-solid.png) → [after](light-1440-dialog-glass.png) | [opaque](light-1440-reduced-transparency.png) |
-| Dark 1440     | [before](dark-1440-conversation-solid.png) → [after](dark-1440-conversation-glass.png)   | [before](dark-1440-menu-solid.png) → [after](dark-1440-menu-glass.png)   | [before](dark-1440-dialog-solid.png) → [after](dark-1440-dialog-glass.png)   | [opaque](dark-1440-reduced-transparency.png)  |
-| Light 390     | [before](light-390-conversation-solid.png) → [after](light-390-conversation-glass.png)   | [before](light-390-menu-solid.png) → [after](light-390-menu-glass.png)   | [before](light-390-dialog-solid.png) → [after](light-390-dialog-glass.png)   | [opaque](light-390-reduced-transparency.png)  |
-| Dark 390      | [before](dark-390-conversation-solid.png) → [after](dark-390-conversation-glass.png)     | [before](dark-390-menu-solid.png) → [after](dark-390-menu-glass.png)     | [before](dark-390-dialog-solid.png) → [after](dark-390-dialog-glass.png)     | [opaque](dark-390-reduced-transparency.png)   |
-
-## Fallback and Mac confirmation
-
-`prefers-reduced-transparency: reduce` removes the tint, blur and translucent sidebar immediately. Electron also listens to `nativeTheme.updated`, removes vibrancy and restores the latest opaque theme color when `prefersReducedTransparency` changes. Non-Mac desktop never enables native vibrancy; its default solid captures above are the fallback reference. Browser preview glass is explicitly opt-in. Native modules leave colors unchanged; no native blur dependency is added.
-
-Linux cannot verify wallpaper sampling through the macOS window, live system accessibility propagation to Chromium, active/inactive vibrancy, Spaces/fullscreen, native titlebar dragging, Retina hairlines or SF Pro rendering. Confirm these on Mac before approving implementation. No iOS/Android runtime is available in this workspace; native screenshots and device verification remain a delivery gap, not evidence supplied by the 390px Web captures.
-
-Native appearance reference: the existing [iPhone chat capture](../../../assets/store-screenshots/raw/iphone/chat.png) on main shows the opaque fallback. It is a pre-existing native capture, not a device run of this branch; it does not close the missing current native-evidence item.
+The independent evidence spec serves the authored [wallpaper](wallpaper.svg) to the real Markdown renderer. The sidebar background uses a 32px blurred copy to simulate native wallpaper sampling. The transcript images stay sharp until they scroll under a surface. Tests own and stop an isolated daemon; they never restart port 6767.
 
 ## Scroll measurement
 
-[Raw frame samples](frames.json), [rendered paint properties](paint.json), and [environment](environment.json) accompany the images. The workload is one completed assistant response with 36 Markdown sections, paragraphs, inline code and code blocks, rendered by the real transcript at 1440×1000, DPR 1. Each of three paired trials runs 180 animation frames, discards the first 30 intervals and retains 150. The scroll offset changes by 12px per frame, reversing after 90 frames. Each run starts at 30% of scroll height. Alternating off/on order limits warmup bias.
+[Frames](frames.json), [paint properties](paint.json) and [environment](environment.json) are the raw evidence. Each strength has three paired blur-off/on trials, alternating order. Only backdrop-filter changes within a pair; tint, layout, shadows and wallpaper stay constant. The workload is 18 Markdown sections with illustrations, paragraphs and tables at 1440×1000, DPR 1.
 
-Both cases retain the glass tint, geometry, shadows and DOM. The off case overrides only backdrop-filter to none. Frame intervals measure delivered requestAnimationFrame cadence, including browser scheduling/compositing; the separate writes array times synchronous scrollTop assignments. Neither is a pure GPU execution-time measurement. The VM uses AMD EPYC and SwiftShader software GPU compositing; this is not a Mac or a hardware GPU benchmark. The JSON records scroll dimensions and node count per trial. No typecheck/build was run during sampling.
+Each trial uses real wheel input to leave follow mode, resets to 30% of scroll height, then advances 12px per animation frame and reverses after 90 frames. It records 180 frames and discards the first 30 intervals. Samples include actual scroll positions and the effective filter; assertions require more than 60 distinct positions and the expected filter state. Per strength, each mode retains 450 intervals.
 
-The response contains 15,433 characters; the captured performance page contains 2088 DOM nodes. The final samples show a substantial software-compositing cost:
+This measures requestAnimationFrame cadence and synchronous scroll writes, not GPU execution time or compositor presentation. It uses a shared Linux VM and software GPU. Do not compare directly with v1's text-only workload, and do not treat a steady cadence as proof that blur has no cost on Mac.
 
-| Mode          | Samples |   Median |      P95 |  Maximum |
-| ------------- | ------: | -------: | -------: | -------: |
-| Blur disabled |     450 | 16.70 ms | 33.40 ms | 33.50 ms |
-| 24px blur     |     450 | 33.20 ms | 49.90 ms | 83.40 ms |
+| Strength   | Blur | Intervals |   Median |      P95 |  Maximum |
+| ---------- | ---- | --------: | -------: | -------: | -------: |
+| restrained | off  |       450 | 16.70 ms | 16.80 ms | 16.80 ms |
+| restrained | on   |       450 | 16.70 ms | 16.80 ms | 16.80 ms |
+| balanced   | off  |       450 | 16.70 ms | 16.70 ms | 16.80 ms |
+| balanced   | on   |       450 | 16.70 ms | 16.80 ms | 16.80 ms |
+| pronounced | off  |       450 | 16.70 ms | 16.80 ms | 16.80 ms |
+| pronounced | on   |       450 | 16.70 ms | 16.70 ms | 16.80 ms |
 
-These measurements do not establish 60fps on macOS. Check a real Mac GPU with the same load before implementation approval; lower the blur budget if its measured frame cost is unacceptable.
+All trials passed the scroll-position and effective-filter assertions. The current workload stayed near the 60Hz requestAnimationFrame period; the scheduler quantization cannot establish a zero GPU cost. The recommendation is visual, pending a Mac presentation-time measurement.
 
-## Validation and review boundary
+## Verification and Mac follow-up
 
-The preview uses the existing npm workspace build and test commands. Browser runs own an isolated daemon/home and shut it down afterward; the main daemon was not restarted. The final matrix covers 24 before/after images plus four reduced-transparency dialog images. Desktop configuration also completed a Linux unpacked desktop build (including Electron web export and main-process compilation).
+The v1 desktop main/window configuration is unchanged. Its full Linux unpacked desktop build remains applicable; this revision rebuilds main and runs the full workspace typecheck/lint plus the new evidence spec. No independent review is required by v2. Self-review: the opt-in CSS layer is suitable for this comparison; production integration remains a later phase after approval and WORK-396.
 
-Self-review only, per Contract v1: **Taste: Good for the preview scope.** One token set owns material strength, the native module boundary keeps fallback behavior, and the window owns its accessibility listener and latest opaque color. The CSS override layer and manual opt-in serve the visual comparison; production integration remains a separate phase after approval and WORK-396. No independent review, merge, deployment or Ready transition is included.
+| Check                                        | Result                                                                             | Evidence                                              |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Independent visual/scroll spec               | Passed; 32 full captures, 24 detail crops, two selectors; 2,700 retained intervals | [browser](browser.txt), [frames](frames.json)         |
+| Full workspace typecheck                     | Passed for v2                                                                      | [typecheck](typecheck.txt)                            |
+| Full workspace lint                          | Passed, no warnings                                                                | [lint](lint.txt)                                      |
+| Desktop main build                           | Passed for v2                                                                      | [main build](build-main.txt)                          |
+| Native palette / path check                  | Passed; code evidence under v2                                                     | [native](native-code.txt)                             |
+| Full Linux desktop package / 14 window tests | Reused from v1; desktop/window code unchanged                                      | [build](build-desktop.txt), [tests](window-tests.txt) |
+| Native Mac runtime                           | Not run; confirmation checklist below                                              | —                                                     |
 
-| Check                                    | Result                                          | Evidence                         |
-| ---------------------------------------- | ----------------------------------------------- | -------------------------------- |
-| Real App screenshot and scroll capture   | Passed; 28 images, 900 retained frame intervals | [browser log](browser.txt)       |
-| Window manager regression file           | Passed; 14 tests                                | [tests](window-tests.txt)        |
-| Full workspace typecheck                 | Passed                                          | [typecheck](typecheck.txt)       |
-| Full workspace lint                      | Passed; no warnings                             | [lint](lint.txt)                 |
-| Desktop build / Linux unpacked package   | Passed                                          | [build](build-desktop.txt)       |
-| Final desktop main compilation           | Passed                                          | [main](build-main.txt)           |
-| macOS compositor / accessibility runtime | Not run on Linux; Mac confirmation list above   | —                                |
-| Current native iOS/Android screenshots   | Blocked: no device runtime in this workspace    | Existing baseline reference only |
-
-Contract v1 items 0 (preview matrix), 2 (Chromium measurements), and 3 (desktop configuration/build with Mac limitations) have evidence. Item 1 has token and contrast specifications and Web fallback captures, but lacks current native device screenshots. Root must provide a native capture environment or revise that evidence requirement; this branch does not waive it.
+On Mac, verify real wallpaper sampling, active/inactive vibrancy, live Reduce Transparency propagation, Spaces/fullscreen, native titlebar dragging, Retina hairlines, SF Pro fallback and GPU frame timings. Those runtime claims cannot be checked on Linux. No merge, deployment or Ready transition is part of this delivery.
