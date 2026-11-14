@@ -9,7 +9,7 @@ icons, status, menus, archive, workspace pins and add/import actions. Relative t
 the baseline, that list only contains the existing callback that closes resource
 sheets before navigation. The grouping controls replace the Workspaces heading.
 The retired session-card renderer and its collection, menu, projection and
-settings have been removed. Stored session metadata remains intact; Explorer's
+settings and hover modules have been removed. Stored session metadata remains intact; Explorer's
 directory context and operations remain independent of sidebar grouping.
 
 ## Fixed comparison
@@ -68,7 +68,8 @@ Terminal escape sequences and trailing whitespace are removed from saved outputs
   host/Git identity boundaries and combined created/last-prompt/manual order.
 - [Directory/context model](model-tests.txt): 10 pass.
 - [Full browser regression](browser-regression.txt): 1 pass. Grouping reads checkout
-  status and sends no `checkout_refresh_request`. Row size, URL, cwd, saved pins
+  status through the shared `fetchCheckoutStatus` normalizer and sends no
+  `checkout_refresh_request`. This keeps the sidebar and Git panel cache consistent. Row size, URL, cwd, saved pins
   and archive fields survive switching; actual pin, Files, resource navigation
   and archive also pass.
 - [Combined-row ordering](sort-browser.txt): 1 pass. A real drag across main and

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { CheckoutStatusResponse } from "@getpaseo/protocol/messages";
 import { useFetchQueries } from "@/data/query";
 import { checkoutStatusQueryKey } from "@/git/query-keys";
+import { fetchCheckoutStatus } from "@/git/checkout-status-cache";
 import { getHostRuntimeStore, useHostRuntimeConnectionStatuses } from "@/runtime/host-runtime";
 import {
   groupSidebarWorktrees,
@@ -25,7 +26,7 @@ export function useSidebarWorktreeGroups(projects: SidebarProjectEntry[], enable
       queryFn: () => {
         const client = getHostRuntimeStore().getClient(host.serverId);
         if (!client) throw new Error(t("common.errors.daemonUnavailable"));
-        return client.getCheckoutStatus(host.iconWorkingDir);
+        return fetchCheckoutStatus({ client, serverId: host.serverId, cwd: host.iconWorkingDir });
       },
       enabled: enabled && statuses.get(host.serverId) === "online",
       staleTimeMs: 15000,

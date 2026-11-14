@@ -3,4 +3,4 @@
 > oxlint
 
 Found 0 warnings and 0 errors.
-Finished in 5.0s on 5557 files with 177 rules using 32 threads.
+Finished in 6.7s on 5555 files with 177 rules using 32 threads.

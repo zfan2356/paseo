@@ -60,17 +60,9 @@ React Compiler enabled
 Expo Autolinking module resolution enabled
 Starting Metro Bundler
 
-| (node:858841) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (node:985003) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 | (Use `node --trace-warnings ...` to show where the warning was created)
-| (node:858841) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-| (Use `node --trace-warnings ...` to show where the warning was created)
-| (node:858841) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-| (Use `node --trace-warnings ...` to show where the warning was created)
-| (node:858841) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-| (Use `node --trace-warnings ...` to show where the warning was created)
-| (node:858841) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-| (Use `node --trace-warnings ...` to show where the warning was created)
-Web Bundled 3696ms packages/app/index.ts (5816 modules)
+Web Bundled 4335ms packages/app/index.ts (5816 modules)
 
 › Assets (25):
 ../../node_modules/expo-router/assets/arrow_down.017bc6ba3fc25503e5eb5e53826d48a8.png (9.5KB)
@@ -97,7 +89,7 @@ assets/images/notification-icon.3bf81d33ddbf380606bdd248ba83e158.png (2.3KB)
 _expo/static/css/xterm-3bb1704bf6cb0876640973dc0244b4cb.css (4.2KB)
 _expo/static/js/web/desktop-attachment-bridge-f2548e5b5428712e5f9914b945a24d8d.js (644B)
 _expo/static/js/web/desktop-attachment-store-1619361af34b9a4d05005a80211f81c6.js (2.9KB)
-_expo/static/js/web/index-3e20389534676267038a8cfad2768b93.js (25MB)
+_expo/static/js/web/index-8736f39e5d3c2b1d5fee722a8838d62c.js (25MB)
 _expo/static/js/web/index-d79a4141fb654e77dd7633418bd3fb66.js (45KB)
 _expo/static/js/web/indexeddb-attachment-store-bf9ef050700504e2db8cddf44a8e017e.js (3.2KB)
 _expo/static/js/web/native-file-attachment-store-cd45a82e4cf6e7879cf0034d1a7aedf3.js (4.3KB)
