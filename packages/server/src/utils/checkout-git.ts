@@ -1120,6 +1120,28 @@ export async function getMainRepoRoot(cwd: string, context?: CheckoutContext): P
   return getMainRepoRootFromCommonDir(cwd, resolveGitRevParsePath(cwd, commonDirOut), context);
 }
 
+export async function getPrimaryWorktreeRoot(
+  cwd: string,
+  context?: CheckoutContext,
+): Promise<string | null> {
+  const inspected = await inspectCheckoutContext(cwd, context);
+  if (!inspected) return null;
+  const { stdout } = await getRunGitCommand(context)(["worktree", "list", "--porcelain"], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+  });
+  // Git lists the primary worktree first, including bare repositories without a checkout.
+  const primary = parseWorktreeList(stdout)[0];
+  if (!primary || primary.isBare) return null;
+  const primaryCheckout = await inspectCheckoutContext(primary.path, context);
+  if (!primaryCheckout?.gitCommonDir || !inspected.gitCommonDir) return null;
+  const [primaryCommonDir, commonDir] = await Promise.all([
+    realpath(primaryCheckout.gitCommonDir),
+    realpath(inspected.gitCommonDir),
+  ]);
+  return primaryCommonDir === commonDir ? primary.path : null;
+}
+
 async function getMainRepoRootFromCommonDir(
   cwd: string,
   commonDir: string | null,

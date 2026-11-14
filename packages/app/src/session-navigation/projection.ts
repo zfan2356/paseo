@@ -26,6 +26,7 @@ interface SessionGroup {
   name: string;
   agents: Agent[];
 }
+export const PINNED_SESSION_GROUP = "pinned-sessions";
 export function sessionStatus(agent: Agent) {
   const lifecycle = agent.status === "running" ? "idle" : agent.status;
   const status = agent.turn.phase === "open" ? "running" : lifecycle;
@@ -93,7 +94,10 @@ export function projectSessions(input: SessionProjectionInput): SessionGroup[] {
       (context?.projectId
         ? i18n.t("sessionNavigation.projectUnavailable")
         : i18n.t("sessionNavigation.ungrouped"));
-    if (input.preferences.group === "status") {
+    if (context?.pinnedAt) {
+      key = PINNED_SESSION_GROUP;
+      name = i18n.t("sidebar.pinned.title");
+    } else if (input.preferences.group === "status") {
       key = sessionStatus(agent);
       name = key.replaceAll("_", " ");
     }
@@ -108,6 +112,8 @@ export function projectSessions(input: SessionProjectionInput): SessionGroup[] {
   return [...groups.values()].sort((a, b) => {
     const aIndex = order.indexOf(a.key);
     const bIndex = order.indexOf(b.key);
+    if (a.key === PINNED_SESSION_GROUP) return -1;
+    if (b.key === PINNED_SESSION_GROUP) return 1;
     return (aIndex < 0 ? Infinity : aIndex) - (bIndex < 0 ? Infinity : bIndex);
   });
 }

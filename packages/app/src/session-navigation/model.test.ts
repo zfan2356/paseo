@@ -58,38 +58,39 @@ describe("session navigation", () => {
   });
 });
 
+const sessionAgent = {
+  serverId: "host",
+  provider: "codex",
+  status: "running",
+  turn: { phase: "idle", cancellationRequestId: null },
+  createdAt: new Date("2026-01-01"),
+  updatedAt: new Date("2026-01-05"),
+  lastUserMessageAt: null,
+  lastActivityAt: new Date("2026-01-05"),
+  capabilities: {
+    supportsStreaming: true,
+    supportsSessionPersistence: true,
+    supportsDynamicModes: true,
+    supportsMcpServers: true,
+    supportsReasoningStream: true,
+    supportsToolInvocations: true,
+  },
+  currentModeId: null,
+  availableModes: [],
+  pendingPermissions: [],
+  persistence: null,
+  title: null,
+  cwd: "/repo",
+  workspaceId: "shared",
+  model: null,
+  parentAgentId: null,
+  labels: {},
+} satisfies Omit<import("@/stores/session-store").Agent, "id">;
+
 it("sorts sessions by their own human prompts and normalizes stale running lifecycle", async () => {
   const { sortSessionAgents, sessionStatus } = await import("./projection");
-  const base = {
-    serverId: "host",
-    provider: "codex",
-    status: "running",
-    turn: { phase: "idle", cancellationRequestId: null },
-    createdAt: new Date("2026-01-01"),
-    updatedAt: new Date("2026-01-05"),
-    lastUserMessageAt: null,
-    lastActivityAt: new Date("2026-01-05"),
-    capabilities: {
-      supportsStreaming: true,
-      supportsSessionPersistence: true,
-      supportsDynamicModes: true,
-      supportsMcpServers: true,
-      supportsReasoningStream: true,
-      supportsToolInvocations: true,
-    },
-    currentModeId: null,
-    availableModes: [],
-    pendingPermissions: [],
-    persistence: null,
-    title: null,
-    cwd: "/repo",
-    workspaceId: "shared",
-    model: null,
-    parentAgentId: null,
-    labels: {},
-  } satisfies Omit<import("@/stores/session-store").Agent, "id">;
-  const a = { ...base, id: "a", lastUserMessageAt: new Date("2026-01-02") };
-  const b = { ...base, id: "b", lastUserMessageAt: new Date("2026-01-03") };
+  const a = { ...sessionAgent, id: "a", lastUserMessageAt: new Date("2026-01-02") };
+  const b = { ...sessionAgent, id: "b", lastUserMessageAt: new Date("2026-01-03") };
   expect(
     sortSessionAgents({
       agents: [a, b],
@@ -177,4 +178,76 @@ it("uses checkout-root paths for nested directory changes and preserves non-Git 
   expect(checkoutDirectory({ directory: "/notes", status: { isGit: false, repoRoot: null } })).toBe(
     "/notes",
   );
+});
+
+it("shows the shortest unambiguous execution directory suffix", async () => {
+  const { executionDirectoryLabel } = await import("./model");
+  expect(executionDirectoryLabel("/works/slime", ["/works/slime", "/works/paseo"])).toBe("slime");
+  expect(executionDirectoryLabel("/works/slime", ["/works/slime", "/other/slime"])).toBe(
+    "works/slime",
+  );
+  expect(executionDirectoryLabel("C:\\dev\\slime", ["D:\\dev\\slime"])).toBe("C:\\dev\\slime");
+  expect(executionDirectoryLabel("/", ["/works"])).toBe("/");
+});
+
+it("keeps all nine pins in one ordered section across project/status grouping and filters", async () => {
+  const { projectSessions, PINNED_SESSION_GROUP } = await import("./projection");
+  const agents = Array.from({ length: 10 }, (_, index) => ({
+    ...sessionAgent,
+    id: String(index),
+    title: `Session ${index}`,
+  }));
+  const snapshots = new Map<string, import("./contexts").ContextSnapshot>(
+    agents.map((agent, index) => [
+      `host:${agent.id}`,
+      {
+        status: "ready" as const,
+        context: {
+          ...context,
+          agentId: agent.id,
+          projectId: null,
+          pinnedAt: index < 9 ? "2026-01-01" : null,
+          sidebarLabelNames: index % 2 ? ["work"] : [],
+        },
+      },
+    ]),
+  );
+  const input = {
+    serverId: "host",
+    roots: agents,
+    snapshots,
+    projects: [],
+    pinnedOrder: agents
+      .slice(0, 9)
+      .toReversed()
+      .map((agent) => `host:${agent.id}`),
+    projectOrder: [],
+    search: "",
+    preferences: { sort: "lastPrompt", labels: [], projects: [], group: "project" },
+  };
+  expect(
+    projectSessions(input).map((group) => [group.key, group.agents.map((agent) => agent.id)]),
+  ).toEqual([
+    [PINNED_SESSION_GROUP, ["8", "7", "6", "5", "4", "3", "2", "1", "0"]],
+    ["ungrouped", ["9"]],
+  ]);
+  expect(
+    projectSessions({
+      ...input,
+      preferences: { ...input.preferences, group: "status", labels: ["work"] },
+    }).map((group) => [group.key, group.agents.map((agent) => agent.id)]),
+  ).toEqual([
+    [PINNED_SESSION_GROUP, ["7", "5", "3", "1"]],
+    ["done", ["9"]],
+  ]);
+  snapshots.set("host:8", {
+    status: "ready",
+    context: { ...context, agentId: "8", pinnedAt: null },
+  });
+  expect(
+    projectSessions({ ...input, search: "Session 8" }).map((group) => [
+      group.key,
+      group.agents.map((agent) => agent.id),
+    ]),
+  ).toEqual([["ungrouped", ["8"]]]);
 });

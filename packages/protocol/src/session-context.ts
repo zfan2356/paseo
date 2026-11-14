@@ -4,6 +4,7 @@ export const SessionContextSchema = z.object({
   agentId: z.string(),
   launchDirectory: z.string(),
   projectId: z.string().nullable(),
+  projectAssignment: z.enum(["automatic", "manual"]).optional(),
   pinnedAt: z.string().nullable(),
   sidebarLabelNames: z.array(z.string()),
   linkedDirectories: z.array(

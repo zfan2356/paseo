@@ -146,3 +146,16 @@ export function checkoutDirectory(input: {
 }): string {
   return input.status?.isGit ? input.status.repoRoot : input.directory;
 }
+
+export function executionDirectoryLabel(directory: string, paths: readonly string[]): string {
+  const segments = directory.split(/[\\/]/).filter(Boolean);
+  const others = paths.filter((candidate) => candidate !== directory);
+  for (let depth = 1; depth <= segments.length; depth++) {
+    const suffix = segments.slice(-depth).join("/");
+    const conflicts = others.some(
+      (candidate) => candidate.split(/[\\/]/).filter(Boolean).slice(-depth).join("/") === suffix,
+    );
+    if (!conflicts) return /^[A-Za-z]:/.test(suffix) ? directory : suffix;
+  }
+  return directory;
+}
