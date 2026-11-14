@@ -255,6 +255,8 @@ lifecycle is separate from public workspace visibility and is not a public creat
 
 Archive is a **soft delete**: the agent record stays on disk with `archivedAt` set, the runtime is closed, and the agent disappears from active lists. Archive is **global** — it lives on the server and propagates to every connected client.
 
+The app waits for server confirmation before publishing a local archive. A pending request does not remove session cards or prune their tabs: pruning cannot reliably recover the previous focus after a refusal. Server agent updates remain authoritative even when the request response is lost.
+
 Archive sets `archivedAt`, invokes the provider's native archive hook, and cascades to managed
 children.
 

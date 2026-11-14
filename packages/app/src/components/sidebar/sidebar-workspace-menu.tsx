@@ -97,13 +97,34 @@ export function SidebarWorkspaceArchiveButton({
 }) {
   const { t } = useTranslation();
   return (
+    <SidebarRowArchiveButton
+      label={t("sidebar.workspace.actions.archiveWorkspace")}
+      testID={`sidebar-workspace-archive-button-${workspaceKey}`}
+      onArchive={onArchive}
+    />
+  );
+}
+
+export function SidebarRowArchiveButton({
+  label,
+  testID,
+  onArchive,
+  disabled,
+}: {
+  label: string;
+  testID: string;
+  onArchive(): void;
+  disabled?: boolean;
+}) {
+  return (
     <PressHighlight
       hitSlop={4}
       style={archiveButtonStyle}
       onPress={onArchive}
+      disabled={disabled}
       accessibilityRole={isWeb ? undefined : "button"}
-      accessibilityLabel={t("sidebar.workspace.actions.archiveWorkspace")}
-      testID={`sidebar-workspace-archive-button-${workspaceKey}`}
+      accessibilityLabel={label}
+      testID={testID}
     >
       {renderArchiveIcon}
     </PressHighlight>

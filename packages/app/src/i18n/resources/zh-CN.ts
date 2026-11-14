@@ -3,6 +3,13 @@ import { pluginSettings } from "./plugin-settings";
 
 export const zhCN: TranslationResources = {
   sessionNavigation: {
+    labelCreatedAssignmentFailed:
+      "标签“{{name}}”已创建，但未能赋给会话：{{message}}。重试将复用该标签。",
+    markRead: "标为已读",
+    markedRead: "会话已标为已读",
+    readOnly: "只读：无法修改会话",
+    rename: "重命名会话",
+    updateHostLabels: "请更新主机以创建标签",
     checkoutRoot: "检出根目录：{{path}}",
     sessions: "会话",
     search: "搜索会话与目录",

@@ -24,6 +24,8 @@ interface HostSource {
   agents: Map<string, Agent>;
   workspaces: Map<string, WorkspaceDescriptor>;
   supported: boolean | null;
+  permissions: import("@/stores/session-store").DaemonServerInfo["permissions"];
+  labelCreateSupported: boolean;
   hydrated: boolean;
   focusedAgentId: string | null;
 }
@@ -39,6 +41,8 @@ function sourcesEqual(a: HostSource[], b: HostSource[]) {
         source.agents === other.agents &&
         source.workspaces === other.workspaces &&
         source.supported === other.supported &&
+        source.permissions === other.permissions &&
+        source.labelCreateSupported === other.labelCreateSupported &&
         source.hydrated === other.hydrated &&
         source.focusedAgentId === other.focusedAgentId
       );
@@ -85,6 +89,8 @@ export function useSessionNavigationCollection({
           supported: session?.serverInfo
             ? session.serverInfo.features?.sessionContext === true
             : null,
+          permissions: session?.serverInfo?.permissions,
+          labelCreateSupported: session?.serverInfo?.features?.workspaceLabelCreate === true,
           hydrated: session?.hasHydratedAgents === true,
           focusedAgentId: session?.focusedAgentId ?? null,
         };

@@ -1,3 +1,5 @@
+import { getHostRuntimeStore } from "@/runtime/host-runtime";
+import { permitsSessionOperation } from "./operations";
 import { useTranslation } from "react-i18next";
 import { movePinnedSession } from "./model";
 import { useSessionNavigationPreferences } from "./preferences";
@@ -31,9 +33,17 @@ import type { SidebarProjectEntry } from "@/hooks/sidebar-workspaces-view-model"
 import { contextKey, type ContextSnapshot } from "./contexts";
 export function useContextMutation(client: DaemonClient, serverId: string, agentId: string) {
   const cache = useQueryClient();
+  const { t } = useTranslation();
   return useMutation({
-    mutationFn: (mutation: SessionContextMutation) =>
-      client.mutateSessionContext(agentId, mutation),
+    mutationFn: (mutation: SessionContextMutation) => {
+      const runtime = getHostRuntimeStore().getSnapshot(serverId);
+      if (runtime?.connectionStatus !== "online") throw new Error(t("sessionNavigation.offline"));
+      if (
+        !permitsSessionOperation(client.getLastServerInfoMessage()?.permissions, "workspace.manage")
+      )
+        throw new Error(t("sessionNavigation.readOnly"));
+      return client.mutateSessionContext(agentId, mutation);
+    },
     onSuccess: (payload) =>
       cache.setQueryData<ContextSnapshot>(contextKey(serverId, agentId), {
         status: "ready",
