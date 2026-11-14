@@ -15,7 +15,6 @@ import { ToolbarLabelSelectTrigger } from "@/components/ui/toolbar-label-trigger
 interface BranchSwitcherProps {
   currentBranchName: string | null;
   serverId: string;
-  workspaceId: string;
   workspaceDirectory: string | null;
   isGitCheckout: boolean;
   testID?: string;
@@ -29,7 +28,6 @@ const ThemedGitBranch = withUnistyles(GitBranch);
 export function BranchSwitcher({
   currentBranchName,
   serverId,
-  workspaceId,
   workspaceDirectory,
   isGitCheckout,
   testID = "workspace-header-branch-switcher",
@@ -41,10 +39,17 @@ export function BranchSwitcher({
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const { branchOptions, isOpen, setIsOpen, handleBranchSelect } = useBranchSwitcher({
+  const {
+    branchOptions,
+    isLoadingBranches,
+    isFetchingBranches,
+    branchError,
+    isOpen,
+    setIsOpen,
+    handleBranchSelect,
+  } = useBranchSwitcher({
     client,
     normalizedServerId: serverId,
-    normalizedWorkspaceId: workspaceId,
     workspaceDirectory,
     currentBranchName,
     isGitCheckout,
@@ -73,6 +78,22 @@ export function BranchSwitcher({
     [branchLeadingSlot],
   );
 
+  let emptyText = t("branchSwitcher.empty");
+  if (isLoadingBranches) emptyText = t("common.states.loading");
+  else if (branchError) emptyText = "";
+
+  const errorFooter = useMemo(
+    () =>
+      branchError ? (
+        <View style={styles.footer}>
+          <Text accessibilityRole="alert" style={styles.error}>
+            {isFetchingBranches ? t("common.states.loading") : t("branchSwitcher.failedToLoad")}
+          </Text>
+        </View>
+      ) : undefined,
+    [branchError, isFetchingBranches, t],
+  );
+
   if (!currentBranchName) {
     return null;
   }
@@ -85,6 +106,7 @@ export function BranchSwitcher({
             testID={testID}
             label={currentBranchName}
             open={isOpen}
+            disabled={!isConnected}
             onPress={handleOpen}
             accessibilityRole="button"
             accessibilityLabel={t("branchSwitcher.currentBranch", {
@@ -103,7 +125,8 @@ export function BranchSwitcher({
         searchable
         placeholder={t("branchSwitcher.placeholder")}
         searchPlaceholder={t("branchSwitcher.searchPlaceholder")}
-        emptyText={t("branchSwitcher.empty")}
+        emptyText={emptyText}
+        footer={errorFooter}
         title={t("branchSwitcher.title")}
         open={isOpen}
         onOpenChange={setIsOpen}
@@ -122,6 +145,8 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     minWidth: 0,
   },
+  footer: { padding: theme.spacing[3], gap: theme.spacing[2] },
+  error: { color: theme.colors.destructive, fontSize: theme.fontSize.sm },
   tooltipText: {
     color: theme.colors.popoverForeground,
     fontSize: theme.fontSize.sm,

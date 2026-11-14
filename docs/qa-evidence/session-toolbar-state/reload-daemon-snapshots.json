@@ -1,0 +1,26 @@
+[
+  {
+    "viewport": 1200,
+    "agentId": "9e2a8221-a3f6-4bfb-bded-fbdb8e608d92",
+    "status": "running",
+    "pendingPermissionCount": 1,
+    "attentionReason": null,
+    "requiresAttention": false,
+    "activeTurn": {
+      "turnId": "6a8931cc-aef0-47f5-a6a4-47319bfdc8c9",
+      "startedAt": "2026-11-14T02:29:59.310Z"
+    }
+  },
+  {
+    "viewport": 390,
+    "agentId": "9e2a8221-a3f6-4bfb-bded-fbdb8e608d92",
+    "status": "running",
+    "pendingPermissionCount": 1,
+    "attentionReason": null,
+    "requiresAttention": false,
+    "activeTurn": {
+      "turnId": "6a8931cc-aef0-47f5-a6a4-47319bfdc8c9",
+      "startedAt": "2026-11-14T02:29:59.310Z"
+    }
+  }
+]
