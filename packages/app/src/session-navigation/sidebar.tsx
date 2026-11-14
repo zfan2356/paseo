@@ -17,6 +17,7 @@ import { useFetchQueries } from "@/data/query";
 import type { SessionContext } from "@getpaseo/protocol/session-context";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { HostBadge } from "@/hosts/host-badge";
+import { AgentStatusDot } from "@/components/agent-status-dot";
 import { sessionStatus, PINNED_SESSION_GROUP } from "./projection";
 import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
 import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-preferences/menu";
@@ -288,9 +289,18 @@ const SessionRow = memo(function SessionRow({
           accessibilityState={selectedState}
           aria-selected={selected}
         >
-          <Text numberOfLines={1} style={styles.text}>
-            {agent.title ?? t("sessionNavigation.untitled")}
-          </Text>
+          <View style={styles.titleLine}>
+            <View
+              testID={`session-status-${agent.id}`}
+              accessibilityRole="image"
+              accessibilityLabel={getStatusBucketLabel(sessionStatus(agent), t)}
+            >
+              <AgentStatusDot bucket={sessionStatus(agent)} showInactive />
+            </View>
+            <Text numberOfLines={1} style={styles.text}>
+              {agent.title ?? t("sessionNavigation.untitled")}
+            </Text>
+          </View>
           <SessionMetadata
             agent={agent}
             context={context}
@@ -497,8 +507,9 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[2],
     gap: theme.spacing[1],
   },
-  title: { flex: 1, paddingVertical: theme.spacing[1] },
-  text: { color: theme.colors.foreground, fontSize: theme.fontSize.base },
+  title: { flex: 1, minWidth: 0, paddingVertical: theme.spacing[1] },
+  titleLine: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
+  text: { color: theme.colors.foreground, fontSize: theme.fontSize.base, flexShrink: 1 },
   hint: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
   error: { color: theme.colors.destructive, fontSize: theme.fontSize.sm },
   menu: {

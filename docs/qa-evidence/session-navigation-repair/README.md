@@ -2,7 +2,7 @@
 
 Implementation: [PR #13](https://github.com/zfan2356/paseo/pull/13), merged as `dbd5138f1c4ea0e7ff66a5211a0c5575270cdcba`. Sidebar evidence follow-up: <https://github.com/zfan2356/paseo/pull/14>. Contract v3.
 
-Sessions and Directories and terminals switch at the top and each own the list area. Pinned sessions have one independent, ordered, collapsible section, subject to the same filters as ordinary sessions. Main-checkout and linked-worktree sessions default to the primary repository project; explicit project choices and execution cwd stay independent. The composer folder button shows a short distinct name and reveals the full execution path on click or desktop hover.
+Sessions and Directories and terminals switch at the top and each own the list area. Pinned sessions have one independent, ordered, collapsible section, subject to the same filters as ordinary sessions. Main-checkout and linked-worktree sessions default to the primary repository project; explicit project choices and execution cwd stay independent. The composer folder button lives in the input toolbar and reveals the full execution path on click or desktop hover. Current toolbar and per-session status evidence is in the [toolbar follow-up](../session-toolbar-state/README.md).
 
 ## Validation
 

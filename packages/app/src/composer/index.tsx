@@ -2255,16 +2255,20 @@ function ComposerContentImpl({
   );
 
   const leftContent = useMemo(
-    () =>
-      renderLeftContent({
-        agentControls,
-        agentId,
-        serverId,
-        focusInput,
-        isCompactLayout,
-        showAgentControls: mode.showAgentControls,
-      }),
-    [agentControls, agentId, focusInput, isCompactLayout, mode.showAgentControls, serverId],
+    () => (
+      <>
+        <ExecutionDirectory serverId={serverId} cwd={cwd} compact={isCompactLayout} />
+        {renderLeftContent({
+          agentControls,
+          agentId,
+          serverId,
+          focusInput,
+          isCompactLayout,
+          showAgentControls: mode.showAgentControls,
+        })}
+      </>
+    ),
+    [agentControls, agentId, cwd, focusInput, isCompactLayout, mode.showAgentControls, serverId],
   );
 
   const handleAttachButtonRef = useCallback((node: View | null) => {
@@ -2471,7 +2475,6 @@ function ComposerContentImpl({
           <View style={inputAreaContentStyle}>
             {isFullscreen ? null : queueList}
             {!isFullscreen && sendErrorNode}
-            <ExecutionDirectory serverId={serverId} cwd={cwd} />
 
             <ComposerAutocompleteBinding
               text={textSource}
