@@ -1,3 +1,4 @@
+import type { SessionContextStore } from "../session-context-store.js";
 import { join } from "node:path";
 import type { FileBackedWorkspaceRegistry } from "../workspace-registry.js";
 import { WorkspaceLabelCatalogStore } from "./internal/catalog-store.js";
@@ -10,6 +11,7 @@ export { WorkspaceLabelStorageUncertainError } from "./internal/catalog-store.js
 
 export function createWorkspaceLabelService(input: {
   paseoHome: string;
+  sessionContexts?: SessionContextStore;
   workspaceRegistry: FileBackedWorkspaceRegistry;
   writeCatalog?: (filePath: string, labels: readonly WorkspaceLabelDefinition[]) => Promise<void>;
   writeTransaction?: (filePath: string, transaction: unknown) => Promise<void>;
@@ -24,7 +26,9 @@ export function createWorkspaceLabelService(input: {
       input.writeCatalog,
       input.writeTransaction,
       input.removeTransaction,
+      input.sessionContexts,
     ),
     new WorkspaceLabelSequence(input.journalLimit),
+    input.sessionContexts,
   );
 }

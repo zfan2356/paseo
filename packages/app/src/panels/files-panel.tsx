@@ -21,16 +21,28 @@ const filesPanelPresentation = {
 function FilesPanel() {
   const { t } = useTranslation();
   const { serverId, workspaceId, target, openPreferredTarget, openTargetToSide } = usePaneContext();
-  const workspaceRoot = useWorkspaceDirectory(serverId, workspaceId);
-  const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId });
+  const defaultRoot = useWorkspaceDirectory(serverId, workspaceId);
+  const directory = target.kind === "files" ? target.directory : undefined;
+  const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId, directory });
   invariant(target.kind === "files", "FilesPanel requires files target");
+  const workspaceRoot = target.directory ?? defaultRoot;
   const onOpenFile = useCallback(
-    (path: string) => openPreferredTarget({ kind: "file", path }, "explorerFiles"),
-    [openPreferredTarget],
+    (path: string) =>
+      openPreferredTarget(
+        { kind: "file", path, directory: target.directory, sessionAgentId: target.sessionAgentId },
+        "explorerFiles",
+      ),
+    [openPreferredTarget, target.directory, target.sessionAgentId],
   );
   const onOpenFileToSide = useCallback(
-    (path: string) => openTargetToSide?.({ kind: "file", path }),
-    [openTargetToSide],
+    (path: string) =>
+      openTargetToSide?.({
+        kind: "file",
+        path,
+        directory: target.directory,
+        sessionAgentId: target.sessionAgentId,
+      }),
+    [openTargetToSide, target.directory, target.sessionAgentId],
   );
   if (!workspaceRoot) {
     return (
@@ -40,14 +52,22 @@ function FilesPanel() {
     );
   }
   return (
-    <FileExplorerPane
-      serverId={serverId}
-      workspaceId={workspaceId}
-      workspaceRoot={workspaceRoot}
-      onOpenFile={onOpenFile}
-      onOpenFileToSide={openTargetToSide ? onOpenFileToSide : undefined}
-      onAddToChat={canAddToChat ? addFile : undefined}
-    />
+    <View style={styles.fill}>
+      {target.directory ? (
+        <Text selectable style={styles.path}>
+          {serverId} · {target.directory}
+        </Text>
+      ) : null}
+      <FileExplorerPane
+        serverId={serverId}
+        workspaceId={workspaceId}
+        sessionAgentId={target.sessionAgentId}
+        workspaceRoot={workspaceRoot}
+        onOpenFile={onOpenFile}
+        onOpenFileToSide={openTargetToSide ? onOpenFileToSide : undefined}
+        onAddToChat={canAddToChat ? addFile : undefined}
+      />
+    </View>
   );
 }
 
@@ -57,6 +77,12 @@ export const filesPanelRegistration = definePanel("files", {
 });
 
 const styles = StyleSheet.create((theme) => ({
+  fill: { flex: 1 },
+  path: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    padding: theme.spacing[2],
+  },
   centerState: {
     flex: 1,
     alignItems: "center",

@@ -66,6 +66,9 @@ WebSocket message schemas. Shared configuration schemas belong in protocol leaf 
 retaining the daemon's runtime and wire-schema allocations. The server export tests guard
 these dependency trees with tree-shaking disabled to match unbundled production imports.
 
+Terminals do not live in the daemon process: their PTYs run in a detached terminal worker that
+survives daemon restarts, crashes and upgrades. See [terminal-worker.md](terminal-worker.md).
+
 Project identity is daemon-global rather than session-owned. After registry bootstrap, the daemon's
 project Git observer keeps one non-recursive watch on each lexically equivalent active project root
 and listens only for the root `.git` entry, with a slow rescan as a missed-event fallback. It runs
@@ -403,36 +406,33 @@ initializing → idle ⇄ running
 - Events stream to connected clients in real time; correctness is backed by authoritative timeline fetches and paged-to-completion catch-up.
 - Agent state persists to `$PASEO_HOME/agents/{cwd-with-dashes}/{agent-id}.json`. Timeline rows are runtime memory; provider history is the durable transcript authority and resumed agents rebuild from it. That storage path is derived from `cwd`, not from workspace id.
 
-## Right-sidebar boundary: directory-backed vs workspace-owned
+## Navigation and resource identity
 
-Two workspaces can share the same `cwd` (e.g. a `directory` workspace and a `local_checkout` workspace on the same folder, or several workspaces opened against one checkout). Model B keeps these distinct: they share everything the directory determines, but nothing the workspace owns. The right-sidebar surfaces split cleanly along this line, and the split is enforced purely by **what each piece of state is keyed by**.
+The default sidebar projects root agents through their SessionContext. Its collection owner also
+supplies keyboard targets, so session project, label and pin changes cannot leave shortcuts on the
+old workspace projection. Projects merge through the existing opaque projectKey across hosts.
+Workspace rows remain under the explicit Directories and terminals resource entry, including
+containers without a visible root agent. The [session navigation design](session-context.md) owns
+the product and compatibility rules.
 
-**Directory-backed (shared by same-`cwd` workspaces) — keyed by `(serverId, cwd)`, never by `workspaceId`:**
+Keep shared directory facts separate from browsing state:
 
-| Surface                 | Key                                                      | Source                                                  |
-| ----------------------- | -------------------------------------------------------- | ------------------------------------------------------- |
-| Git status              | `checkoutStatusQueryKey(serverId, cwd)`                  | `packages/app/src/git/query-keys.ts`                    |
-| Git diff                | `checkoutDiffQueryKey(serverId, cwd, mode, baseRef, ws)` | `packages/app/src/git/query-keys.ts`                    |
-| Forge change request    | `checkoutPrStatusQueryKey(serverId, cwd)`                | `packages/app/src/git/query-keys.ts`                    |
-| Change request timeline | `prPaneTimelineQueryKey({ serverId, cwd, prNumber })`    | `packages/app/src/git/pull-request-panel/query-keys.ts` |
-| File preview content    | `["workspaceFile", serverId, cwd, path]`                 | `packages/app/src/components/file-pane.tsx`             |
-| File explorer listings  | fetched via `listDirectory(workspaceRoot, path)`         | `packages/app/src/hooks/use-file-explorer-actions.ts`   |
+| State                                                                           | Identity                                                         |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Git status, diff and file content                                               | Host and actual directory/path, plus the requested comparison    |
+| Explicit directory tab, Explorer navigation, comparison choice and review draft | Host, session and directory; review also includes its comparison |
+| Terminals, layouts, scripts and cleanup                                         | Existing owning workspace                                        |
+| Legacy panels without an explicit directory target                              | Existing workspace scope                                         |
 
-**Workspace-owned (independent per workspace) — keyed by `workspaceId` (falling back to `cwd` only when no `workspaceId` exists):**
+Binding and browsing never create an owning workspace, change its project FK or change agent cwd.
+Keep the real workspaceId on resource operations; a browsing-state key must not masquerade as a
+workspaceId. Session navigation uses bounded directory checks on expansion and explicit refresh.
+An unregistered directory's cached daemon Git snapshot needs checkoutRefresh; another
+getCheckoutStatus alone does not refresh it.
 
-| State                        | Key builder / store                                | Source                                                        |
-| ---------------------------- | -------------------------------------------------- | ------------------------------------------------------------- |
-| Review draft comments        | `buildReviewDraftKey`                              | `packages/app/src/review/store.ts`                            |
-| Working diff comparison      | `workingDiffComparisonKey` (in-memory)             | `packages/app/src/git/working-diff-comparison/state.ts`       |
-| Composer attachments         | `buildWorkspaceAttachmentScopeKey`                 | `packages/app/src/attachments/workspace-attachments-store.ts` |
-| File explorer nav/open state | `fileExplorer` map keyed `workspace:{workspaceId}` | `packages/app/src/hooks/use-file-explorer-actions.ts`         |
-| File explorer expanded paths | `expandedPathsByWorkspace[workspaceStateKey]`      | `packages/app/src/stores/panel-store/state.ts`                |
-
-`diff-pane.tsx` is the canonical wiring site: it passes `{ serverId, cwd }` to the git queries and `{ serverId, workspaceId, cwd }` to the draft/comparison/attachment scope keys.
-
-**Do not "fix" the sharing away.** Re-keying a directory-backed query by `workspaceId` makes same-`cwd` workspaces diverge (two windows onto the same git tree showing different diffs). Re-keying owned state (drafts, expanded paths) by `cwd` makes them leak between distinct workspaces on the same folder. The `workspaceId`-keyed builders carry a `// workspaceId is opaque; do not parse this key back into a path.` comment — the opaque-id fallback to `cwd` exists only for old payloads without a `workspaceId`, not as a content-sharing mechanism.
-
-One deliberate non-violation: `AgentFileExplorerState.directories`/`files` cache directory listings inside the `workspaceId`-keyed explorer map. Same-`cwd` workspaces therefore keep duplicate caches, but they can never diverge — both fetch the identical directory via `listDirectory(workspaceRoot, …)`. This is duplication, not leakage, and is left as-is.
+See [Explorer](explorer-sidebar.md) for explicit target propagation and [data storage](data-model.md)
+for SessionContext ownership. Legacy Explorer surfaces can retain separate listing copies while
+sharing the same underlying directory; their navigation state remains independent.
 
 ## Agent providers
 
@@ -491,6 +491,16 @@ $PASEO_HOME/
 The supervisor alone publishes its ready worker's endpoint in `paseo.pid`, clears it before respawn, and fails if any worker exits before first readiness. CLI home selection trusts only that live record; config expresses desired state, never an endpoint fallback. POSIX home stop signals the captured supervisor without TCP. Windows graceful stop and ordinary RPCs trust the published endpoint. This metadata is not cryptographic listener ownership: edited endpoints, copied identities, PID reuse, and address takeover races remain outside that guarantee. A stale heartbeat never permits reclaiming a live lock.
 
 Worker restart retains supervisor arguments/environment and rereads the configuration file. Updating a package and observing its new worker version do not refresh the running supervisor code; the launcher owns full-process replacement. See [CLI lifecycle contracts](../public-docs/cli.md#daemon-management).
+
+## Outbound networking
+
+The daemon and its plugin processes honor `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`
+(including lowercase forms, which take precedence). Fetch and relay, Hub, and connected-host WebSockets
+share this policy. Loopback (`localhost`, `127.0.0.1`, `::1`) always goes direct.
+A proxy without a scheme uses HTTP. Invalid values and unsupported proxy schemes
+are treated as unset, with one warning naming the variable in `daemon.log`.
+Agent and terminal environments are unchanged. System proxy settings and SOCKS-only
+`ALL_PROXY` configurations are not supported.
 
 ## Deployment models
 
