@@ -22,6 +22,7 @@ import { getStatusDotColor } from "@/utils/status-dot-color";
 import { STATUS_INDICATOR_FILLED_DOT_SIZE } from "@/utils/status-indicator-geometry";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { COMPOSER_PILL_CLEARANCE, composerPillStyles } from "./pill-styles";
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 
 /**
  * The strip of pills where a pane's ambient trackers and plugin actions live.
@@ -39,7 +40,7 @@ import { COMPOSER_PILL_CLEARANCE, composerPillStyles } from "./pill-styles";
 export function ComposerTrackBar({ children }: { children: ReactNode }): ReactElement {
   const scrollGesture = usePanelAwareHorizontalScrollGesture();
   return (
-    <View style={styles.bar} pointerEvents="box-none">
+    <View dataSet={MATERIAL_SLOTS.composerTracks} style={styles.bar} pointerEvents="box-none">
       <View style={styles.trackViewport} pointerEvents="box-none">
         <GestureDetector gesture={scrollGesture}>
           <ScrollView

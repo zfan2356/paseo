@@ -1,6 +1,7 @@
 // Stable data attributes shared by web/desktop materials.
 export const MATERIAL_SLOTS = {
   scrollControls: { material: "scroll-controls" },
+  composerTracks: { material: "composer-tracks" },
   sessionRow: { material: "session-row" },
   tooltip: { material: "tooltip" },
   toast: { material: "toast" },
