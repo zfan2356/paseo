@@ -49,6 +49,8 @@ The local runner only selects the installed headless Chromium executable and dis
 | Full workspace typecheck, staged lint and formatting | Passed                                                                          | [commit checks](commit-checks.txt) |
 | GitHub Actions                                       | Not run; known disabled-repository exemption. No runs for the runtime revision. | [CI](ci.txt)                       |
 
+The semantic regression opens the card by its existing accessible label and requires a visible **Rename session** menu item. With only `session-navigation/sidebar.tsx` replaced by the original main version (`030f54b7`), the same test [fails](baseline-browser.txt) because the menu has only settings, binding and archive. Restoring the fixed component [passes](fixed-menu-browser.txt). This is a component source comparison against the same daemon/test fixture, not a claim that an entire old daemon was tested.
+
 No full local suite ran. The specified Reviewer first found a workspace picker callback lifetime regression and a newly added JSDOM hook test that violated repository rules. The callback now follows stable workspace identity and has the real browser refresh regression above; the JSDOM addition was removed. Final review is tracked in WORK-390.
 
 Multica's GitHub integration is not configured for this workspace, so the formal PR card is not linked. Root verified that platform gap and accepted the GitHub URL, remote source/base and complete diff as the review handoff. This delivery does not configure the integration, merge, deploy or restart the production daemon.

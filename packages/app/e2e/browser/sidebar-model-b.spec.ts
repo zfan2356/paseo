@@ -852,6 +852,10 @@ test("session card menus keep same-directory operations isolated across pointer 
       await expectSessionMenuSettled(page.getByTestId("session-menu-archive"));
     };
     await expect(row).toBeVisible();
+    await expect(row).toContainText("Directories: 1");
+    await row.getByRole("button", { name: "Session menu", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Rename session", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(row.getByTestId("session-menu-trigger")).toBeEnabled();
     await row.hover();
     await expect(row.getByTestId("session-hover-archive")).toBeInViewport({ ratio: 1 });
