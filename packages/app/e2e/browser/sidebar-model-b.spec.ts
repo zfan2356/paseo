@@ -33,6 +33,33 @@ async function seedSecondWorkspace(seeded: SeededWorkspace, title: string): Prom
   return created.workspace.id;
 }
 
+async function expectSessionSidebarSettled(page: Page) {
+  const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+  const sessions = page.getByTestId("session-navigation-sessions").filter({ visible: true });
+  const resources = page.getByTestId("directory-terminal-resources").filter({ visible: true });
+  const pinnedTitle = sidebar.getByTestId("session-pinned-toggle");
+  await expect(sidebar).toBeInViewport({ ratio: 1 });
+  await expect(sessions).toBeInViewport({ ratio: 1 });
+  await expect(resources).toBeInViewport({ ratio: 1 });
+  await expect(pinnedTitle).toBeInViewport({ ratio: 1 });
+  const newWorkspace = page.getByTestId("sidebar-global-new-workspace").filter({ visible: true });
+  await expect(newWorkspace).toBeInViewport({ ratio: 1 });
+  await expect(newWorkspace.locator("svg").first()).toBeInViewport({ ratio: 1 });
+  await sidebar.scrollIntoViewIfNeeded();
+  const frames = await sidebar.evaluate(async (element) => {
+    const samples = [];
+    for (let frame = 0; frame < 6; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const { x, y, width, height } = element.getBoundingClientRect();
+      samples.push({ x, y, width, height });
+    }
+    return samples;
+  });
+  expect(frames[0].x).toBe(0);
+  for (const frame of frames) expect(frame).toEqual(frames[0]);
+  return frames;
+}
+
 test.describe("Model B sidebar shape", () => {
   test.describe.configure({ timeout: 180_000 });
 
@@ -392,6 +419,7 @@ test("session navigation restores nine pins and swaps complete lists without cha
   const { createTempDirectory } = await import("../support/helpers/workspace");
   const { execFileSync } = await import("node:child_process");
   const path = await import("node:path");
+  const { writeFile } = await import("node:fs/promises");
   const trees = await createTempDirectory("navigation-worktrees-");
   const treeProjects: string[] = [];
   try {
@@ -515,6 +543,7 @@ test("session navigation restores nine pins and swaps complete lists without cha
       });
       if (width === 390) await page.getByRole("button", { name: "Open menu", exact: true }).click();
       const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+      const openingBounds = await sidebar.boundingBox();
       const pins = sidebar.getByTestId("session-pinned-section");
       await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(9);
       await expect(sidebar.locator('[data-testid^="session-row-"]')).toHaveCount(15);
@@ -528,6 +557,13 @@ test("session navigation restores nine pins and swaps complete lists without cha
 
       await expect(sidebar.getByTestId(`session-row-${independent.id}`)).toBeVisible();
       await expect(sidebar.getByTestId(`session-row-${nonGit.id}`)).toBeVisible();
+      const settledFrames = await expectSessionSidebarSettled(page);
+      const geometryPath = info.outputPath(`sidebar-geometry-${width}.json`);
+      await writeFile(geometryPath, JSON.stringify({ openingBounds, settledFrames }, null, 2));
+      await info.attach(`sidebar-geometry-${width}`, {
+        path: geometryPath,
+        contentType: "application/json",
+      });
       await page.screenshot({
         path: info.outputPath(`pinned-sessions-${width}.png`),
         fullPage: true,

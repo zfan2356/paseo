@@ -32,7 +32,9 @@ The combination creates a primary checkout on `trunk` with no remote, two extern
 | Compact execution folder button         | [1200px](execution-directory-1200.png)         | [390px](execution-directory-390.png)         |
 | Execution path on click                 | [1200px](execution-directory-details-1200.png) | [390px](execution-directory-details-390.png) |
 
-[Desktop hover](execution-directory-hover-1200.png) also exposes the full execution path. Captures were inspected after modal close settled, with pins collapsed for the repository-group captures.
+[Desktop hover](execution-directory-hover-1200.png) also exposes the full execution path. The sidebar captures require the full list, both top segments, the Pinned title and the New workspace button/icon to be inside the viewport. Six consecutive animation frames then confirm identical list geometry at the left anchor `x = 0`. [Wide geometry](sidebar-geometry-1200.json) and [narrow geometry](sidebar-geometry-390.json) preserve the opening bounds and settled samples. The sidebars in both Pinned captures were visually checked, including their left edges. Directory details wait for a settled, fully visible path; repository-group captures collapse pins.
+
+The [prior narrow capture](https://github.com/zfan2356/paseo/blob/25a452dfacc95f05ff78b0a74f823804c982a632/docs/qa-evidence/session-navigation-repair/pinned-sessions-390.png) caught the overlay moving into place. The same scenario with the geometry assertions shows the complete panel at rest. This correction changes the test and evidence; production layout remains unchanged from `25a452df`.
 
 ## Compatibility and coverage
 
