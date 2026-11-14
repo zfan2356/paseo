@@ -128,6 +128,7 @@ export interface CurrentPullRequestStatus {
   state: string;
   baseRefName: string;
   headRefName: string;
+  headSha?: string;
   isMerged: boolean;
   isDraft?: boolean;
   mergeable: PullRequestMergeable;
@@ -435,7 +436,22 @@ export interface CreatePullRequestOptions {
   body?: string;
 }
 
+export interface ForgeRepositoryTarget {
+  host: string;
+  projectPath: string;
+  number: number;
+}
+export type ExplicitPullRequestOptions = ForgeRepositoryTarget & { cwd: string };
 export interface ForgeService {
+  getPullRequestStatus?(
+    options: ExplicitPullRequestOptions,
+  ): Promise<CurrentPullRequestStatus | null>;
+  retainPullRequestStatusPoll?(
+    options: ExplicitPullRequestOptions & {
+      onStatus: (status: CurrentPullRequestStatus | null) => void;
+      onError: (error: unknown) => void;
+    },
+  ): { unsubscribe: () => void };
   listPullRequests(options: ListPullRequestsOptions): Promise<PullRequestSummary[]>;
   listIssues(options: ListIssuesOptions): Promise<IssueSummary[]>;
   getPullRequest(options: GetPullRequestOptions): Promise<PullRequestSummary>;
@@ -509,6 +525,7 @@ export interface ForgeService {
    */
   authProbeCanThrow?: boolean;
   retainCurrentPullRequestStatusPoll?(options: {
+    repository?: ForgeRepositoryTarget;
     cwd: string;
     headRef: string;
     headSha?: string;

@@ -26,6 +26,10 @@ checkout root. They intentionally differ for an exact subproject inside a worktr
 restore, branch auto-name, and descriptor flows consume those persisted facts rather than
 rediscovering ownership from a directory that may already be gone. Reconciliation may refresh
 mutable placement facts, but never changes `projectId`, `cwd`, `displayName`, or `baseBranch`.
+An explicit base selection is stored in the checkout's Git-directory Paseo metadata and
+mirrored to `baseBranch` in every workspace record sharing that checkout. The record keeps
+recovery possible after the checkout metadata is deleted. A newly opened workspace inherits
+the checkout's selected base; separate worktrees keep separate bases.
 Workspace archive runs lifecycle teardown from the exact `cwd` but removes only the backing
 `worktreeRoot` after its last active reference disappears. Worktree recovery recreates that backing
 checkout from `mainRepoRoot`, then restores the relative path from `worktreeRoot` to `cwd`.
@@ -53,6 +57,8 @@ $PASEO_HOME/
 ├── agents/
 │   └── {sanitized-cwd}/
 │       └── {agentId}.json               # One file per agent
+├── agent-contexts/
+│   └── {agentId}.json                 # Independent session grouping and directory links
 ├── schedules/
 │   └── {scheduleId}.json                # One file per schedule
 ├── projects/
@@ -74,6 +80,24 @@ $PASEO_HOME/
 ```
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
+
+---
+
+## Session context
+
+Each agent has an independent side file under `agent-contexts/`. Older daemons rewrite agent records through a stripping schema, so session metadata must stay outside those records. Only a missing context file permits initialization. Malformed, inaccessible, or inconsistent files fail explicitly and remain untouched.
+
+Before accepting clients on the first upgraded boot, capture the existing agent IDs and initialize their missing side files. Visible roots inherit workspace pins and label names once; archived/internal sessions and same-workspace children receive empty sidebar metadata. The atomic `.legacy-import-complete` marker closes this cohort only after every file succeeds. An interrupted import retries missing files without overwriting initialized user values. Later boots, new/imported sessions and ordinary missing-file reads initialize only the recorded cwd and workspace project, with no inherited pin or labels. Later workspace edits never enter session metadata. Missing historical cwd information is not reconstructed.
+
+A corrupt or inaccessible context file during the first import prevents daemon startup and identifies the affected agent. Repair that file or its permissions, or restore a valid backup; then retry startup. Keep initialized context files and the cohort marker intact. Deleting either to force a new import can replace independent session metadata with legacy workspace values. An invalid cohort marker also fails explicitly and must be repaired or restored rather than discarded.
+
+Session project membership can point at an existing active project or be explicitly ungrouped. It does not change workspace membership, workspace identity, execution cwd, or agent titles. Orphaned project references remain readable for a client to repair. The launch directory is immutable; directory links neither own files nor retain worktrees. Directory mutations require absolute paths and normalize them lexically, never by realpath or Git identity. See the [target navigation design](session-context.md).
+
+A daemon-owned serialization boundary protects reads, initialization and mutations, including shared label catalog commits. All context reads go through that boundary. The shared catalog journal includes context before-images when assignments change; a prepared journal rolls back catalog, workspace and context values together. A committed marker is cleanup only and never replays stale values. An uncertain outcome blocks both workspace and context writes until restart. Ordinary workspace assignments read no context files; session assignments read only their target. Only catalog rename/delete enumerate contexts, and an invalid file identifies the session and aborts the operation without overwriting it. Session assignment selects an existing catalog label; label creation, rename and deletion retain the existing host catalog API. Labels left outside the catalog by an old daemon remain readable by name and can always be unassigned; upgrade never guesses an alias or deletes them silently.
+
+Contexts survive daemon downgrade because old versions never read or write their directory. The client delete-agent RPC removes the side file after deleting the agent. Internal failed-creation cleanup and old-daemon deletion can leave an orphan side file; it is not a new session and reads still require the agent to exist. No speculative orphan cleanup runs during startup.
+
+`server_info.features.sessionContext` gates the SDK once per operation and reconnect. `agent.context.get.request` optionally opens a source-owned subscription; `agent.context.mutate.request` changes one context. Only subscribed sources receive `agent.context.update`; a normal legacy connection receives its existing messages. Release/disconnect drops demand, and reconnect obtains a fresh snapshot.
 
 ---
 
@@ -226,12 +250,6 @@ snapshot so a mixed edit can apply its live subset and still name the paths that
     }
   },
   providers: {
-    openai: {
-      apiKey?: string,
-      baseUrl?: string,
-      stt?: { apiKey?: string, baseUrl?: string },
-      tts?: { apiKey?: string, baseUrl?: string }
-    },
     local: { modelsDir: string }
   },
   agents: {
@@ -249,8 +267,8 @@ snapshot so a mixed edit can apply its live subset and still name the paths that
   pluginsEnabled: boolean,
   plugins: Record<pluginId, { source: "directory", path: string, enabled?: boolean }>,
   features: {
-    dictation: { enabled, stt: { provider, model, language, confidenceThreshold } },
-    voiceMode: { enabled, llm, stt: { provider, model, language }, turnDetection, tts: { provider, model, voice, speakerId, speed } }
+    dictation: { enabled, stt: SpeechSttConfig },
+    voiceMode: { enabled, llm, stt: SpeechSttConfig, turnDetection, tts: SpeechTtsConfig }
   },
   log: {
     level, format,
@@ -358,42 +376,27 @@ Environment variables override `config.json`:
 after changing `config.json`. Environment changes require a daemon restart; the launch environment
 remains authoritative during reload.
 
-Local speech model ids are intentionally narrow: STT uses `parakeet-tdt-0.6b-v2-int8`, TTS uses `kokoro-en-v0_19`, and turn detection uses the bundled Silero VAD model.
+### Speech configuration
 
-Set these to select OpenAI instead of local speech:
+Each use site owns its provider settings: `features.dictation.stt`,
+`features.voiceMode.stt`, and `features.voiceMode.tts`. `provider` selects a strict
+`local` or `openai` variant. Both STT variants carry `language`; normalization preserves
+it regardless of provider. `providers.local.modelsDir` remains shared storage.
+See [Voice configuration](../public-docs/voice.md) for fields, examples and env precedence.
 
-| Env var                        | Applies to                      |
-| ------------------------------ | ------------------------------- |
-| `PASEO_VOICE_STT_PROVIDER`     | Voice mode STT provider         |
-| `PASEO_DICTATION_STT_PROVIDER` | Composer dictation STT provider |
-| `PASEO_VOICE_TTS_PROVIDER`     | Voice mode TTS provider         |
+On load, `persisted-config.ts` folds legacy `providers.openai` credentials and URLs
+into OpenAI sites that lack their own values, using endpoint settings before shared
+settings. A provider-less site becomes local; provider names are lower-cased, and
+fields ignored by the selected speech provider are discarded. The next save writes only the
+inline shape. A legacy key with no site to receive it is discarded with a warning
+that names its path, without logging its value.
 
-OpenAI speech can be configured under `providers.openai`. STT and TTS resolve independently, so they can point at different endpoints:
-
-```json
-{
-  "providers": {
-    "openai": {
-      "stt": {
-        "apiKey": "sk-...",
-        "baseUrl": "https://stt.example.com/v1"
-      },
-      "tts": {
-        "apiKey": "sk-...",
-        "baseUrl": "https://api.openai.com/v1"
-      }
-    }
-  }
-}
-```
-
-`providers.openai.stt` is used for both composer dictation and voice mode speech-to-text; `providers.openai.tts` is used for voice mode text-to-speech. The equivalent env vars are `OPENAI_STT_API_KEY`/`OPENAI_STT_BASE_URL` and `OPENAI_TTS_API_KEY`/`OPENAI_TTS_BASE_URL`. Each feature falls back to `providers.openai.apiKey`/`providers.openai.baseUrl`, then `OPENAI_API_KEY`/`OPENAI_BASE_URL`, when its own fields are unset. These settings apply only to Paseo OpenAI speech features, not to Codex or other OpenAI-backed tools.
-
-Paseo uses these paths under the configured OpenAI base URL:
-
-- dictation STT: `/v1/audio/transcriptions`
-- voice mode STT: `/v1/audio/transcriptions`
-- voice mode TTS: `/v1/audio/speech`
+`speech-settings.ts` owns mutable config reads and patches. The wire uses the same
+`features` structure. Reads replace OpenAI keys with `hasApiKey` (saved in config)
+and report effective env sources in `envOverrides`. A site patch that changes
+`provider` replaces the entire object. The same or omitted `provider` merges fields
+into the current variant, preserving the write-only key when a form re-saves it. `null` clears a value. Switching providers discards credentials and
+options from the previous variant.
 
 ---
 
@@ -496,7 +499,7 @@ Array of workspace records. A workspace is a specific working directory within a
 | `title`                        | `string \| null`                                             | User-set name override layered over `displayName`. Null means "use `displayName`".                                                                                                            |
 | `branch`                       | `string \| null`                                             | The current Git branch for git-backed workspaces. Separate from `displayName`/`title`; a background branch refresh never rewrites the name.                                                   |
 | `worktreeRoot`                 | `string \| null`                                             | Backing checkout/worktree root. May differ from `cwd` for exact subprojects and remains persisted after the worktree is deleted so restore can reproduce the placement.                       |
-| `baseBranch`                   | `string \| null`                                             | Comparison base retained across archive and restore. Branch-off creation stores the resolved ref; legacy and PR-checkout records hold a bare name. Null means no recorded base.               |
+| `baseBranch`                   | `string \| null`                                             | Current base retained across archive and restore. Explicit selections and branch-off creation store exact refs; older records may store branch names. Null means no recorded base.            |
 | `isPaseoOwnedWorktree`         | `boolean`                                                    | Whether Paseo owns and may remove/recreate the backing `worktreeRoot`                                                                                                                         |
 | `mainRepoRoot`                 | `string \| null`                                             | Main repository root for worktree checkouts, independent of both exact `cwd` and backing `worktreeRoot`                                                                                       |
 | `createdAt`                    | `string` (ISO 8601)                                          |                                                                                                                                                                                               |
@@ -574,10 +577,7 @@ These live in React Native `AsyncStorage` or browser `IndexedDB`, not on the dae
 
 ### Keying convention: directory-backed vs workspace-owned
 
-Right-sidebar client state splits on whether it is determined by the directory or owned by the workspace (two workspaces can share one `cwd`). The split is enforced by the cache key, so changing a key changes the sharing semantics — see [architecture.md](architecture.md#right-sidebar-boundary-directory-backed-vs-workspace-owned) for the full table.
-
-- **Directory-backed** (shared by same-`cwd` workspaces): keyed by `(serverId, cwd)`. Git status/diff, GitHub PR status, PR timeline, file preview content. These are TanStack Query caches, not persisted stores.
-- **Workspace-owned** (independent per workspace): keyed by `workspaceId`, with `cwd` used only as a fallback when no `workspaceId` is present. Review draft comments (`@paseo:review-draft-store`), diff-mode overrides (in-memory), workspace composer attachments, and file-explorer nav/expand state. The `workspaceId` part of these keys is **opaque** — never parse it back into a path.
+Shared directory data, session browsing state and workspace resources have separate identities; see [navigation and resource identity](architecture.md#navigation-and-resource-identity). The device-local `session-navigation` record keeps expanded sessions, pinned order and the last explicitly browsed directory per session. It waits for both preference stores and the authoritative agent directory before expanding legacy pinned workspace order into session keys. Existing workspace layouts and terminal identities remain intact.
 
 ### Replica row store
 
