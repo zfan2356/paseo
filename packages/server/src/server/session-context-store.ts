@@ -16,6 +16,7 @@ interface ContextDependencies {
   getWorkspace(id: string): Promise<PersistedWorkspaceRecord | null>;
   isVisibleRoot(agent: StoredAgentRecord): Promise<boolean>;
   projectExists(id: string): Promise<boolean>;
+  resolveAutomaticProject(directory: string): Promise<string | null>;
 }
 
 export class SessionContextReadError extends Error {
@@ -73,14 +74,31 @@ export class SessionContextStore {
     const agent = await this.deps.getAgent(agentId);
     if (!agent) throw new Error("Agent not found");
     const existing = await this.read(agentId);
-    if (existing) return existing;
     const workspace = agent.workspaceId ? await this.deps.getWorkspace(agent.workspaceId) : null;
+    if (existing) {
+      // COMPAT(sessionProjectAssignment): added after v0.15.3, remove after 2027-05-14.
+      const inheritedProject =
+        existing.projectAssignment === undefined &&
+        existing.projectId !== null &&
+        existing.projectId === workspace?.projectId;
+      if (!inheritedProject) return existing;
+      const projectId = await this.deps.resolveAutomaticProject(existing.launchDirectory);
+      if (!projectId) return existing;
+      const assigned = { ...existing, projectId, projectAssignment: "automatic" as const };
+      await this.writeUnlocked(assigned);
+      this.publish(assigned);
+      return assigned;
+    }
     const migrate = importLegacy && (await this.deps.isVisibleRoot(agent));
     // Existing side files always win, including a partially completed legacy import.
     const context: SessionContext = {
       agentId,
       launchDirectory: path.resolve(agent.cwd),
-      projectId: workspace?.projectId ?? null,
+      projectId:
+        (await this.deps.resolveAutomaticProject(path.resolve(agent.cwd))) ??
+        workspace?.projectId ??
+        null,
+      projectAssignment: "automatic",
       pinnedAt: migrate ? (workspace?.pinnedAt ?? null) : null,
       sidebarLabelNames: migrate ? [...(workspace?.labels ?? [])] : [],
       linkedDirectories: [],
@@ -150,6 +168,7 @@ export class SessionContextStore {
           if (mutation.projectId !== null && !(await this.deps.projectExists(mutation.projectId)))
             throw new Error("Project not found");
           context.projectId = mutation.projectId;
+          context.projectAssignment = "manual";
           break;
         case "pin":
           context.pinnedAt = mutation.pinned

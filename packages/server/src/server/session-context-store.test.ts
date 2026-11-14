@@ -17,7 +17,9 @@ describe("session context", () => {
   let home: string;
   let workspaces: FileBackedWorkspaceRegistry;
   let contexts: SessionContextStore;
-  function store() {
+  function store(
+    resolveAutomaticProject: (directory: string) => Promise<string | null> = async () => null,
+  ) {
     return new SessionContextStore({
       directory: path.join(home, "agent-contexts"),
       getAgent: async (id) =>
@@ -32,6 +34,7 @@ describe("session context", () => {
               updatedAt: timestamp,
             }),
       getWorkspace: (id) => workspaces.get(id),
+      resolveAutomaticProject,
       projectExists: async (id) => id === "other",
       isVisibleRoot: async (agent) => agent.id !== "child",
     });
@@ -73,6 +76,7 @@ describe("session context", () => {
       agentId: "one",
       launchDirectory: home,
       projectId: "project",
+      projectAssignment: "automatic",
       pinnedAt: timestamp,
       sidebarLabelNames: ["Review"],
       linkedDirectories: [],
@@ -92,6 +96,65 @@ describe("session context", () => {
       pinnedAt: timestamp,
     });
     await expect(contexts.get("missing")).rejects.toThrow("Agent not found");
+  });
+
+  test("reclassifies only inherited legacy projects once and never overwrites manual choices", async () => {
+    const original = await contexts.get("one");
+    delete original.projectAssignment;
+    await writeJsonFileAtomic(path.join(home, "agent-contexts", "one.json"), original);
+    const automatic = store(async (directory) => {
+      expect(directory).toBe(home);
+      return "main-project";
+    });
+    expect(await automatic.get("one")).toEqual({
+      ...original,
+      projectId: "main-project",
+      projectAssignment: "automatic",
+    });
+    expect(await store(async () => "changed").get("one")).toMatchObject({
+      projectId: "main-project",
+      projectAssignment: "automatic",
+    });
+    await automatic.mutate("one", { kind: "project", projectId: "other" });
+    expect(await store(async () => "changed").get("one")).toMatchObject({
+      projectId: "other",
+      projectAssignment: "manual",
+    });
+    await automatic.mutate("one", { kind: "project", projectId: null });
+    expect(await automatic.get("one")).toMatchObject({
+      projectId: null,
+      projectAssignment: "manual",
+    });
+    for (const projectId of [null, "different"]) {
+      await writeJsonFileAtomic(path.join(home, "agent-contexts", "one.json"), {
+        ...original,
+        projectId,
+      });
+      expect(await automatic.get("one")).toEqual({ ...original, projectId });
+    }
+    await writeJsonFileAtomic(path.join(home, "agent-contexts", "one.json"), original);
+    expect(await store().get("one")).toEqual(original);
+    await workspaces.remove("workspace");
+    expect(await automatic.get("one")).toEqual(original);
+  });
+
+  test("new automatic projects use launch-directory facts and retain non-Git defaults", async () => {
+    const automatic = store(async () => "main-project");
+    const created = await automatic.get("new-worktree-session");
+    expect(created).toMatchObject({
+      projectId: "main-project",
+      projectAssignment: "automatic",
+      launchDirectory: home,
+    });
+    await automatic.mutate(created.agentId, { kind: "link", path: path.dirname(home) });
+    expect(await automatic.get(created.agentId)).toMatchObject({
+      projectId: "main-project",
+      launchDirectory: home,
+    });
+    expect(await store().get("new-non-git-session")).toMatchObject({
+      projectId: "project",
+      projectAssignment: "automatic",
+    });
   });
 
   test("legacy import is fixed before clients connect; later workspace edits and new sessions stay independent", async () => {
@@ -381,6 +444,7 @@ describe("session label crash recovery", () => {
           }),
         getWorkspace: async () => null,
         isVisibleRoot: async () => true,
+        resolveAutomaticProject: async () => null,
         projectExists: async () => false,
       });
       const labels = createWorkspaceLabelService({
@@ -430,6 +494,7 @@ test("a lost committed-marker acknowledgement blocks contexts until restart with
           }),
         getWorkspace: (id) => registry.get(id),
         isVisibleRoot: async () => true,
+        resolveAutomaticProject: async () => null,
         projectExists: async () => false,
       });
     }
@@ -499,6 +564,7 @@ test("a throwing observer cannot turn a durable context mutation into a failure"
         }),
       getWorkspace: async () => null,
       isVisibleRoot: async () => true,
+      resolveAutomaticProject: async () => null,
       projectExists: async () => false,
     });
     await contexts.subscribe("one", () => {

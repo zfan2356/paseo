@@ -38,7 +38,6 @@ import {
   SIDEBAR_RESIZE_FAIL_OFFSET,
 } from "@/components/sidebar-resize-handle-layout";
 import { HostPicker } from "@/components/hosts/host-picker";
-import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-preferences/menu";
 import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { SidebarNavRows } from "@/components/sidebar/sidebar-nav-rows";
 import { SidebarFooterIconHighlight } from "@/components/sidebar/sidebar-footer-icon-highlight";
@@ -56,7 +55,6 @@ import {
 } from "@/components/ui/control-geometry";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { DensityIcon } from "@/components/ui/density-icon";
-import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
 import { Shortcut } from "@/components/ui/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
@@ -648,9 +646,8 @@ function MobileSidebar({
           {isInitialLoad && !hasActiveHostFilter ? (
             <SidebarAgentListSkeleton />
           ) : (
-            <SessionSidebar dismiss={closeSidebar} header={workspacesSectionHeaderElement}>
+            <SessionSidebar dismiss={closeSidebar}>
               <SidebarWorkspaceList
-                listHeaderComponent={resourceSectionHeaderElement}
                 collapsedProjectKeys={collapsedProjectKeys}
                 onToggleProjectCollapsed={toggleProjectCollapsed}
                 shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
@@ -848,9 +845,8 @@ function DesktopSidebar({
             {isInitialLoad && !hasActiveHostFilter ? (
               <SidebarAgentListSkeleton />
             ) : (
-              <SessionSidebar dismiss={closeSidebar} header={workspacesSectionHeaderElement}>
+              <SessionSidebar dismiss={closeSidebar}>
                 <SidebarWorkspaceList
-                  listHeaderComponent={resourceSectionHeaderElement}
                   collapsedProjectKeys={collapsedProjectKeys}
                   onToggleProjectCollapsed={toggleProjectCollapsed}
                   shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
@@ -898,31 +894,6 @@ function DesktopSidebar({
     </MobilePanelOverlay>
   );
 }
-
-function WorkspacesSectionHeader({ sessions = false }: { sessions?: boolean }) {
-  const { t } = useTranslation();
-  return (
-    <SidebarSectionHeader
-      title={t(sessions ? "sessionNavigation.sessions" : "sessionNavigation.resources")}
-    >
-      <Tooltip delayDuration={300}>
-        <TooltipTrigger asChild>
-          <View>
-            <SidebarDisplayPreferencesMenu sessions={sessions} />
-          </View>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" align="center" offset={8}>
-          <IconTooltipContent label="Display preferences" />
-        </TooltipContent>
-      </Tooltip>
-    </SidebarSectionHeader>
-  );
-}
-
-// Stable element so the sidebar list's listHeaderComponent prop keeps identity across
-// renders (WorkspacesSectionHeader takes no props).
-const workspacesSectionHeaderElement = <WorkspacesSectionHeader sessions />;
-const resourceSectionHeaderElement = <WorkspacesSectionHeader />;
 
 // Static styles for Animated.Views — must NOT use Unistyles dynamic theme to
 // avoid the "Unable to find node on an unmounted component" crash when Unistyles

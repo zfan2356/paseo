@@ -1,3 +1,4 @@
+import { ExecutionDirectory } from "./execution-directory";
 import {
   useComposerEditingSession,
   useComposerFullscreen,
@@ -2470,13 +2471,7 @@ function ComposerContentImpl({
           <View style={inputAreaContentStyle}>
             {isFullscreen ? null : queueList}
             {!isFullscreen && sendErrorNode}
-            <Text
-              selectable
-              style={styles.executionDirectory}
-              testID="composer-execution-directory"
-            >
-              {t("sessionNavigation.execution", { path: cwd })}
-            </Text>
+            <ExecutionDirectory serverId={serverId} cwd={cwd} />
 
             <ComposerAutocompleteBinding
               text={textSource}
@@ -2592,12 +2587,6 @@ const animatedStaticStyles = RNStyleSheet.create({
 });
 
 const styles = StyleSheet.create((theme: Theme) => ({
-  executionDirectory: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[1],
-  },
   borderSeparator: {
     height: theme.borderWidth[1],
     backgroundColor: theme.colors.border,

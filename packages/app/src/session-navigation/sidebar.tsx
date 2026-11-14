@@ -17,7 +17,10 @@ import { useFetchQueries } from "@/data/query";
 import type { SessionContext } from "@getpaseo/protocol/session-context";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { HostBadge } from "@/hosts/host-badge";
-import { sessionStatus } from "./projection";
+import { sessionStatus, PINNED_SESSION_GROUP } from "./projection";
+import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
+import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-preferences/menu";
+import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
 import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { type Agent } from "@/stores/session-store";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
@@ -54,15 +57,29 @@ import type { SidebarProjectEntry } from "@/hooks/sidebar-workspaces-view-model"
 export function SessionSidebar({
   children,
   dismiss,
-  header,
 }: {
-  header: ReactNode;
   children: ReactNode;
   dismiss?: () => void;
 }) {
   const { t } = useTranslation();
   const { sessionNavigation, allProjects } = useSidebarModel();
-  const [resources, setResources] = useState(false);
+  const [view, setView] = useState<"sessions" | "resources">("sessions");
+  const resources = view === "resources";
+  const options = useMemo<SegmentedControlOption<"sessions" | "resources">[]>(
+    () => [
+      {
+        value: "sessions",
+        label: t("sessionNavigation.sessions"),
+        testID: "session-navigation-sessions",
+      },
+      {
+        value: "resources",
+        label: t("sessionNavigation.resources"),
+        testID: "directory-terminal-resources",
+      },
+    ],
+    [t],
+  );
   const showShortcutBadges = useShowShortcutBadges();
   const activeWorkspace = useActiveWorkspaceSelection();
   const activeWorkspaceKey = activeWorkspace
@@ -100,65 +117,63 @@ export function SessionSidebar({
   }, [focusedKey]);
   const search = useSessionNavigationPreferences((state) => state.search);
   const setSearch = useSessionNavigationPreferences((state) => state.setSearch);
-  const resourceAccessibilityState = useMemo(() => ({ expanded: resources }), [resources]);
-  const toggleResources = useCallback(() => setResources((value) => !value), []);
+
   return (
     <View style={styles.fill}>
-      {header}
-      <View style={styles.search}>
-        <FormTextInput
-          initialValue={search}
-          onChangeText={setSearch}
-          placeholder={t("sessionNavigation.search")}
-          accessibilityLabel={t("sessionNavigation.search")}
-        />
+      <View style={styles.viewHeader}>
+        <SegmentedControl options={options} value={view} onValueChange={setView} size="sm" />
+        <SidebarDisplayPreferencesMenu sessions={!resources} />
       </View>
-      <ScrollView style={styles.fill} testID="session-sidebar" keyboardShouldPersistTaps="handled">
-        {sessionNavigation.visibleHosts
-          .filter(
-            (host) =>
-              sessionNavigation.roots.find((root) => root.source.serverId === host.serverId)?.source
-                .supported === false,
-          )
-          .map((host) => (
-            <Text key={host.serverId} style={styles.hint}>
-              {t("sessionNavigation.updateHost", { host: host.label ?? host.serverId })}
-            </Text>
-          ))}
-        {sessionNavigation.groups.map((group) => (
-          <SessionGroup key={group.key} groupKey={group.key} name={group.name}>
-            {group.agents.map((agent) => (
-              <ProjectedSessionRow
-                key={agent.serverId + ":" + agent.id}
-                agent={agent}
-                model={sessionNavigation}
-                projects={allProjects}
-                dismiss={dismiss}
-                showShortcutBadges={showShortcutBadges}
-                activeWorkspace={activeWorkspace}
-                selectedKey={selectedKey}
-                directoryTarget={directoryTarget}
-              />
-            ))}
-          </SessionGroup>
-        ))}
-        <Button
-          variant="ghost"
-          onPress={toggleResources}
-          accessibilityState={resourceAccessibilityState}
-          aria-expanded={resources}
-          testID="directory-terminal-resources"
-        >
-          {resources ? "▾" : "▸"}
-          {t("sessionNavigation.resources")}
-        </Button>
-        {resources ? <Text style={styles.hint}>{t("sessionNavigation.resourcesHint")}</Text> : null}
-      </ScrollView>
       {resources ? (
         <View style={styles.resources} testID="directory-terminal-resource-list">
           {children}
         </View>
-      ) : null}
+      ) : (
+        <>
+          <View style={styles.search}>
+            <FormTextInput
+              initialValue={search}
+              onChangeText={setSearch}
+              placeholder={t("sessionNavigation.search")}
+              accessibilityLabel={t("sessionNavigation.search")}
+            />
+          </View>
+          <ScrollView
+            style={styles.fill}
+            testID="session-sidebar"
+            keyboardShouldPersistTaps="handled"
+          >
+            {sessionNavigation.visibleHosts
+              .filter(
+                (host) =>
+                  sessionNavigation.roots.find((root) => root.source.serverId === host.serverId)
+                    ?.source.supported === false,
+              )
+              .map((host) => (
+                <Text key={host.serverId} style={styles.hint}>
+                  {t("sessionNavigation.updateHost", { host: host.label ?? host.serverId })}
+                </Text>
+              ))}
+            {sessionNavigation.groups.map((group) => (
+              <SessionGroup key={group.key} groupKey={group.key} name={group.name}>
+                {group.agents.map((agent) => (
+                  <ProjectedSessionRow
+                    key={agent.serverId + ":" + agent.id}
+                    agent={agent}
+                    model={sessionNavigation}
+                    projects={allProjects}
+                    dismiss={dismiss}
+                    showShortcutBadges={showShortcutBadges}
+                    activeWorkspace={activeWorkspace}
+                    selectedKey={selectedKey}
+                    directoryTarget={directoryTarget}
+                  />
+                ))}
+              </SessionGroup>
+            ))}
+          </ScrollView>
+        </>
+      )}
     </View>
   );
 }
@@ -175,20 +190,26 @@ function SessionGroup({
   const bucket = STATUS_BUCKET_ORDER.find((candidate) => candidate === groupKey);
   const displayName = bucket ? getStatusBucketLabel(bucket, t) : name;
   const mode = useSidebarModel().groupMode;
-  const collapsed = useSidebarCollapsedSectionsStore((state) =>
-    mode === "status"
-      ? state.collapsedWorkspaceGroupKeys.has(groupKey)
-      : state.collapsedProjectKeys.has(groupKey),
-  );
-  const toggleGroup = useSidebarCollapsedSectionsStore((state) =>
-    mode === "status" ? state.toggleWorkspaceGroupCollapsed : state.toggleProjectCollapsed,
-  );
+  const pinned = groupKey === PINNED_SESSION_GROUP;
+  const collapsed = useSidebarCollapsedSectionsStore((state) => {
+    if (pinned) return state.collapsedPinned;
+    if (mode === "status") return state.collapsedWorkspaceGroupKeys.has(groupKey);
+    return state.collapsedProjectKeys.has(groupKey);
+  });
+  const toggleGroup = useSidebarCollapsedSectionsStore((state) => {
+    if (pinned) return state.togglePinnedCollapsed;
+    if (mode === "status") return state.toggleWorkspaceGroupCollapsed;
+    return state.toggleProjectCollapsed;
+  });
   const toggleGroupCollapsed = useCallback(() => toggleGroup(groupKey), [toggleGroup, groupKey]);
   return (
-    <View>
-      <Button variant="ghost" style={styles.groupToggle} onPress={toggleGroupCollapsed}>
-        {collapsed ? "▸" : "▾"} {displayName}
-      </Button>
+    <View testID={pinned ? "session-pinned-section" : `session-group-${groupKey}`}>
+      <SidebarSectionHeader
+        title={displayName}
+        collapsed={collapsed}
+        onToggle={toggleGroupCollapsed}
+        testID={pinned ? "session-pinned-toggle" : undefined}
+      />
       {collapsed ? null : children}
     </View>
   );
@@ -268,7 +289,6 @@ const SessionRow = memo(function SessionRow({
           aria-selected={selected}
         >
           <Text numberOfLines={1} style={styles.text}>
-            {context?.pinnedAt ? "⌖ " : ""}
             {agent.title ?? t("sessionNavigation.untitled")}
           </Text>
           <SessionMetadata
@@ -452,13 +472,18 @@ function SessionDirectories({
   );
 }
 const styles = StyleSheet.create((theme) => ({
-  groupToggle: { justifyContent: "flex-start" },
   selected: {
     backgroundColor: theme.colors.interactionHighlight,
     borderRadius: theme.borderRadius.md,
   },
   fill: { flex: 1 },
   resources: { flex: 1 },
+  viewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: theme.spacing[1],
+  },
   search: { padding: theme.spacing[2] },
   host: {
     color: theme.colors.foregroundMuted,

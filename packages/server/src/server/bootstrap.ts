@@ -1,3 +1,4 @@
+import { getPrimaryWorktreeRoot } from "../utils/checkout-git.js";
 import { SessionContextStore } from "./session-context-store.js";
 import { getParentAgentIdFromLabels } from "@getpaseo/protocol/agent-labels";
 import { createRestartRecovery } from "./agent/restart-recovery/index.js";
@@ -952,6 +953,25 @@ export async function createPaseoDaemon(
     directory: path.join(config.paseoHome, "agent-contexts"),
     getAgent: (id) => agentStorage.get(id),
     getWorkspace: (id) => workspaceRegistry!.get(id),
+    resolveAutomaticProject: async (directory) => {
+      let root: string | null;
+      try {
+        root = await getPrimaryWorktreeRoot(directory, {
+          logger,
+          paseoHome: config.paseoHome,
+          worktreesRoot: config.worktreesRoot,
+        });
+      } catch (error) {
+        logger.warn(
+          { err: error, directory },
+          "Cannot determine session repository; keeping project assignment",
+        );
+        return null;
+      }
+      if (!root) return null;
+      const project = await workspaceProvisioning.findOrCreateProjectForDirectory(root);
+      return project.projectId;
+    },
     projectExists: async (id) => {
       const project = await projectRegistry.get(id);
       return !!project && !project.archivedAt;

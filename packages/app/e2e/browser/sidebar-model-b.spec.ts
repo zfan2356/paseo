@@ -252,8 +252,9 @@ for (const width of [1200, 390]) {
         page.getByTestId("file-explorer-tree-scroll").filter({ visible: true }),
       ).toContainText("README.md");
       // The composer can be behind the compact Explorer; its retained text must still name execution cwd.
-      await expect(page.getByTestId("composer-execution-directory").first()).toContainText(
-        mock.cwd,
+      await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
+        "aria-label",
+        `Execution: ${mock.cwd}`,
       );
     } finally {
       await mock.cleanup();
@@ -367,9 +368,217 @@ test("session tree resolves nested directory changes against the checkout root",
       .filter({ visible: true });
     await expect(attachment).toContainText(path.join(repo.path, "sub/nested.txt"));
     await expect(composer).toHaveValue("Keep the execution directory");
-    await expect(page.getByTestId("composer-execution-directory").first()).toContainText(mock.cwd);
+    await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
+      "aria-label",
+      `Execution: ${mock.cwd}`,
+    );
   } finally {
     await mock.cleanup();
     await repo.cleanup();
+  }
+});
+
+test("session navigation restores nine pins and swaps complete lists without changing execution", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  const mock = await seedMockAgentWorkspace({
+    repoPrefix: "navigation-pins-",
+    title: "Pinned session 0",
+  });
+  const other = await seedWorkspace({ repoPrefix: "navigation-other-" });
+  const notes = await seedWorkspace({ repoPrefix: "navigation-notes-", git: false });
+  const third = await seedWorkspace({ repoPrefix: "navigation-third-" });
+  const { createTempDirectory } = await import("../support/helpers/workspace");
+  const { execFileSync } = await import("node:child_process");
+  const path = await import("node:path");
+  const trees = await createTempDirectory("navigation-worktrees-");
+  const treeProjects: string[] = [];
+  try {
+    execFileSync("git", ["branch", "-m", "trunk"], { cwd: mock.cwd });
+    const worktreeAgents: string[] = [];
+    for (const branch of ["one", "two"]) {
+      const cwd = path.join(trees.path, branch);
+      execFileSync("git", ["worktree", "add", "-b", branch, cwd], {
+        cwd: mock.cwd,
+        stdio: "ignore",
+      });
+      const { workspace } = await mock.client.createWorkspace({
+        source: { kind: "directory", path: cwd },
+      });
+      if (!workspace) throw new Error("Worktree workspace not created");
+      treeProjects.push(workspace.projectId);
+      const agent = await mock.client.createAgent({
+        provider: "mock",
+        cwd,
+        workspaceId: workspace.id,
+        title: `Worktree ${branch}`,
+        modeId: "load-test",
+        model: "e2e-fast-stream",
+      });
+      worktreeAgents.push(agent.id);
+    }
+    const mainContext = await mock.client.mutateSessionContext(mock.agentId, {
+      kind: "pin",
+      pinned: false,
+    });
+    for (const agentId of worktreeAgents) {
+      const { context } = await mock.client.mutateSessionContext(agentId, {
+        kind: "pin",
+        pinned: false,
+      });
+      expect(context.projectId).toBe(mainContext.context.projectId);
+      expect(context.projectAssignment).toBe("automatic");
+    }
+    const pinned = [mock.agentId];
+    for (let index = 1; index < 9; index++) {
+      const agent = await mock.client.createAgent({
+        provider: "mock",
+        cwd: mock.cwd,
+        workspaceId: mock.workspaceId,
+        title: `Pinned session ${index}`,
+        modeId: "load-test",
+        model: "e2e-fast-stream",
+      });
+      pinned.push(agent.id);
+    }
+    for (const id of pinned)
+      await mock.client.mutateSessionContext(id, { kind: "pin", pinned: true });
+    const ordinary = await mock.client.createAgent({
+      provider: "mock",
+      cwd: mock.cwd,
+      workspaceId: mock.workspaceId,
+      title: "Ordinary session",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+    });
+    const independent = await other.client.createAgent({
+      provider: "mock",
+      cwd: other.repoPath,
+      workspaceId: other.workspaceId,
+      title: "Independent repository",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+    });
+    const nonGit = await notes.client.createAgent({
+      provider: "mock",
+      cwd: notes.repoPath,
+      workspaceId: notes.workspaceId,
+      title: "Non-Git notes",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+    });
+    await third.client.createAgent({
+      provider: "mock",
+      cwd: third.repoPath,
+      workspaceId: third.workspaceId,
+      title: "Second independent repository",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+    });
+    const { openAgentRoute } = await import("../support/helpers/mock-agent");
+    for (const width of [1200, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await openAgentRoute(page, mock);
+      const directory = page.getByTestId("composer-execution-directory").filter({ visible: true });
+      await expect(directory).toHaveAttribute("aria-label", `Execution: ${mock.cwd}`);
+      await expect(directory).not.toContainText("Execution:");
+      await directory.click();
+      const fullPath = page.getByTestId("execution-directory-full-path");
+      await expect(fullPath).toHaveText(mock.cwd);
+      await expect(fullPath).toBeVisible();
+      // Playwright waits for stable geometry before scrolling the animated sheet content.
+      await fullPath.scrollIntoViewIfNeeded();
+      await expect(fullPath).toBeInViewport({ ratio: 1 });
+      await page.screenshot({
+        path: info.outputPath(`execution-directory-details-${width}.png`),
+        fullPage: true,
+      });
+      await page
+        .getByTestId("execution-directory-details")
+        .getByRole("button", { name: "Close", exact: true })
+        .click();
+      await expect(page.getByTestId("execution-directory-full-path")).not.toBeVisible();
+      if (width === 1200) {
+        await directory.hover();
+        await expect(page.getByText(`Execution: ${mock.cwd}`, { exact: true })).toBeVisible();
+        await page.screenshot({
+          path: info.outputPath("execution-directory-hover-1200.png"),
+          fullPage: true,
+        });
+        await page.mouse.move(0, 0);
+        await expect(page.getByText(`Execution: ${mock.cwd}`, { exact: true })).not.toBeVisible();
+      }
+      await page.screenshot({
+        path: info.outputPath(`execution-directory-${width}.png`),
+        fullPage: true,
+      });
+      if (width === 390) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+      const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+      const pins = sidebar.getByTestId("session-pinned-section");
+      await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(9);
+      await expect(sidebar.locator('[data-testid^="session-row-"]')).toHaveCount(15);
+      await expect(pins).not.toContainText("Ordinary session");
+      const repositoryGroup = sidebar
+        .locator('[data-testid^="session-group-"]')
+        .filter({ has: page.getByTestId(`session-row-${ordinary.id}`) });
+      await expect(repositoryGroup.locator('[data-testid^="session-row-"]')).toHaveCount(3);
+      for (const id of worktreeAgents)
+        await expect(repositoryGroup.getByTestId(`session-row-${id}`)).toBeVisible();
+
+      await expect(sidebar.getByTestId(`session-row-${independent.id}`)).toBeVisible();
+      await expect(sidebar.getByTestId(`session-row-${nonGit.id}`)).toBeVisible();
+      await page.screenshot({
+        path: info.outputPath(`pinned-sessions-${width}.png`),
+        fullPage: true,
+      });
+      await sidebar.getByTestId("session-pinned-toggle").click();
+      await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(0);
+      await repositoryGroup.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: info.outputPath(`session-repositories-${width}.png`),
+        fullPage: true,
+      });
+      await sidebar.getByTestId("session-pinned-toggle").click();
+      await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(9);
+      await page.getByTestId("directory-terminal-resources").filter({ visible: true }).click();
+      await expect(sidebar).not.toBeVisible();
+      const resources = page
+        .getByTestId("directory-terminal-resource-list")
+        .filter({ visible: true });
+      await expect(resources).toBeVisible();
+      await expect(
+        resources.getByTestId(`sidebar-workspace-row-${getServerId()}:${mock.workspaceId}`),
+      ).toBeVisible();
+      await page.screenshot({
+        path: info.outputPath(`directory-resources-${width}.png`),
+        fullPage: true,
+      });
+      await page.getByTestId("session-navigation-sessions").filter({ visible: true }).click();
+      await expect(pins.locator('[data-testid^="session-row-"]')).toHaveCount(9);
+      await expect(resources).not.toBeVisible();
+      await expect(page.getByTestId("composer-execution-directory").first()).toHaveAttribute(
+        "aria-label",
+        `Execution: ${mock.cwd}`,
+      );
+      const settings = sidebar.getByTestId(`session-row-${ordinary.id}`);
+      await expect(settings).toBeVisible();
+    }
+    await mock.client.mutateSessionContext(pinned[0], { kind: "pin", pinned: false });
+    const sidebar = page.getByTestId("session-sidebar").filter({ visible: true });
+    await expect(
+      sidebar.getByTestId("session-pinned-section").locator('[data-testid^="session-row-"]'),
+    ).toHaveCount(8);
+    await expect(sidebar.getByTestId(`session-row-${pinned[0]}`)).toHaveCount(1);
+    await expect(
+      sidebar.getByTestId("session-pinned-section").getByTestId(`session-row-${pinned[0]}`),
+    ).toHaveCount(0);
+  } finally {
+    for (const projectId of treeProjects) await mock.client.removeProject(projectId);
+    await trees.cleanup();
+    await third.cleanup();
+    await mock.cleanup();
+    await other.cleanup();
+    await notes.cleanup();
   }
 });

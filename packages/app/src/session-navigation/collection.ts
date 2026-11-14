@@ -13,7 +13,7 @@ import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import type { SidebarProjectEntry } from "@/hooks/sidebar-workspaces-view-model";
 import { visibleSessionAgents } from "./model";
-import { projectSessions, sortSessionAgents } from "./projection";
+import { projectSessions, sortSessionAgents, PINNED_SESSION_GROUP } from "./projection";
 import { useSessionContexts } from "./contexts";
 import { useSessionNavigationPreferences } from "./preferences";
 import { useSidebarRowItems } from "@/components/sidebar/display-preferences/model";
@@ -142,6 +142,7 @@ export function useSessionNavigationCollection({
   const collapsed = useSidebarCollapsedSectionsStore((state) =>
     preferences.group === "status" ? state.collapsedWorkspaceGroupKeys : state.collapsedProjectKeys,
   );
+  const collapsedPinned = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
   const resolvedProjectFilters = useMemo(
     () =>
       resolveActiveProjectFilters(
@@ -203,7 +204,11 @@ export function useSessionNavigationCollection({
         ? ["needs_input", "failed", "attention", "running", "done"]
         : projectOrder;
     return [...merged.values()]
-      .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
+      .sort((a, b) => {
+        if (a.key === PINNED_SESSION_GROUP) return -1;
+        if (b.key === PINNED_SESSION_GROUP) return 1;
+        return order.indexOf(a.key) - order.indexOf(b.key);
+      })
       .map((group) => ({
         key: group.key,
         name: group.name,
@@ -227,7 +232,9 @@ export function useSessionNavigationCollection({
   const shortcutTargets = useMemo(
     () =>
       groups
-        .filter((group) => !collapsed.has(group.key))
+        .filter((group) =>
+          group.key === PINNED_SESSION_GROUP ? !collapsedPinned : !collapsed.has(group.key),
+        )
         .flatMap((group) =>
           group.agents.flatMap((agent) =>
             agent.workspaceId
@@ -235,7 +242,7 @@ export function useSessionNavigationCollection({
               : [],
           ),
         ),
-    [groups, collapsed],
+    [groups, collapsed, collapsedPinned],
   );
   const shortcutIndexBySession = useMemo(
     () =>
