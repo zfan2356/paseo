@@ -1189,6 +1189,7 @@ test("session card failures keep drafts and assignments, and capability gates ex
     await menu();
     for (const id of ["rename", "pin", "labels", "read", "archive"])
       await expect(page.getByTestId(`session-menu-${id}`)).toBeDisabled();
+    await expectSessionMenuSettled(page.getByTestId("session-menu-archive"));
     await page.screenshot({ path: info.outputPath("session-offline-1200.png"), fullPage: true });
   } catch (error) {
     await captureSessionFailure(page, info);
