@@ -126,7 +126,7 @@ function BackgroundWorkRow({
         <Text style={styles.title}>{title}</Text>
         {command ? <Text style={styles.facts}>{command}</Text> : null}
         {external ? (
-          <ExternalWorkFacts item={item} ready={ready} />
+          <ExternalWorkFacts item={item} ready={ready && live} />
         ) : (
           <Text style={styles.facts}>
             {kind} ·{" "}

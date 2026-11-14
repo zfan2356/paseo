@@ -9042,6 +9042,7 @@ export class Session {
   ): Promise<void> {
     let error: string | null = null;
     try {
+      await this.readAgentBackgroundWork(msg.agentId);
       await this.agentManager.stopAgentBackgroundWork({
         agentId: msg.agentId,
         itemId: msg.itemId,
@@ -9087,10 +9088,11 @@ export class Session {
     }
   }
 
-  // Background work lives only in memory, so an agent that is not loaded has none.
   // Answering from storage keeps a read from resuming a dormant agent.
   private async readAgentBackgroundWork(agentId: string): Promise<AgentBackgroundWorkItem[]> {
-    if (this.agentManager.getAgent(agentId)) {
+    const agent = this.agentManager.getAgent(agentId);
+    if (agent?.internal) throw new Error(`Unknown agent '${agentId}'`);
+    if (agent) {
       if (!this.agentManager.getAgentBackgroundWorkSummary(agentId)) {
         throw new Error("Background work inventory is unavailable");
       }

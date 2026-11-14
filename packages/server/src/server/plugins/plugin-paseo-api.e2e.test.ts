@@ -604,6 +604,11 @@ export default function contribute(server) {
       undefined,
       { workspaceId: workspace.workspace.id },
     );
+    const internal = await daemon.daemon.agentManager.createAgent(
+      { provider: "codex", cwd: directory, internal: true },
+      undefined,
+      { workspaceId: workspace.workspace.id },
+    );
     const entry = {
       agentId: a.id,
       id: "same-id",
@@ -613,7 +618,10 @@ export default function contribute(server) {
       canStop: true,
       external: { status: "Running", running: true, deadline: null, finishedAt: null, issue: null },
     };
-    await writeFile(inventoryPath, JSON.stringify([entry, { ...entry, agentId: b.id }]));
+    await writeFile(
+      inventoryPath,
+      JSON.stringify([entry, { ...entry, agentId: b.id }, { ...entry, agentId: internal.id }]),
+    );
     await client.installDirectoryPlugin(directory, "background-fixture");
     await expect
       .poll(
@@ -623,6 +631,11 @@ export default function contribute(server) {
           ).length,
       )
       .toBe(1);
+    const privateItem = daemon.daemon.agentManager.listAgentBackgroundWork(internal.id)[0]!;
+    await expect(client.listAgentBackgroundWork(internal.id)).rejects.toThrow("Unknown agent");
+    await expect(client.stopAgentBackgroundWork(internal.id, privateItem)).rejects.toThrow(
+      "Unknown agent",
+    );
     const [item] = await client.listAgentBackgroundWork(a.id, { timeout: 2000 });
     expect(item?.external?.label).toBe("Multica fixture");
     expect((await client.listAgentBackgroundWork(b.id, { timeout: 2000 }))[0]?.id).toBe(item?.id);
@@ -635,6 +648,12 @@ export default function contribute(server) {
     const readItem = (await reader.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]!;
     expect(readItem.canStop).toBeUndefined();
     expect(readItem.stopToken).toBeUndefined();
+    await expect(reader.stopAgentBackgroundWork(a.id, item!)).rejects.toThrow(
+      /permission|authoriz|denied/i,
+    );
+    expect(await client.listAgentBackgroundWork(a.id)).toMatchObject([
+      { external: { status: "Running" } },
+    ]);
     await client.stopAgentBackgroundWork(a.id, item!);
     expect(
       (await client.listAgentBackgroundWork(a.id, { timeout: 2000 }))[0]?.external?.status,
@@ -658,17 +677,13 @@ export default function contribute(server) {
     observation.subscribe({
       update(message) {
         if (
-          message.type === "agent_update" &&
-          message.payload.kind === "upsert" &&
-          message.payload.agent.id === b.id
+          message.type !== "agent_update" ||
+          message.payload.kind !== "upsert" ||
+          message.payload.agent.id !== b.id
         )
-          runningCounts.push(message.payload.agent.backgroundWork?.runningCount);
-        if (
-          message.type === "agent_update" &&
-          message.payload.kind === "upsert" &&
-          message.payload.agent.id === b.id
-        )
-          totalCounts.push(message.payload.agent.backgroundWork?.count ?? -1);
+          return;
+        runningCounts.push(message.payload.agent.backgroundWork?.runningCount);
+        totalCounts.push(message.payload.agent.backgroundWork?.count ?? -1);
       },
     });
     await observation.ready;
