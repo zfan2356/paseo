@@ -10,14 +10,15 @@ The existing Playwright fixture starts Metro and a real isolated daemon with det
 
 Chromium 140 on Linux. Pointer layouts use 1200×1000 and 390×1000; a separate 390×1000 context sets `hasTouch: true` and `isMobile: true`, asserts fine-pointer=false and uses taps. Screenshots wait for stable geometry and menu ancestor opacity; a disabled row keeps its designed opacity. Images were visually inspected.
 
-| Surface                                   | Evidence                                                                         |
-| ----------------------------------------- | -------------------------------------------------------------------------------- |
-| Wide right-click menu                     | [1200px](session-context-menu-1200.png)                                          |
-| Compact menu                              | [390px](session-menu-390.png)                                                    |
-| Touch menu and label creation             | [menu](session-touch-menu-390.png), [create](session-touch-label-create-390.png) |
-| Archive refusal keeps the current session | [1200px](session-archive-failure-1200.png)                                       |
-| Archived history after an RPC error       | [1200px](session-authoritative-history-1200.png)                                 |
-| Viewer and disconnected host              | [read only](session-readonly-1200.png), [offline](session-offline-1200.png)      |
+| Surface                                   | Evidence                                                                                                |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Wide right-click menu                     | [original card](baseline-menu-1200.png), [restored controls](session-context-menu-1200.png)             |
+| Compact menu                              | [390px](session-menu-390.png)                                                                           |
+| Touch menu and label creation             | [menu](session-touch-menu-390.png), [create](session-touch-label-create-390.png)                        |
+| Archive refusal keeps the current session | [1200px](session-archive-failure-1200.png)                                                              |
+| Archived history after an RPC error       | [1200px](session-authoritative-history-1200.png)                                                        |
+| Viewer and disconnected host              | [read only](session-readonly-1200.png), [offline](session-offline-1200.png)                             |
+| Basic actions without session context     | [unsupported host](session-context-unsupported-1200.png), [failed read](session-context-error-1200.png) |
 
 Viewer permissions and the old label-creation capability are negotiated as handshake fixtures on reconnect. These verify UI gating, not daemon authorization. The [pending-permission reload boundary](../session-toolbar-state/README.md#reload-boundary) remains separate. iOS, Android and packaged Electron are not exercised; desktop users need to update the app to receive the renderer changes.
 
@@ -41,14 +42,16 @@ npm run test:e2e --workspace=@getpaseo/app -- sidebar-model-b.spec.ts workspace-
 
 The local runner only selects the installed headless Chromium executable and disables video/trace; checked-in runner settings are unchanged. Runtime source: `983e03355db2ccb7d0cf79cf0b008648d2d60374`, against main `030f54b7c7c2ef4c4bca7a427a3fa6dfd727e7af`. The six-case matrix was collected for `44b9506e`; the later context-capability fix has two targeted cases. The Reviewer requested those focused cases without repeating the unaffected matrix. [PR #16](https://github.com/zfan2356/paseo/pull/16) carries the exact delivery revision and evidence.
 
-| Check                                                | Result                                                                          | Log                                |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------- |
-| Browser matrix                                       | 6 passed                                                                        | [browser](browser.txt)             |
-| Offline screenshot recapture                         | 1 passed; same behavior, menu animation settled                                 | [capture](offline-capture.txt)     |
-| Catalog service file                                 | 26 passed                                                                       | [unit](labels-unit.txt)            |
-| Server and workspace dependency build                | Passed                                                                          | [build](build-server.txt)          |
-| Full workspace typecheck, staged lint and formatting | Passed                                                                          | [commit checks](commit-checks.txt) |
-| GitHub Actions                                       | Not run; known disabled-repository exemption. No runs for the runtime revision. | [CI](ci.txt)                       |
+| Check                                                | Result                                                                          | Log                                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Browser matrix                                       | 6 passed                                                                        | [browser](browser.txt)                                                           |
+| Context capability/error boundaries                  | 2 passed; candidate 9ac930caf fails the unsupported-host case                   | [before](context-unavailable-before.txt), [after](context-unavailable-after.txt) |
+| Context fix repository checks                        | Full typecheck/lint/format passed                                               | [checks](context-commit-checks.txt)                                              |
+| Offline screenshot recapture                         | 1 passed; same behavior, menu animation settled                                 | [capture](offline-capture.txt)                                                   |
+| Catalog service file                                 | 26 passed                                                                       | [unit](labels-unit.txt)                                                          |
+| Server and workspace dependency build                | Passed                                                                          | [build](build-server.txt)                                                        |
+| Full workspace typecheck, staged lint and formatting | Passed                                                                          | [commit checks](commit-checks.txt)                                               |
+| GitHub Actions                                       | Not run; known disabled-repository exemption. No runs for the runtime revision. | [CI](ci.txt)                                                                     |
 
 The semantic regression opens the card by its existing accessible label and requires a visible **Rename session** menu item. With only `session-navigation/sidebar.tsx` replaced by the original main version (`030f54b7`), the same test [fails](baseline-browser.txt) because the menu has only settings, binding and archive. Restoring the fixed component [passes](fixed-menu-browser.txt). This is a component source comparison against the same daemon/test fixture, not a claim that an entire old daemon was tested.
 
