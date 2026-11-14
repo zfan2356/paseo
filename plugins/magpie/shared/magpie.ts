@@ -27,6 +27,7 @@ export const snapshotSchema = z.object({
       id: z.string(),
       name: z.string(),
       ready: z.boolean(),
+      modelCount: z.number().int().nonnegative().default(0),
       accounts: z.array(
         z.object({
           user: z.string(),
@@ -80,6 +81,11 @@ export const snapshotRpc = defineRpc({
   name: "magpie.snapshot",
   input: z.object({ refresh: z.boolean().default(false) }),
   output: snapshotSchema,
+});
+export const webUiRpc = defineRpc({
+  name: "magpie.web.open",
+  input: z.object({}),
+  output: z.object({ url: z.url() }),
 });
 export const startRpc = defineRpc({
   name: "magpie.start",

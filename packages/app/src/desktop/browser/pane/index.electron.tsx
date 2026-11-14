@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import {
   useCallback,
   useEffect,
@@ -1607,7 +1608,7 @@ function BrowserElementAnnotationCard({
 
   return createPortal(
     <View style={[styles.annotationOverlay, bounds]} pointerEvents="box-none">
-      <View style={styles.annotationCard}>
+      <View dataSet={MATERIAL_SLOTS.popover} style={styles.annotationCard}>
         <View style={styles.annotationHeader}>
           <Text numberOfLines={1} style={styles.annotationTitle}>
             {t("workspace.browser.annotate.title")}
@@ -1635,10 +1636,10 @@ function BrowserElementAnnotationCard({
           initialValue={comment}
         />
         <View style={styles.annotationActions}>
-          <Button variant="ghost" size="sm" onPress={onCancel}>
+          <Button variant="ghost" onPress={onCancel}>
             {t("workspace.browser.annotate.cancel")}
           </Button>
-          <Button variant="default" size="sm" onPress={handleSubmit}>
+          <Button variant="default" onPress={handleSubmit}>
             {t("workspace.browser.annotate.submit")}
           </Button>
         </View>

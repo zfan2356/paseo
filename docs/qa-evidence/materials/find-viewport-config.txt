@@ -1,0 +1,13 @@
+import config from "../packages/app/vitest.config";
+import { playwright } from "@vitest/browser-playwright";
+for (const project of config.test.projects) {
+  if (project.test?.name === "browser") {
+    project.test.browser.provider = playwright({
+      launchOptions: {
+        executablePath: "/data/home/jayjayzhang/.cache/ms-playwright/chromium_headless_shell-1187/chrome-linux/headless_shell",
+        args: ["--enable-unsafe-swiftshader"],
+      },
+    });
+  }
+}
+export default config;

@@ -1,0 +1,21 @@
+(node:3607549) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Isolated Multica API, account and workspace ready
+Real Claude and Codex Paseo sessions created
+(node:3607549) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Both real daemon waits visible in frozen original sessions; cross-session isolation and explicitly bound Issue link passed
+Real Claude native background shell and Multica wait coexist in one list
+Running count and expanded list captured in real browser app
+Browser app reload reconnected and restored external inventory
+Separate HTTP verification workload kept advancing after its local curl monitor was cancelled
+Local wait cancellation retained its terminal delivery status; other session wait remains running
+Completion enqueued and delivered to its frozen original Paseo session
+Recipient handled acknowledgment removed only its completed wait
+(node:3607549) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Plugin reload, daemon offline stale and Multica restart lost recovery passed
+(node:3607549) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Paseo daemon restart preserved host/session mapping, rebuilt inventory and restored the Codex app list
+Multica server offline retained a stale snapshot with no controls; recovery reconciled it and issued fresh controls

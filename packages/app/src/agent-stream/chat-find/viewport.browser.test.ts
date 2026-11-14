@@ -24,6 +24,9 @@ function viewport(root: HTMLElement, capture: Capture) {
   const handle: StreamViewportHandle = {
     scrollToBottom() {},
     prepareForViewportChange() {},
+    holdRow(_rowId, apply) {
+      apply();
+    },
     scrollToMessage(_messageId, occurrence) {
       if (occurrence) capture.occurrence = occurrence;
     },
@@ -32,7 +35,7 @@ function viewport(root: HTMLElement, capture: Capture) {
     {
       viewportRef: { current: handle },
       revealLoadedMessage: () => false,
-      visibleMessageIds: new Set(["message-1"]),
+      visibleMessageIds: new Set(["message-1", "message-2"]),
     };
   return createFindViewport({
     getBindings: () => bindings,
@@ -56,6 +59,24 @@ it("counts occurrences across every block row of the message", async () => {
     new AbortController().signal,
   );
   expect(found).toEqual({ occurrence: 2, count: 3 });
+});
+
+it("retains a nested report entry as the scroll target", async () => {
+  const root = transcript("message-1", ["first report"]);
+  const entry = document.createElement("div");
+  entry.dataset.messageId = "message-2";
+  entry.innerHTML = '<div data-message-text="true">completion needle</div>';
+  root.firstElementChild!.append(entry);
+  const capture: Capture = {};
+  const found = await viewport(root, capture).reveal(
+    "message-2",
+    "needle",
+    0,
+    new AbortController().signal,
+  );
+  expect(found).toEqual({ occurrence: 0, count: 1 });
+  expect(capture.occurrence?.targetTop()).toBeTypeOf("number");
+  expect(highlightedText()).toEqual(["needle"]);
 });
 
 // The settle loop asks for the target position every frame while the viewport moves,
@@ -117,4 +138,18 @@ it("waits for an asynchronous renderer before counting its matches", async () =>
   content.textContent = "needle and another needle";
   content.removeAttribute("aria-busy");
   expect(await reveal).toEqual({ occurrence: 0, count: 2 });
+});
+
+it("reveals a match below a find widget displaced by workspace chrome", async () => {
+  const root = transcript("message-1", ["needle"]);
+  root.style.position = "relative";
+  root.style.minHeight = "200px";
+  const widget = document.createElement("div");
+  widget.dataset.chatFindWidget = "true";
+  widget.style.cssText = "position:absolute;top:80px;height:40px;width:100px";
+  root.append(widget);
+  const capture: Capture = {};
+  await viewport(root, capture).reveal("message-1", "needle", 0, new AbortController().signal);
+  const selected = highlightedRanges()[0].getBoundingClientRect().top;
+  expect(capture.occurrence?.targetTop()).toBeCloseTo(selected - 120);
 });

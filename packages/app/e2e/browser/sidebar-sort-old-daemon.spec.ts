@@ -1,3 +1,4 @@
+import { openDirectoryResources } from "../support/helpers/workspace-ui";
 import type { Page } from "@playwright/test";
 import { buildHostWorkspaceRoute } from "../../src/utils/host-routes";
 import { randomUUID } from "node:crypto";
@@ -21,7 +22,10 @@ test("published old daemon keeps workspace navigation and gates sorting", async 
       });
       expect(second.workspace).toBeTruthy();
       await openPublishedHost(page, daemon, project.workspaceId);
+      await expect(page.getByText(/Update .* to use session directories/)).toBeVisible();
+      await openDirectoryResources(page);
       await openWorkspace(page, daemon.serverId, second.workspace!.id);
+      await openDirectoryResources(page);
       await expectSortingRequiresHostUpdate(page);
       await selectSidebarStatusGrouping(page);
       await expectStatusHasNoSorting(page);
