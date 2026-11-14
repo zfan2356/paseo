@@ -703,7 +703,19 @@ test("session toolbar stays inline and status dots follow each session independe
         .click();
       if (width === 1200) {
         await directory.hover();
-        await expect(page.getByText(`Execution: ${mock.cwd}`, { exact: true })).toBeVisible();
+        const tooltip = page.getByText(`Execution: ${mock.cwd}`, { exact: true });
+        await expect(tooltip).toBeInViewport({ ratio: 1 });
+        await waitForSettledPosition(tooltip);
+        await expect
+          .poll(() =>
+            tooltip.evaluate((element) => {
+              for (let node: Element | null = element; node; node = node.parentElement) {
+                if (Number(getComputedStyle(node).opacity) < 1) return false;
+              }
+              return true;
+            }),
+          )
+          .toBe(true);
         await page.screenshot({
           path: info.outputPath("directory-hover-1200.png"),
           fullPage: true,

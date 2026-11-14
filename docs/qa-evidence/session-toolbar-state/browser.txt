@@ -2,24 +2,24 @@
 > @getpaseo/app@0.15.3 test:e2e
 > playwright test --project=browser --config playwright.work386.config.ts sidebar-model-b.spec.ts --grep session toolbar stays inline
 
-(node:381059) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:436361) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 [metro] Skipping web setup: EXPO_NO_WEB_SETUP is enabled.
 [metro] Using src/app as the root directory for Expo Router.
-[metro] Waiting on http://localhost:33077
+[metro] Waiting on http://localhost:44241
 [metro] Logs for your project will appear below.
-[metro] Web Bundled 4182ms packages/app/index.ts (5894 modules)
-[e2e] Metro warmed on port 33077
+[metro] Web Bundled 4361ms packages/app/index.ts (5894 modules)
+[e2e] Metro warmed on port 44241
 
 Running 1 test using 1 worker
 
-(node:382002) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(node:438764) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:382002) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
-(node:382002) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(node:438764) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:438764) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
-[e2e] Worker 0 daemon started on port 36443, home: /tmp/multica-task-2448824229/paseo-e2e-worker-0-qCcnZL
-[metro] Web Bundled 262ms packages/app/index.ts (1 module)
+[e2e] Worker 0 daemon started on port 39423, home: /tmp/multica-task-2448824229/paseo-e2e-worker-0-ErDHoi
+[metro] Web Bundled 269ms packages/app/index.ts (1 module)
 [metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
 [metro] Web  LOG  Running application "main" with appParams:
 [metro]  {"hydrate": undefined, "rootTag": "#root"} 
@@ -49,9 +49,9 @@ Running 1 test using 1 worker
 [metro] Require cycles are allowed, but can result in uninitialized values. Consider refactoring to remove the need for a cycle.
 [metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
 [metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
-[metro] Web Bundled 63ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web Bundled 67ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
   ✓  1 [browser] › e2e/browser/sidebar-model-b.spec.ts:623:5 › session toolbar stays inline and status dots follow each session independently (14.1s)
 [e2e] Worker 0 daemon stopped
 [e2e] Metro stopped
 
-  1 passed (37.9s)
+  1 passed (39.4s)

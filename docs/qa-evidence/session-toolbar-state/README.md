@@ -12,7 +12,7 @@ Chromium 140 on Linux, 1200×1000 and 390×1000. The existing Playwright fixture
 | Full execution path                       | [1200px](directory-details-1200.png) | [390px](directory-details-390.png) |
 | Running, approval, failure and idle       | [1200px](session-states-1200.png)    | [390px](session-states-390.png)    |
 
-[Desktop hover](directory-hover-1200.png) and [live state changes](session-states-transition-390.png) cover the remaining interactions. Captures wait for the controls and full path to settle inside the viewport; the sidebar also checks six identical animation frames at `x = 0`. Screenshot contents were visually inspected.
+[Desktop hover](directory-hover-1200.png) and [live state changes](session-states-transition-390.png) cover the remaining interactions. Captures wait for the controls and full path to settle inside the viewport; the hover capture also waits until the tooltip and every ancestor have opacity 1; the sidebar also checks six identical animation frames at `x = 0`. Screenshot contents were visually inspected.
 
 [Card parity audit](card-parity-audit.md) compares the old row/menu/shortcuts with the session row, records the operation targets and separates missing session interactions from directory/workspace resource actions. Added implementations require the requester’s scope decision.
 
