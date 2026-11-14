@@ -21,6 +21,43 @@ import {
 } from "@/utils/sidebar-shortcuts";
 import { statusWorkspaceGroups, type SidebarWorkspaceGroup } from "./sidebar-labels";
 import { executionDirectoryLabel } from "@/session-navigation/model";
+import { applyStoredOrdering } from "@/hooks/sidebar-workspaces-view-model";
+import {
+  compareWorkspaceStructureItems,
+  compareWorkspaceTimes,
+  workspaceSortTime,
+  type WorkspaceSort,
+} from "@/projects/workspace-structure";
+
+export function orderSidebarWorktreeGroups(
+  projects: SidebarProjectEntry[],
+  entries: ReadonlyMap<string, SidebarWorkspaceEntry>,
+  sort: WorkspaceSort | undefined,
+  workspaceOrders: Readonly<Record<string, string[]>>,
+): SidebarProjectEntry[] {
+  return projects.map((project) => {
+    if (!project.workspaces.some((workspace) => workspace.projectViewKey !== project.viewKey))
+      return project;
+    const sorted = project.workspaces
+      .map((workspace) => ({
+        workspace,
+        workspaceKey: workspace.workspaceKey,
+        workspaceName: entries.get(workspace.workspaceKey)?.name ?? workspace.name,
+        sortTime: workspaceSortTime(entries.get(workspace.workspaceKey) ?? {}, sort),
+      }))
+      .sort(sort ? compareWorkspaceTimes : compareWorkspaceStructureItems)
+      .map(({ workspace }) => workspace);
+    const workspaces =
+      sort === "manual"
+        ? applyStoredOrdering({
+            items: sorted,
+            storedOrder: workspaceOrders[project.viewKey] ?? [],
+            getKey: (workspace) => workspace.workspaceKey,
+          })
+        : sorted;
+    return { ...project, workspaces };
+  });
+}
 
 export type SidebarCheckoutIdentity =
   | { isGit: false }

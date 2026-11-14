@@ -19,7 +19,7 @@ import {
 } from "@/stores/sidebar-view-store";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import type { SidebarShortcutModel } from "@/utils/sidebar-shortcuts";
-import { buildSidebarProjection } from "./sidebar-projection";
+import { buildSidebarProjection, orderSidebarWorktreeGroups } from "./sidebar-projection";
 import type { SidebarProjectIconTarget } from "@/utils/sidebar-project-row-model";
 import { filterWorkspacesByLabels, type SidebarWorkspaceGroup } from "./sidebar-labels";
 import { filterWorkspacesByProjects, resolveActiveProjectFilters } from "./sidebar-project-filter";
@@ -77,6 +77,7 @@ export function SidebarModelProvider({
   );
   const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
   const pinnedWorkspaceOrder = useSidebarOrderStore((state) => state.pinnedWorkspaceOrder);
+  const workspaceOrders = useSidebarOrderStore((state) => state.workspaceOrderByProject);
   const toggleProjectCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.toggleProjectCollapsed,
   );
@@ -160,7 +161,25 @@ export function SidebarModelProvider({
     filteredProjects,
     modelActive && grouping === "project",
   );
-  const displayProjects = grouping === "project" ? repositoryProjects : filteredProjects;
+  const displayProjects = useMemo(
+    () =>
+      grouping === "project"
+        ? orderSidebarWorktreeGroups(
+            repositoryProjects,
+            filteredWorkspaceEntriesByKey,
+            list.workspaceSort,
+            workspaceOrders,
+          )
+        : filteredProjects,
+    [
+      grouping,
+      repositoryProjects,
+      filteredWorkspaceEntriesByKey,
+      list.workspaceSort,
+      workspaceOrders,
+      filteredProjects,
+    ],
+  );
   const projectionInput = useMemo(
     () => ({
       projects: displayProjects,

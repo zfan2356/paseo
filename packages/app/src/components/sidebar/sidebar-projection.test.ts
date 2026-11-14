@@ -8,6 +8,7 @@ import type {
 import {
   buildSidebarProjection,
   groupSidebarWorktrees,
+  orderSidebarWorktreeGroups,
   sidebarCheckoutIdentityKey,
   type SidebarCheckoutIdentity,
 } from "./sidebar-projection";
@@ -94,6 +95,54 @@ describe("worktree sidebar grouping", () => {
       ]),
     );
   }
+
+  it("applies the existing time sorts across merged directories", () => {
+    const main = makeWorkspace("main", "done", [], "main");
+    const older = makeWorkspace("older", "done", [], "linked");
+    const newer = makeWorkspace("newer", "done", [], "linked");
+    const grouped = [makeProject([main.placement, older.placement, newer.placement], "main")];
+    const entries = new Map([
+      [
+        main.entry.workspaceKey,
+        { ...main.entry, createdAt: new Date(2000), lastUserMessageAt: new Date(3000) },
+      ],
+      [
+        older.entry.workspaceKey,
+        { ...older.entry, createdAt: new Date(1000), lastUserMessageAt: new Date(5000) },
+      ],
+      [
+        newer.entry.workspaceKey,
+        { ...newer.entry, createdAt: new Date(3000), lastUserMessageAt: new Date(4000) },
+      ],
+    ]);
+    expect(
+      orderSidebarWorktreeGroups(grouped, entries, "created", {})[0].workspaces.map(
+        (workspace) => workspace.workspaceId,
+      ),
+    ).toEqual(["newer", "main", "older"]);
+    expect(
+      orderSidebarWorktreeGroups(grouped, entries, "lastPrompt", {})[0].workspaces.map(
+        (workspace) => workspace.workspaceId,
+      ),
+    ).toEqual(["older", "newer", "main"]);
+  });
+
+  it("honors the saved merged drag order without writing directory orders", () => {
+    const main = makeWorkspace("main", "done", [], "main");
+    const linked = makeWorkspace("linked", "done", [], "linked");
+    const grouped = [makeProject([main.placement, linked.placement], "main")];
+    const orders = {
+      main: [linked.entry.workspaceKey, main.entry.workspaceKey],
+      linked: [linked.entry.workspaceKey],
+    };
+    const before = structuredClone(orders);
+    expect(orderSidebarWorktreeGroups(grouped, new Map(), "manual", orders)[0].workspaces).toEqual([
+      linked.placement,
+      main.placement,
+    ]);
+    expect(orders).toEqual(before);
+    expect(grouped[0].workspaces).toEqual([main.placement, linked.placement]);
+  });
 
   it("only moves linked worktrees into the main checkout's existing list, keeping row identities", () => {
     const linked = project("/outside/fix");

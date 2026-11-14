@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { expect, test } from "../support/fixtures";
 import { gotoAppShell } from "../support/helpers/app";
 import { projectEquivalenceViewKey } from "../support/helpers/project-view-key";
@@ -76,6 +77,58 @@ async function dragWithoutReordering(rows: Locator): Promise<void> {
   await finishSidebarDrag(page);
   await expect.poll(() => rowTestIds(rows)).toEqual(before);
 }
+
+test("merged worktree rows retain manual order and share time sorts", async ({ page }) => {
+  const project = await seedWorkspace({ repoPrefix: "sidebar-merged-order-" });
+  const linkedPath = `${project.repoPath}-linked`;
+  let linkedProjectId: string | undefined;
+  try {
+    execFileSync("git", ["worktree", "add", "-b", "merged-order", linkedPath], {
+      cwd: project.repoPath,
+    });
+    const added = await project.client.addProject(linkedPath);
+    if (!added.project) throw new Error(added.error ?? "Missing linked project");
+    linkedProjectId = added.project.projectId;
+    const linked = await project.client.createWorkspace({
+      source: { kind: "directory", path: linkedPath, projectId: linkedProjectId },
+      title: "Linked row",
+    });
+    if (!linked.workspace) throw new Error(linked.error ?? "Missing linked workspace");
+    const agent = await project.client.createAgent({
+      provider: "mock",
+      cwd: project.repoPath,
+      workspaceId: project.workspaceId,
+      title: "Main row",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+    });
+    await page.goto(`/h/${getServerId()}/workspace/${project.workspaceId}`);
+    await page.getByTestId("session-group-by-project").click();
+    await expect(page.locator('[data-testid^="sidebar-project-row-"]')).toHaveCount(1);
+    const mainId = `sidebar-workspace-row-${getServerId()}:${project.workspaceId}`;
+    const linkedId = `sidebar-workspace-row-${getServerId()}:${linked.workspace.id}`;
+    const rows = page.locator(`[data-testid="${mainId}"], [data-testid="${linkedId}"]`);
+    await expect.poll(() => rowTestIds(rows)).toEqual([linkedId, mainId]);
+    await selectWorkspaceSort(page, "Manual");
+    await quickDragFirstRowAfterSecond(rows, pressWorkspaceRow);
+    await page.getByTestId("session-group-by-directory").click();
+    await expect(page.locator('[data-testid^="sidebar-project-row-"]')).toHaveCount(2);
+    await page.getByTestId("session-group-by-project").click();
+    await expect.poll(() => rowTestIds(rows)).toEqual([mainId, linkedId]);
+    await page.reload();
+    await expect.poll(() => rowTestIds(rows)).toEqual([mainId, linkedId]);
+    await selectWorkspaceSort(page, "Created");
+    await expect.poll(() => rowTestIds(rows)).toEqual([linkedId, mainId]);
+    await project.client.sendAgentMessage(agent.id, "Say hello.");
+    await project.client.waitForFinish(agent.id, 20000);
+    await selectWorkspaceSort(page, "Last prompt");
+    await expect.poll(() => rowTestIds(rows)).toEqual([mainId, linkedId]);
+  } finally {
+    if (linkedProjectId) await project.client.removeProject(linkedProjectId);
+    execFileSync("git", ["worktree", "remove", "--force", linkedPath], { cwd: project.repoPath });
+    await project.cleanup();
+  }
+});
 
 test("projects and pinned chats reorder while ordinary workspaces stay newest first", async ({
   page,

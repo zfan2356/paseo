@@ -1,11 +1,12 @@
+import { tmpdir } from "node:os";
 import { test, expect } from '../../packages/app/e2e/support/fixtures';
 import { connectSeedClient } from '../../packages/app/e2e/support/helpers/seed-client';
 import { getServerId } from '../../packages/app/e2e/support/helpers/server-id';
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile, access } from 'node:fs/promises';
+import { mkdir, writeFile, access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const fixture = path.resolve(__dirname, 'fixture');
+const fixture = path.join(tmpdir(), 'work-416-fixed-sidebar');
 const repo = path.join(fixture, 'paseo');
 const worktrees = ['theme-fix', 'sidebar-fix'].map(name => path.join(fixture, name));
 const notes = path.join(fixture, 'notes');
@@ -23,6 +24,7 @@ test('capture fixed Chinese dark sidebar fixture', async ({ page }) => {
     git(['-c', 'commit.gpgsign=false', 'commit', '-m', 'Initial fixture']);
     for (const [index, directory] of worktrees.entries()) git(['worktree', 'add', '-b', index ? 'main' : 'theme', directory]);
   }
+  expect(() => git(['rev-parse', '--is-inside-work-tree'], notes)).toThrow();
   const client = await connectSeedClient();
   const records: Array<{ id: string; directory: string; projectId: string; agentId: string }> = [];
   try {
@@ -42,9 +44,17 @@ test('capture fixed Chinese dark sidebar fixture', async ({ page }) => {
     const rowId = (id: string) => `sidebar-workspace-row-${getServerId()}:${id}`;
     await expect(page.getByTestId(rowId(records[0].id))).toBeVisible({ timeout: 60000 });
     await expect(page.getByTestId('message-input-root')).toBeVisible({ timeout: 60000 });
-    const baseline = process.env.CAPTURE_BASELINE === '1';
-    for (const mode of baseline ? ['original'] : ['directory', 'project']) {
-      if (!baseline) await page.getByTestId(`session-group-by-${mode}`).click();
+    const compare = process.env.CAPTURE_COMPARE === '1';
+    const baselineOnly = process.env.CAPTURE_BASELINE === '1';
+    for (const mode of compare ? ['original', 'directory', 'project'] : baselineOnly ? ['original'] : ['directory', 'project']) {
+      if (compare && mode === 'directory') {
+        for (const [snapshot, target] of [['final-left-sidebar.tsx', 'components/left-sidebar.tsx'], ['final-sidebar-model.tsx', 'components/sidebar/sidebar-model.tsx']]) {
+          await writeFile(path.resolve(__dirname, '../../packages/app/src', target), await readFile(path.resolve(__dirname, snapshot)));
+        }
+        await page.reload();
+      }
+      if (mode !== 'original') await page.getByTestId(`session-group-by-${mode}`).click();
+      expect((await client.listProjects()).projects).toHaveLength(4);
       await expect(page.getByTestId(rowId(records[1].id))).toBeVisible();
       // Let layout, icons and font rasterization settle after the real directory snapshot.
       await expect.poll(async () => page.locator('[data-testid^="sidebar-project-row-"]').count()).toBe(mode === 'project' ? 2 : 4);
@@ -56,7 +66,7 @@ test('capture fixed Chinese dark sidebar fixture', async ({ page }) => {
       await page.screenshot({ path: path.resolve(__dirname, `${mode}-narrow.png`) });
       await page.setViewportSize({ width: 1440, height: 1000 });
     }
-    await writeFile(path.resolve(__dirname, baseline ? 'original-fixture.json' : 'updated-fixture.json'), JSON.stringify(records, null, 2));
+    await writeFile(path.resolve(__dirname, compare ? 'comparison-fixture.json' : baselineOnly ? 'original-fixture.json' : 'updated-fixture.json'), JSON.stringify(records, null, 2));
   } finally {
     for (const record of records) await client.removeProject(record.projectId).catch(() => undefined);
     await client.close();

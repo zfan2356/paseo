@@ -2,28 +2,26 @@
 > @getpaseo/app@0.15.3 test:e2e
 > playwright test --project=browser --config ../../.dev/work-416/behavior.config.ts sidebar-workspace.spec.ts --grep groups only linked worktrees
 
-(node:705037) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:818645) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 [metro] Skipping web setup: EXPO_NO_WEB_SETUP is enabled.
 [metro] Using src/app as the root directory for Expo Router.
-[metro] Waiting on http://localhost:36591
+[metro] Waiting on http://localhost:40203
 [metro] Logs for your project will appear below.
-[metro] | (node:705144) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-[metro] | (Use `node --trace-warnings ...` to show where the warning was created)
-[metro] Web Bundled 4304ms packages/app/index.ts (5896 modules)
-[e2e] Metro warmed on port 36591
+[metro] Web Bundled 4085ms packages/app/index.ts (5894 modules)
+[e2e] Metro warmed on port 40203
 
 Running 1 test using 1 worker
 
-(node:706051) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(node:819753) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:706051) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
-(node:706051) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(node:819753) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:819753) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
-[e2e] Worker 0 daemon started on port 46595, home: /tmp/multica-task-320999999/paseo-e2e-worker-0-a8I2jD
+[e2e] Worker 0 daemon started on port 40731, home: /tmp/multica-task-320999999/paseo-e2e-worker-0-VMG7Me
 Preparing worktree (new branch 'sidebar-linked')
-[metro] Web Bundled 263ms packages/app/index.ts (1 module)
-[metro] Web Bundled 61ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
+[metro] Web Bundled 268ms packages/app/index.ts (1 module)
+[metro] Web Bundled 60ms packages/app/src/attachments/web/indexeddb-attachment-store.ts (1 module)
 [metro] Web  INFO  %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
 [metro] Web  LOG  Running application "main" with appParams:
 [metro]  {"hydrate": undefined, "rootTag": "#root"}
@@ -54,8 +52,8 @@ Preparing worktree (new branch 'sidebar-linked')
 [metro] Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
 [metro] Web  WARN  Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
 
-  ✓  1 [browser] › e2e/browser/sidebar-workspace.spec.ts:318:7 › Sidebar workspace list › groups only linked worktrees while preserving original rows, pins and selection (13.4s)
+  ✓  1 [browser] › e2e/browser/sidebar-workspace.spec.ts:319:7 › Sidebar workspace list › groups only linked worktrees while preserving original rows, pins and selection (12.1s)
 [e2e] Worker 0 daemon stopped
 [e2e] Metro stopped
 
-  1 passed (38.7s)
+  1 passed (36.3s)

@@ -27,6 +27,7 @@ import { projectEquivalenceViewKey } from "../support/helpers/project-view-key";
 import { escapeRegex } from "../support/helpers/regex";
 import { openFilesPanel } from "../support/helpers/workspace-tabs";
 import { seedMockAgentWorkspace } from "../support/helpers/mock-agent";
+import { loadSessionMessageReaders } from "../support/helpers/new-workspace";
 
 const GITHUB_REMOTE_URL = "https://github.com/test-owner/test-repo.git";
 
@@ -318,6 +319,13 @@ test.describe("Sidebar workspace list", () => {
   test("groups only linked worktrees while preserving original rows, pins and selection", async ({
     page,
   }) => {
+    const frames = await loadSessionMessageReaders();
+    const requests: string[] = [];
+    const recordFrame = ({ payload }: { payload: string | Buffer }) => {
+      const message = frames.client(payload);
+      if (message) requests.push(message.type);
+    };
+    page.on("websocket", (socket) => socket.on("framesent", recordFrame));
     const project = await seedWorkspace({ repoPrefix: "sidebar-original-" });
     const linkedPath = `${project.repoPath}-linked`;
     let linkedProjectId: string | undefined;
@@ -386,6 +394,10 @@ test.describe("Sidebar workspace list", () => {
         () => JSON.parse(localStorage.getItem("session-navigation") ?? "{}").state,
       );
       expect(preferencesAfter).toEqual(preferencesBefore);
+      expect(requests.filter((type) => type === "checkout_status_request").length).toBeGreaterThan(
+        0,
+      );
+      expect(requests.filter((type) => type === "checkout_refresh_request")).toEqual([]);
       expect(persistedRows((await project.client.fetchWorkspaces()).entries)).toEqual(
         workspacesBefore,
       );

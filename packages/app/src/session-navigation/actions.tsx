@@ -1,9 +1,6 @@
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { permitsSessionOperation } from "./operations";
 import { useTranslation } from "react-i18next";
-import { movePinnedSession } from "./model";
-import { useSessionNavigationPreferences } from "./preferences";
-import { useSessionNavigationCollection } from "./collection";
 import { openDirectoryForm } from "./directory-form";
 import {
   useDeferredValue,
@@ -17,19 +14,11 @@ import { Text, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFetchQuery } from "@/data/query";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import type { SessionContext, SessionContextMutation } from "@getpaseo/protocol/session-context";
+import type { SessionContextMutation } from "@getpaseo/protocol/session-context";
 import { StyleSheet } from "react-native-unistyles";
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
-import { useWorkspaceLabelProjection } from "@/workspace-labels";
-import type { SidebarProjectEntry } from "@/hooks/sidebar-workspaces-view-model";
 import { contextKey, type ContextSnapshot } from "./contexts";
 export function useContextMutation(client: DaemonClient, serverId: string, agentId: string) {
   const cache = useQueryClient();
@@ -50,120 +39,6 @@ export function useContextMutation(client: DaemonClient, serverId: string, agent
         context: payload.context,
       }),
   });
-}
-export function SessionSettings({
-  client,
-  serverId,
-  context,
-  projects,
-  cwd,
-  onClose,
-}: {
-  client: DaemonClient;
-  serverId: string;
-  context: SessionContext;
-  projects: SidebarProjectEntry[];
-  cwd: string;
-  onClose(): void;
-}) {
-  const { t } = useTranslation();
-  const mutation = useContextMutation(client, serverId, context.agentId);
-  const sessionNavigation = useSessionNavigationCollection({ projects, enabled: true });
-  const pinnedGroup = sessionNavigation.groups.find((group) =>
-    group.agents.some((agent) => agent.serverId === serverId && agent.id === context.agentId),
-  );
-  const pinnedPeers =
-    pinnedGroup?.agents
-      .filter((agent) => {
-        const snapshot = sessionNavigation.snapshots.get(agent.serverId + ":" + agent.id);
-        return snapshot?.status === "ready" && snapshot.context.pinnedAt;
-      })
-      .map((agent) => agent.serverId + ":" + agent.id) ?? [];
-  const { hosts } = useWorkspaceLabelProjection();
-  const labels = hosts.find((host) => host.serverId === serverId)?.labels ?? [];
-  const availableProjects = projects.flatMap((project) =>
-    project.hosts
-      .filter((host) => host.serverId === serverId)
-      .map((host) => ({ id: host.projectId, name: project.projectName })),
-  );
-  const projectName =
-    availableProjects.find((project) => project.id === context.projectId)?.name ??
-    (context.projectId
-      ? t("sessionNavigation.projectUnavailable")
-      : t("sessionNavigation.ungrouped"));
-  const settingsHeader = useMemo(
-    () => ({
-      title: t("sessionNavigation.settings"),
-      subtitle: <Text style={styles.muted}>{serverId}</Text>,
-    }),
-    [serverId, t],
-  );
-  const clearProject = useCallback(
-    () => mutation.mutate({ kind: "project", projectId: null }),
-    [mutation],
-  );
-  const togglePinned = useCallback(
-    () => mutation.mutate({ kind: "pin", pinned: !context.pinnedAt }),
-    [mutation, context.pinnedAt],
-  );
-  return (
-    <AdaptiveModalSheet visible onClose={onClose} header={settingsHeader} testID="session-settings">
-      <View style={styles.body}>
-        {mutation.error ? (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {mutation.error.message}
-          </Text>
-        ) : null}
-        <Field label={t("sessionNavigation.project")}>
-          <DropdownMenu compactMode="sheet">
-            <DropdownMenuTrigger disabled={mutation.isPending}>
-              <Text style={styles.text}>{projectName} ▾</Text>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent sheetTitle={t("sessionNavigation.project")}>
-              <DropdownMenuItem onSelect={clearProject}>
-                {t("sessionNavigation.ungrouped")}
-              </DropdownMenuItem>
-              {availableProjects.map((project) => (
-                <ProjectChoice
-                  key={project.id}
-                  id={project.id}
-                  name={project.name}
-                  mutation={mutation}
-                />
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </Field>
-        <Button variant="outline" disabled={mutation.isPending} onPress={togglePinned}>
-          {context.pinnedAt ? t("sessionNavigation.unpin") : t("sessionNavigation.pin")}
-        </Button>
-        {context.pinnedAt ? (
-          <PinnedSessionOrder serverId={serverId} agentId={context.agentId} peers={pinnedPeers} />
-        ) : null}
-        <Field label={t("sessionNavigation.labels")}>
-          <View style={styles.body}>
-            {labels.map((label) => (
-              <LabelChoice
-                key={label.name}
-                name={label.name}
-                assigned={context.sidebarLabelNames.includes(label.name)}
-                mutation={mutation}
-              />
-            ))}
-          </View>
-        </Field>
-        <Field label={t("sessionNavigation.executionReadOnly")}>
-          <Text selectable style={styles.text}>
-            {cwd}
-          </Text>
-        </Field>
-        <Text style={styles.muted}>{t("sessionNavigation.bindingHint")}</Text>
-        {mutation.isPending ? (
-          <Text style={styles.muted}>{t("sessionNavigation.saving")}</Text>
-        ) : null}
-      </View>
-    </AdaptiveModalSheet>
-  );
 }
 function useDirectoryForm(ports: Parameters<typeof openDirectoryForm>[0]) {
   const [model] = useState(() => openDirectoryForm(ports));
@@ -329,85 +204,11 @@ const styles = StyleSheet.create((theme) => ({
   muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
   error: { color: theme.colors.destructive, fontSize: theme.fontSize.sm },
 }));
-interface ChoiceMutationProps {
-  mutation: ReturnType<typeof useContextMutation>;
-}
-function ProjectChoice({
-  id,
-  name,
-  mutation,
-}: ChoiceMutationProps & {
-  id: string;
-  name: string;
-}) {
-  const select = useCallback(
-    () => mutation.mutate({ kind: "project", projectId: id }),
-    [mutation, id],
-  );
-  return (
-    <DropdownMenuItem disabled={mutation.isPending} onSelect={select}>
-      {name}
-    </DropdownMenuItem>
-  );
-}
-function LabelChoice({
-  name,
-  assigned,
-  mutation,
-}: ChoiceMutationProps & {
-  name: string;
-  assigned: boolean;
-}) {
-  const toggle = useCallback(
-    () => mutation.mutate({ kind: "label", name, assigned: !assigned }),
-    [mutation, name, assigned],
-  );
-  return (
-    <Button variant="ghost" disabled={mutation.isPending} onPress={toggle}>
-      {assigned ? "✓ " : ""}
-      {name}
-    </Button>
-  );
-}
 function PathSuggestion({ path, select }: { path: string; select(path: string): void }) {
   const choose = useCallback(() => select(path), [path, select]);
   return (
     <Button variant="ghost" onPress={choose}>
       {path}
     </Button>
-  );
-}
-function PinnedSessionOrder({
-  serverId,
-  agentId,
-  peers,
-}: {
-  serverId: string;
-  agentId: string;
-  peers: string[];
-}) {
-  const { t } = useTranslation();
-  const key = serverId + ":" + agentId;
-  const index = peers.indexOf(key);
-  const move = useCallback(
-    (delta: number) => {
-      const neighbor = peers[index + delta];
-      if (!neighbor) return;
-      const state = useSessionNavigationPreferences.getState();
-      state.setPinnedOrder(movePinnedSession(state.pinnedOrder, key, neighbor));
-    },
-    [peers, index, key],
-  );
-  const up = useCallback(() => move(-1), [move]);
-  const down = useCallback(() => move(1), [move]);
-  return (
-    <View>
-      <Button variant="ghost" onPress={up} disabled={index <= 0}>
-        {t("sessionNavigation.moveUp")}
-      </Button>
-      <Button variant="ghost" onPress={down} disabled={index < 0 || index >= peers.length - 1}>
-        {t("sessionNavigation.moveDown")}
-      </Button>
-    </View>
   );
 }

@@ -3,7 +3,6 @@ import type { CheckoutStatusResponse } from "@getpaseo/protocol/messages";
 import { useFetchQueries } from "@/data/query";
 import { checkoutStatusQueryKey } from "@/git/query-keys";
 import { getHostRuntimeStore, useHostRuntimeConnectionStatuses } from "@/runtime/host-runtime";
-import { readDirectoryFacts } from "@/session-navigation/model";
 import {
   groupSidebarWorktrees,
   sidebarCheckoutIdentityKey,
@@ -26,11 +25,7 @@ export function useSidebarWorktreeGroups(projects: SidebarProjectEntry[], enable
       queryFn: () => {
         const client = getHostRuntimeStore().getClient(host.serverId);
         if (!client) throw new Error(t("common.errors.daemonUnavailable"));
-        return readDirectoryFacts({
-          client,
-          path: host.iconWorkingDir,
-          refreshError: t("sessionNavigation.refreshError"),
-        });
+        return client.getCheckoutStatus(host.iconWorkingDir);
       },
       enabled: enabled && statuses.get(host.serverId) === "online",
       staleTimeMs: 15000,
