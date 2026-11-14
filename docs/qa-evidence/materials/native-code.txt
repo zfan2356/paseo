@@ -1,0 +1,6 @@
+packages/app/src/composer/dock/index.native.tsx: identical to main 17327eec7
+packages/app/src/composer/dock/internal/background.native.tsx: identical to main 17327eec7
+sidebarMaterialColor: native passthrough passed
+materialMutedColor: native passthrough passed
+materialStatusColor: native passthrough passed
+Native Materials returns null; all CSS lives in .web.tsx. Shared dataSet markers do not change native style. DOM clearance writes are isWeb guarded. Zero-PR hiding is web-only. Native sheet background remains undefined. No native runtime executed.

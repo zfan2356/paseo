@@ -182,10 +182,9 @@ test("default material evidence", async ({ page }, testInfo) => {
           "backdrop-filter",
           "none",
         );
-        await expect(page.locator('[data-material="dialog"]:visible').first()).toHaveCSS(
-          "backdrop-filter",
-          "none",
-        );
+        await expect(
+          page.locator('[data-material="dialog"]:visible, [data-material="sheet"]:visible').first(),
+        ).toHaveCSS("backdrop-filter", "none");
         await page.waitForTimeout(500);
         await page.screenshot({ path: `${out}${scheme}-${width}-reduced-transparency.png` });
         await cdp.send("Emulation.setEmulatedMedia", {
