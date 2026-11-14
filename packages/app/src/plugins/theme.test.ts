@@ -79,6 +79,7 @@ function installed(serverId: string, themes: PluginThemeContribution[]): Install
 describe("toPluginTheme", () => {
   it("maps the app theme into the plugin color tokens", () => {
     expect(toPluginTheme(lightTheme)).toEqual({
+      colorScheme: "light",
       colors: {
         surface0: lightTheme.colors.surface0,
         surface1: lightTheme.colors.surface1,
@@ -93,6 +94,22 @@ describe("toPluginTheme", () => {
         statusDanger: lightTheme.colors.statusDanger,
       },
     });
+  });
+});
+
+describe("plugin resolved appearance", () => {
+  it("maps successive host themes without retaining the previous appearance", () => {
+    for (const theme of [lightTheme, darkTheme, lightTheme]) {
+      expect(toPluginTheme(theme).colorScheme).toBe(theme.colorScheme);
+    }
+  });
+
+  it.each([MOCHA, LATTE])("uses the contributed appearance for $name", (contribution) => {
+    const option = collectPluginThemes(
+      [installed("host-theme", [contribution])],
+      new Set(["host-theme"]),
+    )[0];
+    expect(toPluginTheme(option.theme).colorScheme).toBe(contribution.appearance);
   });
 });
 

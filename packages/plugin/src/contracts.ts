@@ -5,6 +5,7 @@ import type { PluginSerializableIcon } from "./icons.js";
 import type { PluginRpcContract } from "./rpc.js";
 
 export interface PluginTheme {
+  readonly colorScheme: "light" | "dark";
   readonly colors: {
     readonly surface0: string;
     readonly surface1: string;
