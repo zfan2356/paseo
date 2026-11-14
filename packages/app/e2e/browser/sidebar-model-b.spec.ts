@@ -484,7 +484,12 @@ test("session navigation restores nine pins and swaps complete lists without cha
       await expect(directory).toHaveAttribute("aria-label", `Execution: ${mock.cwd}`);
       await expect(directory).not.toContainText("Execution:");
       await directory.click();
-      await expect(page.getByTestId("execution-directory-full-path")).toHaveText(mock.cwd);
+      const fullPath = page.getByTestId("execution-directory-full-path");
+      await expect(fullPath).toHaveText(mock.cwd);
+      await expect(fullPath).toBeVisible();
+      // Playwright waits for stable geometry before scrolling the animated sheet content.
+      await fullPath.scrollIntoViewIfNeeded();
+      await expect(fullPath).toBeInViewport({ ratio: 1 });
       await page.screenshot({
         path: info.outputPath(`execution-directory-details-${width}.png`),
         fullPage: true,
