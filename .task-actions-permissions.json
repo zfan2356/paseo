@@ -1,0 +1,5 @@
+{
+  "message": "You must have repository read permissions or have the repository Actions policies fine-grained permission.",
+  "documentation_url": "https://docs.github.com/rest/actions/permissions#get-github-actions-permissions-for-a-repository",
+  "status": "403"
+}

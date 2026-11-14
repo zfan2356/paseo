@@ -1,0 +1,157 @@
+{
+  "contract": {
+    "sequence": 2,
+    "versions": [
+      {
+        "number": 1,
+        "goal": "同一套紧凑会话卡片以按项目/按目录按钮切换分组，目录管理回到右侧面板。",
+        "scope": "侧栏分组、卡片项目图标、右侧目录及资源入口、必要测试和文档。复用现有SessionContext及资源生命周期。",
+        "authorization_note": "用户确认设计，允许实现PR及独立审查。Root按已有授权验收合入部署，执行者不发布。Reviewer cd0fdafa-7c61-43d1-99f1-c68bb418c545。CI禁用及平台PR卡未配置按已知例外记录。",
+        "criteria": [
+          "顶部按项目/按目录，默认按项目；两边同批会话相同卡片，按项目合并同仓主检出/worktree，按目录以实际cwd分组；切换不改选中会话/cwd/项目归属。",
+          "两边同一独立置顶区，保留顺序；复用旧紧凑卡片和项目图标、标题、状态与已恢复操作；去掉额外项目状态副行、目录计数/主机长串堆叠、侧栏目录树/绑定/文件夹入口。",
+          "右侧文件/更改面板选择和绑定/移除关联目录，文件/Git操作目标正确；执行cwd独立。原无会话工作区/终端/服务仍可达，沿原资源生命周期，发现入口设计冲突带线框交Root。",
+          "首个可操作版本发真实1200/390预览并通知Root，最终验证多项目/worktree/非Git/跨项目置顶/多状态/无会话终端，分组、导航、卡片操作回归和仓规检查通过。",
+          "一个PR至main，source/base/full diff回读，指定Reviewer独立审查修复闭环，准确交付测试与未验证边界。"
+        ],
+        "executor": {
+          "type": "agent",
+          "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4"
+        },
+        "acceptor": {
+          "type": "agent",
+          "id": "71318ceb-7ddd-4b14-875b-d143f9268870",
+          "session_id": "01a1d77b-9554-7cc2-b92e-38c776e42e69"
+        },
+        "basis": {
+          "acceptor": {
+            "id": "71318ceb-7ddd-4b14-875b-d143f9268870",
+            "type": "agent",
+            "session_id": "01a1d77b-9554-7cc2-b92e-38c776e42e69"
+          },
+          "criteria": [
+            "顶部按项目/按目录，默认按项目；两边同批会话相同卡片，按项目合并同仓主检出/worktree，按目录以实际cwd分组；切换不改选中会话/cwd/项目归属。",
+            "两边同一独立置顶区，保留顺序；复用旧紧凑卡片和项目图标、标题、状态与已恢复操作；去掉额外项目状态副行、目录计数/主机长串堆叠、侧栏目录树/绑定/文件夹入口。",
+            "右侧文件/更改面板选择和绑定/移除关联目录，文件/Git操作目标正确；执行cwd独立。原无会话工作区/终端/服务仍可达，沿原资源生命周期，发现入口设计冲突带线框交Root。",
+            "首个可操作版本发真实1200/390预览并通知Root，最终验证多项目/worktree/非Git/跨项目置顶/多状态/无会话终端，分组、导航、卡片操作回归和仓规检查通过。",
+            "一个PR至main，source/base/full diff回读，指定Reviewer独立审查修复闭环，准确交付测试与未验证边界。"
+          ],
+          "executor": {
+            "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4",
+            "type": "agent"
+          },
+          "leadership": null,
+          "merge_authorization": {
+            "allowed": false,
+            "granted_at": null,
+            "granted_by": null,
+            "target_branch": null,
+            "repository_url": null
+          },
+          "requester_leadership": null,
+          "requester_session_id": "01a1d77b-9554-7cc2-b92e-38c776e42e69"
+        },
+        "author": {
+          "type": "agent",
+          "id": "71318ceb-7ddd-4b14-875b-d143f9268870",
+          "session_id": "01a1d77b-9554-7cc2-b92e-38c776e42e69"
+        },
+        "created_at": "2026-11-14T10:00:14.876117301Z"
+      },
+      {
+        "number": 2,
+        "goal": "同一套紧凑会话卡片以按项目/按目录按钮切换分组，目录管理回到右侧面板。",
+        "scope": "侧栏分组、卡片项目图标、右侧目录及资源入口、必要测试和文档。复用现有SessionContext及资源生命周期。",
+        "authorization_note": "用户确认设计，允许实现PR及独立审查。Root按已有授权验收合入部署，执行者不发布。Reviewer cd0fdafa-7c61-43d1-99f1-c68bb418c545。CI禁用及平台PR卡未配置按已知例外记录。",
+        "criteria": [
+          "顶部按项目/按目录，默认按项目；两边同批会话相同卡片，按项目合并同仓主检出/worktree，按目录以实际cwd分组；切换不改选中会话/cwd/项目归属。",
+          "两边同一独立置顶区，保留顺序；复用旧紧凑卡片和项目图标、标题、状态与已恢复操作；去掉额外项目状态副行、目录计数/主机长串堆叠、侧栏目录树/绑定/文件夹入口。",
+          "右侧文件/更改面板选择和绑定/移除关联目录，文件/Git操作目标正确；执行cwd独立。原无会话工作区/终端/服务仍可达，沿原资源生命周期，发现入口设计冲突带线框交Root。 入口决定：右侧Explorer工具栏增加“工作区与终端”入口，打开复用现有全局工作区列表的sheet；没有当前workspace时，现有Open project页提供同一个入口。选择真实workspace通过navigateToWorkspace打开原布局/terminal/service，不能自动创建agent或改变现有会话cwd。手机入口必须可见可点且可返回，不依赖hover。沿用真实本地化与无障碍标签，不以泛称“资源”掩盖用途。",
+          "首个可操作版本发真实1200/390预览并通知Root，最终验证多项目/worktree/非Git/跨项目置顶/多状态/无会话终端，分组、导航、卡片操作回归和仓规检查通过。",
+          "一个PR至main，source/base/full diff回读，指定Reviewer独立审查修复闭环，准确交付测试与未验证边界。"
+        ],
+        "executor": {
+          "type": "agent",
+          "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4"
+        },
+        "acceptor": {
+          "type": "agent",
+          "id": "71318ceb-7ddd-4b14-875b-d143f9268870",
+          "session_id": "01a1d77b-9554-7cc2-b92e-38c776e42e69"
+        },
+        "basis": {
+          "acceptor": {
+            "id": "71318ceb-7ddd-4b14-875b-d143f9268870",
+            "type": "agent",
+            "session_id": "01a1d77b-9554-7cc2-b92e-38c776e42e69"
+          },
+          "criteria": [
+            "顶部按项目/按目录，默认按项目；两边同批会话相同卡片，按项目合并同仓主检出/worktree，按目录以实际cwd分组；切换不改选中会话/cwd/项目归属。",
+            "两边同一独立置顶区，保留顺序；复用旧紧凑卡片和项目图标、标题、状态与已恢复操作；去掉额外项目状态副行、目录计数/主机长串堆叠、侧栏目录树/绑定/文件夹入口。",
+            "右侧文件/更改面板选择和绑定/移除关联目录，文件/Git操作目标正确；执行cwd独立。原无会话工作区/终端/服务仍可达，沿原资源生命周期，发现入口设计冲突带线框交Root。 入口决定：右侧Explorer工具栏增加“工作区与终端”入口，打开复用现有全局工作区列表的sheet；没有当前workspace时，现有Open project页提供同一个入口。选择真实workspace通过navigateToWorkspace打开原布局/terminal/service，不能自动创建agent或改变现有会话cwd。手机入口必须可见可点且可返回，不依赖hover。沿用真实本地化与无障碍标签，不以泛称“资源”掩盖用途。",
+            "首个可操作版本发真实1200/390预览并通知Root，最终验证多项目/worktree/非Git/跨项目置顶/多状态/无会话终端，分组、导航、卡片操作回归和仓规检查通过。",
+            "一个PR至main，source/base/full diff回读，指定Reviewer独立审查修复闭环，准确交付测试与未验证边界。"
+          ],
+          "executor": {
+            "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4",
+            "type": "agent"
+          },
+          "leadership": null,
+          "merge_authorization": {
+            "allowed": false,
+            "granted_at": null,
+            "granted_by": null,
+            "target_branch": null,
+            "repository_url": null
+          },
+          "requester_leadership": null,
+          "requester_session_id": "01a1d77b-9554-7cc2-b92e-38c776e42e69"
+        },
+        "author": {
+          "type": "agent",
+          "id": "71318ceb-7ddd-4b14-875b-d143f9268870",
+          "session_id": "01a1d77b-9554-7cc2-b92e-38c776e42e69"
+        },
+        "created_at": "2026-11-14T10:03:36.005814088Z"
+      }
+    ],
+    "deliveries": [],
+    "decisions": [],
+    "requests": [
+      {
+        "id": "e107fa5b-1d9c-49d2-8e57-6e0e3a9598db",
+        "digest": "1e62f592e53a09a19fadadb42bf83aca2267065253972f6b343d0f811eb139b1"
+      },
+      {
+        "id": "7ddbf718-c868-4e82-9789-e322e8916c90",
+        "digest": "b0fcf373d83ed12054e99d5cefe69b8849b3a9a4e86b2517902bb62f0a50e8b7"
+      }
+    ]
+  },
+  "stale": false,
+  "accepted": [],
+  "pending_actor": {
+    "type": "agent",
+    "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4"
+  },
+  "executor": {
+    "type": "agent",
+    "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4"
+  },
+  "executor_representative": null,
+  "acceptor": {
+    "type": "agent",
+    "id": "71318ceb-7ddd-4b14-875b-d143f9268870",
+    "session_id": "01a1d77b-9554-7cc2-b92e-38c776e42e69"
+  },
+  "can_edit": false,
+  "can_submit": true,
+  "can_review": false,
+  "merge_authorization": {
+    "allowed": false,
+    "repository_url": null,
+    "target_branch": null,
+    "granted_by": null,
+    "granted_at": null
+  }
+}

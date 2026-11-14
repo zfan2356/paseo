@@ -1,0 +1,25 @@
+{
+  "contract": null,
+  "stale": false,
+  "accepted": [],
+  "pending_actor": null,
+  "executor": {
+    "type": "agent",
+    "id": "cd0fdafa-7c61-43d1-99f1-c68bb418c545"
+  },
+  "executor_representative": null,
+  "acceptor": {
+    "type": "agent",
+    "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4"
+  },
+  "can_edit": true,
+  "can_submit": false,
+  "can_review": false,
+  "merge_authorization": {
+    "allowed": false,
+    "repository_url": null,
+    "target_branch": null,
+    "granted_by": null,
+    "granted_at": null
+  }
+}

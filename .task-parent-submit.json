@@ -1,0 +1,15 @@
+{
+  "action": "submit",
+  "client_request_id": "40b4869d-1ef1-4307-b325-1d8b7baab163",
+  "expected_sequence": 2,
+  "version": 2,
+  "criteria": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "evidence": "交付PR https://github.com/zfan2356/paseo/pull/18 ，Ready、target main。最终source 448fc68287cfaf27d92e0b4bb6c48cba740a3df8；base b60da86b9d695b2274e870d13fe7f4426b75892d；runtime ee9a65365d57a559daa62e58d8015fc38407da20。远端source/base/56文件完整diff已回读，文件集合与本地一致，分支agent/sol/work-396仍含起点3d06c2a。实现同批紧凑会话卡按项目/实际cwd分组、统一独立pin、项目图标/状态/旧操作；目录选择/绑定/移除/worktree创建回右侧；工作区与终端sheet及Open project入口复用真实资源生命周期。1200/390首个真实预览已通知Root，空会话主页、390原终端与running service均有截图。验证：13 unit通过；全仓typecheck/lint/format及两轮runtime hooks通过；相关18会话/资源浏览器用例和服务例在记录的矩阵/补跑通过，最终2例显式检查1200/390当前/其他workspace sheet关闭、status模式、同一terminal IDs/cwd/无假agent/可停止service。独立审查 WORK-399 Taste Good，R1项目与状态两条回调缺失已修复复审通过；子合同v1 delivery50dce254-8f00-4210-a8ff-cf4a0c271758已独立accept并done，两份结果MailBox均handled。Reviewer审查source6639f4f6，最终448fc682仅README加入两份既存日志链接，无runtime变化。证据 https://github.com/zfan2356/paseo/blob/agent/sol/work-396/docs/qa-evidence/session-grouping/README.md 。CI按合同禁用豁免（无checks/runs，读取Actions权限403）；正式PR卡绑定404、回读为空，按既知集成豁免未循环重试。未运行iOS/Android/packaged Electron，Add/Import仅静态核查。未合入、部署或重启生产。父交付待指定Root验收；沿本轮固定external_session回投。",
+  "child_ids": []
+}

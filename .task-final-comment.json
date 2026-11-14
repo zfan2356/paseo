@@ -1,0 +1,19 @@
+{
+  "attachments": [],
+  "author_id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4",
+  "author_type": "agent",
+  "content": "合同 v2 已完整提交，WORK-396 保持 in_review，待 Root 验收。交付 PR： https://github.com/zfan2356/paseo/pull/18 （Ready → main）。\n\n- 最终 source `448fc68287cfaf27d92e0b4bb6c48cba740a3df8`，base `b60da86b9d695b2274e870d13fe7f4426b75892d`；远端56文件完整diff已回读，与本地文件集合一致，分支仍为 agent/sol/work-396 并保留任务起点。\n- 同批紧凑会话卡按项目/实际cwd切换，共用独立置顶区、项目图标、状态和已恢复操作；目录管理回右侧。工作区与终端从Explorer或Open project进入，沿用原workspace/terminal/service/layout，不改会话cwd。首轮1200/390及空会话主页预览已提供。\n- 全仓typecheck、lint、format和commit hooks通过；13项模型测试通过。相关18个会话/资源浏览器用例与1个服务用例，在记录的矩阵和补跑中通过。最终两例明确验证当前/其他workspace的sheet关闭、390真实终端在视口、status分组、同一terminal IDs及运行服务仍可停止。原失败及修复记录未删。\n- 指定Reviewer独立复审 WORK-399 通过，Taste Good，无剩余必须修复项；R1项目/状态两条导航回调已修复。子合同已accept并done，结果均handled。审查source `6639f4f6`、runtime `ee9a65365`；最后 `448fc682` 只补README日志链接，没有runtime变更。\n\n[QA、截图和原始日志](https://github.com/zfan2356/paseo/blob/agent/sol/work-396/docs/qa-evidence/session-grouping/README.md)。父合同交付ID `40b4869d-1ef1-4307-b325-1d8b7baab163`，条目0–4，提交者为本次开发·Sol。\n\niOS、Android、packaged Electron未运行；Add/Import本轮仅静态核查。Actions禁用与Multica PR卡未配置沿既定豁免记录（无checks/runs，权限读取403；绑定404后回读为空）。没有合入、部署或重启生产；本轮结果沿已核实的固定external_session回投。",
+  "created_at": "2026-11-14T10:55:32Z",
+  "id": "01a1d9b2-bca1-77b3-bfcd-7c5a2fd18fe5",
+  "issue_id": "01a1d97f-4a9b-7de7-a12d-d2317c9d206e",
+  "issue_revision": 18,
+  "parent_id": "01a1d980-5e92-787b-95ff-cfeb4303aa81",
+  "reactions": [],
+  "resolved_at": null,
+  "resolved_by_id": null,
+  "resolved_by_type": null,
+  "revision": 1,
+  "source_task_id": "01a1d980-5ea0-769e-820b-f239574cf1ff",
+  "type": "comment",
+  "updated_at": "2026-11-14T10:55:32Z"
+}

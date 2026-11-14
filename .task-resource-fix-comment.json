@@ -1,0 +1,19 @@
+{
+  "attachments": [],
+  "author_id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4",
+  "author_type": "agent",
+  "content": "更正服务验证判断：第二次选资源行后残留遮罩是实际代码缺陷，并非仅测试点击位置。原 WorkspaceRowItem 接收 onWorkspacePress 却未调用，旧导航由路由/侧栏状态隐式关闭，放入全局sheet后切到保留workspace不会关闭sheet。已补回调到navigateToWorkspace前，并增加sheet关闭断言，正在跑服务/终端完整复验。资源空态原Add/Import回调也已补接既有流程。Reviewer已知此增量；其余审查继续。",
+  "created_at": "2026-11-14T10:39:39Z",
+  "id": "01a1d9a4-3297-7372-9027-293191ea6659",
+  "issue_id": "01a1d97f-4a9b-7de7-a12d-d2317c9d206e",
+  "issue_revision": 16,
+  "parent_id": "01a1d980-5e92-787b-95ff-cfeb4303aa81",
+  "reactions": [],
+  "resolved_at": null,
+  "resolved_by_id": null,
+  "resolved_by_type": null,
+  "revision": 1,
+  "source_task_id": "01a1d980-5ea0-769e-820b-f239574cf1ff",
+  "type": "comment",
+  "updated_at": "2026-11-14T10:39:39Z"
+}

@@ -1,0 +1,20 @@
+{
+  "handled_by_task_id": "01a1d980-5ea0-769e-820b-f239574cf1ff",
+  "id": "01a1d9af-5e4f-72e3-81be-2754580cee58",
+  "kind": "delegation_result",
+  "payload": {
+    "outcome": "completed",
+    "issue_id": "01a1d99b-5a8d-7c70-9282-6377cd857100",
+    "result_task_id": "01a1d9ab-b17e-7b0c-93fd-6be1ccccd993",
+    "delegation_return_id": "01a1d99b-5a93-741f-a640-9f4607f49f54"
+  },
+  "issue_id": "01a1d99b-5a8d-7c70-9282-6377cd857100",
+  "comment_id": "",
+  "recipient_agent_id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4",
+  "source_session": null,
+  "delivery_status": "pending",
+  "processing_status": "handled",
+  "created_at": "2026-11-14T10:51:51Z",
+  "delivered_at": null,
+  "last_error": null
+}

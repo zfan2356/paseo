@@ -1,0 +1,89 @@
+{
+  "contract": {
+    "sequence": 1,
+    "versions": [
+      {
+        "number": 1,
+        "goal": "独立审查 WORK-396 的精确交付修订并给出可执行结论。",
+        "scope": "发起评论指定的source/base完整diff及受影响生产路径；设计品味、正确性、证据；必要的独立最小反例。",
+        "authorization_note": "父合同v2授权指定Reviewer独立审查及修复复审。只审查和必要隔离验证，不修改作者checkout、不合入部署、不重启生产。CI及平台PR卡既知豁免不阻塞。",
+        "criteria": [
+          "核对精确source/base/full diff与仓规和父合同v2，完成各生产入口的独立审查，给Taste评级、正确性与证据判断；重要未查路径明示。",
+          "必须修复项包含可达触发、后果、位置与最小修复，并尝试调用者保证/反证；未定疑点和建议不冒充阻断项。",
+          "按本次固定回投报告实际复现、作者报告与未运行边界；submit审查结论和证据，若需复审在同一任务继续。"
+        ],
+        "executor": {
+          "type": "agent",
+          "id": "cd0fdafa-7c61-43d1-99f1-c68bb418c545"
+        },
+        "acceptor": {
+          "type": "agent",
+          "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4"
+        },
+        "basis": {
+          "acceptor": {
+            "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4",
+            "type": "agent"
+          },
+          "criteria": [
+            "核对精确source/base/full diff与仓规和父合同v2，完成各生产入口的独立审查，给Taste评级、正确性与证据判断；重要未查路径明示。",
+            "必须修复项包含可达触发、后果、位置与最小修复，并尝试调用者保证/反证；未定疑点和建议不冒充阻断项。",
+            "按本次固定回投报告实际复现、作者报告与未运行边界；submit审查结论和证据，若需复审在同一任务继续。"
+          ],
+          "executor": {
+            "id": "cd0fdafa-7c61-43d1-99f1-c68bb418c545",
+            "type": "agent"
+          },
+          "leadership": null,
+          "merge_authorization": {
+            "allowed": false,
+            "granted_at": null,
+            "granted_by": null,
+            "target_branch": null,
+            "repository_url": null
+          },
+          "requester_leadership": null,
+          "requester_session_id": null
+        },
+        "author": {
+          "type": "agent",
+          "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4"
+        },
+        "created_at": "2026-11-14T10:30:16.925981617Z"
+      }
+    ],
+    "deliveries": [],
+    "decisions": [],
+    "requests": [
+      {
+        "id": "ce2f5f8e-d2d0-4a01-b7a0-942448608374",
+        "digest": "43d2c17d7e6897fd446fd13577fd040f0ea3fb10f6409b5bdf0c1f9f0aec77eb"
+      }
+    ]
+  },
+  "stale": false,
+  "accepted": [],
+  "pending_actor": {
+    "type": "agent",
+    "id": "cd0fdafa-7c61-43d1-99f1-c68bb418c545"
+  },
+  "executor": {
+    "type": "agent",
+    "id": "cd0fdafa-7c61-43d1-99f1-c68bb418c545"
+  },
+  "executor_representative": null,
+  "acceptor": {
+    "type": "agent",
+    "id": "e3fd8e2b-ea18-46fd-86fc-336763b492f4"
+  },
+  "can_edit": true,
+  "can_submit": false,
+  "can_review": false,
+  "merge_authorization": {
+    "allowed": false,
+    "repository_url": null,
+    "target_branch": null,
+    "granted_by": null,
+    "granted_at": null
+  }
+}
