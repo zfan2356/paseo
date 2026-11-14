@@ -4,8 +4,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { z } from "zod";
 import { createValidatedPersistStorage } from "@/storage/validated-persist-storage";
+export type SessionGrouping = "project" | "directory";
 const PreferencesSchema = z.object({
-  expanded: z.record(z.string(), z.boolean()),
+  grouping: z.enum(["project", "directory"]).optional(),
   pinnedOrder: z.array(z.string()),
   migratedHosts: z.array(z.string()),
   legacyPinRanks: z
@@ -17,17 +18,18 @@ const PreferencesSchema = z.object({
 });
 interface SessionNavigationPreferences extends z.infer<typeof PreferencesSchema> {
   search: string;
+  setGrouping(grouping: SessionGrouping): void;
   selectSession(key: string): void;
   selectDirectory(sessionKey: string, path: string): void;
   setSearch(search: string): void;
-  toggleExpanded(key: string): void;
   setPinnedOrder(order: string[]): void;
   migratePins(serverId: string, keys: LegacySessionPin[]): void;
 }
 export const useSessionNavigationPreferences = create<SessionNavigationPreferences>()(
   persist(
     (set) => ({
-      expanded: {},
+      grouping: "project",
+      setGrouping: (grouping) => set({ grouping }),
       pinnedOrder: [],
       migratedHosts: [],
       legacyPinRanks: {},
@@ -42,8 +44,6 @@ export const useSessionNavigationPreferences = create<SessionNavigationPreferenc
           selectedDirectoryBySession: { ...state.selectedDirectoryBySession, [sessionKey]: path },
         })),
       setSearch: (search) => set({ search }),
-      toggleExpanded: (key) =>
-        set((state) => ({ expanded: { ...state.expanded, [key]: !state.expanded[key] } })),
       setPinnedOrder: (pinnedOrder) => set({ pinnedOrder, pinOrderEdited: true }),
       migratePins: (serverId, keys) =>
         set((state) => {
@@ -65,7 +65,7 @@ export const useSessionNavigationPreferences = create<SessionNavigationPreferenc
       name: "session-navigation",
       storage: createValidatedPersistStorage(AsyncStorage, PreferencesSchema),
       partialize: (state) => ({
-        expanded: state.expanded,
+        grouping: state.grouping,
         pinnedOrder: state.pinnedOrder,
         migratedHosts: state.migratedHosts,
         legacyPinRanks: state.legacyPinRanks,

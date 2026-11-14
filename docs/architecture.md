@@ -411,8 +411,8 @@ initializing → idle ⇄ running
 The default sidebar projects root agents through their SessionContext. Its collection owner also
 supplies keyboard targets, so session project, label and pin changes cannot leave shortcuts on the
 old workspace projection. Projects merge through the existing opaque projectKey across hosts.
-Workspace rows remain under the explicit Directories and terminals resource entry, including
-containers without a visible root agent. The [session navigation design](session-context.md) owns
+Workspace rows remain in the Workspaces and terminals sheet, including containers without a
+visible root agent. Its entry points live in Explorer and on Open project. The [session navigation design](session-context.md) owns
 the product and compatibility rules.
 
 Keep shared directory facts separate from browsing state:
@@ -426,7 +426,7 @@ Keep shared directory facts separate from browsing state:
 
 Binding and browsing never create an owning workspace, change its project FK or change agent cwd.
 Keep the real workspaceId on resource operations; a browsing-state key must not masquerade as a
-workspaceId. Session navigation uses bounded directory checks on expansion and explicit refresh.
+workspaceId. Directory panels read only the selected path; sidebar grouping does not inspect bound directories.
 An unregistered directory's cached daemon Git snapshot needs checkoutRefresh; another
 getCheckoutStatus alone does not refresh it.
 

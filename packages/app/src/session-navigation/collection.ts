@@ -57,12 +57,13 @@ export function useSessionNavigationCollection({
   enabled: boolean;
 }) {
   const hosts = useHosts();
+  const grouping = useSessionNavigationPreferences((state) => state.grouping ?? "project");
   const preferences = useSidebarViewStore(
     useShallow((state) => ({
       sort: state.workspaceSort,
       labels: state.labelFilter.labels,
       projects: state.projectFilters,
-      group: state.groupMode,
+      group: grouping,
       showBackground: state.showBackground,
       hostFilters: state.hostFilters,
     })),
@@ -145,9 +146,7 @@ export function useSessionNavigationCollection({
   const oldPinnedOrder = useSidebarOrderStore((state) => state.pinnedWorkspaceOrder);
   const search = useSessionNavigationPreferences((state) => state.search);
   const projectOrder = useSidebarOrderStore((state) => state.projectOrder);
-  const collapsed = useSidebarCollapsedSectionsStore((state) =>
-    preferences.group === "status" ? state.collapsedWorkspaceGroupKeys : state.collapsedProjectKeys,
-  );
+  const collapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedProjectKeys);
   const collapsedPinned = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
   const resolvedProjectFilters = useMemo(
     () =>
@@ -205,15 +204,16 @@ export function useSessionNavigationCollection({
         else merged.set(group.key, group);
       }
     }
-    const order =
-      preferences.group === "status"
-        ? ["needs_input", "failed", "attention", "running", "done"]
-        : projectOrder;
+    const order = preferences.group === "project" ? projectOrder : [];
     return [...merged.values()]
       .sort((a, b) => {
         if (a.key === PINNED_SESSION_GROUP) return -1;
         if (b.key === PINNED_SESSION_GROUP) return 1;
-        return order.indexOf(a.key) - order.indexOf(b.key);
+        const rank = (key: string) => {
+          const index = order.indexOf(key);
+          return index < 0 ? Infinity : index;
+        };
+        return rank(a.key) - rank(b.key);
       })
       .map((group) => ({
         key: group.key,
