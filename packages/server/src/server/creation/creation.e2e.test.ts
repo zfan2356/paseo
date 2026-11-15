@@ -41,31 +41,31 @@ interface ReviewCliInput {
   port: number;
   cwd: string;
   env: NodeJS.ProcessEnv;
+  newWorkspace?: boolean;
 }
 
 async function runReviewCli(input: ReviewCliInput): Promise<string> {
-  const result = await promisify(execFile)(
-    process.execPath,
-    [
-      "--conditions=source",
-      "--import",
-      "tsx",
-      fileURLToPath(new URL("../../../../cli/src/index.ts", import.meta.url)),
-      "--host",
-      `127.0.0.1:${input.port}`,
-      "run",
-      "Review the change",
-      "--provider",
-      "codex",
-      "--no-wait",
-      "--new-workspace",
-      "local",
-      "--cwd",
-      input.cwd,
-      "--json",
-    ],
-    { env: input.env, timeout: 15000 },
-  );
+  const args = [
+    "--conditions=source",
+    "--import",
+    "tsx",
+    fileURLToPath(new URL("../../../../cli/src/index.ts", import.meta.url)),
+    "--host",
+    `127.0.0.1:${input.port}`,
+    "run",
+    "Review the change",
+    "--provider",
+    "codex",
+    "--no-wait",
+    "--cwd",
+    input.cwd,
+    "--json",
+  ];
+  if (input.newWorkspace !== false) args.push("--new-workspace", "local");
+  const result = await promisify(execFile)(process.execPath, args, {
+    env: input.env,
+    timeout: 15000,
+  });
   return z.object({ agentId: z.string() }).parse(JSON.parse(result.stdout)).agentId;
 }
 
@@ -141,6 +141,20 @@ test.each(["non-git", "linked-worktree"])(
       expect((await client.listProjects()).projects.map((entry) => entry.projectId)).toEqual([
         project.projectId,
       ]);
+
+      const bareId = await runReviewCli({
+        port: daemon.port,
+        cwd: next,
+        newWorkspace: false,
+        env: {
+          ...env,
+          PASEO_AGENT_ID: recoveredId,
+          PASEO_WORKSPACE_ID: recovered?.agent.workspaceId,
+        },
+      });
+      const bare = await client.fetchAgent({ agentId: bareId });
+      expect(bare?.agent.cwd).toBe(next);
+      expect(bare?.agent.workspaceId).not.toBe(recovered?.agent.workspaceId);
 
       const workspaceCreation = await promisify(execFile)(
         process.execPath,

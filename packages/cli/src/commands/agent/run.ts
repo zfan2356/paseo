@@ -548,9 +548,9 @@ export async function resolveExistingRunWorkspace(
 
 // Workspace policy for `paseo run`. Precedence:
 //   1. --workspace <id>            -> run in that existing workspace
-//   2. caller agent                -> daemon resolves the caller's workspace
-//   3. $PASEO_WORKSPACE_ID         -> exported by workspace terminals
-//   4. --new-workspace <kind>      -> mint a new workspace explicitly
+//   2. --new-workspace or managed  -> create a separate workspace, select project on the host
+//   3. caller agent                -> daemon resolves the caller's workspace
+//   4. $PASEO_WORKSPACE_ID         -> exported by workspace terminals
 //   5. bare run                    -> mint a new local-backed workspace for cwd
 async function resolveRunWorkspace(
   client: ConnectedDaemonClient,
@@ -559,17 +559,19 @@ async function resolveRunWorkspace(
   callerAgentId: string | undefined,
 ): Promise<RunWorkspace> {
   const newWorkspace = resolveNewWorkspaceKind(options);
+  const automatic = isAutomaticTaskInvocation();
+  const separateWorkspace = Boolean(newWorkspace) || automatic;
   const explicit = newWorkspace ? undefined : options.workspace?.trim();
   if (explicit) {
     console.error(`Using workspace ${explicit}`);
     return resolveExistingRunWorkspace(client, explicit);
   }
 
-  if (!newWorkspace && callerAgentId) {
+  if (!separateWorkspace && callerAgentId) {
     return { cwd };
   }
 
-  const ambientWorkspaceId = newWorkspace ? undefined : process.env.PASEO_WORKSPACE_ID?.trim();
+  const ambientWorkspaceId = separateWorkspace ? undefined : process.env.PASEO_WORKSPACE_ID?.trim();
   if (ambientWorkspaceId) {
     console.error(`Using workspace ${ambientWorkspaceId}`);
     return resolveExistingRunWorkspace(client, ambientWorkspaceId);
@@ -580,7 +582,7 @@ async function resolveRunWorkspace(
   const source = buildRunWorkspaceSource(options, cwd);
   const result = await client.createWorkspace({
     source,
-    ...(isAutomaticTaskInvocation() ? { automatic: true } : {}),
+    ...(automatic ? { automatic: true } : {}),
     ...(callerAgentId ? { callerAgentId } : {}),
   });
 

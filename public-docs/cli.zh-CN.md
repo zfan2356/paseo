@@ -121,7 +121,7 @@ paseo run --output-schema '{"type":"object","properties":{"summary":{"type":"str
 
 创建 worktree 时接受 `--worktree-mode branch-off|checkout-branch|checkout-pr`，以及相应的 `--new-branch`/`--base`、`--branch` 或 `--pr-number`/`--forge` 选项。使用 `--worktree-slug` 选择托管目录的 slug。
 
-当一个已有的 Paseo Agent 运行同样的命令时，Paseo 会通过 `PASEO_AGENT_ID` 识别它。如果没有显式指定位置，新的 Agent 会成为它在同一工作区中的子 Agent。`--workspace` 可以把这个子 Agent 放到其他地方，而不改变它的父 Agent。
+在托管任务之外，当一个已有的 Paseo Agent 运行同样的命令时，Paseo 会通过 `PASEO_AGENT_ID` 识别它。如果没有显式指定位置，新的 Agent 会成为它在同一工作区中的子 Agent。`--workspace` 可以把这个子 Agent 放到其他地方，而不改变它的父 Agent。
 
 使用 `--output-schema` 只返回符合 schema 的 JSON 输出。你可以传入 schema 文件路径，或内联的 JSON schema 对象。此模式不能与 `--no-wait` 一起使用。
 
