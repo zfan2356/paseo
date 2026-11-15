@@ -59,6 +59,11 @@ export interface CreateWorktreeWorkspaceInput {
   callerWorkspaceId?: string;
 }
 
+type WorkspaceProjectSelection = Pick<
+  CreateWorktreeWorkspaceInput,
+  "projectId" | "callerWorkspaceId" | "automatic"
+>;
+
 export interface WorkspaceProvisioningService {
   runInImportWorkspace<T>(
     input: ImportWorkspaceInput,
@@ -231,11 +236,9 @@ export function createWorkspaceProvisioningService(deps: {
     return project;
   }
 
-  async function resolveCreationProjectId(input: {
-    projectId?: string;
-    callerWorkspaceId?: string;
-    automatic?: boolean;
-  }): Promise<string | undefined> {
+  async function resolveCreationProjectId(
+    input: WorkspaceProjectSelection,
+  ): Promise<string | undefined> {
     if (input.projectId) return input.projectId;
     if (input.callerWorkspaceId) {
       const parent = await workspaceRegistry.get(input.callerWorkspaceId);
