@@ -66,6 +66,8 @@ Fork-only feature files (`agent-change-requests/section.tsx`, `side-chat/panel.t
 
 ## Resolving conflicts
 
+Expect about 5–7 hook conflicts per merge. A trial merge of one week of upstream (2026-11-08 to 2026-11-15) hit 10 material conflict blocks in 8 files, 9 of them on shared primitives upstream was rewriting; a 4–5 day merge window scales that down. Each conflict is one line to re-attach.
+
 Upstream wins. Take upstream's version of the file, then re-attach the hook:
 
 - A conflict on a `dataSet={MATERIAL_SLOTS.x}` line or a `@/fork/materials/*` import: take upstream, then add the attribute or import back on the equivalent element.
