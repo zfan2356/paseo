@@ -541,6 +541,7 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
 
 export interface CreateWorkspaceRequestOptions {
   source: WorkspaceCreateRequest["source"];
+  automatic?: WorkspaceCreateRequest["automatic"];
   title?: string;
   /** Workspace discovery visibility; contents retain normal durability. */
   background?: boolean;
@@ -5420,6 +5421,12 @@ export class DaemonClient {
     requestId?: string,
   ): Promise<WorkspaceCreatePayload> {
     const resolvedRequestId = this.createRequestId(requestId ?? input.requestId);
+    const needsAutomaticProjectSelection = input.automatic && !input.source.projectId;
+    const automaticProjectsSupported =
+      this.lastServerInfoMessage?.features?.automaticTaskProjects === true;
+    // COMPAT(automaticTaskProjects): added in v0.15.3; remove after 2027-05-15.
+    if (needsAutomaticProjectSelection && !automaticProjectsSupported)
+      throw new Error("Update the host to use automatic task projects.");
     if (input.background !== undefined || input.callerAgentId) this.requireBackgroundWorkspaces();
     if (input.agent?.background !== undefined)
       throw new Error("Configure background on the workspace, not its initial agent.");
@@ -5454,6 +5461,7 @@ export class DaemonClient {
           ? { idempotencyKey: input.idempotencyKey }
           : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.automatic !== undefined ? { automatic: input.automatic } : {}),
         ...(input.background !== undefined ? { background: input.background } : {}),
         ...(input.callerAgentId ? { callerAgentId: input.callerAgentId } : {}),
         ...(input.firstAgentContext !== undefined

@@ -2960,6 +2960,7 @@ export const WorkspaceCreateRequestSchema = z.object({
   internal: z.boolean().optional(),
   background: z.boolean().optional(),
   callerAgentId: z.string().optional(),
+  automatic: z.boolean().optional(),
   source: z.discriminatedUnion("kind", [
     z.object({
       kind: z.literal("directory"),
@@ -3943,6 +3944,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(internalWorkspaces): added in v0.9.0; remove gate after 2027-03-17.
         internalWorkspaces: z.boolean().optional(),
         backgroundWorkspaces: z.boolean().optional(),
+        automaticTaskProjects: z.boolean().optional(),
         // COMPAT(backgroundAgents): added in v0.15.0; remove gate after 2027-05-03.
         backgroundAgents: z.boolean().optional(),
         providersSnapshot: z.boolean().optional(),

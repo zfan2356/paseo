@@ -1029,6 +1029,7 @@ export class Session {
     });
     this.workspaceAutoName = workspaceAutoName;
     this.workspaceProvisioning = createWorkspaceProvisioningService({
+      automaticProjectRoot: resolve(this.paseoHome, "automatic-tasks"),
       withCheckoutLock: this.workspaceBaseBranch.withCheckoutLock,
       lifecycle: this.pluginRuntime,
       serverId,
@@ -7710,6 +7711,7 @@ export class Session {
       request.source.projectId,
       {
         expectsInitialAgent: Boolean(request.firstAgentContext),
+        automatic: request.automatic,
         workspaceId,
         ...(await this.workspaceBackgroundIntent(request.background, request.callerAgentId)),
       },
@@ -7766,6 +7768,7 @@ export class Session {
         cwd: sourceCwd,
         workspaceId,
         projectId: source.projectId,
+        automatic: request.automatic,
         worktreeSlug: source.worktreeSlug,
         action: source.action,
         refName: source.refName,

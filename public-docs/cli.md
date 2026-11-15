@@ -118,9 +118,13 @@ paseo run --output-schema '{"type":"object","properties":{"summary":{"type":"str
 
 From a human shell, a bare `paseo run` creates a new local workspace for the current directory. Use `--workspace <id>` to add the agent to an existing workspace, or `--new-workspace local|worktree` to explicitly create a separate workspace for the run.
 
+To keep a separate execution directory under an existing project, use `paseo run --new-workspace local --cwd /path/to/review --project <project-id> "review the diff"`. Get the project ID from `paseo project ls` on the target host. `--project` requires `--new-workspace`; it selects project ownership without reusing another workspace's directory.
+
+Inside a managed Multica task, an explicit project takes precedence. Worktree sources keep their registered project; otherwise `run` and `workspace create` select the verified caller's project, then the host's “自动任务” project. Execution directories stay independent. Update the target host if the CLI reports that automatic task projects are unsupported.
+
 Worktree creation accepts `--worktree-mode branch-off|checkout-branch|checkout-pr` plus the matching `--new-branch`/`--base`, `--branch`, or `--pr-number`/`--forge` options. Use `--worktree-slug` to choose the managed directory slug.
 
-When an existing Paseo agent runs the same command, Paseo recognizes it through `PASEO_AGENT_ID`. Without explicit placement, the new agent becomes its subagent in the same workspace. `--workspace` can place that subagent elsewhere without changing its parent.
+Outside managed tasks, when an existing Paseo agent runs the same command, Paseo recognizes it through `PASEO_AGENT_ID`. Without explicit placement, the new agent becomes its subagent in the same workspace. `--workspace` can place that subagent elsewhere without changing its parent.
 
 Use `--output-schema` to return only matching JSON output. You can pass a schema file path or an inline JSON schema object. This mode cannot be used with `--no-wait`.
 

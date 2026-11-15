@@ -31,6 +31,7 @@ import type { FirstAgentContext } from "@getpaseo/protocol/messages";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
 
 export interface CreatePaseoWorktreeInput extends CreateWorktreeCoreInput {
+  automatic?: boolean;
   workspaceId?: string;
   projectId?: string;
   title?: string;
@@ -116,6 +117,7 @@ async function createPaseoWorktreeWithPriority(
       expectsInitialAgent: Boolean(input.firstAgentContext),
       background: input.background,
       callerWorkspaceId: input.callerWorkspaceId,
+      automatic: input.automatic,
       ...(createdWorktree.intent.kind === "checkout-change-request" &&
       createdWorktree.intent.headRepository
         ? {

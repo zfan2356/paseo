@@ -1019,6 +1019,7 @@ export async function createPaseoDaemon(
     }
   });
   const workspaceProvisioning = createWorkspaceProvisioningService({
+    automaticProjectRoot: path.join(config.paseoHome, "automatic-tasks"),
     lifecycle: pluginRuntime,
     serverId,
     projectRegistry,

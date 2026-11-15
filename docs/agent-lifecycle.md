@@ -139,6 +139,21 @@ the marker. Closing a tab sets that client's label to `false`. Any `true` client
 open. Detach clears the parent and every open-tab label. The surviving child therefore becomes a
 normal root agent immediately, and closing its still-open tab archives it.
 
+Agent-scoped directory workspace creation defaults to the caller workspace's project. An explicit
+project takes precedence; the child keeps its own workspace ID and execution directory. Worktree
+creation keeps a registered source project's ownership before considering caller/default ownership;
+clients use project kind to enable Git actions. Project identity is local to the target daemon;
+an external task system's project ID is not a Paseo project ID.
+
+The CLI marks workspace creation inside a managed Multica task using its existing `MULTICA_TASK_ID`
+environment marker. The value is never used as a Paseo ID. Automatic creation with no explicit or
+registered source project and no verified caller uses the target daemon's “自动任务” project. Its dedicated root under
+`PASEO_HOME/automatic-tasks` identifies it across concurrent calls, renames and restarts; a same-named
+project elsewhere is unrelated. A later automatic task restores that project if it was archived.
+Each task retains its own workspace and execution directory. Manual creation without caller or
+explicit project context keeps path-based allocation. Older hosts require an update for automatic
+project selection; clients must check `server_info.features.automaticTaskProjects` before requesting it.
+
 Agent-scoped workspace creation records the caller's workspace as `parentWorkspaceId`.
 This is informational ancestry for future workspace grouping. It does not change placement,
 visibility, status, or archive behavior. Archiving a parent workspace preserves its children's

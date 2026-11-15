@@ -1308,6 +1308,10 @@ describe("workspace message schemas", () => {
     });
     expect(newDirectory.type).toBe("workspace.create.request");
     expect(newDirectory.source.kind).toBe("directory");
+    expect(newDirectory.automatic).toBeUndefined();
+    expect(WorkspaceCreateRequestSchema.parse({ ...newDirectory, automatic: true }).automatic).toBe(
+      true,
+    );
   });
 });
 
