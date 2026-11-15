@@ -138,6 +138,10 @@ describe("runRunCommand option validation", () => {
     );
   });
 
+  it("rejects --project without new workspace creation", async () => {
+    await expectInvalidOptions({ project: "prj_existing" }, /--project requires --new-workspace/);
+  });
+
   it("allows explicit worktree workspace creation through validation", async () => {
     // Explicit workspace creation with no --workspace
     // must clear validation. It still fails later (provider resolution), which

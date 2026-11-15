@@ -139,6 +139,12 @@ the marker. Closing a tab sets that client's label to `false`. Any `true` client
 open. Detach clears the parent and every open-tab label. The surviving child therefore becomes a
 normal root agent immediately, and closing its still-open tab archives it.
 
+Agent-scoped directory workspace creation defaults to the caller workspace's project. An explicit
+project takes precedence; the child keeps its own workspace ID and execution directory. Worktree
+creation resolves its source project separately. Project identity is local to the target daemon;
+an external task system's project ID is not a Paseo project ID. Without caller or explicit project
+context, directory creation retains its path-based allocation behavior.
+
 Agent-scoped workspace creation records the caller's workspace as `parentWorkspaceId`.
 This is informational ancestry for future workspace grouping. It does not change placement,
 visibility, status, or archive behavior. Archiving a parent workspace preserves its children's

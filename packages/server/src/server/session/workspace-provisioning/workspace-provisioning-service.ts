@@ -255,10 +255,22 @@ export function createWorkspaceProvisioningService(deps: {
       callerWorkspaceId?: string;
     },
   ): Promise<PersistedWorkspaceRecord> {
+    const creationMetadata = await resolveCreationMetadata(context);
+    let ownerProjectId = projectId;
+    if (!ownerProjectId && creationMetadata.parentWorkspaceId) {
+      const parent = await workspaceRegistry.get(creationMetadata.parentWorkspaceId);
+      if (!parent)
+        throw new Error(`Caller workspace ${creationMetadata.parentWorkspaceId} not found`);
+      ownerProjectId = parent.projectId;
+    }
     const normalizedCwd = resolve(cwd);
     const checkout = await workspaceGitService.getCheckout(normalizedCwd);
-    const project = projectId
-      ? await refreshProjectKind(await requireActiveProject(projectId), normalizedCwd, checkout)
+    const project = ownerProjectId
+      ? await refreshProjectKind(
+          await requireActiveProject(ownerProjectId),
+          normalizedCwd,
+          checkout,
+        )
       : // COMPAT(workspaceCreateMissingProjectId): added in v0.1.107, remove after 2027-01-15.
         await findOrCreateProjectForDirectory(normalizedCwd);
     const create = async () => {
@@ -275,7 +287,7 @@ export function createWorkspaceProvisioningService(deps: {
         title: title?.trim() || null,
         createdAt: timestamp,
         updatedAt: timestamp,
-        ...(await resolveCreationMetadata(context)),
+        ...creationMetadata,
       });
       await workspaceRegistry.upsert(workspace, {
         expectsInitialAgent: context?.expectsInitialAgent,

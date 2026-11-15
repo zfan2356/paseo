@@ -260,6 +260,86 @@ test("worktree workspace creation records its caller independently of its source
   });
 });
 
+test.each([false, true])(
+  "directory children inherit project ownership independently of their checkout (git: %s)",
+  async (isGit) => {
+    const source = path.join(tmpDir, "source");
+    const cwd = path.join(tmpDir, "review-copy");
+    if (isGit) {
+      gitRoots.add(source);
+      gitRoots.add(cwd);
+    }
+    const parent = await provisioning.createWorkspaceForDirectory(source);
+    const child = await provisioning.createWorkspaceForDirectory(cwd, "Review", undefined, {
+      callerWorkspaceId: parent.workspaceId,
+    });
+    const repeated = await provisioning.createWorkspaceForDirectory(cwd, "Review", undefined, {
+      callerWorkspaceId: parent.workspaceId,
+    });
+    expect(child).toMatchObject({ projectId: parent.projectId, cwd });
+    expect(child.workspaceId).not.toBe(parent.workspaceId);
+    expect(repeated.workspaceId).not.toBe(child.workspaceId);
+    expect(repeated.projectId).toBe(parent.projectId);
+    expect(await projectRegistry.list()).toHaveLength(1);
+
+    const projects = new FileBackedProjectRegistry(
+      path.join(tmpDir, "projects", "projects.json"),
+      logger,
+    );
+    const workspaces = new FileBackedWorkspaceRegistry(
+      path.join(tmpDir, "projects", "workspaces.json"),
+      logger,
+    );
+    await projects.initialize();
+    await workspaces.initialize();
+    const restored = createWorkspaceProvisioningService({
+      workspaceRegistry: workspaces,
+      projectRegistry: projects,
+      workspaceGitService: gitService(),
+      isDirectory,
+      logger,
+    });
+    const afterRestart = await restored.createWorkspaceForDirectory(cwd, null, undefined, {
+      callerWorkspaceId: parent.workspaceId,
+    });
+    expect(afterRestart.projectId).toBe(parent.projectId);
+    expect(await projects.list()).toHaveLength(1);
+  },
+);
+
+test("an explicit project overrides the caller's project for a directory child", async () => {
+  const parent = await provisioning.createWorkspaceForDirectory(path.join(tmpDir, "parent"));
+  const other = await provisioning.createWorkspaceForDirectory(path.join(tmpDir, "other"));
+  const child = await provisioning.createWorkspaceForDirectory(
+    path.join(tmpDir, "review-copy"),
+    null,
+    other.projectId,
+    { callerWorkspaceId: parent.workspaceId },
+  );
+  expect(child).toMatchObject({
+    projectId: other.projectId,
+    parentWorkspaceId: parent.workspaceId,
+  });
+  expect(await projectRegistry.list()).toHaveLength(2);
+});
+
+test.each(["archived", "missing"])(
+  "directory children reject a %s parent project without registering their cwd",
+  async (state) => {
+    const parent = await provisioning.createWorkspaceForDirectory(path.join(tmpDir, "parent"));
+    if (state === "archived") await projectRegistry.archive(parent.projectId, ARCHIVED_AT);
+    else await projectRegistry.remove(parent.projectId);
+    const before = await projectRegistry.list();
+    await expect(
+      provisioning.createWorkspaceForDirectory(path.join(tmpDir, "review-copy"), null, undefined, {
+        callerWorkspaceId: parent.workspaceId,
+      }),
+    ).rejects.toBeInstanceOf(WorkspaceProvisioningError);
+    expect(await projectRegistry.list()).toEqual(before);
+    expect(await workspaceRegistry.listAll()).toHaveLength(1);
+  },
+);
+
 test("workspace creation rejects an unknown caller even with explicit visibility", async () => {
   await expect(
     provisioning.createWorkspaceForDirectory(path.join(tmpDir, "plain"), null, undefined, {
@@ -267,6 +347,8 @@ test("workspace creation rejects an unknown caller even with explicit visibility
       background: false,
     }),
   ).rejects.toThrow("Caller workspace missing not found");
+  expect(await projectRegistry.list()).toHaveLength(0);
+  expect(await workspaceRegistry.listAll()).toHaveLength(0);
 });
 
 test("workspace creation cannot overwrite its caller with a self relationship", async () => {

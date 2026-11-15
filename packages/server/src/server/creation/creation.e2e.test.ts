@@ -1,10 +1,12 @@
-import { execFileSync } from "node:child_process";
-import type { z } from "zod";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import { BUILTIN_PROVIDER_IDS } from "@getpaseo/protocol/provider-manifest";
 import { WebSocket } from "ws";
 import { SessionInboundMessageSchema, WSOutboundMessageSchema } from "@getpaseo/protocol/messages";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
@@ -34,6 +36,131 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+
+test.each(["non-git", "linked-worktree"])(
+  "CLI directory child retains caller project with independent %s cwd",
+  async (kind) => {
+    const directory = await mkdtemp(join(tmpdir(), "project-ownership-"));
+    const source = join(directory, "source");
+    const review = join(directory, "review-copy");
+    await mkdir(source);
+    if (kind === "linked-worktree") {
+      execFileSync("git", ["init", source]);
+      execFileSync("git", [
+        "-C",
+        source,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "initial",
+      ]);
+      execFileSync("git", ["-C", source, "worktree", "add", "-b", "review", review]);
+    } else {
+      await mkdir(review);
+    }
+    const daemon = await createCreationDaemon();
+    const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    try {
+      await client.connect();
+      const parent = await client.createWorkspace({
+        source: { kind: "directory", path: source },
+        agent: { config: { provider: "codex", cwd: source } },
+      });
+      expect(parent.error).toBeNull();
+      if (!parent.agent || !parent.workspace) throw new Error("Parent creation failed");
+      const cli = await promisify(execFile)(
+        process.execPath,
+        [
+          "--conditions=source",
+          "--import",
+          "tsx",
+          fileURLToPath(new URL("../../../../cli/src/index.ts", import.meta.url)),
+          "--host",
+          `127.0.0.1:${daemon.port}`,
+          "run",
+          "Review the change",
+          "--provider",
+          "codex",
+          "--no-wait",
+          "--new-workspace",
+          "local",
+          "--cwd",
+          review,
+          "--json",
+        ],
+        { env: { ...process.env, PASEO_AGENT_ID: parent.agent.id }, timeout: 15000 },
+      );
+      const result = z.object({ agentId: z.string() }).parse(JSON.parse(cli.stdout));
+      const child = await client.fetchAgent({ agentId: result.agentId });
+      expect(child?.agent.cwd).toBe(review);
+      expect(child?.agent.workspaceId).not.toBe(parent.workspace.id);
+      const workspaces = await client.fetchWorkspaces();
+      const childWorkspace = workspaces.entries.find(
+        (entry) => entry.id === child?.agent.workspaceId,
+      );
+      expect(childWorkspace).toMatchObject({
+        projectId: parent.workspace.projectId,
+        parentWorkspaceId: parent.workspace.id,
+        workspaceDirectory: review,
+      });
+      expect((await client.listProjects()).projects).toHaveLength(1);
+
+      const other = await client.createWorkspace({
+        source: { kind: "directory", path: directory },
+      });
+      if (!other.workspace) throw new Error("Other project creation failed");
+      const {
+        PASEO_AGENT_ID: _caller,
+        PASEO_WORKSPACE_ID: _workspace,
+        ...unscopedEnv
+      } = process.env;
+      const explicit = await promisify(execFile)(
+        process.execPath,
+        [
+          "--conditions=source",
+          "--import",
+          "tsx",
+          fileURLToPath(new URL("../../../../cli/src/index.ts", import.meta.url)),
+          "--host",
+          `127.0.0.1:${daemon.port}`,
+          "run",
+          "Review independently",
+          "--provider",
+          "codex",
+          "--no-wait",
+          "--new-workspace",
+          "local",
+          "--cwd",
+          review,
+          "--project",
+          other.workspace.projectId,
+          "--json",
+        ],
+        { env: unscopedEnv, timeout: 15000 },
+      );
+      const selected = z.object({ agentId: z.string() }).parse(JSON.parse(explicit.stdout));
+      const selectedAgent = await client.fetchAgent({ agentId: selected.agentId });
+      const selectedWorkspace = (await client.fetchWorkspaces()).entries.find(
+        (entry) => entry.id === selectedAgent?.agent.workspaceId,
+      );
+      expect(selectedWorkspace).toMatchObject({
+        projectId: other.workspace.projectId,
+        workspaceDirectory: review,
+      });
+      expect(selectedWorkspace?.id).not.toBe(other.workspace.id);
+      expect((await client.listProjects()).projects).toHaveLength(2);
+    } finally {
+      await client.close();
+      await daemon.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  30000,
+);
 
 test("creation progresses before agent readiness and continues after the disconnected Session is cleaned up", async () => {
   const provider = deferred<void>();

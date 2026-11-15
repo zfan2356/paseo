@@ -115,6 +115,8 @@ paseo run --output-schema '{"type":"object","properties":{"summary":{"type":"str
 
 在人工操作的 shell 中，不带参数的 `paseo run` 会为当前目录创建一个新的本地工作区。使用 `--workspace <id>` 把 Agent 加入一个已有的工作区，或者使用 `--new-workspace local|worktree` 为这次运行显式创建一个单独的工作区。
 
+要在已有项目下使用独立执行目录，运行 `paseo run --new-workspace local --cwd /path/to/review --project <project-id> "review the diff"`。项目 ID 从目标主机的 `paseo project ls` 获取。`--project` 必须与 `--new-workspace` 一起使用；它选择项目归属，工作区和执行目录仍然独立。
+
 创建 worktree 时接受 `--worktree-mode branch-off|checkout-branch|checkout-pr`，以及相应的 `--new-branch`/`--base`、`--branch` 或 `--pr-number`/`--forge` 选项。使用 `--worktree-slug` 选择托管目录的 slug。
 
 当一个已有的 Paseo Agent 运行同样的命令时，Paseo 会通过 `PASEO_AGENT_ID` 识别它。如果没有显式指定位置，新的 Agent 会成为它在同一工作区中的子 Agent。`--workspace` 可以把这个子 Agent 放到其他地方，而不改变它的父 Agent。

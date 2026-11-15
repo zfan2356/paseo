@@ -47,6 +47,7 @@ export function addRunOptions(cmd: Command): Command {
       .option("--thinking <id>", "Thinking option ID to use for this run")
       .option("--mode <mode>", "Provider-specific mode (e.g., plan, default, bypass)")
       .option("--new-workspace <local|worktree>", "Create a separate local or worktree workspace")
+      .option("--project <id>", "Use an existing project for --new-workspace")
       .addOption(new Option("--worktree <name>", "Legacy workspace isolation alias").hideHelp())
       .option(
         "--worktree-mode <mode>",
@@ -124,6 +125,7 @@ export interface AgentRunOptions extends CommandOptions {
   thinking?: string;
   mode?: string;
   newWorkspace?: string;
+  project?: string;
   worktree?: string;
   worktreeMode?: string;
   worktreeSlug?: string;
@@ -150,6 +152,7 @@ function buildRunWorkspaceSource(options: AgentRunOptions, cwd: string) {
   return buildWorkspaceSource({
     daemonTarget: options.daemonTarget,
     isolation: newWorkspace,
+    project: options.project,
     path: cwd,
     mode: options.worktreeMode,
     worktreeSlug: options.worktreeSlug ?? options.worktree,
@@ -317,6 +320,14 @@ function structuredRunSchema(output: Record<string, unknown>): OutputSchema<Agen
 
 function validateRunWorkspaceOptions(options: AgentRunOptions): void {
   const newWorkspace = resolveNewWorkspaceKind(options);
+  if (options.project && !newWorkspace) {
+    throw {
+      code: "INVALID_OPTIONS",
+      message: "--project requires --new-workspace",
+      details:
+        "Use --new-workspace local or --new-workspace worktree to keep a separate execution directory",
+    } satisfies CommandError;
+  }
   if (
     options.newWorkspace &&
     options.newWorkspace !== "local" &&
