@@ -86,6 +86,7 @@ export function sourceOf(group: {
   if (!members) return "custom";
   if (group.routing === "order") return "auto";
   if (group.routing !== "manual") return "custom";
+  if (!group.pick) return "personal";
   if (group.pick === members.personal) return "personal";
   if (group.pick === members.ichat) return "ichat";
   return "custom";
@@ -139,7 +140,6 @@ export class Controls {
         ...group,
         routing: source === "auto" ? "order" : "manual",
         pick: source === "auto" ? "" : pick,
-        affinity: "off",
       });
     } finally {
       this.changing = false;

@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { ComposerDockBackground } from "@/composer/dock";
 import { useMemo, type ReactNode } from "react";
 import type { LayoutChangeEvent } from "react-native";
@@ -50,7 +51,11 @@ export function ScreenHeader({
   const rightCombinedStyle = useMemo(() => [styles.right, rightStyle], [rightStyle]);
 
   return (
-    <ComposerDockBackground style={styles.header} testID="composer-dock-header">
+    <ComposerDockBackground
+      style={styles.header}
+      testID="composer-dock-header"
+      dataSet={MATERIAL_SLOTS.header}
+    >
       <View style={innerStyle}>
         <WindowChromeSafeArea
           placement="inline"

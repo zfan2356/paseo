@@ -1,0 +1,507 @@
+diff --git a/internal/agent/paseo_auto_speed.go b/internal/agent/paseo_auto_speed.go
+new file mode 100644
+index 0000000..dc3c219
+--- /dev/null
++++ b/internal/agent/paseo_auto_speed.go
+@@ -0,0 +1,100 @@
++package agent
++
++import (
++	"bytes"
++	"encoding/json"
++	"errors"
++	"os"
++	"path/filepath"
++	"reflect"
++	"strings"
++
++	"github.com/yetone/magpie/internal/codexcat"
++	"github.com/yetone/magpie/internal/edit"
++	"github.com/yetone/magpie/internal/provider"
++)
++
++func paseoAutoTierCatalog(raw []byte, updates map[string]json.RawMessage) ([]byte, error) {
++	var doc map[string]json.RawMessage
++	if err := json.Unmarshal(raw, &doc); err != nil || doc == nil {
++		return nil, errors.New("invalid catalog")
++	}
++	var models []json.RawMessage
++	if err := json.Unmarshal(doc["models"], &models); err != nil || models == nil {
++		return nil, errors.New("invalid catalog models")
++	}
++	changed := false
++	for i, entry := range models {
++		var model map[string]json.RawMessage
++		if err := json.Unmarshal(entry, &model); err != nil || model == nil {
++			return nil, errors.New("invalid catalog model")
++		}
++		var slug string
++		if err := json.Unmarshal(model["slug"], &slug); err != nil {
++			return nil, errors.New("invalid catalog slug")
++		}
++		next, ok := updates[slug]
++		if !ok {
++			continue
++		}
++		var oldTiers, newTiers any
++		if err := json.Unmarshal(next, &newTiers); err != nil {
++			return nil, errors.New("invalid replacement tiers")
++		}
++		_ = json.Unmarshal(model["service_tiers"], &oldTiers)
++		if reflect.DeepEqual(oldTiers, newTiers) {
++			continue
++		}
++		model["service_tiers"] = next
++		models[i], _ = json.Marshal(model)
++		changed = true
++	}
++	if !changed {
++		return raw, nil
++	}
++	doc["models"], _ = json.Marshal(models)
++	out, err := json.MarshalIndent(doc, "", "  ")
++	return append(out, '\n'), err
++}
++
++// Only an explicitly configured catalog is managed; its models stay untouched.
++func syncPaseoAutoTiers() error {
++	path := os.Getenv("PASEO_CODEX_SPEED_CATALOG")
++	if path == "" {
++		return nil
++	}
++	if !filepath.IsAbs(path) {
++		return errors.New("catalog path must be absolute")
++	}
++	raw, err := os.ReadFile(path)
++	if err != nil {
++		return errors.New("catalog could not be read")
++	}
++	shown, _ := provider.CatalogFor("codex")
++	byID := codexcat.ServiceTiers(provider.CodexCatalog(shown))
++	updates := map[string]json.RawMessage{}
++	for _, e := range shown {
++		if !strings.HasPrefix(e.ID, provider.AutoPrefix) {
++			continue
++		}
++		g, _, ok := provider.FindGroup(e.ID)
++		if !ok || !provider.IsCodexIchatAuto(e.ID, g) {
++			continue
++		}
++		tiers := byID[e.ID]
++		if tiers == nil {
++			updates[e.ID] = json.RawMessage(`[]`)
++		} else {
++			updates[e.ID], _ = json.Marshal(tiers)
++		}
++	}
++	out, err := paseoAutoTierCatalog(raw, updates)
++	if err != nil || bytes.Equal(raw, out) {
++		return err
++	}
++	now, err := os.ReadFile(path)
++	if err != nil || !bytes.Equal(raw, now) {
++		return errors.New("catalog changed during sync")
++	}
++	return edit.WriteAtomic(path, out)
++}
+diff --git a/internal/agent/paseo_auto_speed_test.go b/internal/agent/paseo_auto_speed_test.go
+new file mode 100644
+index 0000000..6751d43
+--- /dev/null
++++ b/internal/agent/paseo_auto_speed_test.go
+@@ -0,0 +1,36 @@
++package agent
++
++import (
++	"encoding/json"
++	"reflect"
++	"testing"
++)
++
++func TestPaseoAutoTierCatalogPreservesChoices(t *testing.T) {
++	raw := []byte(`{"note":"keep","models":[{"slug":"auto/gpt-a","visibility":"list","context_window":123,"service_tiers":[{"id":"priority"}]},{"slug":"ichat/gpt-a","service_tiers":[{"id":"custom"}]},{"slug":"auto/gpt-b","visibility":"hide"}]}`)
++	updates := map[string]json.RawMessage{"auto/gpt-a": json.RawMessage(`[{"id":"priority"},{"id":"ultrafast"}]`), "auto/gpt-b": json.RawMessage(`[]`), "auto/missing": json.RawMessage(`[]`)}
++	out, err := paseoAutoTierCatalog(raw, updates)
++	if err != nil {
++		t.Fatal(err)
++	}
++	var before, after map[string]any
++	json.Unmarshal(raw, &before)
++	json.Unmarshal(out, &after)
++	mb, ma := before["models"].([]any), after["models"].([]any)
++	if after["note"] != "keep" || len(ma) != len(mb) || !reflect.DeepEqual(ma[1], mb[1]) {
++		t.Fatalf("unrelated choices changed: %s", out)
++	}
++	a := ma[0].(map[string]any)
++	if a["visibility"] != "list" || a["context_window"] != float64(123) || len(a["service_tiers"].([]any)) != 2 {
++		t.Fatalf("auto entry changed unexpectedly: %v", a)
++	}
++	again, err := paseoAutoTierCatalog(out, updates)
++	if err != nil || string(again) != string(out) {
++		t.Fatal("unchanged catalog was rewritten")
++	}
++	for _, bad := range []string{`{`, `{}`, `{"models":[null]}`, `{"models":[{}]}`} {
++		if _, err := paseoAutoTierCatalog([]byte(bad), updates); err == nil {
++			t.Fatalf("accepted malformed catalog %q", bad)
++		}
++	}
++}
+diff --git a/internal/agent/sync.go b/internal/agent/sync.go
+index 409da39..ce2d3bc 100644
+--- a/internal/agent/sync.go
++++ b/internal/agent/sync.go
+@@ -4,6 +4,7 @@ import (
+ 	"bytes"
+ 	"encoding/json"
+ 	"io"
++	"log"
+ 	"reflect"
+ 	"slices"
+ 	"strings"
+@@ -55,6 +56,9 @@ func SyncCatalog() {
+ 				a.renameFoundGroups()
+ 			}
+ 		}
++		if err := syncPaseoAutoTiers(); err != nil {
++			log.Printf("Paseo auto speed catalog sync failed: %v", err)
++		}
+ 		release()
+ 		syncing.Lock()
+ 		if !syncing.again {
+diff --git a/internal/codexcat/codexcat.go b/internal/codexcat/codexcat.go
+index c6ee812..d8411cd 100644
+--- a/internal/codexcat/codexcat.go
++++ b/internal/codexcat/codexcat.go
+@@ -430,6 +430,8 @@ func namedTiers(own map[string]map[string]any, ids []string) []tier {
+ 		t := tier{ID: id, Name: id}
+ 		if id == fastTier.ID {
+ 			t = fastTier
++		} else if id == "ultrafast" {
++			t.Name = "Ultrafast"
+ 		}
+ 	found:
+ 		for _, slug := range slices.Sorted(maps.Keys(own)) {
+diff --git a/internal/gateway/auto_speed.go b/internal/gateway/auto_speed.go
+new file mode 100644
+index 0000000..0349175
+--- /dev/null
++++ b/internal/gateway/auto_speed.go
+@@ -0,0 +1,29 @@
++package gateway
++
++import (
++	"slices"
++
++	"github.com/yetone/magpie/internal/provider"
++)
++
++// autoTierBody fits the requested speed to the current attempt, not the route.
++func autoTierBody(from provider.Protocol, body []byte, tiers []string) []byte {
++	if from != provider.Chat && from != provider.Responses {
++		return body
++	}
++	switch askedTier(body) {
++	case "ultrafast":
++		if slices.Contains(tiers, "ultrafast") {
++			return body
++		}
++		if slices.Contains(tiers, "priority") {
++			return withFields(body, map[string]any{"service_tier": "priority"})
++		}
++		return withoutFields(body, "service_tier")
++	case "priority":
++		if !slices.Contains(tiers, "priority") {
++			return withoutFields(body, "service_tier")
++		}
++	}
++	return body
++}
+diff --git a/internal/gateway/auto_speed_test.go b/internal/gateway/auto_speed_test.go
+new file mode 100644
+index 0000000..14b7390
+--- /dev/null
++++ b/internal/gateway/auto_speed_test.go
+@@ -0,0 +1,111 @@
++package gateway
++
++import (
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"reflect"
++	"strings"
++	"testing"
++
++	"github.com/yetone/magpie/internal/catalog"
++	"github.com/yetone/magpie/internal/codexcat"
++	"github.com/yetone/magpie/internal/provider"
++)
++
++func TestAutoTierDowngrade(t *testing.T) {
++	for _, tt := range []struct {
++		asked string
++		tiers []string
++		want  string
++	}{
++		{"ultrafast", []string{"ultrafast", "priority"}, "ultrafast"},
++		{"ultrafast", []string{"priority"}, "priority"},
++		{"ultrafast", nil, ""},
++		{"priority", []string{"priority"}, "priority"},
++		{"priority", nil, ""},
++		{"default", nil, "default"},
++		{"flex", nil, "flex"},
++	} {
++		body := []byte(`{"model":"auto/gpt-test","service_tier":"` + tt.asked + `","input":"hello"}`)
++		got := autoTierBody(provider.Responses, body, tt.tiers)
++		if tier := askedTier(got); tier != tt.want || !strings.Contains(string(got), `"input":"hello"`) {
++			t.Errorf("asked=%s tiers=%v got %s", tt.asked, tt.tiers, got)
++		}
++	}
++}
++
++func TestAutoPairFitsEachAttempt(t *testing.T) {
++	for _, tt := range []struct {
++		name       string
++		codexFails bool
++		ichatTiers []string
++		want       []string
++	}{
++		{"first-source", false, []string{"ultrafast"}, []string{"codex:priority"}},
++		{"fallback-ultra", true, []string{"ultrafast", "priority"}, []string{"codex:priority", "codex:ultrafast", "ichat:ultrafast"}},
++		{"fallback-fast", true, []string{"priority"}, []string{"codex:priority", "codex:ultrafast", "ichat:priority"}},
++		{"fallback-unknown", true, nil, []string{"codex:priority", "codex:ultrafast", "ichat:"}},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			tierAccounts(t, nil, nil)
++			var tried []string
++			server := func(id string, fail bool) *httptest.Server {
++				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++					b, _ := io.ReadAll(r.Body)
++					tried = append(tried, id+":"+askedTier(b))
++					if fail {
++						w.WriteHeader(429)
++						io.WriteString(w, `{"error":{"message":"You've hit your usage limit"}}`)
++						return
++					}
++					io.WriteString(w, sse(`data: {"type":"response.created","response":{"id":"r1","model":"gpt-6-luna"}}`, `data: {"type":"response.output_text.delta","delta":"pong"}`, `data: {"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":7,"output_tokens":1}}}`))
++				}))
++			}
++			codex := server("codex", tt.codexFails)
++			defer codex.Close()
++			ichat := server("ichat", false)
++			defer ichat.Close()
++			old := provider.CodexBase
++			provider.CodexBase = "https://chatgpt.com/backend-api/codex"
++			t.Cleanup(func() { provider.CodexBase = old })
++			if err := provider.Save(provider.Provider{ID: "ichat", Name: "iChat", Key: "fixture", Responses: ichat.URL + "/v1", Models: []string{"gpt-6-luna"}}); err != nil {
++				t.Fatal(err)
++			}
++			if err := catalog.SaveLive("ichat", "fixture", []catalog.Model{{ID: "gpt-6-luna", Tiers: tt.ichatTiers}}); err != nil {
++				t.Fatal(err)
++			}
++			g := provider.Group{ID: provider.AutoGroupID("gpt-6-luna"), Name: "Auto", Members: []string{"codex/gpt-6-luna", "ichat/gpt-6-luna"}, Routing: provider.Ordered, Affinity: provider.AffinitySession}
++			if err := provider.SaveGroup(g); err != nil {
++				t.Fatal(err)
++			}
++			found, _, ok := provider.FindGroup("auto/gpt-6-luna")
++			if !ok || !provider.IsCodexIchatAuto("auto/gpt-6-luna", found) {
++				t.Fatalf("auto pair not found: %+v", found)
++			}
++			shown, _ := provider.CatalogFor("codex")
++			var tierIDs []string
++			for _, tier := range codexcat.ServiceTiers(provider.CodexCatalog(shown))["auto/gpt-6-luna"] {
++				tierIDs = append(tierIDs, tier.ID)
++			}
++			if !reflect.DeepEqual(tierIDs, []string{"priority", "ultrafast"}) {
++				t.Fatalf("auto catalog tiers %v", tierIDs)
++			}
++			s := New()
++			to, _ := url.Parse(codex.URL)
++			s.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
++				if r.URL.Host == "chatgpt.com" {
++					r.URL.Scheme, r.URL.Host = to.Scheme, to.Host
++				}
++				return http.DefaultTransport.RoundTrip(r)
++			})}
++			r := postFrom(t, s, "codex", "/v1/responses", `{"model":"auto/gpt-6-luna","input":"hello-`+tt.name+`","service_tier":"ultrafast"}`)
++			if !reflect.DeepEqual(tried, tt.want) {
++				b, _ := json.Marshal(r)
++				t.Fatalf("tries %v, want %v; route %s", tried, tt.want, b)
++			}
++		})
++	}
++}
+diff --git a/internal/gateway/gateway.go b/internal/gateway/gateway.go
+index ae25688..d8d2824 100644
+--- a/internal/gateway/gateway.go
++++ b/internal/gateway/gateway.go
+@@ -1810,6 +1810,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
+ 	// before any image is taken out of the request: one may be for images
+ 	g, ms, isGroup := provider.FindGroup(asked)
+ 	g = g.Live() // a manual group's rules wait
++	autoCodexPair := isGroup && provider.IsCodexIchatAuto(asked, g)
+ 	// a model on this machine or the local network that the user set to
+ 	// go unmasked gets the request as written (lc on Discord); the log
+ 	// keeps the masked one
+@@ -2632,7 +2633,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
+ 		// instead, which every plan with Fast takes (yxinyu715 on X): asked
+ 		// by the client in either of OpenAI's APIs, or by a pick (#1954)
+ 		openAI := from == provider.Chat || from == provider.Responses
+-		if (openAI && askedTier(attemptBody) == "ultrafast" || ultra && from == provider.Anthropic) && !takesTier(c, "ultrafast") {
++		if autoCodexPair {
++			attemptBody = autoTierBody(from, attemptBody, provider.AutoMemberTiers(c.p, c.model))
++		}
++		if !autoCodexPair && (openAI && askedTier(attemptBody) == "ultrafast" || ultra && from == provider.Anthropic) && !takesTier(c, "ultrafast") {
+ 			if j := tierMate(cands[i+1:], c, "ultrafast"); j >= 0 {
+ 				j += i + 1
+ 				cs := slices.Clone(cands)
+diff --git a/internal/provider/auto_speed.go b/internal/provider/auto_speed.go
+new file mode 100644
+index 0000000..bbbb9f0
+--- /dev/null
++++ b/internal/provider/auto_speed.go
+@@ -0,0 +1,69 @@
++package provider
++
++import (
++	"slices"
++	"strings"
++)
++
++// IsCodexIchatAuto limits this policy to a same-model personal/iChat pair.
++func IsCodexIchatAuto(ref string, g Group) bool {
++	if ref == GroupPrefix+g.ID {
++		ref = g.Ref()
++	}
++	model, ok := strings.CutPrefix(ref, AutoPrefix)
++	return ok && model != "" && len(g.Members) == 2 &&
++		slices.Contains(g.Members, "codex/"+model) && slices.Contains(g.Members, "ichat/"+model)
++}
++
++// AutoMemberTiers uses only the selected source's own advertised tiers.
++func AutoMemberTiers(p Provider, model string) []string {
++	if p.Account != nil {
++		tiers, ok := p.Account.Tiers(model)
++		if ok {
++			return tiers
++		}
++		return nil
++	}
++	if p.IsPlugin() {
++		return PluginTiers(p, model)
++	}
++	var tiers []string
++	for _, m := range p.liveByID(model) {
++		for _, tier := range m.Tiers {
++			if !slices.Contains(tiers, tier) {
++				tiers = append(tiers, tier)
++			}
++		}
++	}
++	return tiers
++}
++
++func autoGroupTiers(ms []Member) []string {
++	fast, ultra := false, false
++	add := func(ids []string) {
++		fast = fast || slices.Contains(ids, "priority")
++		ultra = ultra || slices.Contains(ids, "ultrafast")
++	}
++	for _, mb := range ms {
++		add(AutoMemberTiers(mb.Provider, mb.Model))
++		if a := mb.Provider.Account; a != nil && a.Agent == "codex" {
++			for _, l := range Logins("codex") {
++				if !l.On || l.Paused || l.Lapsed != "" {
++					continue
++				}
++				ts, ok := (&Account{Agent: "codex", User: l.User}).Tiers(mb.Model)
++				if ok {
++					add(ts)
++				}
++			}
++		}
++	}
++	var tiers []string
++	if fast {
++		tiers = append(tiers, "priority")
++	}
++	if ultra {
++		tiers = append(tiers, "ultrafast")
++	}
++	return tiers
++}
+diff --git a/internal/provider/auto_speed_test.go b/internal/provider/auto_speed_test.go
+new file mode 100644
+index 0000000..f955330
+--- /dev/null
++++ b/internal/provider/auto_speed_test.go
+@@ -0,0 +1,50 @@
++package provider
++
++import (
++	"path/filepath"
++	"slices"
++	"testing"
++
++	"github.com/yetone/magpie/internal/catalog"
++)
++
++func TestAutoPairAndMemberTiers(t *testing.T) {
++	home := t.TempDir()
++	t.Setenv("HOME", home)
++	t.Setenv("USERPROFILE", home)
++	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
++	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
++	g := Group{Members: []string{"codex/gpt-test", "ichat/gpt-test"}}
++	if !IsCodexIchatAuto("auto/gpt-test", g) || IsCodexIchatAuto("group/test", g) || IsCodexIchatAuto("auto/other", g) {
++		t.Fatal("auto pair recognition differs from the requested route")
++	}
++	if IsCodexIchatAuto("auto/gpt-test", Group{Members: []string{"codex/gpt-test", "ichat/other"}}) {
++		t.Fatal("different models formed a pair")
++	}
++	if err := catalog.SaveLive("ichat", "fixture", []catalog.Model{
++		{ID: "gpt-test", Tiers: []string{"priority", "ultrafast"}},
++		{ID: "gpt-unknown"},
++	}); err != nil {
++		t.Fatal(err)
++	}
++	p := Provider{ID: "ichat"}
++	if got := AutoMemberTiers(p, "gpt-test"); !slices.Equal(got, []string{"priority", "ultrafast"}) {
++		t.Fatalf("reported tiers = %v", got)
++	}
++	if got := AutoMemberTiers(p, "gpt-unknown"); len(got) != 0 {
++		t.Fatalf("unknown tiers invented: %v", got)
++	}
++	if err := catalog.SaveLive("codex-fixture", "fixture", []catalog.Model{{ID: "gpt-test", Tiers: []string{"priority"}}}); err != nil {
++		t.Fatal(err)
++	}
++	ms := []Member{{Provider: p, Model: "gpt-test"}, {Provider: Provider{ID: "codex-fixture"}, Model: "gpt-test"}}
++	if got := autoGroupTiers(ms); !slices.Equal(got, []string{"priority", "ultrafast"}) {
++		t.Fatalf("union tiers = %v", got)
++	}
++	if err := catalog.SaveLive("ichat", "fixture", []catalog.Model{{ID: "gpt-test", Tiers: []string{"ultrafast"}}}); err != nil {
++		t.Fatal(err)
++	}
++	if got := autoGroupTiers(ms); !slices.Equal(got, []string{"priority", "ultrafast"}) {
++		t.Fatalf("split tiers = %v", got)
++	}
++}
+diff --git a/internal/provider/codex_models.go b/internal/provider/codex_models.go
+index 3ceea0b..a656ba5 100644
+--- a/internal/provider/codex_models.go
++++ b/internal/provider/codex_models.go
+@@ -673,6 +673,12 @@ func CodexTiers(m *catalog.Model, e Entry, members func(id string) []Member) {
+ 		m.Tiers = e.Tiers
+ 	}
+ 	if e.Group != "" {
++		if strings.HasPrefix(e.ID, AutoPrefix) {
++			if g, _, ok := FindGroup(e.ID); ok && IsCodexIchatAuto(e.ID, g) {
++				m.Tiers = autoGroupTiers(members(e.ID))
++				return
++			}
++		}
+ 		for _, mb := range members(e.ID) {
+ 			if a := mb.Provider.Account; a != nil && a.Agent == "codex" && strings.HasPrefix(mb.Model, "gpt-") {
+ 				m.Fast = true

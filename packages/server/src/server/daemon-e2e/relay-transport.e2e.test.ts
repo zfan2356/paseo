@@ -7,7 +7,10 @@ import {
   encodeTerminalStreamFrame,
   TerminalStreamOpcode,
 } from "@getpaseo/protocol/binary-frames/index";
-import type { DaemonClient as HostClient } from "@getpaseo/client/internal/daemon-client";
+import {
+  getDaemonAuthFailureReason,
+  DaemonClient as HostClient,
+} from "@getpaseo/client/internal/daemon-client";
 import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import { describe, expect, test } from "vitest";
 import { withTimeout } from "../../utils/promise-timeout.js";
@@ -540,72 +543,162 @@ async function waitForCapturedLog(
     120000,
   );
 
-  test("oversized attachments fail without disconnecting or resubmitting over the relay", async () => {
-    await startRelay({ useLocalRelay: true });
-    const daemon = await createTestPaseoDaemon({
-      relayEnabled: true,
-      relayEndpoint: `127.0.0.1:${relayPort}`,
-      relayUseTls: false,
-      relayPublicUseTls: false,
-    });
-    let client: DaemonClient | null = null;
+  test("password-protected daemon refuses a relay client without the password", async () => {
+    let daemon: Awaited<ReturnType<typeof createTestPaseoDaemon>> | undefined;
+    const clients: HostClient[] = [];
     try {
+      await startRelay({ useLocalRelay: true });
+      daemon = await createTestPaseoDaemon({
+        relayEnabled: true,
+        relayEndpoint: `127.0.0.1:${relayPort}`,
+        relayUseTls: false,
+        relayPublicUseTls: false,
+        auth: { password: hashSync("relay-password", 4) },
+      });
       const offerUrl = await getPairingOfferUrl({
         paseoHome: daemon.paseoHome,
         relayEnabled: true,
         relayEndpoint: daemon.config.relayEndpoint,
       });
       const { serverId, daemonPublicKeyB64 } = decodeOfferFromFragmentUrl(offerUrl);
-      client = new DaemonClient({
-        url: buildRelayWebSocketUrl({
-          endpoint: `127.0.0.1:${relayPort}`,
-          useTls: false,
-          serverId,
-          role: "client",
-        }),
-        e2ee: { enabled: true, daemonPublicKeyB64 },
-        reconnect: { baseDelayMs: 100, maxDelayMs: 100 },
-      });
-      await client.connect();
-      const statuses: string[] = [];
-      client.subscribeConnectionStatus((state) => statuses.push(state.status));
-      for (const imageMiB of [30, 61]) {
-        // Attachments are base64 in the JSON, then E2EE base64 expands the frame again.
-        const images = [
-          { data: "A".repeat(4 * Math.ceil((imageMiB * 1024 * 1024) / 3)), mimeType: "image/png" },
-        ];
-        await expect(
-          withTimeout(
-            client.createWorkspace({
-              source: { kind: "directory", path: daemon.staticDir },
-              agent: {
-                provider: "claude",
-                cwd: daemon.staticDir,
-                initialPrompt: "Describe these screens.",
-                images,
-              },
-            }),
-            10000,
-            "Workspace creation did not settle",
-          ),
-        ).rejects.toThrow(/too large.*32\.0 MiB/);
-        expect((await client.fetchAgents()).entries).toEqual([]);
-      }
-      const agent = await client.createAgent({ provider: "claude", cwd: daemon.staticDir });
-      await expect(
-        client.sendMessage(agent.id, "Describe these screens.", {
-          images: [{ data: "A".repeat(40 * 1024 * 1024), mimeType: "image/png" }],
-        }),
-      ).rejects.toThrow(/too large.*32\.0 MiB/);
-      await client.sendMessage(agent.id, "A small follow-up still works.");
-      expect((await client.fetchAgents()).entries).toHaveLength(1);
-      expect(statuses).toEqual(["connected"]);
+      const connectOverRelay = (password?: string): Promise<void> => {
+        const connection = new URL(`relay://127.0.0.1:${relayPort}/${serverId}`);
+        connection.searchParams.set("key", daemonPublicKeyB64);
+        if (password) connection.searchParams.set("password", password);
+        const client = createHostClient(connection.toString(), {
+          clientId: crypto.randomUUID(),
+          reconnect: { enabled: false },
+        });
+        clients.push(client);
+        return client.connect();
+      };
+
+      // The pairing offer alone must not grant access to a password-protected daemon.
+      const rejection = await connectOverRelay().then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(getDaemonAuthFailureReason(rejection)).toBe("password_required");
+      await expect(connectOverRelay("wrong-password")).rejects.toThrow("Incorrect password");
+
+      await connectOverRelay("relay-password");
+      expect((await createPaseoApi(clients.at(-1)!).workspaces.list()).entries).toEqual([]);
     } finally {
-      await client?.close();
-      await daemon.close();
-      await stopRelay();
+      try {
+        await Promise.all(clients.map((client) => client.close()));
+        await daemon?.close();
+      } finally {
+        await stopRelay();
+      }
     }
-  }, 60000);
+  }, 90000);
+
+  test.each([true, false])(
+    "large messages cross the relay with unpaced upload admission preserved (supportsDrain=%s)",
+    async (supportsDrain) => {
+      await startRelay({ useLocalRelay: true });
+      const daemon = await createTestPaseoDaemon({
+        relayEnabled: true,
+        relayEndpoint: `127.0.0.1:${relayPort}`,
+        relayUseTls: false,
+        relayPublicUseTls: false,
+      });
+      let client: HostClient | null = null;
+      try {
+        const offerUrl = await getPairingOfferUrl({
+          paseoHome: daemon.paseoHome,
+          relayEnabled: true,
+          relayEndpoint: daemon.config.relayEndpoint,
+        });
+        const { serverId, daemonPublicKeyB64 } = decodeOfferFromFragmentUrl(offerUrl);
+        client = new HostClient({
+          clientId: "paced-relay-regression",
+          webSocketFactory: Object.assign((url: string) => new WebSocket(url), { supportsDrain }),
+          url: buildRelayWebSocketUrl({
+            endpoint: `127.0.0.1:${relayPort}`,
+            useTls: false,
+            serverId,
+            role: "client",
+          }),
+          e2ee: { enabled: true, daemonPublicKeyB64 },
+          reconnect: { baseDelayMs: 100, maxDelayMs: 100 },
+        });
+        await client.connect();
+        const statuses: string[] = [];
+        client.subscribeConnectionStatus((state) => statuses.push(state.status));
+        for (const imageMiB of [30, 61]) {
+          const images = [
+            {
+              data: "A".repeat(4 * Math.ceil((imageMiB * 1024 * 1024) / 3)),
+              mimeType: "image/png",
+            },
+          ];
+          const creation = client.createWorkspace({
+            source: { kind: "directory", path: daemon.staticDir },
+            agent: {
+              provider: "claude",
+              cwd: daemon.staticDir,
+              initialPrompt: "Describe these screens.",
+              images,
+            },
+          });
+          if (supportsDrain)
+            await withTimeout(creation, 30000, "Chunked workspace creation did not settle");
+          else await expect(creation).rejects.toThrow(/too large.*32\.0 MiB/);
+        }
+        expect((await client.fetchAgents()).entries).toHaveLength(supportsDrain ? 2 : 0);
+        await expect(
+          client.createWorkspace({
+            source: { kind: "directory", path: daemon.staticDir },
+            agent: {
+              provider: "claude",
+              cwd: daemon.staticDir,
+              initialPrompt: "Describe these screens.",
+              images: [{ data: "A".repeat(101 * 1024 * 1024), mimeType: "image/png" }],
+            },
+          }),
+        ).rejects.toThrow(/too large.*100\.0 MiB/);
+        expect((await client.fetchAgents()).entries).toHaveLength(supportsDrain ? 2 : 0);
+        const agent = await client.createAgent({ provider: "claude", cwd: daemon.staticDir });
+        const attachment = client.sendMessage(agent.id, "Describe these screens.", {
+          images: [{ data: "A".repeat(40 * 1024 * 1024), mimeType: "image/png" }],
+        });
+        if (supportsDrain) await attachment;
+        else await expect(attachment).rejects.toThrow(/too large.*32\.0 MiB/);
+        await expect(
+          client.sendMessage(agent.id, "Describe these screens.", {
+            images: [{ data: "A".repeat(101 * 1024 * 1024), mimeType: "image/png" }],
+          }),
+        ).rejects.toThrow(/too large.*100\.0 MiB/);
+        await client.sendMessage(agent.id, "A small follow-up still works.");
+        expect((await client.fetchAgents()).entries).toHaveLength(supportsDrain ? 3 : 1);
+        // Respect the per-item content budget while exceeding the relay frame limit.
+        const text = "x".repeat(240 * 1024);
+        for (let row = 0; row < 220; row++)
+          await daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+            type: "user_message",
+            text,
+          });
+        const timeline = await client.fetchAgentTimeline(agent.id, {
+          projection: "canonical",
+          limit: 0,
+          timeout: 30000,
+        });
+        const delivered = timeline.entries.filter(
+          (row) => row.item.type === "user_message" && row.item.text === text,
+        );
+        expect(delivered).toHaveLength(220);
+        expect(delivered.length * Buffer.byteLength(text)).toBeGreaterThan(50 * 1024 * 1024);
+        await client.ping();
+        expect(statuses).toEqual(["connected"]);
+      } finally {
+        await client?.close();
+        await daemon.close();
+        await stopRelay();
+      }
+    },
+    120000,
+  );
 
   test("daemon connects to relay and client ping/pong works through relay", async () => {
     process.env.PASEO_PRIMARY_LAN_IP = "192.168.1.12";

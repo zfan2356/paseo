@@ -1,0 +1,310 @@
+diff --git a/internal/provider/codex_zstd.go b/internal/provider/codex_zstd.go
+--- a/internal/provider/codex_zstd.go
++++ b/internal/provider/codex_zstd.go
+@@ -2,10 +2,13 @@
+ 
+ import (
+ 	"bytes"
++	"encoding/json"
+ 	"io"
++	"log"
+ 	"net/http"
+ 	"net/url"
+ 	"strings"
++	"sync"
+ 	"sync/atomic"
+ 
+ 	"github.com/klauspost/compress/zstd"
+@@ -41,14 +44,73 @@
+ var codexZstd = newCodexZstd()
+ 
+ func newCodexZstd() *zstd.Encoder {
++	return codexZstdLevel(zstd.SpeedDefault)
++}
++
++func codexZstdLevel(level zstd.EncoderLevel) *zstd.Encoder {
+ 	z, _ := zstd.NewWriter(nil,
+-		zstd.WithEncoderLevel(zstd.SpeedDefault),
++		zstd.WithEncoderLevel(level),
+ 		zstd.WithEncoderCRC(false),
+ 		zstd.WithWindowSize(2<<20),
+ 		zstd.WithEncoderConcurrency(2),
+ 		zstd.WithLowerEncoderMem(true),
+ 	)
+ 	return z
++}
++
++var codexZstdCompatible = sync.OnceValue(func() *zstd.Encoder {
++	return codexZstdLevel(zstd.SpeedBetterCompression)
++})
++
++// CodexDo retries an opaque compressed-body refusal once with another
++// encoder. The signed JSON and account stay identical; no SSE is replayed.
++func CodexDo(req *http.Request, body []byte, do func(*http.Request) (*http.Response, error)) (*http.Response, int, error) {
++	owned := req.Header.Get("Content-Encoding") == "" || strings.EqualFold(req.Header.Get("Content-Encoding"), "identity")
++	sent := CodexCompressed(req, body)
++	res, err := do(req)
++	if err != nil || !owned || req.Method != http.MethodPost || !codexTurnURL(req.URL) ||
++		req.Header.Get("Content-Encoding") != "zstd" || res.StatusCode != http.StatusBadRequest {
++		return res, sent, err
++	}
++	head, readErr := io.ReadAll(io.LimitReader(res.Body, 4097))
++	if readErr != nil {
++		res.Body.Close()
++		return nil, sent, readErr
++	}
++	if len(head) > 4096 || !codexOpaqueBadRequest(head) {
++		res.Body = struct {
++			io.Reader
++			io.Closer
++		}{io.MultiReader(bytes.NewReader(head), res.Body), res.Body}
++		return res, sent, nil
++	}
++	res.Body.Close()
++	if err := req.Context().Err(); err != nil {
++		return nil, sent, err
++	}
++	retry := req.Clone(req.Context())
++	wire := codexZstdCompatible().EncodeAll(body, nil)
++	retry.Body = io.NopCloser(bytes.NewReader(wire))
++	retry.GetBody = func() (io.ReadCloser, error) {
++		return io.NopCloser(bytes.NewReader(wire)), nil
++	}
++	retry.ContentLength = int64(len(wire))
++	retry.Header.Del("Content-Length")
++	res, err = do(retry)
++	status := 0
++	if res != nil {
++		status = res.StatusCode
++	}
++	log.Printf("codex: retried opaque zstd HTTP 400 with compatible encoding; session=%q bytes=%d status=%d",
++		req.Header.Get("Session-Id"), len(body), status)
++	return res, len(wire), err
++}
++
++func codexOpaqueBadRequest(body []byte) bool {
++	var fields map[string]json.RawMessage
++	var detail string
++	return json.Unmarshal(body, &fields) == nil && len(fields) == 1 &&
++		json.Unmarshal(fields["detail"], &detail) == nil && detail == "Bad Request"
+ }
+ 
+ // codexZstdOff leaves turns plain, for tests alone: the fake backends of
+diff --git a/internal/provider/codex_zstd_test.go b/internal/provider/codex_zstd_test.go
+--- a/internal/provider/codex_zstd_test.go
++++ b/internal/provider/codex_zstd_test.go
+@@ -5,6 +5,7 @@
+ 	"context"
+ 	"encoding/base64"
+ 	"encoding/json"
++	"fmt"
+ 	"image"
+ 	"image/png"
+ 	"io"
+@@ -18,6 +19,98 @@
+ 
+ 	"github.com/klauspost/compress/zstd"
+ )
++
++func TestCodexEncodingRetryBoundaries(t *testing.T) {
++	for _, test := range []struct {
++		name, path, encoding, reply string
++		status, calls               int
++	}{
++		{"opaque", "/responses", "", `{"detail":"Bad Request"}`, 400, 2},
++		{"specific", "/responses", "", `{"detail":"Invalid input item"}`, 400, 1},
++		{"structured", "/responses", "", `{"error":{"type":"invalid_request_error","message":"Bad Request"}}`, 400, 1},
++		{"quota", "/responses", "", `{"detail":"Bad Request"}`, 429, 1},
++		{"server", "/responses", "", `{"detail":"Bad Request"}`, 503, 1},
++		{"empty", "/responses", "", "", 400, 1},
++		{"long", "/responses", "", strings.Repeat("x", 5000), 400, 1},
++		{"SSE", "/responses", "", "data: {\"type\":\"response.failed\"}\n\n", 200, 1},
++		{"compact", "/responses/compact", "", `{"detail":"Bad Request"}`, 400, 1},
++		{"preencoded", "/responses", "gzip", `{"detail":"Bad Request"}`, 400, 1},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			t.Cleanup(CodexZstdForTests(true))
++			calls := 0
++			var first, second []byte
++			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				calls++
++				wire, _ := io.ReadAll(r.Body)
++				if calls == 1 {
++					first = wire
++				} else {
++					second = wire
++				}
++				if r.Header.Get("Authorization") != "Bearer example" || r.Header.Get("Session-Id") != "same-session" {
++					t.Error("retry changed the account or session")
++				}
++				w.WriteHeader(test.status)
++				io.WriteString(w, test.reply)
++			}))
++			defer up.Close()
++			was := CodexBase
++			CodexBase = up.URL
++			defer func() { CodexBase = was }()
++			var text strings.Builder
++			for n := range 3000 {
++				fmt.Fprintf(&text, "Tool %d returned status %d: %s\n", n%73, n%7, strings.Repeat("preserved request ", n%9+1))
++			}
++			body, _ := json.Marshal(map[string]any{"model": "gpt-6-astra", "input": text.String()})
++			req, _ := http.NewRequest("POST", CodexBase+test.path, bytes.NewReader(body))
++			req.Header.Set("Authorization", "Bearer example")
++			req.Header.Set("Session-Id", "same-session")
++			if test.encoding != "" {
++				req.Header.Set("Content-Encoding", test.encoding)
++			}
++			res, sent, err := CodexDo(req, body, up.Client().Do)
++			if err != nil {
++				t.Fatal(err)
++			}
++			got, _ := io.ReadAll(res.Body)
++			res.Body.Close()
++			if calls != test.calls || res.StatusCode != test.status || string(got) != test.reply {
++				t.Fatalf("calls=%d status=%d response bytes=%d", calls, res.StatusCode, len(got))
++			}
++			if calls == 2 {
++				if bytes.Equal(first, second) || sent != len(second) {
++					t.Fatal("retry did not change the encoding or report its actual wire size")
++				}
++				d, _ := zstd.NewReader(nil)
++				defer d.Close()
++				for _, wire := range [][]byte{first, second} {
++					plain, err := d.DecodeAll(wire, nil)
++					if err != nil || !bytes.Equal(plain, body) {
++						t.Fatalf("retry changed JSON: %v", err)
++					}
++				}
++			}
++		})
++	}
++}
++
++func TestCodexEncodingRetryHonorsCancellation(t *testing.T) {
++	t.Cleanup(CodexZstdForTests(true))
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	body := []byte(`{"input":"hello"}`)
++	req, _ := http.NewRequestWithContext(ctx, "POST", CodexBase+"/responses", bytes.NewReader(body))
++	calls := 0
++	res, _, err := CodexDo(req, body, func(*http.Request) (*http.Response, error) {
++		calls++
++		cancel()
++		return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader(`{"detail":"Bad Request"}`))}, nil
++	})
++	if res != nil || err != context.Canceled || calls != 1 {
++		t.Fatalf("response=%v error=%v calls=%d", res, err, calls)
++	}
++}
+ 
+ // A ChatGPT turn goes as Codex's client sends it (openai/codex
+ // codex-rs/http-client/src/request.rs: zstd level 3, Content-Encoding:
+diff --git a/internal/provider/codex_warmup.go b/internal/provider/codex_warmup.go
+--- a/internal/provider/codex_warmup.go
++++ b/internal/provider/codex_warmup.go
+@@ -449,8 +449,7 @@
+ 	if err := sign(ctx, req, body); err != nil {
+ 		return err
+ 	}
+-	CodexCompressed(req, body) // as Codex sends a turn
+-	res, err := http.DefaultClient.Do(req)
++	res, _, err := CodexDo(req, body, http.DefaultClient.Do)
+ 	if err != nil {
+ 		return err
+ 	}
+diff --git a/internal/gateway/gateway.go b/internal/gateway/gateway.go
+--- a/internal/gateway/gateway.go
++++ b/internal/gateway/gateway.go
+@@ -4082,12 +4082,16 @@
+ 		s.fitUserBetas(p, req.Header)
+ 	}
+ 	sent := len(body)
++	var res *http.Response
+ 	if p.Account != nil && p.Account.Agent == "codex" {
+ 		// a turn goes zstd-compressed, as Codex's own client sends it;
+ 		// sent plain, ChatGPT answered a 1.1 MB one 503 (ylorn on X)
+-		sent = provider.CodexCompressed(req, body)
+-	}
+-	res, err := p.Do(s.client, req)
++		res, sent, err = provider.CodexDo(req, body, func(r *http.Request) (*http.Response, error) {
++			return p.Do(s.client, r)
++		})
++	} else {
++		res, err = p.Do(s.client, req)
++	}
+ 	if err == nil && res.StatusCode >= 400 && provider.OpenCodeURL(req.URL.String()) {
+ 		logOpenCodeRefusal(p, req, res.StatusCode)
+ 	}
+diff --git a/internal/gateway/codex_backend.go b/internal/gateway/codex_backend.go
+--- a/internal/gateway/codex_backend.go
++++ b/internal/gateway/codex_backend.go
+@@ -1080,8 +1080,7 @@
+ 			req.Header.Del("Accept-Encoding")
+ 			// a turn to ChatGPT goes zstd-compressed again, as Codex sent it
+ 			// before magpie read it (ylorn on X); an API key's goes plain
+-			sent = provider.CodexCompressed(req, body)
+-			if res, err = s.client.Do(req); err != nil {
++			if res, sent, err = provider.CodexDo(req, body, s.client.Do); err != nil {
+ 				msg := "OpenAI: " + err.Error()
+ 				if rest == "/responses" {
+ 					msg = codexUnreached(modelOf(body), err)
+diff --git a/internal/gateway/codex_zstd_test.go b/internal/gateway/codex_zstd_test.go
+--- a/internal/gateway/codex_zstd_test.go
++++ b/internal/gateway/codex_zstd_test.go
+@@ -14,6 +14,55 @@
+ 
+ 	"github.com/yetone/magpie/internal/provider"
+ )
++
++func TestCodexOpaqueCompressedRefusalRecovers(t *testing.T) {
++	for _, model := range []string{"gpt-6-astra", "codex/gpt-6-astra"} {
++		t.Run(model, func(t *testing.T) {
++			codexSignedIn(t, "spare@example.com")
++			zstdTurns(t)
++			var firstWire, firstJSON []byte
++			var accounts []string
++			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				wire, _ := io.ReadAll(r.Body)
++				d, _ := zstd.NewReader(nil)
++				plain, err := d.DecodeAll(wire, nil)
++				d.Close()
++				if err != nil {
++					t.Errorf("decode: %v", err)
++				}
++				accounts = append(accounts, r.Header.Get("chatgpt-account-id"))
++				if len(accounts) == 1 {
++					firstWire, firstJSON = wire, plain
++					w.WriteHeader(400)
++					io.WriteString(w, `{"detail":"Bad Request"}`)
++					return
++				}
++				if !bytes.Equal(plain, firstJSON) || bytes.Equal(wire, firstWire) {
++					t.Error("retry must change the encoding and preserve the exact JSON")
++				}
++				if r.Header.Get("Content-Encoding") != "zstd" || r.ContentLength != int64(len(wire)) {
++					t.Error("retry lost its compression or Content-Length")
++				}
++				io.WriteString(w, sse(
++					`data: {"type":"response.output_text.delta","delta":"recovered"}`,
++					`data: {"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":7,"output_tokens":1}}}`,
++				))
++			}))
++			defer up.Close()
++			was := provider.CodexBase
++			provider.CodexBase = up.URL + "/backend-api/codex"
++			defer func() { provider.CodexBase = was }()
++			turn := withModel([]byte(textTurn(270000)), model)
++			code, reply := codexPost(t, string(turn))
++			if code != 200 || !strings.Contains(reply, "recovered") {
++				t.Fatalf("status %d: %.300s", code, reply)
++			}
++			if len(accounts) != 2 || accounts[0] != accounts[1] {
++				t.Fatalf("encoding recovery changed accounts: %v", accounts)
++			}
++		})
++	}
++}
+ 
+ // zstdTurns sends turns to the ChatGPT backend compressed, as the gateway
+ // does outside tests (TestMain leaves them plain for the other fakes).

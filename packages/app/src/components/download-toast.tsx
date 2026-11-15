@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { TFunction } from "i18next";
@@ -68,7 +69,7 @@ export function DownloadToast() {
 
   return (
     <View style={containerStyle} pointerEvents="box-none">
-      <View style={styles.toast}>
+      <View dataSet={MATERIAL_SLOTS.toast} style={styles.toast}>
         {activeDownload.status === "downloading" ? (
           <LoadingSpinner size="small" color={theme.colors.foreground} />
         ) : null}

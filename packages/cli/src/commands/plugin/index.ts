@@ -1,6 +1,7 @@
 import path from "node:path";
 import { expandUserPath } from "../../classify.js";
 import { createInterface } from "node:readline/promises";
+import { readFileSync } from "node:fs";
 import { reviewPluginUpdates, type UpdateOutcome } from "./update.js";
 import { Command } from "commander";
 import type { PluginListItem, PluginLogEntry } from "@getpaseo/protocol/messages";
@@ -18,6 +19,7 @@ import {
   withPluginUpdateClient,
   withPluginManagementClient,
   withPluginSourceClient,
+  withPluginRpcClient,
 } from "./shared.js";
 
 interface PluginOptions extends CommandOptions {
@@ -29,6 +31,39 @@ interface PluginOptions extends CommandOptions {
   version?: string;
   check?: boolean;
   yes?: boolean;
+  inputJson?: string;
+}
+
+export async function runPluginRpcCommand(
+  pluginId: string,
+  method: string,
+  options: PluginOptions,
+  _command: Command,
+): Promise<SingleResult<unknown>> {
+  if (options.inputJson === undefined) {
+    throw {
+      code: "INPUT_REQUIRED",
+      message: "Provide --input-json <json>, or --input-json - to read stdin.",
+    };
+  }
+  let input: unknown;
+  try {
+    const text = options.inputJson === "-" ? readFileSync(0, "utf8") : options.inputJson;
+    input = JSON.parse(text);
+  } catch {
+    throw { code: "INPUT_INVALID", message: "RPC input must be readable, valid JSON." };
+  }
+  const data = await withPluginRpcClient(options.daemonTarget, (client) =>
+    client.invokePluginRpc(pluginId, method, input),
+  );
+  return {
+    type: "single",
+    data,
+    schema: {
+      idField: (value) => JSON.stringify(value),
+      columns: [{ header: "OUTPUT", field: (value) => JSON.stringify(value) }],
+    },
+  };
 }
 
 const pluginSchema: OutputSchema<PluginListItem> = {
@@ -209,6 +244,14 @@ async function remove(
 
 export function createPluginCommand(): Command {
   const plugin = new Command("plugin").description("Manage trusted, unsandboxed plugins");
+  addJsonAndDaemonHostOptions(
+    plugin
+      .command("rpc")
+      .description("Invoke a plugin RPC")
+      .argument("<plugin-id>")
+      .argument("<method>")
+      .option("--input-json <json>", "JSON input; use - to read stdin"),
+  ).action(withOutput(runPluginRpcCommand));
   addJsonOption(
     plugin
       .command("init")

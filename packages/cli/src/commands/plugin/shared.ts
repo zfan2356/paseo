@@ -4,6 +4,7 @@ import type { CommandError } from "../../output/index.js";
 import { connectToDaemon } from "../../utils/client.js";
 
 type PluginFeature =
+  | "plugins"
   | "pluginManagement"
   | "pluginLogs"
   | "pluginSourceUpdates"
@@ -41,6 +42,14 @@ export async function withPluginManagementClient<T>(
     "Update the host to use plugin management.",
     run,
   );
+}
+
+export async function withPluginRpcClient<T>(
+  target: DaemonTarget,
+  run: (client: DaemonClient) => Promise<T>,
+): Promise<T> {
+  // COMPAT(plugins): added in v0.3.0; remove gate after 2027-08-14.
+  return withPluginClient(target, "plugins", "Update the host to invoke plugin RPCs.", run);
 }
 
 export async function withPluginLogsClient<T>(

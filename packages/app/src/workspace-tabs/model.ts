@@ -13,6 +13,8 @@ export interface WorkspaceDraftTabSetup {
 
 export interface WorkspaceWorkingDiffTabTarget {
   kind: "working_diff";
+  directory?: string;
+  sessionAgentId?: string;
   focusPath?: string;
   focusRequestId?: number;
 }
@@ -40,14 +42,14 @@ export type WorkspaceTabTarget =
   | { kind: "provider_subagent"; parentAgentId: string; subagentId: string }
   | { kind: "terminal"; terminalId: string }
   | { kind: "browser"; browserId: string }
-  | { kind: "changes_tree" }
-  | { kind: "files" }
+  | { kind: "changes_tree"; directory?: string; sessionAgentId?: string }
+  | { kind: "files"; directory?: string; sessionAgentId?: string }
   | { kind: "pull_request" }
   | WorkspaceFileTabTarget
   | WorkspaceWorkingDiffTabTarget
   | PluginWorkspaceTabTarget
   | { kind: "setup"; workspaceId: string }
-  | { kind: "commit_diff"; sha: string };
+  | { kind: "commit_diff"; sha: string; directory?: string; sessionAgentId?: string };
 
 export interface WorkspaceTab {
   tabId: string;

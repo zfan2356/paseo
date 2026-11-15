@@ -1,3 +1,5 @@
+import { isWeb } from "@/constants/platform";
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
 export { ComposerDockBackground } from "./internal/background";
 export { ComposerFullscreenBody, ComposerFullscreenFooter } from "./internal/fullscreen";
 import { ScrollView } from "@/components/ui/scroll-view";
@@ -33,6 +35,14 @@ export function ComposerDock({
     const { width, height } = event.nativeEvent.layout;
     if (height > 0) setSurfaceSize({ width, height });
   }, []);
+  const measureComposer = useCallback((event: import("react-native").LayoutChangeEvent) => {
+    if (isWeb && surfaceRef.current instanceof HTMLElement) {
+      surfaceRef.current.style.setProperty(
+        "--paseo-composer-clearance",
+        event.nativeEvent.layout.height + "px",
+      );
+    }
+  }, []);
   if (centered) {
     return (
       <View ref={surfaceRef} style={styles.centered} onLayout={measureViewport}>
@@ -55,9 +65,16 @@ export function ComposerDock({
     );
   }
   return (
-    <View ref={surfaceRef} style={styles.surface} onLayout={measureViewport}>
+    <View
+      dataSet={MATERIAL_SLOTS.dock}
+      ref={surfaceRef}
+      style={styles.surface}
+      onLayout={measureViewport}
+    >
       <View style={styles.content}>{content}</View>
       <View
+        dataSet={fullscreen ? MATERIAL_SLOTS.solid : MATERIAL_SLOTS.dockComposer}
+        onLayout={measureComposer}
         style={
           fullscreen ? [styles.fullscreenComposer, fullscreenFrame] : [styles.composer, constraint]
         }
@@ -72,7 +89,7 @@ export function ComposerDock({
 const styles = StyleSheet.create((theme) => ({
   surface: { flex: 1, overflow: "hidden" },
   content: { flex: 1, justifyContent: "flex-end" },
-  composer: { width: "100%", flexShrink: 1 },
+  composer: { width: "100%", flexShrink: 1, paddingBottom: theme.spacing[4] },
   // Fixed, not absolute: a touch pan that starts inside an overflow-hidden ancestor
   // never reaches the zoomed visual viewport, while a fixed box chains to the viewport
   // directly. React Native Web renders `fixed`; React Native's style type omits it.

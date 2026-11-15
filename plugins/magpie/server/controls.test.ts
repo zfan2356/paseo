@@ -40,6 +40,7 @@ function fixture(personalReady = true, ultraSupported = true) {
 
 test("source switches preserve model identity and unrelated policy", async () => {
   const f = fixture();
+  f.group.affinity = "session";
   await f.controls.source("gpt-test", "personal");
   assert.deepEqual(f.saves[0], { ...f.group, routing: "manual", pick: "codex/gpt-test" });
   await f.controls.source("gpt-test", "ichat");
@@ -47,6 +48,15 @@ test("source switches preserve model identity and unrelated policy", async () =>
   await f.controls.source("gpt-test", "auto");
   assert.deepEqual(f.saves[2], f.group);
   assert.equal(sourceOf({ ...f.group, routing: "manual", pick: "ichat/gpt-test" }), "ichat");
+});
+
+test("official manual routes default to their first member and unrelated routes stay custom", () => {
+  assert.equal(sourceOf({ members: ["codex/m", "ichat/m"], routing: "manual" }), "personal");
+  assert.equal(
+    sourceOf({ members: ["codex/m", "ichat/m", "other/m"], routing: "order" }),
+    "custom",
+  );
+  assert.equal(sourceOf({ members: ["other/m", "ichat/m"], routing: "order" }), "custom");
 });
 
 test("unavailable personal source is refused before any save", async () => {
