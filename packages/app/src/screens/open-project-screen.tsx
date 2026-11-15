@@ -1,10 +1,11 @@
+import { WorkspaceResourcesSheet } from "@/session-navigation/workspace-resources";
 import { useHosts, useHostRuntimeLastError } from "@/runtime/host-runtime";
 import { useCallback, useEffect, useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, Pressable, ScrollView } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useRouter } from "expo-router";
-import { FolderOpen, Inbox, Plug, Smartphone } from "lucide-react-native";
+import { FolderOpen, Inbox, Plug, Smartphone, PanelsTopLeft } from "lucide-react-native";
 import { PaseoLogo } from "@/components/icons/paseo-logo";
 import { CommunityLinks } from "@/components/community-links";
 import { MenuHeader } from "@/components/headers/menu-header";
@@ -33,6 +34,9 @@ export function OpenProjectScreen() {
   const importSession = useImportSession();
   const chooseHost = useHostChooser();
   const localServerId = useLocalDaemonServerId();
+  const [resourcesOpen, setResourcesOpen] = useState(false);
+  const openResources = useCallback(() => setResourcesOpen(true), []);
+  const closeResources = useCallback(() => setResourcesOpen(false), []);
   const [isPairDeviceOpen, setIsPairDeviceOpen] = useState(false);
 
   const isCompactLayout = useIsCompactFormFactor();
@@ -76,6 +80,13 @@ export function OpenProjectScreen() {
           ))}
           <View style={styles.tiles}>
             <HomeTile
+              icon={PanelsTopLeft}
+              title={t("sessionNavigation.workspaceResources")}
+              description={t("sessionNavigation.workspaceResourcesHint")}
+              onPress={openResources}
+              testID="open-project-workspace-resources"
+            />
+            <HomeTile
               icon={FolderOpen}
               title={t("openProject.tiles.addProject.title")}
               description={t("openProject.tiles.addProject.description")}
@@ -118,6 +129,7 @@ export function OpenProjectScreen() {
         onClose={handleClosePairDevice}
         testID="open-project-pair-device-modal"
       />
+      {resourcesOpen ? <WorkspaceResourcesSheet onClose={closeResources} /> : null}
       {importSession.sheet}
     </View>
   );

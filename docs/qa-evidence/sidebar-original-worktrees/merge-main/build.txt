@@ -1,0 +1,45 @@
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Expo Autolinking module resolution enabled
+Starting Metro Bundler
+
+| (node:1171868) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+Web Bundled 3861ms packages/app/index.ts (5820 modules)
+
+› Assets (25):
+../../node_modules/expo-router/assets/arrow_down.017bc6ba3fc25503e5eb5e53826d48a8.png (9.5KB)
+../../node_modules/expo-router/assets/error.d1ea1496f9057eb392d5bbf3732a61b7.png (469B)
+../../node_modules/expo-router/assets/file.19eeb73b9593a38f8e9f418337fc7d10.png (138B)
+../../node_modules/expo-router/assets/forward.d8b800c443b8972542883e0b9de2bdc6.png (188B)
+../../node_modules/expo-router/assets/pkg.ab19f4cbc543357183a20571f68380a3.png (364B)
+../../node_modules/expo-router/assets/react-navigation/elements/back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653B)
+../../node_modules/expo-router/assets/react-navigation/elements/back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207B)
+../../node_modules/expo-router/assets/react-navigation/elements/clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425B)
+../../node_modules/expo-router/assets/react-navigation/elements/close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235B)
+../../node_modules/expo-router/assets/react-navigation/elements/search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928B)
+../../node_modules/expo-router/assets/sitemap.412dd9275b6b48ad28f5e3d81bb1f626.png (465B)
+../../node_modules/expo-router/assets/unmatched.20e71bdf79e3a97bf55fd9e164041578.png (4.8KB)
+assets/images/favicon-dark-attention.882b3a27dcb2073e9e31b334f9ed9728.png (2.2KB)
+assets/images/favicon-dark-running.8112342ff0d39e047a7f8d4fad9402f3.png (2.2KB)
+assets/images/favicon-dark.8005ed36ac07a5a7c60de25780897bd4.png (1.7KB)
+assets/images/favicon-light-attention.882b3a27dcb2073e9e31b334f9ed9728.png (2.2KB)
+assets/images/favicon-light-running.8112342ff0d39e047a7f8d4fad9402f3.png (2.2KB)
+assets/images/favicon-light.8005ed36ac07a5a7c60de25780897bd4.png (1.7KB)
+assets/images/notification-icon.3bf81d33ddbf380606bdd248ba83e158.png (2.3KB)
+
+› web bundles (7):
+_expo/static/css/xterm-3bb1704bf6cb0876640973dc0244b4cb.css (4.2KB)
+_expo/static/js/web/desktop-attachment-bridge-b36c7496a928dad272133c12f5951857.js (644B)
+_expo/static/js/web/desktop-attachment-store-53db2a828bc093ff5be3634c50015d40.js (2.9KB)
+_expo/static/js/web/index-2691db1b5756e8c22089a2d1a3e25d12.js (25MB)
+_expo/static/js/web/index-fe0b45f867cc0c98e709ce7368e5ee5d.js (45KB)
+_expo/static/js/web/indexeddb-attachment-store-ce1c95b9d9fbee133b7775eed113227f.js (3.2KB)
+_expo/static/js/web/native-file-attachment-store-93c3eb64aea74c212a259aa01574a8f8.js (4.3KB)
+
+› Files (3):
+favicon.ico (15KB)
+index.html (3.3KB)
+metadata.json (49B)
+
+Exported: dist

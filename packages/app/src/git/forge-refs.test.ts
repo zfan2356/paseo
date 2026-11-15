@@ -102,3 +102,12 @@ describe("extractForgeRefs", () => {
     expect(extractForgeRefs("https://github.com/getpaseo/paseo/pull/1", null)).toEqual([]);
   });
 });
+
+it("recognizes TGit MR references without attaching another repository", () => {
+  const remote = "git@git.woa.com:example/repo.git";
+  expect(parseForgeRef("https://git.woa.com/example/repo/-/merge_requests/686", remote)).toEqual({
+    kind: "change_request",
+    number: 686,
+  });
+  expect(parseForgeRef("https://git.woa.com/other/repo/-/merge_requests/686", remote)).toBeNull();
+});

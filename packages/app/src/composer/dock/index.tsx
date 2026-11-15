@@ -1,3 +1,5 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
+import { publishComposerClearance } from "@/fork/materials/floating-layout";
 export { ComposerDockBackground } from "./internal/background";
 export { ComposerFullscreenBody, ComposerFullscreenFooter } from "./internal/fullscreen";
 import { ScrollView } from "@/components/ui/scroll-view";
@@ -55,9 +57,16 @@ export function ComposerDock({
     );
   }
   return (
-    <View ref={surfaceRef} style={styles.surface} onLayout={measureViewport}>
+    <View
+      dataSet={MATERIAL_SLOTS.dock}
+      ref={surfaceRef}
+      style={styles.surface}
+      onLayout={measureViewport}
+    >
       <View style={styles.content}>{content}</View>
       <View
+        dataSet={fullscreen ? MATERIAL_SLOTS.solid : MATERIAL_SLOTS.dockComposer}
+        onLayout={publishComposerClearance}
         style={
           fullscreen ? [styles.fullscreenComposer, fullscreenFrame] : [styles.composer, constraint]
         }
@@ -72,7 +81,7 @@ export function ComposerDock({
 const styles = StyleSheet.create((theme) => ({
   surface: { flex: 1, overflow: "hidden" },
   content: { flex: 1, justifyContent: "flex-end" },
-  composer: { width: "100%", flexShrink: 1 },
+  composer: { width: "100%", flexShrink: 1, paddingBottom: theme.spacing[4] },
   // Fixed, not absolute: a touch pan that starts inside an overflow-hidden ancestor
   // never reaches the zoomed visual viewport, while a fixed box chains to the viewport
   // directly. React Native Web renders `fixed`; React Native's style type omits it.

@@ -9,9 +9,7 @@ test("shows Codex in the appearance picker", async ({ page }, testInfo) => {
   await expect(page.getByTestId("settings-sidebar")).toBeVisible();
   await openSettingsSection(page, "appearance");
 
-  const themeTrigger = page.getByLabel("Theme: System", { exact: true });
-  await themeTrigger.click();
-  await expect(page.getByText("Codex", { exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Codex", exact: true })).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("appearance-theme-picker-codex.png"),
     fullPage: true,
@@ -50,9 +48,11 @@ test("shows Pure black in the appearance picker", async ({ page }, testInfo) => 
   await expect(page.getByTestId("settings-sidebar")).toBeVisible();
   await openSettingsSection(page, "appearance");
 
-  const themeTrigger = page.getByLabel("Theme: System", { exact: true });
-  await themeTrigger.click();
-  await expect(page.getByText("Pure black", { exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "System", exact: true })).toBeChecked();
+  await expect(
+    page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio").first(),
+  ).toHaveAccessibleName("System");
+  await expect(page.getByRole("radio", { name: "Pure black", exact: true })).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("appearance-theme-picker.png"),
     fullPage: true,
