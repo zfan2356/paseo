@@ -53,7 +53,8 @@ function skeletonCss(root: string, theme: Theme): string {
 // Composer pills float over the transcript, so each one takes the hint material.
 function composerPillCss(root: string, scheme: Theme["colorScheme"]): string {
   const hint = MATERIAL.elevation.hint;
-  const pill = `${root} [data-material="composer-tracks"] [role="button"]`;
+  // Outermost buttons only: a control nested inside a pill keeps the pill's material.
+  const pill = `${root} [data-material="composer-tracks"] [role="button"]:not([role="button"] [role="button"])`;
   return `
     ${pill} { border: ${hint.border[scheme]} !important; box-shadow: ${hint.shadow[scheme]}; }
     @media (prefers-reduced-transparency: no-preference) {

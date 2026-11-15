@@ -814,9 +814,22 @@ test("diff pane keeps a single header row with aligned directory actions", async
     await expect(panel.getByText(/^Checkout: /)).toHaveCount(0);
     await expect(panel.getByText("Directory changes can include work")).toHaveCount(0);
 
-    await panel.getByTestId("session-directory-select").hover();
-    await expect(page.getByText(/^Checkout: /).filter({ visible: true })).toBeVisible();
-    await page.mouse.move(0, 0);
+    // The checkout path and the shared-changes hint head the directory menu.
+    const expectCheckoutInMenu = async () => {
+      await page
+        .getByTestId("working-diff-panel")
+        .filter({ visible: true })
+        .first()
+        .getByTestId("session-directory-select")
+        .click();
+      const checkout = page.getByTestId("session-directory-checkout").filter({ visible: true });
+      await expect(checkout).toContainText(`Checkout: ${session.cwd}`);
+      await expect(checkout).toContainText("Directory changes can include work");
+      return checkout;
+    };
+    const checkout = await expectCheckoutInMenu();
+    await page.keyboard.press("Escape");
+    await expect(checkout).toHaveCount(0);
 
     await panel.getByTestId("session-directory-actions").click();
     const items = page.getByRole("menuitem").filter({ visible: true });
@@ -842,6 +855,12 @@ test("diff pane keeps a single header row with aligned directory actions", async
     }
     expect(new Set(rows.map((row) => row.icon)).size).toBe(1);
     expect(new Set(rows.map((row) => row.title)).size).toBe(1);
+    await page.keyboard.press("Escape");
+
+    // Compact layouts open the same menu as a sheet; the checkout stays reachable there.
+    await page.setViewportSize({ width: 390, height: 900 });
+    await expect(page.getByTestId("working-diff-panel").filter({ visible: true })).toBeVisible();
+    await expectCheckoutInMenu();
   } finally {
     await session.cleanup();
   }

@@ -171,6 +171,20 @@ for (const platform of PLATFORMS) {
         await expect(page.getByRole("menuitem").first()).toBeVisible();
         await shot("1440-directory-menu");
         await page.keyboard.press("Escape");
+
+        const diffPane = page.getByTestId("working-diff-panel").filter({ visible: true });
+        await diffPane.getByTestId("session-directory-select").click();
+        await expect(page.getByRole("menuitem").first()).toBeVisible();
+        await shot("1440-directory-select");
+        await page.keyboard.press("Escape");
+
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.waitForTimeout(600);
+        await expect(diffPane).toBeVisible();
+        await shot("390-diff");
+        await diffPane.getByTestId("session-directory-select").click();
+        await expect(page.getByRole("menuitem").first()).toBeVisible();
+        await shot("390-directory-select");
       } finally {
         await session.cleanup();
       }

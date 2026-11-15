@@ -29,7 +29,6 @@ import { BindDirectory, CreateSessionWorktree, useContextMutation } from "./acti
 import { permitsSessionOperation } from "./operations";
 import { isWeb } from "@/constants/platform";
 import { ChangeRequestsDialog } from "@/agent-change-requests/section";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const ThemedLink = withUnistyles(Link);
@@ -124,7 +123,7 @@ export function SessionDirectoryToolbar({
   checkoutRoot,
 }: {
   selection: ReturnType<typeof useSessionDirectoryTarget>;
-  /** The diff pane passes the checkout it reads; the selector tooltip names it. */
+  /** The diff pane passes the checkout it reads; the directory menu names it. */
   checkoutRoot?: string;
 }) {
   const { target, retargetCurrentTab } = usePaneContext();
@@ -252,31 +251,25 @@ function DirectoryChoices({
     <View style={styles.wrapper} testID="session-directory-toolbar">
       <View style={styles.row}>
         <DropdownMenu compactMode="sheet">
-          <Tooltip
-            delayDuration={0}
-            enabledOnDesktop={checkoutRoot !== undefined}
-            enabledOnMobile={false}
+          <DropdownMenuTrigger
+            accessibilityRole="button"
+            accessibilityLabel={t("sessionNavigation.selectDirectory")}
+            testID="session-directory-select"
+            style={styles.selector}
           >
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger
-                accessibilityRole="button"
-                accessibilityLabel={t("sessionNavigation.selectDirectory")}
-                testID="session-directory-select"
-                style={styles.selector}
-              >
-                <Text numberOfLines={1} style={styles.text}>
-                  {executionDirectoryLabel(directory ?? context.launchDirectory, paths)} ▾
-                </Text>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" align="start" offset={4}>
-              <Text style={styles.tooltip}>
-                {t("sessionNavigation.checkoutRoot", { path: checkoutRoot })}
-              </Text>
-              <Text style={styles.tooltip}>{t("sessionNavigation.changesHint")}</Text>
-            </TooltipContent>
-          </Tooltip>
+            <Text numberOfLines={1} style={styles.text}>
+              {executionDirectoryLabel(directory ?? context.launchDirectory, paths)} ▾
+            </Text>
+          </DropdownMenuTrigger>
           <DropdownMenuContent sheetTitle={t("sessionNavigation.selectDirectory")}>
+            {checkoutRoot ? (
+              <View style={styles.checkout} testID="session-directory-checkout">
+                <Text selectable style={styles.checkoutText}>
+                  {t("sessionNavigation.checkoutRoot", { path: checkoutRoot })}
+                </Text>
+                <Text style={styles.checkoutText}>{t("sessionNavigation.changesHint")}</Text>
+              </View>
+            ) : null}
             {directories.map(({ path, launch }) => (
               <DirectoryChoice key={path} path={path} launch={launch} select={onSelect} />
             ))}
@@ -356,7 +349,8 @@ const styles = StyleSheet.create((theme) => ({
   text: { color: theme.colors.foreground, fontSize: theme.fontSize.sm },
   menu: { color: theme.colors.foregroundMuted, padding: theme.spacing[2] },
   error: { color: theme.colors.destructive, fontSize: theme.fontSize.sm },
-  tooltip: { color: theme.colors.foreground, fontSize: theme.fontSize.sm },
+  checkout: { paddingHorizontal: theme.spacing[3], paddingVertical: theme.spacing[2] },
+  checkoutText: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
 }));
 
 function DirectoryChoice({
