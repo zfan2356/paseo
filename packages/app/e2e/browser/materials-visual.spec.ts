@@ -1,9 +1,11 @@
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { getServerId } from "../support/helpers/server-id";
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { openAttachmentMenu } from "../support/helpers/composer";
+import { openChangesPanel } from "../support/helpers/workspace-tabs";
 
 // Pixel comparison of the material layer between two revisions; see docs/fork/SYNC.md.
 // Run once with --update-snapshots on the baseline revision, then without it on the candidate.
@@ -58,6 +60,7 @@ for (const platform of PLATFORMS) {
               `## ${index + 1}. Surfaces\n\nKeep the colors, typography and spacing consistent.\n\n| Detail | Direction |\n| --- | --- |\n| Palette | Teal, amber |\n`,
           ).join("\n"),
         },
+        repo: { withRemote: true, files: [{ path: ".gitignore", content: "/remote.git/\n" }] },
       });
       const randomName = path.basename(session.cwd);
       const row = page
@@ -90,6 +93,12 @@ for (const platform of PLATFORMS) {
         });
       };
       try {
+        // A working-tree change puts the diff-stat pill over the transcript and fills the diff pane.
+        await writeFile(
+          path.join(session.cwd, "README.md"),
+          "# Temp Repo\nexport const one = 1;\n",
+        );
+        await session.client.checkoutRefresh(session.cwd);
         await session.client.waitForFinish(session.agentId, 30_000);
         await page.emulateMedia({ colorScheme: theme });
         await openAgentRoute(page, session);
@@ -142,6 +151,22 @@ for (const platform of PLATFORMS) {
             await page.getByTestId("sidebar-close").click();
           }
         }
+
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.waitForTimeout(600);
+        const sidebarToggle = page.getByTestId("menu-button").filter({ visible: true }).first();
+        await sidebarToggle.click();
+        await expect(row).toHaveCount(0);
+        await shot("1440-sidebar-collapsed");
+        await sidebarToggle.click();
+        await expect(row).toBeVisible();
+
+        await openChangesPanel(page);
+        await shot("1440-diff");
+        await page.getByTestId("session-directory-actions").filter({ visible: true }).click();
+        await expect(page.getByRole("menuitem").first()).toBeVisible();
+        await shot("1440-directory-menu");
+        await page.keyboard.press("Escape");
       } finally {
         await session.cleanup();
       }

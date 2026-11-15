@@ -35,7 +35,6 @@ export const es: TranslationResources = {
     loading: "Cargando directorios de sesión…",
     refreshError: "No se pudo actualizar el estado del directorio",
     otherDirectories: "Otros directorios",
-    addDirectory: "+ Vincular directorio",
     updating: "Actualizando directorios…",
     checking: "Comprobando…",
     nonGit: "Directorio sin Git",

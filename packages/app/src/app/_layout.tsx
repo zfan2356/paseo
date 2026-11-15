@@ -1,4 +1,5 @@
 import { MATERIAL_SLOTS } from "@/fork/materials/slots";
+import { WorkspacePanel } from "@/fork/materials/workspace-panel";
 import { useHardwareKeyboardPresent } from "@/keyboard";
 import {
   WindowLayoutProvider,
@@ -519,7 +520,9 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <WindowChromeRegion
           corners={isCompactLayout && chromeEnabled ? "both" : appChromeLayout.contentCorners}
         >
-          <View style={flexStyle}>{children}</View>
+          <WorkspacePanel floating={!isCompactLayout && !isWorkspaceFocusModeEnabled}>
+            {children}
+          </WorkspacePanel>
         </WindowChromeRegion>
       </WorkspaceExplorerOpenGesture>
     </WindowLayoutSurface>

@@ -33,7 +33,6 @@ export const zhCN: TranslationResources = {
     loading: "正在加载会话目录…",
     refreshError: "无法刷新目录状态",
     otherDirectories: "其他目录",
-    addDirectory: "+ 绑定目录",
     updating: "正在更新目录…",
     checking: "正在检查…",
     nonGit: "非 Git 目录",

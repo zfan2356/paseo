@@ -34,7 +34,6 @@ export const fr: TranslationResources = {
     loading: "Chargement des répertoires de session…",
     refreshError: "Impossible d’actualiser l’état du répertoire",
     otherDirectories: "Autres répertoires",
-    addDirectory: "+ Lier un répertoire",
     updating: "Mise à jour des répertoires…",
     checking: "Vérification…",
     nonGit: "Répertoire sans Git",

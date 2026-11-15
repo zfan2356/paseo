@@ -34,6 +34,40 @@ function elevationCss(root: string, scheme: Theme["colorScheme"], material: Mate
   );
 }
 
+// Window skeleton: the sidebar material is the floor and the workspace floats on it as one panel.
+function skeletonCss(root: string, theme: Theme): string {
+  const scheme = theme.colorScheme;
+  const { panel } = MATERIAL;
+  const sidebarMaterial = `var(--paseo-sidebar-material, ${theme.colors.surfaceSidebar})`;
+  return `
+    ${root} { --paseo-floor: color-mix(in srgb, ${sidebarMaterial}, black ${panel.floorShade[scheme]}%); }
+    ${root} [data-material="sidebar"] { background: var(--paseo-floor) !important; border-right-width: 0 !important; }
+    ${root} [data-material="panel-frame"] { background: var(--paseo-floor); padding: ${panel.inset}px; }
+    ${root} [data-material="panel"] {
+      background: ${MATERIAL[scheme].content}; overflow: hidden; border-radius: ${panel.radius}px;
+      border: ${panel.border[scheme]}; box-shadow: ${panel.shadow[scheme]};
+    }
+  `;
+}
+
+// Composer pills float over the transcript, so each one takes the hint material.
+function composerPillCss(root: string, scheme: Theme["colorScheme"]): string {
+  const hint = MATERIAL.elevation.hint;
+  const pill = `${root} [data-material="composer-tracks"] [role="button"]`;
+  return `
+    ${pill} { border: ${hint.border[scheme]} !important; box-shadow: ${hint.shadow[scheme]}; }
+    @media (prefers-reduced-transparency: no-preference) {
+      ${pill} {
+        background: color-mix(in srgb, ${MATERIAL[scheme].surface} ${hint.material.minimumOpacity * 100}%, transparent) !important;
+        backdrop-filter: blur(${hint.material.maximumBlur}px) saturate(${MATERIAL.glass.saturation});
+      }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      ${pill} { background: ${MATERIAL[scheme].surface} !important; }
+    }
+  `;
+}
+
 function MaterialStyles({ theme }: { theme: Theme }) {
   useEffect(() => {
     const t = MATERIAL;
@@ -44,6 +78,8 @@ function MaterialStyles({ theme }: { theme: Theme }) {
     const root = "html";
     style.textContent = `
         ${root} [data-material="window"] { background: ${getIsElectronMac() ? "transparent" : palette.content} !important; }
+        ${skeletonCss(root, theme)}
+        ${composerPillCss(root, theme.colorScheme)}
         ${root} [data-material="dock"], ${root} [data-material="transcript"] { background: ${palette.content}; }
         ${root} [data-material="chrome"] {
           position: absolute; top: 0; left: 0; right: 0; z-index: 10;
