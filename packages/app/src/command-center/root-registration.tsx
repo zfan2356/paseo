@@ -37,6 +37,8 @@ import { getShortcutOs } from "@/utils/shortcut-platform";
 import type { CommandCenterContribution, CommandCenterIconProps } from "./contributions";
 import { useCommandCenterActions } from "./provider";
 import { buildGroupingContribution } from "./root-contributions";
+import { setWindowSkeleton, useWindowSkeleton } from "@/styles/window-skeleton";
+import { isWeb } from "@/constants/platform";
 
 const ThemedPlus = withUnistyles(Plus, (theme) => ({ color: theme.colors.foregroundMuted }));
 const ThemedFolderPlus = withUnistyles(FolderPlus, (theme) => ({
@@ -128,6 +130,7 @@ export function CommandCenterRootActions() {
   const toggleMobileAgentList = usePanelStore((state) => state.toggleMobileAgentList);
   const toggleDesktopAgentList = usePanelStore((state) => state.toggleDesktopAgentList);
   const toggleAgentList = isCompact ? toggleMobileAgentList : toggleDesktopAgentList;
+  const windowSkeleton = useWindowSkeleton();
   const shortcutPlatform = useMemo(
     () => ({ isMac: getShortcutOs() === "mac", usesDesktopBindings }),
     [],
@@ -330,6 +333,25 @@ export function CommandCenterRootActions() {
       }),
     );
 
+    if (isWeb) {
+      const option = windowSkeleton === "a" ? "B" : "A";
+      availableActions.push({
+        id: "window-skeleton-preview",
+        group: "actions",
+        groupRank: 0,
+        rank: 9,
+        keywords: ["preview", "window", "skeleton", "layout", "sidebar", "panel"],
+        visibility: "query",
+        run: () => setWindowSkeleton(windowSkeleton === "a" ? "b" : "a"),
+        presentation: {
+          kind: "action",
+          title: t("shell.commandCenter.windowSkeletonPreview", { option }),
+          sectionTitle: t("shell.commandCenter.actions"),
+          icon: PanelLeftIcon,
+        },
+      });
+    }
+
     return availableActions;
   }, [
     groupMode,
@@ -347,6 +369,7 @@ export function CommandCenterRootActions() {
     shortcutsAvailable,
     t,
     toggleAgentList,
+    windowSkeleton,
   ]);
 
   useCommandCenterActions({ sourceId: "root", enabled: true, actions });

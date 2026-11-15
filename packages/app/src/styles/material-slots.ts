@@ -20,6 +20,7 @@ export const MATERIAL_SLOTS = {
   panelFrame: { material: "panel-frame" },
   panel: { material: "panel" },
   sidebar: { material: "sidebar" },
+  toolbarGroup: { material: "toolbar-group" },
   header: { material: "header" },
   menu: { material: "menu" },
   dialog: { material: "dialog" },

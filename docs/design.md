@@ -2,7 +2,7 @@
 
 Tokens — every color, font size, weight, spacing step, radius, icon size — live in `packages/app/src/styles/theme.ts`.
 
-Web and desktop layer the window with the `MATERIAL` tokens in the same file: see [Window skeleton](#14-window-skeleton) and [Layers and materials](#15-layers-and-materials). The [material evidence](qa-evidence/materials/README.md) records coverage and Mac verification gaps. Native surfaces retain their existing styles.
+Web and desktop layer the window with the `MATERIAL` tokens in the same file; see [Window skeleton](#14-window-skeleton) and [Layers and materials](#15-layers-and-materials). The [material evidence](qa-evidence/materials/README.md) records coverage and Mac verification gaps. Native surfaces retain their existing styles.
 
 ---
 
@@ -263,22 +263,35 @@ New status pills use `<StatusBadge>`. Identity, shortcut, and interactive link b
 
 ## 14. Window skeleton
 
-Web and desktop wide layouts have two levels: the floor and the workspace panel. Compact layouts and native apps have neither; the workspace fills the screen.
+Two candidates are in preview; this section collapses to one once the user picks. Switch with the command center action "Preview window skeleton A/B" (web and desktop, stored in `@paseo:window-skeleton-preview`). A is the default. Both apply to wide web and desktop layouts only; compact layouts and native apps keep the full-screen workspace.
 
-- **Floor.** The sidebar material fills the whole window, behind the sidebar and around the panel. On macOS desktop it is window vibrancy under a `MATERIAL.glass.sidebarOpacity` tint. On Web, Windows and Linux it is opaque `surfaceSidebar`. With Reduce Transparency it is opaque `MATERIAL.<scheme>.surface`.
-- **Panel.** Everything right of the sidebar — tabs, panes, Explorer — is one panel. It sits `MATERIAL.panel.inset` from every window edge and from the sidebar, with `MATERIAL.panel.radius` corners, a hairline border, a faint shadow and an opaque `MATERIAL.<scheme>.content` fill.
-- **No dividing line.** The sidebar carries no right border. The contrast between floor and panel is the separation.
+Both candidates share three rules:
 
-| State                                 | Skeleton                                                                                     |
-| ------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Sidebar pinned                        | Floor under the sidebar; panel inset on all four sides                                       |
-| Sidebar collapsed                     | Panel keeps all four insets, so the floor frames it and the toggle does not move             |
-| Narrow wide window (overlay sidebar)  | The sidebar slides over the panel; the panel keeps its insets                                |
-| Workspace focus mode                  | No panel: the workspace fills the window edge to edge, because focus mode means content only |
-| macOS full screen                     | Same as windowed                                                                             |
-| Compact (`md` and below), native apps | No floor and no panel; unchanged full-screen workspace                                       |
+- **No dividing line.** The sidebar carries no right border. Material contrast separates the sidebar from the workspace.
+- **One floating level.** Exactly one of the two regions floats: the workspace in A, the sidebar in B. The other is the ground it floats on.
+- **Degrade, don't drop.** Off macOS, and under Reduce Transparency, every translucent fill becomes the opaque version of the same colour. Geometry, borders and shadows stay.
 
-The panel is a web-only CSS slot: `MATERIAL_SLOTS.panelFrame`, `panel` and `sidebar` are set in `packages/app/src/app/_layout.tsx` and `left-sidebar.tsx`, and styled in `packages/app/src/styles/materials.web.tsx`. The wrappers render in every state so toggling focus mode or the sidebar never remounts the workspace.
+**A — floating workspace.** The sidebar material is the window's floor; the workspace floats on it.
+
+- **Floor.** On macOS desktop, window vibrancy under a `MATERIAL.glass.sidebarOpacity` tint; on Web, Windows and Linux, opaque `surfaceSidebar`; under Reduce Transparency, opaque `MATERIAL.<scheme>.surface`. `MATERIAL.panel.floorShade` mixes black into it so the panel reads as raised in both schemes.
+- **Panel.** Everything right of the sidebar — tabs, panes, Explorer — is one panel, `MATERIAL.panel.inset` from every window edge and from the sidebar, with `MATERIAL.panel.radius` corners, `MATERIAL.panel.border` and `MATERIAL.panel.shadow`, filled with opaque `MATERIAL.<scheme>.content`.
+
+**B — floating sidebar.** The workspace fills the window; the sidebar floats over it.
+
+- **Ground.** The workspace is full-bleed `MATERIAL.<scheme>.content`, edge to edge, on every platform.
+- **Sidebar.** An inset glass panel: `MATERIAL.sidebarPanel.inset` from the window's top, left and bottom edges, `MATERIAL.sidebarPanel.radius` corners, the L2 border and shadow, and a `MATERIAL.glass` fill. The ground shows through its translucency; content does not scroll beneath it, because the sidebar still takes its column in the layout.
+- **Toolbar capsules.** Header control groups (`MATERIAL_SLOTS.toolbarGroup`: the title group, the trailing actions, the tab strip) sit in pill-shaped glass capsules with the L2 border and the L1 shadow, so the header reads as controls floating over the workspace rather than a band.
+
+| State                                 | A — floating workspace                                                | B — floating sidebar                               |
+| ------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------- |
+| Sidebar pinned                        | Floor under the sidebar; panel inset on all four sides                | Sidebar inset on three sides; workspace full-bleed |
+| Sidebar collapsed                     | Panel keeps all four insets; the floor frames it                      | Workspace full-bleed; capsules remain              |
+| Narrow wide window (overlay sidebar)  | The overlay sidebar slides over the panel; the panel keeps its insets | The overlay sidebar keeps its own surface          |
+| Workspace focus mode                  | No panel: the workspace fills the window                              | Same as collapsed                                  |
+| macOS full screen                     | Same as windowed                                                      | Same as windowed                                   |
+| Compact (`md` and below), native apps | Unchanged full-screen workspace                                       | Unchanged full-screen workspace                    |
+
+Both are web-only CSS: `MATERIAL_SLOTS.panelFrame`, `panel`, `sidebar` and `toolbarGroup` are set in `packages/app/src/app/_layout.tsx`, `left-sidebar.tsx`, `screen-header.tsx` and `workspace-desktop-tabs-row.tsx`, and styled by `skeletonCss` in `packages/app/src/styles/materials.web.tsx`. The wrappers render in every state, so toggling focus mode, the sidebar or the preview never remounts the workspace.
 
 ---
 
@@ -286,19 +299,19 @@ The panel is a web-only CSS slot: `MATERIAL_SLOTS.panelFrame`, `panel` and `side
 
 Every web and desktop surface belongs to one layer. A layer fixes radius, border, shadow and material together; a surface never picks them separately.
 
-| Layer   | Radius | Material                            | Border and shadow            | Owners                                                          |
-| ------- | -----: | ----------------------------------- | ---------------------------- | --------------------------------------------------------------- |
-| Floor   |      — | Sidebar material                    | None                         | Window background, sidebar                                      |
-| L0      |   12px | Opaque content                      | Hairline, faint              | Workspace panel                                                 |
-| Content |      — | Opaque, inherits the panel          | Interior borders only (§5)   | Transcript, cards, rows, pane chrome over static content        |
-| Chrome  |      — | Glass                               | None                         | Workspace header over agent tabs                                |
-| L1      |   10px | Protected glass, 96% tint, 8px blur | `MATERIAL.elevation.hint`    | Tooltip, toast, collapsed linked requests                       |
-| L2      |   16px | Glass                               | `MATERIAL.elevation.popover` | Menus, comboboxes, autocomplete, hover cards, banners, callouts |
-| L3      |   24px | Glass                               | `MATERIAL.elevation.modal`   | Composer, dialogs, sheets, fullscreen viewers, command center   |
+| Layer   |  Radius | Material                            | Border and shadow            | Owners                                                          |
+| ------- | ------: | ----------------------------------- | ---------------------------- | --------------------------------------------------------------- |
+| Floor   |       — | A: sidebar material; B: content     | None                         | Window background; the sidebar in A                             |
+| L0      | 12/16px | A: opaque content; B: glass         | `MATERIAL.panel` / L2        | A: workspace panel; B: sidebar panel and toolbar capsules       |
+| Content |       — | Opaque, inherits the panel          | Interior borders only (§5)   | Transcript, cards, rows, pane chrome over static content        |
+| Chrome  |       — | Glass                               | None                         | Workspace header over agent tabs                                |
+| L1      |    10px | Protected glass, 96% tint, 8px blur | `MATERIAL.elevation.hint`    | Tooltip, toast, collapsed linked requests                       |
+| L2      |    16px | Glass                               | `MATERIAL.elevation.popover` | Menus, comboboxes, autocomplete, hover cards, banners, callouts |
+| L3      |    24px | Glass                               | `MATERIAL.elevation.modal`   | Composer, dialogs, sheets, fullscreen viewers, command center   |
 
-- **Glass is for floating.** Translucency and blur belong only to surfaces that float over moving content: the chrome, the composer, and L1–L3. Content inside the panel is opaque.
-- **Shadows mark height.** Only L0–L3 cast a shadow, and each uses its token. Rows, cards, buttons and pane chrome never do.
-- **Radii grow with height.** 12 → 10/16 → 24 from the panel up. An L2 menu inside the panel is rounder than the panel.
+- **Glass is for floating.** Translucency and blur belong only to surfaces that float: the chrome, the composer, B's sidebar and capsules, and L1–L3. Workspace content is opaque.
+- **Shadows mark height.** Only L0–L3 cast a shadow, and each uses its token. Rows, cards, buttons and pane chrome never do; B's toolbar capsules are L0 and use the L1 shadow.
+- **Radii grow with height.** In A, 12 → 10/16 → 24 from the panel up, so an L2 menu inside the panel is rounder than the panel. In B the sidebar panel already sits at the L2 radius.
 - **Reduce Transparency** makes every glass layer opaque `surface` and removes blur. Borders, shadows and radii stay, so the hierarchy survives.
 - **A new floating surface** takes a slot from `packages/app/src/styles/material-slots.ts`. It never sets its own blur, shadow or translucent fill.
 

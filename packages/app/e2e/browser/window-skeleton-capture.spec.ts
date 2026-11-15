@@ -12,6 +12,8 @@ const OUT = process.env.E2E_SKELETON_OUT ?? "";
 const PLATFORMS = ["web", "mac"] as const;
 const SCHEMES = ["light", "dark"] as const;
 const WIDTHS = [1440, 390] as const;
+// Main has no preview switch; its captures use the unprefixed names.
+const SKELETONS = (process.env.E2E_SKELETON_VARIANTS ?? "a,b").split(",");
 
 async function simulateMac(page: Page, wallpaper: string) {
   await page.addInitScript(() => {
@@ -95,57 +97,65 @@ test.describe("window skeleton capture", () => {
   test.skip(process.env.E2E_SKELETON_CAPTURE !== "1", "Explicit screenshot capture");
   test.setTimeout(900_000);
 
-  for (const platform of PLATFORMS) {
-    test(`skeleton scenes (${platform})`, async ({ page }) => {
-      const out = path.join(OUT, "skeleton");
-      await mkdir(out, { recursive: true });
-      if (platform === "mac") {
-        const wallpaper = await readFile("../../docs/qa-evidence/materials/wallpaper.svg", "utf8");
-        await simulateMac(page, wallpaper);
-      }
-      const session = await seedMockAgentWorkspace({
-        repoPrefix: "skeleton-",
-        title: "Refine the window skeleton",
-        initialPrompt: "Explain how the sidebar and the main panel separate.",
-        featureValues: {
-          mockAssistantResponse:
-            "The sidebar material fills the window. The main area floats on it as a rounded panel.\n\n".repeat(
-              24,
-            ),
-        },
-      });
-      try {
-        await session.client.waitForFinish(session.agentId, 30_000);
-        for (const scheme of SCHEMES) {
-          await page.emulateMedia({ colorScheme: scheme });
-          await page.setViewportSize({ width: 1440, height: 900 });
-          await openAgentRoute(page, session);
-          await settle(page, scheme);
-          for (const width of WIDTHS) {
-            const name = (scene: string) =>
-              path.join(out, `${platform}-${scheme}-${width}-${scene}.png`);
-            await page.setViewportSize({ width, height: 900 });
-            await page.waitForTimeout(600);
-            await page.screenshot({ path: name("conversation") });
-            await openAttachmentMenu(page);
-            await page.waitForTimeout(400);
-            await page.screenshot({ path: name("menu") });
-            await page.keyboard.press("Escape");
-            await page.waitForTimeout(300);
-            await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-            await page.keyboard.press("Shift+?");
-            await expect(page.getByTestId("keyboard-shortcuts-dialog")).toBeVisible();
-            await page.waitForTimeout(400);
-            await page.screenshot({ path: name("dialog") });
-            await page.keyboard.press("Escape");
-            await expect(page.getByTestId("keyboard-shortcuts-dialog")).toBeHidden();
-            if (width === 1440) await captureWideScenes(page, platform, scheme, name);
-          }
+  for (const variant of SKELETONS) {
+    for (const platform of PLATFORMS) {
+      test(`skeleton scenes (${variant}, ${platform})`, async ({ page }) => {
+        const out = path.join(OUT, "skeleton", variant);
+        await mkdir(out, { recursive: true });
+        await page.addInitScript((value) => {
+          localStorage.setItem("@paseo:window-skeleton-preview", value);
+        }, variant);
+        if (platform === "mac") {
+          const wallpaper = await readFile(
+            "../../docs/qa-evidence/materials/wallpaper.svg",
+            "utf8",
+          );
+          await simulateMac(page, wallpaper);
         }
-      } finally {
-        await session.cleanup();
-      }
-    });
+        const session = await seedMockAgentWorkspace({
+          repoPrefix: "skeleton-",
+          title: "Refine the window skeleton",
+          initialPrompt: "Explain how the sidebar and the main panel separate.",
+          featureValues: {
+            mockAssistantResponse:
+              "The sidebar material fills the window. The main area floats on it as a rounded panel.\n\n".repeat(
+                24,
+              ),
+          },
+        });
+        try {
+          await session.client.waitForFinish(session.agentId, 30_000);
+          for (const scheme of SCHEMES) {
+            await page.emulateMedia({ colorScheme: scheme });
+            await page.setViewportSize({ width: 1440, height: 900 });
+            await openAgentRoute(page, session);
+            await settle(page, scheme);
+            for (const width of WIDTHS) {
+              const name = (scene: string) =>
+                path.join(out, `${platform}-${scheme}-${width}-${scene}.png`);
+              await page.setViewportSize({ width, height: 900 });
+              await page.waitForTimeout(600);
+              await page.screenshot({ path: name("conversation") });
+              await openAttachmentMenu(page);
+              await page.waitForTimeout(400);
+              await page.screenshot({ path: name("menu") });
+              await page.keyboard.press("Escape");
+              await page.waitForTimeout(300);
+              await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+              await page.keyboard.press("Shift+?");
+              await expect(page.getByTestId("keyboard-shortcuts-dialog")).toBeVisible();
+              await page.waitForTimeout(400);
+              await page.screenshot({ path: name("dialog") });
+              await page.keyboard.press("Escape");
+              await expect(page.getByTestId("keyboard-shortcuts-dialog")).toBeHidden();
+              if (width === 1440) await captureWideScenes(page, platform, scheme, name);
+            }
+          }
+        } finally {
+          await session.cleanup();
+        }
+      });
+    }
   }
 
   test("polish walkthrough", async ({ page }) => {

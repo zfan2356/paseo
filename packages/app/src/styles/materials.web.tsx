@@ -33,6 +33,45 @@ function elevationCss(root: string, scheme: Theme["colorScheme"], material: Mate
   );
 }
 
+// Window skeleton (docs/design.md §14). A floats the workspace on the floor; B floats the sidebar.
+function skeletonCss(theme: Theme): string {
+  const scheme = theme.colorScheme;
+  const palette = MATERIAL[scheme];
+  const { panel, sidebarPanel, glass, elevation } = MATERIAL;
+  const sidebarMaterial = `var(--paseo-sidebar-material, ${theme.colors.surfaceSidebar})`;
+  const a = 'html:not([data-skeleton="b"])';
+  const b = 'html[data-skeleton="b"]';
+  const popover = elevation.popover;
+  return `
+    html { --paseo-floor: color-mix(in srgb, ${sidebarMaterial}, black ${panel.floorShade[scheme]}%); }
+    ${a} [data-material="sidebar"] { background: var(--paseo-floor) !important; border-right-width: 0 !important; }
+    ${a} [data-material="panel-frame"] { background: var(--paseo-floor); padding: ${panel.inset}px; }
+    ${a} [data-material="panel"] {
+      background: ${palette.content}; overflow: hidden; border-radius: ${panel.radius}px;
+      border: ${panel.border[scheme]}; box-shadow: ${panel.shadow[scheme]};
+    }
+    ${b} [data-material="window"] { background: ${palette.content} !important; }
+    ${b} [data-material="panel-frame"], ${b} [data-material="panel"] { background: ${palette.content}; }
+    ${b} [data-material="sidebar"] {
+      margin: ${sidebarPanel.inset}px; border-radius: ${sidebarPanel.radius}px; overflow: hidden;
+      border: ${popover.border[scheme]} !important; box-shadow: ${popover.shadow[scheme]};
+      background: ${palette.surface} !important;
+    }
+    ${b} [data-material="panel-frame"] [data-material="toolbar-group"]:not(:empty) {
+      flex: 0 1 auto; margin-right: auto; padding: 0 4px; border-radius: 999px;
+      border: ${popover.border[scheme]} !important; box-shadow: ${elevation.hint.shadow[scheme]};
+      background: ${palette.surface} !important;
+    }
+    ${b} [data-material="panel-frame"] [data-material="toolbar-group"]:not(:empty) ~ [data-material="toolbar-group"] { margin-right: 0; }
+    @media (prefers-reduced-transparency: no-preference) {
+      ${b} [data-material="sidebar"], ${b} [data-material="panel-frame"] [data-material="toolbar-group"]:not(:empty) {
+        background: color-mix(in srgb, ${palette.surface} ${glass.sidebarOpacity * 100}%, transparent) !important;
+        backdrop-filter: blur(${glass.blur}px) saturate(${glass.saturation});
+      }
+    }
+  `;
+}
+
 function MaterialStyles({ theme }: { theme: Theme }) {
   useEffect(() => {
     const t = MATERIAL;
@@ -43,15 +82,7 @@ function MaterialStyles({ theme }: { theme: Theme }) {
     const root = "html";
     style.textContent = `
         ${root} [data-material="window"] { background: ${getIsElectronMac() ? "transparent" : palette.content} !important; }
-        ${root} [data-material="sidebar"] { border-right-width: 0 !important; }
-        ${root} [data-material="panel-frame"] {
-          background: var(--paseo-sidebar-material, ${theme.colors.surfaceSidebar});
-          padding: ${t.panel.inset}px;
-        }
-        ${root} [data-material="panel"] {
-          background: ${palette.content}; overflow: hidden; border-radius: ${t.panel.radius}px;
-          border: ${t.panel.border[theme.colorScheme]}; box-shadow: ${t.panel.shadow[theme.colorScheme]};
-        }
+        ${skeletonCss(theme)}
         ${root} [data-material="dock"], ${root} [data-testid="agent-chat-scroll"] { background: ${palette.content}; }
         ${root} [data-material="chrome"] {
           position: absolute; top: 0; left: 0; right: 0; z-index: 10;

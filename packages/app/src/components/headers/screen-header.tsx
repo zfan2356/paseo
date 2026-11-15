@@ -64,8 +64,12 @@ export function ScreenHeader({
           style={rowStyle}
         >
           <TitlebarDragRegion />
-          <View style={leftCombinedStyle}>{left}</View>
-          <View style={rightCombinedStyle}>{right}</View>
+          <View style={leftCombinedStyle} dataSet={MATERIAL_SLOTS.toolbarGroup}>
+            {left}
+          </View>
+          <View style={rightCombinedStyle} dataSet={MATERIAL_SLOTS.toolbarGroup}>
+            {right}
+          </View>
         </WindowChromeSafeArea>
       </View>
     </ComposerDockBackground>

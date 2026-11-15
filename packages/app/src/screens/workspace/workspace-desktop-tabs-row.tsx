@@ -1429,7 +1429,7 @@ function ResolvedWorkspaceDesktopTabsRow({
         onPress={onExitFocusMode}
         onLayout={handleExitFocusModeLayout}
       />
-      <View style={styles.tabsScrollContainer}>
+      <View style={styles.tabsScrollContainer} dataSet={MATERIAL_SLOTS.toolbarGroup}>
         <Animated.ScrollView
           ref={tabsScrollRef}
           horizontal

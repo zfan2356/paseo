@@ -3,6 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { openAttachmentMenu } from "../support/helpers/composer";
+import { openCommandCenter } from "../support/helpers/command-center";
 // Real renderer/daemon coverage and raw scroll samples for default materials.
 test("default material evidence", async ({ page }, testInfo) => {
   test.skip(process.env.E2E_PERFORMANCE !== "1", "Explicit visual/performance evidence capture");
@@ -735,3 +736,56 @@ for (const platform of ["darwin", "web"] as const) {
     }
   });
 }
+
+// Preview B floats the sidebar as an inset glass panel over the full-bleed workspace.
+test("window skeleton preview B floats the sidebar", async ({ page }) => {
+  test.setTimeout(180_000);
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "material-skeleton-b-",
+    title: "Window skeleton B",
+    initialPrompt: "hello",
+    featureValues: { mockAssistantResponse: "ok" },
+  });
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openAgentRoute(page, session);
+    await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible({
+      timeout: 60_000,
+    });
+    await page.waitForFunction(() => document.querySelector("[data-material-styles]"));
+    // The preview switch lives in the command center.
+    const commandCenter = await openCommandCenter(page);
+    await page.keyboard.type("skeleton");
+    await commandCenter.getByText("Preview window skeleton B").click();
+    await expect(page.locator("html")).toHaveAttribute("data-skeleton", "b");
+    const geometry = () =>
+      page.evaluate(() => {
+        const sidebar = document.querySelector('[data-material="sidebar"]');
+        const panel = document.querySelector('[data-material="panel"]');
+        if (!sidebar || !panel) return null;
+        const s = sidebar.getBoundingClientRect();
+        const p = panel.getBoundingClientRect();
+        const sidebarStyle = getComputedStyle(sidebar);
+        return {
+          left: Math.round(s.left),
+          top: Math.round(s.top),
+          bottom: Math.round(window.innerHeight - s.bottom),
+          sidebarRadius: sidebarStyle.borderTopLeftRadius,
+          sidebarRule: sidebarStyle.borderRightWidth,
+          panelRight: Math.round(window.innerWidth - p.right),
+          panelRadius: getComputedStyle(panel).borderTopLeftRadius,
+        };
+      });
+    await expect.poll(geometry).toEqual({
+      left: 8,
+      top: 8,
+      bottom: 8,
+      sidebarRadius: "16px",
+      sidebarRule: "1px",
+      panelRight: 0,
+      panelRadius: "0px",
+    });
+  } finally {
+    await session.cleanup();
+  }
+});
