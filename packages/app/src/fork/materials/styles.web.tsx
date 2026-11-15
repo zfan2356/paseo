@@ -34,18 +34,23 @@ function elevationCss(root: string, scheme: Theme["colorScheme"], material: Mate
   );
 }
 
-// Window skeleton: the sidebar material is the floor and the workspace floats on it as one panel.
+// Window skeleton: the workspace panel meets the window on its top, right and bottom edges and
+// floats off the sidebar-material floor only beside the pinned sidebar. The overlay sidebar
+// (collapsed, or a narrow wide window) carries no `sidebar` slot, so the panel then fills the frame.
 function skeletonCss(root: string, theme: Theme): string {
   const scheme = theme.colorScheme;
   const { panel } = MATERIAL;
   const sidebarMaterial = `var(--paseo-sidebar-material, ${theme.colors.surfaceSidebar})`;
+  const pinned = `${root}:has([data-material="sidebar"])`;
   return `
     ${root} { --paseo-floor: color-mix(in srgb, ${sidebarMaterial}, black ${panel.floorShade[scheme]}%); }
     ${root} [data-material="sidebar"] { background: var(--paseo-floor) !important; border-right-width: 0 !important; }
-    ${root} [data-material="panel-frame"] { background: var(--paseo-floor); padding: ${panel.inset}px; }
-    ${root} [data-material="panel"] {
-      background: ${MATERIAL[scheme].content}; overflow: hidden; border-radius: ${panel.radius}px;
-      border: ${panel.border[scheme]}; box-shadow: ${panel.shadow[scheme]};
+    ${root} [data-material="panel-frame"] { background: var(--paseo-floor); }
+    ${root} [data-material="panel"] { background: ${MATERIAL[scheme].content}; overflow: hidden; }
+    ${pinned} [data-material="panel-frame"] { padding-left: ${panel.inset}px; }
+    ${pinned} [data-material="panel"] {
+      border-radius: ${panel.radius}px 0 0 ${panel.radius}px;
+      border-left: ${panel.border[scheme]}; box-shadow: ${panel.shadow[scheme]};
     }
   `;
 }
