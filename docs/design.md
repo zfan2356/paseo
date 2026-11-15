@@ -2,7 +2,7 @@
 
 Tokens — every color, font size, weight, spacing step, radius, icon size — live in `packages/app/src/styles/theme.ts`.
 
-Web and desktop use the glass and L1/L2/L3 elevation tokens in `MATERIAL`. The [material evidence](qa-evidence/materials/README.md) records coverage and Mac verification gaps. Native surfaces retain their existing styles.
+Web and desktop layer the window with the `MATERIAL` tokens in the same file: see [Window skeleton](#14-window-skeleton) and [Layers and materials](#15-layers-and-materials). The [material evidence](qa-evidence/materials/README.md) records coverage and Mac verification gaps. Native surfaces retain their existing styles.
 
 ---
 
@@ -11,6 +11,8 @@ Web and desktop use the glass and L1/L2/L3 elevation tokens in `MATERIAL`. The [
 Paseo is minimal, spacious, quiet, confident. Whitespace is deliberate. Nothing crowds, nothing decorates, nothing apologizes. A row, a label, a control. That is the bar.
 
 The app is calm so the user's work is not. Every visual decision serves either _act on this_ or _understand this_ — never _look at this_.
+
+Content stays quiet; texture comes from material. On web and desktop the sidebar material is the window's floor, the workspace floats on it as one rounded panel, and transient surfaces float above as glass. Material separates regions and marks what is temporary. It never decorates content.
 
 Consistency comes from component reuse, not from hand-matching styles across surfaces. A row in the projects list, a row in settings, and a row in a modal are the same component, not three implementations that happen to look alike. When two surfaces do the same semantic thing in two different ways, one of them is wrong.
 
@@ -86,7 +88,7 @@ A `<Pressable>` wrapping a `<Text>` is a sixth variant. It is wrong. `<Button>` 
 
 ## 5. Borders
 
-Borders group, separate, or rarely emphasize.
+Borders group, separate, or rarely emphasize. They work inside a surface. Window regions — the sidebar and the workspace — are separated by material, not by a line ([Window skeleton](#14-window-skeleton)).
 
 A logical block of related rows lives inside a card — one border around the whole group. The card primitive is `settingsStyles.card`; the keyboard-shortcuts dialog uses the same shape inline (`packages/app/src/components/keyboard-shortcuts-dialog.tsx:68-73`). The border defines what belongs together.
 
@@ -94,7 +96,7 @@ Rows after the first inside a card carry `settingsStyles.rowBorder` — a single
 
 A list that is itself the page content — sidebar items in `sidebar-workspace-list.tsx`, the workspace list, the agent list (`packages/app/src/components/agent-list.tsx`) — uses spacing and surface, not borders, to separate items. Rows-in-a-card is an interior pattern; lists-as-pages are not.
 
-Pane chrome — the workspace pane header, the file-explorer header, the diff pane header — uses a single bottom border to separate the header from the content (`packages/app/src/components/git-diff-pane.tsx:2328-2331`). One border, no shadow.
+Pane chrome over static content — the file-explorer header, the diff pane header — uses a single bottom border to separate the header from the content (`packages/app/src/components/git-diff-pane.tsx:2328-2331`). One border, no shadow. On web and desktop the workspace header over agent tabs is a floating glass layer instead: the transcript scrolls under it, so it has no border ([Layers and materials](#15-layers-and-materials)).
 
 `borderAccent` is reserved for the outline button. Inputs use `border`. Single-thing borders are wrong; a single bordered element is either a card with one row (use the card) or it does not need a border.
 
@@ -167,7 +169,7 @@ The settings shell (`packages/app/src/screens/settings-screen.tsx`) and the proj
 
 The branching is one `useIsCompactFormFactor()` check at the top of the screen component. The list and the detail are the same components in both layouts; only the framing changes.
 
-The workspace screen (`packages/app/src/screens/workspace/workspace-screen.tsx`) follows a different but parallel rule: tabs collapse on compact, panes split on desktop. The sidebar (`packages/app/src/components/left-sidebar.tsx`) is overlaid on compact and pinned on desktop.
+The workspace screen (`packages/app/src/screens/workspace/workspace-screen.tsx`) follows a different but parallel rule: tabs collapse on compact, panes split on desktop. The sidebar (`packages/app/src/components/left-sidebar.tsx`) is overlaid on compact and pinned on desktop. How the pinned sidebar and the workspace meet is the [Window skeleton](#14-window-skeleton).
 
 On a narrow window using the wide layout, app navigation yields when the remaining width cannot accommodate the content topology. Settings prefers a 720px split (320px list + 400px detail); its list shrinks first to keep forms readable without reducing the detail below 400px. Explorer reserves at least 240px plus a 360px workspace. These are local space budgets, not compact breakpoints. The app sidebar shrinks from its preferred 320px toward a 200px minimum to leave a 400px center target; its preferred width fits at 720px. Temporary width clamps are render-only; widening restores the user's saved sidebar widths.
 
@@ -259,7 +261,50 @@ New status pills use `<StatusBadge>`. Identity, shortcut, and interactive link b
 
 ---
 
-## 14. Forbidden
+## 14. Window skeleton
+
+Web and desktop wide layouts have two levels: the floor and the workspace panel. Compact layouts and native apps have neither; the workspace fills the screen.
+
+- **Floor.** The sidebar material fills the whole window, behind the sidebar and around the panel. On macOS desktop it is window vibrancy under a `MATERIAL.glass.sidebarOpacity` tint. On Web, Windows and Linux it is opaque `surfaceSidebar`. With Reduce Transparency it is opaque `MATERIAL.<scheme>.surface`.
+- **Panel.** Everything right of the sidebar — tabs, panes, Explorer — is one panel. It sits `MATERIAL.panel.inset` from every window edge and from the sidebar, with `MATERIAL.panel.radius` corners, a hairline border, a faint shadow and an opaque `MATERIAL.<scheme>.content` fill.
+- **No dividing line.** The sidebar carries no right border. The contrast between floor and panel is the separation.
+
+| State                                 | Skeleton                                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Sidebar pinned                        | Floor under the sidebar; panel inset on all four sides                                       |
+| Sidebar collapsed                     | Panel keeps all four insets, so the floor frames it and the toggle does not move             |
+| Narrow wide window (overlay sidebar)  | The sidebar slides over the panel; the panel keeps its insets                                |
+| Workspace focus mode                  | No panel: the workspace fills the window edge to edge, because focus mode means content only |
+| macOS full screen                     | Same as windowed                                                                             |
+| Compact (`md` and below), native apps | No floor and no panel; unchanged full-screen workspace                                       |
+
+The panel is a web-only CSS slot: `MATERIAL_SLOTS.panelFrame`, `panel` and `sidebar` are set in `packages/app/src/app/_layout.tsx` and `left-sidebar.tsx`, and styled in `packages/app/src/styles/materials.web.tsx`. The wrappers render in every state so toggling focus mode or the sidebar never remounts the workspace.
+
+---
+
+## 15. Layers and materials
+
+Every web and desktop surface belongs to one layer. A layer fixes radius, border, shadow and material together; a surface never picks them separately.
+
+| Layer   | Radius | Material                            | Border and shadow            | Owners                                                          |
+| ------- | -----: | ----------------------------------- | ---------------------------- | --------------------------------------------------------------- |
+| Floor   |      — | Sidebar material                    | None                         | Window background, sidebar                                      |
+| L0      |   12px | Opaque content                      | Hairline, faint              | Workspace panel                                                 |
+| Content |      — | Opaque, inherits the panel          | Interior borders only (§5)   | Transcript, cards, rows, pane chrome over static content        |
+| Chrome  |      — | Glass                               | None                         | Workspace header over agent tabs                                |
+| L1      |   10px | Protected glass, 96% tint, 8px blur | `MATERIAL.elevation.hint`    | Tooltip, toast, collapsed linked requests                       |
+| L2      |   16px | Glass                               | `MATERIAL.elevation.popover` | Menus, comboboxes, autocomplete, hover cards, banners, callouts |
+| L3      |   24px | Glass                               | `MATERIAL.elevation.modal`   | Composer, dialogs, sheets, fullscreen viewers, command center   |
+
+- **Glass is for floating.** Translucency and blur belong only to surfaces that float over moving content: the chrome, the composer, and L1–L3. Content inside the panel is opaque.
+- **Shadows mark height.** Only L0–L3 cast a shadow, and each uses its token. Rows, cards, buttons and pane chrome never do.
+- **Radii grow with height.** 12 → 10/16 → 24 from the panel up. An L2 menu inside the panel is rounder than the panel.
+- **Reduce Transparency** makes every glass layer opaque `surface` and removes blur. Borders, shadows and radii stay, so the hierarchy survives.
+- **A new floating surface** takes a slot from `packages/app/src/styles/material-slots.ts`. It never sets its own blur, shadow or translucent fill.
+
+---
+
+## 16. Forbidden
 
 - `fontWeight.medium` on row titles, body text, badge text, or `<SidebarCallout>` titles. Medium is reserved for the structural-label tier described in §3 — section labels, modal/sheet titles, dense metadata emphasis, and tight action labels. Anything else is `normal`. `<ScreenTitle>` is responsive `400/300` and is never overridden.
 - `<Pressable>` wrapping `<Text>` to make a button. `<Button>` exists.
@@ -272,6 +317,8 @@ New status pills use `<StatusBadge>`. Identity, shortcut, and interactive link b
 - Placeholder text dimmed beyond `foregroundMuted`. No extra opacity, no italics, no ghost-text.
 - `onPointerEnter` and `onPointerLeave`. They do not fire on native iOS. Hover uses Pressable's `onHoverIn`/`onHoverOut` gated with `isHovered || isCompact || isNative`.
 - Raw DOM APIs without an `isWeb` guard.
+- A border or line between the app sidebar and the workspace. The window skeleton separates them (§14).
+- Shadows, blur or translucent fills outside a layer in §15.
 - Spacing values outside the scale. `padding: 20` and `gap: 10` are wrong.
 - Color changes for disabled state. Opacity only.
 - Destructive actions without `confirmDialog`. Restart, remove, and future destructive actions are confirmed. Archive workspace is confirmed only when its worktree backing reports uncommitted changes or unpushed commits; otherwise it archives immediately.
@@ -281,7 +328,7 @@ New status pills use `<StatusBadge>`. Identity, shortcut, and interactive link b
 
 ---
 
-## 15. Canonical surfaces by pattern
+## 17. Canonical surfaces by pattern
 
 | Pattern                                             | Reference                                                                                                                                                                                                                                                                                                |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

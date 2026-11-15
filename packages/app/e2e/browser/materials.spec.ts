@@ -664,3 +664,74 @@ test("header icon sizing leaves the tab close scrim at full width", async ({ pag
     await session.cleanup();
   }
 });
+
+// The workspace floats as a rounded panel on the sidebar material; no line divides the two.
+for (const platform of ["darwin", "web"] as const) {
+  test(`window skeleton floats the workspace panel (${platform})`, async ({ page }) => {
+    test.setTimeout(180_000);
+    if (platform === "darwin") {
+      await page.addInitScript(() => {
+        (window as unknown as { paseoDesktop: unknown }).paseoDesktop = {
+          platform: "darwin",
+          events: { on: () => () => {} },
+          invoke: async () => null,
+        };
+      });
+    }
+    const session = await seedMockAgentWorkspace({
+      repoPrefix: "material-skeleton-",
+      title: "Window skeleton",
+      initialPrompt: "hello",
+      featureValues: { mockAssistantResponse: "ok" },
+    });
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openAgentRoute(page, session);
+      await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible({
+        timeout: 60_000,
+      });
+      await page.waitForFunction(() => document.querySelector("[data-material-styles]"));
+      const geometry = () =>
+        page.evaluate(() => {
+          const sidebar = document.querySelector('[data-material="sidebar"]');
+          const panel = document.querySelector('[data-material="panel"]');
+          if (!sidebar || !panel) return null;
+          const s = sidebar.getBoundingClientRect();
+          const p = panel.getBoundingClientRect();
+          const panelStyle = getComputedStyle(panel);
+          return {
+            gap: Math.round(p.left - s.right),
+            top: Math.round(p.top),
+            bottom: Math.round(window.innerHeight - p.bottom),
+            right: Math.round(window.innerWidth - p.right),
+            radius: panelStyle.borderTopLeftRadius,
+            panelBorder: panelStyle.borderTopWidth,
+            sidebarRule: getComputedStyle(sidebar).borderRightWidth,
+          };
+        });
+      await expect.poll(geometry).toEqual({
+        gap: 8,
+        top: 8,
+        bottom: 8,
+        right: 8,
+        radius: "12px",
+        panelBorder: "1px",
+        sidebarRule: "0px",
+      });
+      if (platform === "web") {
+        // Focus mode is content only: the workspace fills the window.
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.keyboard.press("Control+Shift+F");
+        await expect(page.getByRole("button", { name: "Exit focus mode" })).toBeVisible();
+        await expect.poll(() => page.locator('[data-material="panel"]').count()).toBe(0);
+        await page.getByRole("button", { name: "Exit focus mode" }).click();
+        await expect.poll(geometry).toMatchObject({ gap: 8, radius: "12px" });
+      }
+      // Compact layouts keep the full-screen workspace.
+      await page.setViewportSize({ width: 390, height: 900 });
+      await expect.poll(() => page.locator('[data-material="panel"]').count()).toBe(0);
+    } finally {
+      await session.cleanup();
+    }
+  });
+}

@@ -519,7 +519,9 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <WindowChromeRegion
           corners={isCompactLayout && chromeEnabled ? "both" : appChromeLayout.contentCorners}
         >
-          <View style={flexStyle}>{children}</View>
+          <WorkspacePanel floating={!isCompactLayout && !isWorkspaceFocusModeEnabled}>
+            {children}
+          </WorkspacePanel>
         </WindowChromeRegion>
       </WorkspaceExplorerOpenGesture>
     </WindowLayoutSurface>
@@ -582,6 +584,17 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
     <AppContainerLifetime sidebarGesturesEnabled={sidebarPresentation === "overlay"}>
       <SheetHostScope enabled={isCompactLayout}>{surface}</SheetHostScope>
     </AppContainerLifetime>
+  );
+}
+
+// Both wrappers always render so toggling focus mode never remounts the workspace.
+function WorkspacePanel({ children, floating }: { children: ReactNode; floating: boolean }) {
+  return (
+    <View style={flexStyle} dataSet={floating ? MATERIAL_SLOTS.panelFrame : undefined}>
+      <View style={flexStyle} dataSet={floating ? MATERIAL_SLOTS.panel : undefined}>
+        {children}
+      </View>
+    </View>
   );
 }
 

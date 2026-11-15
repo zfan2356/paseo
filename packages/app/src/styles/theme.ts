@@ -605,6 +605,13 @@ export const MATERIAL = {
       material: { name: "glass", minimumOpacity: 0, maximumBlur: 20 },
     },
   },
+  // L0: the window skeleton. The workspace floats as one panel on the sidebar material.
+  panel: {
+    inset: 8,
+    radius: 12,
+    border: { light: "1px solid rgba(24,46,34,0.08)", dark: "1px solid rgba(255,255,255,0.08)" },
+    shadow: { light: "0 1px 3px rgba(24,46,34,0.06)", dark: "0 1px 3px rgba(0,0,0,0.32)" },
+  },
   menuMinWidth: 240,
   spacing: { composer: 20, menu: 6, banner: 12, secondary: 8 },
   icon: { size: 16, action: 20, stroke: 1.5 },

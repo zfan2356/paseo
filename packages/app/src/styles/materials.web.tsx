@@ -43,6 +43,15 @@ function MaterialStyles({ theme }: { theme: Theme }) {
     const root = "html";
     style.textContent = `
         ${root} [data-material="window"] { background: ${getIsElectronMac() ? "transparent" : palette.content} !important; }
+        ${root} [data-material="sidebar"] { border-right-width: 0 !important; }
+        ${root} [data-material="panel-frame"] {
+          background: var(--paseo-sidebar-material, ${theme.colors.surfaceSidebar});
+          padding: ${t.panel.inset}px;
+        }
+        ${root} [data-material="panel"] {
+          background: ${palette.content}; overflow: hidden; border-radius: ${t.panel.radius}px;
+          border: ${t.panel.border[theme.colorScheme]}; box-shadow: ${t.panel.shadow[theme.colorScheme]};
+        }
         ${root} [data-material="dock"], ${root} [data-testid="agent-chat-scroll"] { background: ${palette.content}; }
         ${root} [data-material="chrome"] {
           position: absolute; top: 0; left: 0; right: 0; z-index: 10;
