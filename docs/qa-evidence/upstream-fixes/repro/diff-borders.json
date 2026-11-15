@@ -1,0 +1,50 @@
+[
+  {
+    "y": 5,
+    "side": "Top",
+    "testid": null,
+    "w": 119
+  },
+  {
+    "y": 31,
+    "side": "Bottom",
+    "testid": null,
+    "w": 119
+  },
+  {
+    "y": 36,
+    "side": "Bottom",
+    "testid": null,
+    "w": 800
+  },
+  {
+    "y": 36,
+    "side": "Bottom",
+    "testid": "workspace-tabs-row",
+    "w": 316
+  },
+  {
+    "y": 72,
+    "side": "Bottom",
+    "testid": "workspace-tabs-row",
+    "w": 800
+  },
+  {
+    "y": 72,
+    "side": "Bottom",
+    "testid": "changes-repository-header",
+    "w": 320
+  },
+  {
+    "y": 108,
+    "side": "Bottom",
+    "testid": "changes-header",
+    "w": 800
+  },
+  {
+    "y": 108,
+    "side": "Bottom",
+    "testid": "changes-header",
+    "w": 320
+  }
+]

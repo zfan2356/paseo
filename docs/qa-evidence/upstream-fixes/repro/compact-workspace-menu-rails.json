@@ -1,0 +1,42 @@
+[
+  {
+    "text": "Copy workspace path",
+    "textLeft": 37,
+    "icon": true
+  },
+  {
+    "text": "Copy branch name",
+    "textLeft": 37,
+    "icon": true
+  },
+  {
+    "text": "Import session",
+    "textLeft": 37,
+    "icon": true
+  },
+  {
+    "text": "Claude Code",
+    "textLeft": 37,
+    "icon": true
+  },
+  {
+    "text": "Codex",
+    "textLeft": 37,
+    "icon": true
+  },
+  {
+    "text": "OpenCode",
+    "textLeft": 37,
+    "icon": true
+  },
+  {
+    "text": "Pi",
+    "textLeft": 37,
+    "icon": true
+  },
+  {
+    "text": "Edit profiles",
+    "textLeft": 13,
+    "icon": false
+  }
+]

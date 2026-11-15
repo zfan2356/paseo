@@ -1,0 +1,402 @@
+[
+  {
+    "tag": "div",
+    "role": null,
+    "label": "Display preferences",
+    "testid": "sidebar-display-preferences-menu",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      279,
+      139,
+      28,
+      28
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Rrepro-4Vm8WX",
+    "testid": "sidebar-project-row-host:srv_e2e_worker_0:/tmp/repro-4Vm8WX",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      8,
+      171,
+      303,
+      40
+    ]
+  },
+  {
+    "tag": "div",
+    "role": null,
+    "label": "Project actions",
+    "testid": "sidebar-project-kebab-host:srv_e2e_worker_0:/tmp/repro-4Vm8WX",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      285,
+      179,
+      24,
+      24
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "main",
+    "testid": "sidebar-workspace-row-srv_e2e_worker_0:wks_e3b39f4fc25ac708",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgb(212, 212, 213)",
+    "rect": [
+      8,
+      215,
+      303,
+      36
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Dismiss",
+    "testid": "worktree-setup-callout-prj_faa91b1002382141-dismiss",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      289,
+      733,
+      14,
+      14
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Open project settings",
+    "testid": "worktree-setup-callout-prj_faa91b1002382141-action-0",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgb(26, 26, 30)",
+    "rect": [
+      16,
+      815,
+      287,
+      32
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Add project",
+    "testid": "sidebar-add-project",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      8,
+      866,
+      28,
+      28
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Usage",
+    "testid": "sidebar-usage-icon",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      36,
+      866,
+      28,
+      28
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Hosts",
+    "testid": "sidebar-hosts-trigger",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      64,
+      866,
+      28,
+      28
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Help and support",
+    "testid": "sidebar-help",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      255,
+      866,
+      28,
+      28
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Settings",
+    "testid": "sidebar-settings",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      283,
+      866,
+      28,
+      28
+    ]
+  },
+  {
+    "tag": "div",
+    "role": null,
+    "label": "",
+    "testid": "left-sidebar-resize-handle",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      314,
+      0,
+      10,
+      900
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Close menu",
+    "testid": "menu-button",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      324,
+      5,
+      26,
+      26
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Workspace actions",
+    "testid": "workspace-header-menu-trigger",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      516,
+      5,
+      26,
+      26
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Commit",
+    "testid": "changes-primary-cta",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      1284,
+      6,
+      91,
+      24
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "More options",
+    "testid": "changes-primary-cta-caret",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      1375,
+      6,
+      26,
+      24
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Open Explorer sidebar",
+    "testid": "workspace-explorer-toggle",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      1410,
+      5,
+      26,
+      26
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Repro",
+    "testid": "workspace-tab-agent_4c5ce15a-fec7-4808-99ca-d0ec1775fb49",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgb(244, 244, 245)",
+    "rect": [
+      326,
+      40,
+      79,
+      28
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Close",
+    "testid": "workspace-agent-close-4c5ce15a-fec7-4808-99ca-d0ec1775fb49",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      383,
+      45,
+      18,
+      18
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "New tab",
+    "testid": "workspace-new-tab-button",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      411,
+      40,
+      28,
+      28
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "More actions",
+    "testid": "workspace-split-pane-menu",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      1415,
+      44,
+      20,
+      20
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Rewind to this message",
+    "testid": "rewind-menu-trigger",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      1232,
+      180,
+      24,
+      24
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Copy message",
+    "testid": null,
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      1264,
+      181,
+      22,
+      22
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Copy turn",
+    "testid": null,
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      474,
+      410,
+      22,
+      22
+    ]
+  },
+  {
+    "tag": "button",
+    "role": "button",
+    "label": "Fork chat from here",
+    "testid": "assistant-fork-menu-trigger",
+    "focusVisible": true,
+    "outline": "solid 2px",
+    "boxShadow": "none",
+    "background": "rgba(0, 0, 0, 0)",
+    "rect": [
+      504,
+      410,
+      22,
+      22
+    ]
+  }
+]
