@@ -3,7 +3,9 @@ import { checkoutStatusQueryKey } from "@/git/query-keys";
 import { useCallback, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { FolderPlus, GitBranch, Link, Unlink } from "lucide-react-native";
+import type { Theme } from "@/styles/theme";
 import { useShallow } from "zustand/shallow";
 import { useSessionStore } from "@/stores/session-store";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
@@ -27,6 +29,16 @@ import { BindDirectory, CreateSessionWorktree, useContextMutation } from "./acti
 import { permitsSessionOperation } from "./operations";
 import { isWeb } from "@/constants/platform";
 import { ChangeRequestsDialog } from "@/agent-change-requests/section";
+
+const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const ThemedLink = withUnistyles(Link);
+const ThemedFolderPlus = withUnistyles(FolderPlus);
+const ThemedGitBranch = withUnistyles(GitBranch);
+const ThemedUnlink = withUnistyles(Unlink);
+const LINK_ICON = <ThemedLink size={16} uniProps={mutedColorMapping} />;
+const BIND_ICON = <ThemedFolderPlus size={16} uniProps={mutedColorMapping} />;
+const WORKTREE_ICON = <ThemedGitBranch size={16} uniProps={mutedColorMapping} />;
+const REMOVE_ICON = <ThemedUnlink size={16} uniProps={mutedColorMapping} />;
 
 export function useSessionDirectoryTarget() {
   const { serverId, workspaceId, target } = usePaneContext();
@@ -108,8 +120,11 @@ export function useSessionDirectoryTarget() {
 
 export function SessionDirectoryToolbar({
   selection,
+  checkoutRoot,
 }: {
   selection: ReturnType<typeof useSessionDirectoryTarget>;
+  /** The diff pane passes the checkout it reads; the directory menu names it. */
+  checkoutRoot?: string;
 }) {
   const { target, retargetCurrentTab } = usePaneContext();
   const { agent, context, client, directory, serverId, connected, permissions } = selection;
@@ -159,6 +174,7 @@ export function SessionDirectoryToolbar({
       client={client}
       context={context}
       directory={directory}
+      checkoutRoot={checkoutRoot}
       canManage={connected && permitsSessionOperation(permissions, "workspace.manage")}
       canWrite={connected && permitsSessionOperation(permissions, "workspace.write")}
       onBind={openBinding}
@@ -192,6 +208,7 @@ function DirectoryChoices({
   client,
   context,
   directory,
+  checkoutRoot,
   canManage,
   canWrite,
   onBind,
@@ -204,6 +221,7 @@ function DirectoryChoices({
   client: NonNullable<ReturnType<typeof useHostRuntimeClient>>;
   context: import("@getpaseo/protocol/session-context").SessionContext;
   directory?: string;
+  checkoutRoot?: string;
   canManage: boolean;
   canWrite: boolean;
   onBind(): void;
@@ -244,6 +262,14 @@ function DirectoryChoices({
             </Text>
           </DropdownMenuTrigger>
           <DropdownMenuContent sheetTitle={t("sessionNavigation.selectDirectory")}>
+            {checkoutRoot ? (
+              <View style={styles.checkout} testID="session-directory-checkout">
+                <Text selectable style={styles.checkoutText}>
+                  {t("sessionNavigation.checkoutRoot", { path: checkoutRoot })}
+                </Text>
+                <Text style={styles.checkoutText}>{t("sessionNavigation.changesHint")}</Text>
+              </View>
+            ) : null}
             {directories.map(({ path, launch }) => (
               <DirectoryChoice key={path} path={path} launch={launch} select={onSelect} />
             ))}
@@ -262,21 +288,34 @@ function DirectoryChoices({
               <DropdownMenuItem
                 disabled={!canWrite}
                 onSelect={openChangeRequests}
+                leading={LINK_ICON}
                 testID="session-directory-link-change-request"
               >
                 {t("agentChangeRequests.link")}
               </DropdownMenuItem>
             ) : null}
-            <DropdownMenuItem disabled={!canManage || mutation.isPending} onSelect={onBind}>
-              {t("sessionNavigation.addDirectory")}
+            <DropdownMenuItem
+              disabled={!canManage || mutation.isPending}
+              onSelect={onBind}
+              leading={BIND_ICON}
+            >
+              {t("sessionNavigation.bind")}
             </DropdownMenuItem>
             {onWorktree ? (
-              <DropdownMenuItem disabled={!canManage || mutation.isPending} onSelect={onWorktree}>
+              <DropdownMenuItem
+                disabled={!canManage || mutation.isPending}
+                onSelect={onWorktree}
+                leading={WORKTREE_ICON}
+              >
                 {t("sessionNavigation.newWorktree")}
               </DropdownMenuItem>
             ) : null}
             {removable ? (
-              <DropdownMenuItem disabled={!canManage || mutation.isPending} onSelect={remove}>
+              <DropdownMenuItem
+                disabled={!canManage || mutation.isPending}
+                onSelect={remove}
+                leading={REMOVE_ICON}
+              >
                 {t("sessionNavigation.remove")}
               </DropdownMenuItem>
             ) : null}
@@ -301,9 +340,8 @@ function DirectoryChoices({
   );
 }
 const styles = StyleSheet.create((theme) => ({
+  // The pane's own toolbar below draws the header's single bottom border.
   wrapper: {
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
     padding: theme.spacing[2],
   },
   row: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
@@ -311,6 +349,8 @@ const styles = StyleSheet.create((theme) => ({
   text: { color: theme.colors.foreground, fontSize: theme.fontSize.sm },
   menu: { color: theme.colors.foregroundMuted, padding: theme.spacing[2] },
   error: { color: theme.colors.destructive, fontSize: theme.fontSize.sm },
+  checkout: { paddingHorizontal: theme.spacing[3], paddingVertical: theme.spacing[2] },
+  checkoutText: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
 }));
 
 function DirectoryChoice({

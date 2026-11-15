@@ -34,7 +34,6 @@ export const ptBR: TranslationResources = {
     loading: "Carregando diretórios da sessão…",
     refreshError: "Não foi possível atualizar o estado do diretório",
     otherDirectories: "Outros diretórios",
-    addDirectory: "+ Vincular diretório",
     updating: "Atualizando diretórios…",
     checking: "Verificando…",
     nonGit: "Diretório sem Git",

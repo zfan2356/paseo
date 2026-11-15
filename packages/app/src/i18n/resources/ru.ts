@@ -34,7 +34,6 @@ export const ru: TranslationResources = {
     loading: "Загрузка каталогов сеанса…",
     refreshError: "Не удалось обновить состояние каталога",
     otherDirectories: "Другие каталоги",
-    addDirectory: "+ Привязать каталог",
     updating: "Обновление каталогов…",
     checking: "Проверка…",
     nonGit: "Каталог без Git",

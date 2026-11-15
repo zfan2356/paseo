@@ -1,4 +1,5 @@
 import { sidebarMaterialColor } from "@/fork/materials/sidebar-color";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { SidebarViewSlot } from "@/plugins/sidebar-view";
 import { useAddHost } from "@/hosts/add-host";
 import { router } from "expo-router";
@@ -821,7 +822,10 @@ function DesktopSidebar({
       closeGesture={closeGesture}
     >
       <Animated.View style={desktopSidebarStyle}>
-        <View style={desktopSidebarBorderStyle}>
+        <View
+          style={desktopSidebarBorderStyle}
+          dataSet={overlay ? undefined : MATERIAL_SLOTS.sidebar}
+        >
           <View style={styles.sidebarDragArea}>
             {ownsTopLeft || DEV_BUILD_LABEL ? (
               <View style={styles.desktopChromeRow}>

@@ -234,7 +234,7 @@ for (const width of [1200, 390]) {
       await openFilesPanel(page);
       const actions = page.getByTestId("session-directory-actions").filter({ visible: true });
       await actions.click();
-      await page.getByRole("menuitem", { name: "+ Bind directory", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Bind directory", exact: true }).click();
       await page.getByTestId("session-directory-path").fill(`${notes.path}/missing`);
       await page.getByTestId("bind-session-directory-submit").click();
       await expect(page.getByTestId("session-directory-field-error")).toContainText(
@@ -244,7 +244,7 @@ for (const width of [1200, 390]) {
       await page.getByTestId("bind-session-directory-submit").click();
       await expect(page.getByTestId("bind-session-directory")).not.toBeVisible();
       await actions.click();
-      await page.getByRole("menuitem", { name: "+ Bind directory", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Bind directory", exact: true }).click();
       await page.getByTestId("session-directory-path").fill(other.path);
       await page.getByTestId("bind-session-directory-submit").click();
       await expect(page.getByTestId("bind-session-directory")).not.toBeVisible();

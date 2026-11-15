@@ -34,7 +34,6 @@ export const ko: TranslationResources = {
     loading: "세션 디렉터리 로딩 중…",
     refreshError: "디렉터리 상태를 새로 고칠 수 없습니다",
     otherDirectories: "다른 디렉터리",
-    addDirectory: "+ 디렉터리 연결",
     updating: "디렉터리 업데이트 중…",
     checking: "확인 중…",
     nonGit: "Git이 아닌 디렉터리",

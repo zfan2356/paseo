@@ -3,6 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { openAttachmentMenu } from "../support/helpers/composer";
+import { openChangesPanel } from "../support/helpers/workspace-tabs";
 // Real renderer/daemon coverage and raw scroll samples for default materials.
 test("default material evidence", async ({ page }, testInfo) => {
   test.skip(process.env.E2E_PERFORMANCE !== "1", "Explicit visual/performance evidence capture");
@@ -625,6 +626,15 @@ for (const platform of ["darwin", "web"] as const) {
         return Boolean(target && el.contains(target));
       });
       expect(hit).toBe(true);
+      // Transcript text scrolls under the pill, so the pill takes the hint material:
+      // a protected fill, a blur of what passes beneath, and the hint border and shadow.
+      const material = await pill.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { blur: style.backdropFilter, shadow: style.boxShadow, fill: style.backgroundColor };
+      });
+      expect(material.blur).toContain("blur(8px)");
+      expect(material.shadow).not.toBe("none");
+      expect(material.fill).toMatch(/\/ 0\.96\)$/);
     } finally {
       await session.cleanup();
     }
@@ -660,6 +670,197 @@ test("header icon sizing leaves the tab close scrim at full width", async ({ pag
       return { overlay: [a.width, a.height], scrim: [b.width, b.height] };
     });
     expect(sizes.scrim).toEqual(sizes.overlay);
+  } finally {
+    await session.cleanup();
+  }
+});
+
+// Window skeleton: the workspace floats as one rounded panel on the sidebar-material floor,
+// with no line between the sidebar and the workspace. See docs/fork/design-materials.md.
+for (const platform of ["darwin", "web"] as const) {
+  test(`window skeleton floats the workspace panel (${platform})`, async ({ page }) => {
+    test.setTimeout(180_000);
+    if (platform === "darwin") {
+      await page.addInitScript(() => {
+        (window as unknown as { paseoDesktop: unknown }).paseoDesktop = {
+          platform: "darwin",
+          events: { on: () => () => {} },
+          invoke: async () => null,
+        };
+      });
+    }
+    const session = await seedMockAgentWorkspace({
+      repoPrefix: "material-skeleton-",
+      title: "Window skeleton",
+      initialPrompt: "hello",
+      featureValues: { mockAssistantResponse: "ok" },
+    });
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openAgentRoute(page, session);
+      await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible({
+        timeout: 60_000,
+      });
+      await page.waitForFunction(() => document.querySelector("[data-material-styles]"));
+      const panelGeometry = () =>
+        page.evaluate(() => {
+          const panel = document.querySelector('[data-material="panel"]');
+          const frame = document.querySelector('[data-material="panel-frame"]');
+          if (!panel || !frame) return null;
+          const p = panel.getBoundingClientRect();
+          const f = frame.getBoundingClientRect();
+          const style = getComputedStyle(panel);
+          return {
+            left: Math.round(p.left - f.left),
+            top: Math.round(p.top),
+            bottom: Math.round(window.innerHeight - p.bottom),
+            right: Math.round(window.innerWidth - p.right),
+            radius: style.borderTopLeftRadius,
+            border: style.borderTopWidth,
+            shadow: style.boxShadow !== "none",
+            floor: getComputedStyle(frame).backgroundColor,
+          };
+        });
+      const sidebarGeometry = () =>
+        page.evaluate(() => {
+          const sidebar = document.querySelector('[data-material="sidebar"]');
+          const panel = document.querySelector('[data-material="panel"]');
+          if (!sidebar || !panel) return null;
+          const style = getComputedStyle(sidebar);
+          return {
+            gap: Math.round(
+              panel.getBoundingClientRect().left - sidebar.getBoundingClientRect().right,
+            ),
+            rule: style.borderRightWidth,
+            floor: style.backgroundColor,
+          };
+        });
+      const floating = {
+        left: 8,
+        top: 8,
+        bottom: 8,
+        right: 8,
+        radius: "12px",
+        border: "1px",
+        shadow: true,
+      };
+      await expect.poll(panelGeometry).toMatchObject(floating);
+      const floor = (await panelGeometry())?.floor;
+      await expect.poll(sidebarGeometry).toEqual({ gap: 8, rule: "0px", floor });
+
+      // Collapsed sidebar: the panel keeps all four insets and the floor frames it.
+      await page.getByTestId("menu-button").filter({ visible: true }).first().click();
+      await expect.poll(() => page.locator('[data-material="sidebar"]:visible').count()).toBe(0);
+      await expect.poll(panelGeometry).toMatchObject(floating);
+      await page.getByTestId("menu-button").filter({ visible: true }).first().click();
+      await expect.poll(sidebarGeometry).toMatchObject({ gap: 8, rule: "0px" });
+
+      if (platform === "web") {
+        // Focus mode is content only: the workspace fills the window.
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.keyboard.press("Control+Shift+F");
+        await expect(page.getByRole("button", { name: "Exit focus mode" })).toBeVisible();
+        await expect.poll(() => page.locator('[data-material="panel"]').count()).toBe(0);
+        await page.getByRole("button", { name: "Exit focus mode" }).click();
+        await expect.poll(panelGeometry).toMatchObject(floating);
+      }
+
+      // Off macOS the floor is opaque; on macOS it lets the window vibrancy through.
+      // Reduce Transparency turns it opaque and keeps the geometry.
+      const translucent = (color: string | undefined) => /\/\s*0?\.\d+\)$/.test(color ?? "");
+      expect(translucent(floor)).toBe(platform === "darwin");
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-reduced-transparency", value: "reduce" }],
+      });
+      await expect.poll(async () => translucent((await panelGeometry())?.floor)).toBe(false);
+      await expect.poll(panelGeometry).toMatchObject(floating);
+      await cdp.send("Emulation.setEmulatedMedia", { features: [] });
+
+      // Compact layouts keep the full-screen workspace.
+      await page.setViewportSize({ width: 390, height: 900 });
+      await expect.poll(() => page.locator('[data-material="panel"]').count()).toBe(0);
+    } finally {
+      await session.cleanup();
+    }
+  });
+}
+
+// The diff pane header is one row: the checkout path lives in the directory selector's tooltip,
+// and every directory action starts its title on the same rail after a leading icon.
+test("diff pane keeps a single header row with aligned directory actions", async ({ page }) => {
+  test.setTimeout(180_000);
+  const { writeFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "material-diff-header-",
+    title: "Diff header",
+    initialPrompt: "hello",
+    featureValues: { mockAssistantResponse: "ok" },
+    repo: { withRemote: true, files: [{ path: ".gitignore", content: "/remote.git/\n" }] },
+  });
+  try {
+    await writeFile(path.join(session.cwd, "README.md"), "# Temp Repo\nexport const one = 1;\n");
+    await session.client.checkoutRefresh(session.cwd);
+    await session.client.waitForFinish(session.agentId, 30_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openAgentRoute(page, session);
+    await openChangesPanel(page);
+    const panel = page.getByTestId("working-diff-panel").filter({ visible: true }).first();
+    const toolbar = panel.getByTestId("session-directory-toolbar");
+    await expect(toolbar).toBeVisible();
+    // The pane toolbar below draws the only divider between the header and the diff.
+    expect(await toolbar.evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe("0px");
+    await expect(panel.getByText(/^Checkout: /)).toHaveCount(0);
+    await expect(panel.getByText("Directory changes can include work")).toHaveCount(0);
+
+    // The checkout path and the shared-changes hint head the directory menu.
+    const expectCheckoutInMenu = async () => {
+      await page
+        .getByTestId("working-diff-panel")
+        .filter({ visible: true })
+        .first()
+        .getByTestId("session-directory-select")
+        .click();
+      const checkout = page.getByTestId("session-directory-checkout").filter({ visible: true });
+      await expect(checkout).toContainText(`Checkout: ${session.cwd}`);
+      await expect(checkout).toContainText("Directory changes can include work");
+      return checkout;
+    };
+    const checkout = await expectCheckoutInMenu();
+    await page.keyboard.press("Escape");
+    await expect(checkout).toHaveCount(0);
+
+    await panel.getByTestId("session-directory-actions").click();
+    const items = page.getByRole("menuitem").filter({ visible: true });
+    await expect(items.first()).toBeVisible();
+    const rows = await items.evaluateAll((elements) =>
+      elements.map((item) => {
+        const icon = item.querySelector("svg");
+        const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+        const text = walker.nextNode();
+        const range = document.createRange();
+        if (text) range.selectNodeContents(text);
+        return {
+          label: text?.nodeValue ?? "",
+          icon: icon ? Math.round(icon.getBoundingClientRect().left) : null,
+          title: Math.round(range.getBoundingClientRect().left),
+        };
+      }),
+    );
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(row.icon, row.label).not.toBeNull();
+      expect(row.label.startsWith("+"), row.label).toBe(false);
+    }
+    expect(new Set(rows.map((row) => row.icon)).size).toBe(1);
+    expect(new Set(rows.map((row) => row.title)).size).toBe(1);
+    await page.keyboard.press("Escape");
+
+    // Compact layouts open the same menu as a sheet; the checkout stays reachable there.
+    await page.setViewportSize({ width: 390, height: 900 });
+    await expect(page.getByTestId("working-diff-panel").filter({ visible: true })).toBeVisible();
+    await expectCheckoutInMenu();
   } finally {
     await session.cleanup();
   }

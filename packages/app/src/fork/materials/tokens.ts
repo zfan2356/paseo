@@ -33,6 +33,18 @@ export const MATERIAL = {
       material: { name: "glass", minimumOpacity: 0, maximumBlur: 20 },
     },
   },
+  // Window skeleton: the workspace floats as one panel on the sidebar-material floor.
+  panel: {
+    inset: 8,
+    radius: 12,
+    // Black mixed into the floor so the panel reads as raised in both schemes.
+    floorShade: { light: 5, dark: 40 },
+    border: { light: "1px solid rgba(24,46,34,0.12)", dark: "1px solid rgba(255,255,255,0.14)" },
+    shadow: {
+      light: "0 1px 2px rgba(24,46,34,0.08), 0 8px 24px rgba(24,46,34,0.10)",
+      dark: "0 1px 2px rgba(0,0,0,0.50), 0 8px 24px rgba(0,0,0,0.45)",
+    },
+  },
   menuMinWidth: 240,
   spacing: { composer: 20, menu: 6, banner: 12, secondary: 8 },
   icon: { size: 16, action: 20, stroke: 1.5 },

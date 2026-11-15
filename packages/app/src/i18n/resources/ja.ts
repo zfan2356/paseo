@@ -34,7 +34,6 @@ export const ja: TranslationResources = {
     loading: "セッションのディレクトリを読み込み中…",
     refreshError: "ディレクトリの状態を更新できません",
     otherDirectories: "その他のディレクトリ",
-    addDirectory: "+ ディレクトリを関連付ける",
     updating: "ディレクトリを更新中…",
     checking: "確認中…",
     nonGit: "Git 以外のディレクトリ",

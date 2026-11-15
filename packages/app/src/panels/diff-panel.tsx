@@ -171,18 +171,7 @@ function ChangesPanel() {
   const profileId = isTree ? `ChangesTreePanel:${tabId}` : `WorkingDiffPanel:${tabId}`;
   return (
     <View style={styles.container} testID={testID}>
-      <SessionDirectoryToolbar selection={selection} />
-      {directory ? (
-        <View>
-          <Text selectable style={styles.mutedText}>
-            {directory}
-          </Text>
-          <Text selectable style={styles.mutedText}>
-            {t("sessionNavigation.checkoutRoot", { path: cwd })}
-          </Text>
-          <Text style={styles.mutedText}>{t("sessionNavigation.changesHint")}</Text>
-        </View>
-      ) : null}
+      <SessionDirectoryToolbar selection={selection} checkoutRoot={directory ? cwd : undefined} />
       <RenderProfile id={profileId}>
         <ChangesSurface
           serverId={serverId}

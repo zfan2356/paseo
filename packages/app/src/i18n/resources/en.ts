@@ -31,7 +31,6 @@ export const en = {
     loading: "Loading session directories…",
     refreshError: "Unable to refresh directory status",
     otherDirectories: "Other directories",
-    addDirectory: "+ Bind directory",
     updating: "Updating directories…",
     checking: "Checking…",
     nonGit: "Non-Git directory",

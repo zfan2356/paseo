@@ -33,7 +33,6 @@ export const ar: TranslationResources = {
     loading: "جارٍ تحميل مجلدات الجلسة…",
     refreshError: "تعذر تحديث حالة المجلد",
     otherDirectories: "مجلدات أخرى",
-    addDirectory: "+ ربط مجلد",
     updating: "جارٍ تحديث المجلدات…",
     checking: "جارٍ التحقق…",
     nonGit: "مجلد غير تابع لـ Git",
