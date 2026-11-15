@@ -3975,6 +3975,29 @@ test("automatic project creation requires host support unless a project is expli
   );
 });
 
+test("automatic project creation preserves its marker without creation lifecycle support", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "automatic-project-legacy-transport-test",
+    transportFactory: () => mock.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { automaticTaskProjects: true } });
+  await connected;
+  mock.sent.length = 0;
+  void client
+    .createWorkspace({ source: { kind: "directory", path: "/tmp/review" }, automatic: true })
+    .catch(() => undefined);
+  expect(mock.sent.map((frame) => parseSentFrame(frame))).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ type: "workspace.create.request", automatic: true }),
+    ]),
+  );
+});
+
 test("sends internal workspace creation and internal listings only to hosts that support them", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();
