@@ -347,9 +347,8 @@ function DirectoryChoices({
   );
 }
 const styles = StyleSheet.create((theme) => ({
+  // The pane's own toolbar below draws the header's single bottom border.
   wrapper: {
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
     padding: theme.spacing[2],
   },
   row: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },

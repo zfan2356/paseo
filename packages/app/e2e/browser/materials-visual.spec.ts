@@ -78,7 +78,7 @@ for (const platform of PLATFORMS) {
             "position:fixed;left:0;bottom:0;width:60px;height:60px;pointer-events:none";
           document.body.append(badge);
         });
-        await expect(page).toHaveScreenshot(`${platform}-${theme}-${name}.png`, {
+        await expect.soft(page).toHaveScreenshot(`${platform}-${theme}-${name}.png`, {
           animations: "disabled",
           caret: "hide",
           maxDiffPixels: 0,
@@ -163,7 +163,11 @@ for (const platform of PLATFORMS) {
 
         await openChangesPanel(page);
         await shot("1440-diff");
-        await page.getByTestId("session-directory-actions").filter({ visible: true }).click();
+        await page
+          .getByTestId("working-diff-panel")
+          .filter({ visible: true })
+          .getByTestId("session-directory-actions")
+          .click();
         await expect(page.getByRole("menuitem").first()).toBeVisible();
         await shot("1440-directory-menu");
         await page.keyboard.press("Escape");

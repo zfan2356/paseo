@@ -626,15 +626,15 @@ for (const platform of ["darwin", "web"] as const) {
         return Boolean(target && el.contains(target));
       });
       expect(hit).toBe(true);
-      // Transcript text scrolls under the pill, so the pill carries the opaque hint material.
-      const fill = await pill.evaluate((el) => {
-        const button = el.closest('[role="button"]') ?? el;
-        return getComputedStyle(button).backgroundColor;
+      // Transcript text scrolls under the pill, so the pill takes the hint material:
+      // a protected fill, a blur of what passes beneath, and the hint border and shadow.
+      const material = await pill.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { blur: style.backdropFilter, shadow: style.boxShadow, fill: style.backgroundColor };
       });
-      const alpha = Number(
-        /\/\s*([\d.]+)\)$/.exec(fill)?.[1] ?? (fill.startsWith("rgba") ? "0" : "1"),
-      );
-      expect(alpha).toBeGreaterThanOrEqual(0.96);
+      expect(material.blur).toContain("blur(8px)");
+      expect(material.shadow).not.toBe("none");
+      expect(material.fill).toMatch(/\/ 0\.96\)$/);
     } finally {
       await session.cleanup();
     }
@@ -807,9 +807,16 @@ test("diff pane keeps a single header row with aligned directory actions", async
     await openAgentRoute(page, session);
     await openChangesPanel(page);
     const panel = page.getByTestId("working-diff-panel").filter({ visible: true }).first();
-    await expect(panel.getByTestId("session-directory-toolbar")).toBeVisible();
+    const toolbar = panel.getByTestId("session-directory-toolbar");
+    await expect(toolbar).toBeVisible();
+    // The pane toolbar below draws the only divider between the header and the diff.
+    expect(await toolbar.evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe("0px");
     await expect(panel.getByText(/^Checkout: /)).toHaveCount(0);
     await expect(panel.getByText("Directory changes can include work")).toHaveCount(0);
+
+    await panel.getByTestId("session-directory-select").hover();
+    await expect(page.getByText(/^Checkout: /).filter({ visible: true })).toBeVisible();
+    await page.mouse.move(0, 0);
 
     await panel.getByTestId("session-directory-actions").click();
     const items = page.getByRole("menuitem").filter({ visible: true });
