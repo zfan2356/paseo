@@ -4,15 +4,16 @@ Before/after pairs from `e2e/browser/materials-visual.spec.ts`: left is `main` a
 
 ## What changed
 
-| Scene                          | Change                                                                                                  |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| All 1440 scenes                | The workspace floats as a 12px-radius panel 8px inside the window on the sidebar floor; no sidebar line |
-| `*-1440-sidebar-collapsed`     | The panel keeps its four insets with the sidebar hidden                                                 |
-| `*-1440-dialog`, `*-1440-menu` | Only the skeleton behind the scrim moves; the dialog and menu are unchanged                             |
-| `p0-6-pill-row-*`              | The diff-stat pill takes the hint material: 96% fill, 8px blur, hint border and shadow                  |
-| `p0-8-diff-header`             | The three-line path block is gone; the checkout path is in the directory selector tooltip; one divider  |
-| `p0-2-directory-menu`          | Every directory action has a leading icon and starts its title on one rail; `+` dropped from the label  |
-| All 390 scenes (16)            | Pixel-identical to `main` (`maxDiffPixels: 0`)                                                          |
+| Scene                          | Change                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| All 1440 scenes                | The workspace floats as a 12px-radius panel 8px inside the window on the sidebar floor; no sidebar line  |
+| `*-1440-sidebar-collapsed`     | The panel keeps its four insets with the sidebar hidden                                                  |
+| `*-1440-dialog`, `*-1440-menu` | Only the skeleton behind the scrim moves; the dialog and menu are unchanged                              |
+| `p0-6-pill-row-*`              | The diff-stat pill takes the hint material: 96% fill, 8px blur, hint border and shadow                   |
+| `p0-8-diff-header`             | The three-line path block is gone and the header keeps one divider                                       |
+| `p0-8-*-directory-select`      | The checkout path and the shared-changes hint head the directory menu: a popover at 1440, a sheet at 390 |
+| `p0-2-directory-menu`          | Every directory action has a leading icon and starts its title on one rail; `+` dropped from the label   |
+| All 390 scenes (16)            | Pixel-identical to `main` (`maxDiffPixels: 0`)                                                           |
 
 ## Mac verification still needed
 
