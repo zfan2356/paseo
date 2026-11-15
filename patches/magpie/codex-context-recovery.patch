@@ -1,0 +1,837 @@
+diff --git a/docs/subsystems/gateway-routing.md b/docs/subsystems/gateway-routing.md
+index a03beb3b..9184bbb4 100644
+--- a/docs/subsystems/gateway-routing.md
++++ b/docs/subsystems/gateway-routing.md
+@@ -105,6 +105,8 @@ recorded as a prediction failure (`noPrediction`).
+ ## Constraints and failure behavior
+
+ - A fallback happens only while none of the reply has been sent. An agent never gets half a reply from one upstream and the rest from another.
++- Native Codex turns that switch between a ChatGPT subscription and a Responses relay recover from `invalid_encrypted_content` before any output is published, including failures inside a 200 SSE response. A named unreadable reasoning item causes all reasoning items in that request to be omitted in one retry, preserving messages, tool exchanges and request options. The omitted seals are remembered only for that sign-in, model and conversation; new reasoning from the current source is retained. Other errors and errors after output are returned without replay. See `recoverCodexReasoning` and `codexReasoningKey` in [`codex_reasoning_recovery.go`](../../internal/gateway/codex_reasoning_recovery.go).
++- Signed-in GPT-6 Codex clients use portable summaries on `/responses/compact` and compaction-trigger requests while native compaction is off. An older sealed checkpoint moving to iChat or a subscription/iChat group is first summarised using the original Codex sign-in, then retained as a portable compaction item delivered together with the actual target-source reply. This preserves earlier tool results across protocol translation. Explicit native-compaction settings and recorded writers stay authoritative. If the original sign-in cannot read a legacy checkpoint, migration fails rather than deleting or flattening it. See [`codex_portable_compaction.go`](../../internal/gateway/codex_portable_compaction.go).
+ - A refusal that comes as an error (#2400, Jichao). An error whose own `message` is, whole, `The request was rejected because it was considered high risk` is a refusal with no code beside it (`highRiskRefusal` in `policyRefusal`): in an HTTP error body or a stream's error event, never in an answer's text, which may quote it. The vendor that sends it isn't known; it says the request was turned away, so it goes to the next candidate under `RefusalRetries` like any refusal and rests nobody. A refusal error event before any content ends the try at once (`eventRefusalError`, `stop` as for any error), so an upstream that keeps the stream open doesn't hold the next candidate back; a refusal's stop or finish marker is still read to the end for the usage and terminator after it. After content, every write is read for a late refusal (`refusalAfter`), so one whose `event: error` name and data come in separate writes is still noted, and nothing is replayed. `TestHighRisk*`, `TestRefusalErrorDoesNotWaitForEOF` in [`refusal_error_test.go`](../../internal/gateway/refusal_error_test.go).
+ - A request is one usage record, counted once by how it ended (小一 on Discord: Codex on credits showed "5,482 · 1,094 failed" while rows said "2 tries/3 tries" and had been answered). The final record carries `tries` when the route took more than one (`rec.Tries`, from the trace's `Tries`). A try a vendor refused or turned away (`hw.refused`, `hw.turnedAway`) still writes its own record, for what it billed and why it failed, marked `handed_on`; `usage.Totals.count` skips such a record for calls and failures. A request failed only when the agent got an error (`LostRequest`); one answered after a failed try is counted beside it as answered on a retry (`Totals.Retried`, `RetriedRequest`, the `retried` filter). Logs written before `handed_on` are read the same way: the log index marks a failed, non-rejected record followed by another of the same route id as handed on (`routeRows` in [`log_index.go`](../../internal/usage/log_index.go)). Counts by account or route (`vias`, window holds) still count every try. A turn relayed on Codex's own ChatGPT sign-in is recorded as that codex account (`codexServed` in [`codex_backend.go`](../../internal/gateway/codex_backend.go)), so the account card's window counts it; the Routing view still names the seat OpenAI, an API-key call stays `openai` with no account, as does one whose `chatgpt-account-id` isn't the account Codex's auth.json here is signed in to (a Codex in WSL or under another `CODEX_HOME`), and a row already written without an account is left as it is. Those relay rows are still not a lead's answerer (`loggedAnswers`, #1367); a row an account answered, its host `host as email`, still is.
+ - Each record keeps the service tier three ways (#1784): `tier_asked` is what the client's body asked (`bodyTier`; Claude's speed fast reads `fast`), `tier_sent` is what that try's last request went out with, noted in `forwardOnce` after every rewrite (fast picks, Ultrafast to priority on a plan without it) onto the per-attempt `wireAt`, and `tier_served` is only what the reply said it ran at (`upstreamTier`, read by the sniffer and the translated readers), empty when it says nothing. The route's tries carry `tier` and `tier_served` the same way. A bridge that doesn't go through `forwardOnce` (the Claude subscription, Cursor's built-in) leaves `tier_sent` empty. Code: [`tier_record.go`](../../internal/gateway/tier_record.go).
+diff --git a/internal/gateway/affinity.go b/internal/gateway/affinity.go
+index a30da86d..e484559d 100644
+--- a/internal/gateway/affinity.go
++++ b/internal/gateway/affinity.go
+@@ -29,6 +29,7 @@ package gateway
+ import (
+ 	"crypto/sha256"
+ 	"encoding/json"
++	"maps"
+ 	"net/http"
+ 	"os"
+ 	"path/filepath"
+@@ -793,6 +794,9 @@ func withoutRefused(key, who string, body []byte) ([]byte, bool) {
+ 		delete(refusedSeals.m, k)
+ 		ok = false
+ 	}
++	if ok {
++		r.seals = maps.Clone(r.seals)
++	}
+ 	refusedSeals.Unlock()
+ 	if !ok {
+ 		return nil, false
+diff --git a/internal/gateway/codex_backend.go b/internal/gateway/codex_backend.go
+index fb8f8c38..4d375b63 100644
+--- a/internal/gateway/codex_backend.go
++++ b/internal/gateway/codex_backend.go
+@@ -147,6 +147,9 @@ func (s *Server) codexBackend(w http.ResponseWriter, r *http.Request) {
+ 				writeError(w, provider.Responses, 400, "/responses/compact is not supported for Magpie models; use a compaction_trigger on /responses")
+ 				return
+ 			}
++			if s.migrateCodexCompaction(w, r, body, model) {
++				return
++			}
+ 			// a sealed subagent task goes to a ChatGPT account the model
+ 			// or group has, or is turned away (serve, sealedReader)
+ 			// a provider set to compact natively is asked Codex's own
+@@ -159,6 +162,10 @@ func (s *Server) codexBackend(w http.ResponseWriter, r *http.Request) {
+ 			s.serveAgent(w, r, provider.Responses, body)
+ 			return
+ 		}
++		if rest == "/responses" && compactionTriggerIn(body) && signedCodexRequest(r) && strings.HasPrefix(model, "gpt-6") && !s.nativeCompactionFor("codex/"+model) {
++			s.codexPortableCompact(w, r, body, model, nil, false)
++			return
++		}
+ 		// the ChatGPT backend checks every item id as OpenAI does
+ 		body = plainItemIDs(boundCallIDs(callItemIDs(body)))
+ 		if rest == "/responses/compact" {
+@@ -197,6 +204,10 @@ func (s *Server) codexBackend(w http.ResponseWriter, r *http.Request) {
+ 				writeError(w, provider.Responses, 400, gone)
+ 				return
+ 			}
++			if writer == nil && signedCodexRequest(r) && strings.HasPrefix(model, "gpt-6") && gjson.GetBytes(body, "input").IsArray() && !s.nativeCompactionFor("codex/"+model) {
++				s.codexPortableCompact(w, r, body, model, on, true)
++				return
++			}
+ 			if on != nil {
+ 				s.codexUpstreamOn(w, r, rest, body, on)
+ 				return
+@@ -862,6 +873,13 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 	if apiKey(r.Header) && rest != "/models" {
+ 		base = codexAPIBase
+ 	}
++	sealKey := codexReasoningKey(r, body, base, on)
++	keepCompaction := r.Context().Value(portableCompactionContextKey{}) == true
++	if rest == "/responses" {
++		if b, ok := withoutRefused(sealKey, "native", body); ok {
++			body = b
++		}
++	}
+ 	if r.Method == http.MethodPost && rest == "/responses" && base == provider.CodexBase {
+ 		// a replayed web search the request doesn't declare the tool for
+ 		// is refused by the ChatGPT backend (#1270), as on an account's
+@@ -881,7 +899,8 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 	overload := r.Method == http.MethodPost && rest == "/responses" && base == provider.CodexBase && on == nil
+ 	streams := streamOf(body)
+ 	kept := &keptAlive{proto: provider.Responses, told: start, streams: streams}
+-	busyAgain := 0     // times the turn was asked again for an overload
++	busyAgain := 0 // times the turn was asked again for an overload
++	sealRetries := 0
+ 	var tried []string // what each of those said, for the request log
+ 	// a turn goes in the Routing view's live trace as the others do, to
+ 	// the one it can go to: Codex's own sign-in, or its key
+@@ -1134,7 +1153,7 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 			msg, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+ 			res.Body.Close()
+ 			res.Body = io.NopCloser(bytes.NewReader(msg))
+-			b, ok := withoutUnreadable(body, msg)
++			b, ok := recoverCodexReasoning(sealKey, body, msg, keepCompaction)
+ 			if !ok {
+ 				break
+ 			}
+@@ -1192,7 +1211,7 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 		// come, an error before them held for the turn to be asked again
+ 		out := w
+ 		var hw *holdWriter
+-		if overload && streams && (busyAgain < lastRetries || kept.sent || s.codexFallsBack(modelOf(body), body)) {
++		if rest == "/responses" && streams {
+ 			hw = newHoldWriter(w, true)
+ 			hw.alive, hw.streams, hw.ctx, hw.stop = kept, true, r.Context(), cancel
+ 			// reasoning goes to Codex at once, as it always went
+@@ -1255,6 +1274,14 @@ func (s *Server) codexUpstreamOn(w http.ResponseWriter, r *http.Request, rest st
+ 			break
+ 		}
+ 		hw.settle()
++		if hw.mayAskAgain() && sealRetries < 3 && foreignReasoning.Match(hw.errBody()) && r.Context().Err() == nil {
++			if b, ok := recoverCodexReasoning(sealKey, body, hw.errBody(), keepCompaction); ok {
++				sealRetries++
++				body = b
++				res.Body.Close()
++				continue
++			}
++		}
+ 		if hw.mayAskAgain() && hw.failure != 0 && !hw.refused && codexBusy(hw.failure, hw.errBody()) && r.Context().Err() == nil {
+ 			// the backend too busy for the turn, said on its stream before
+ 			// any of the reply (#1418)
+@@ -1441,6 +1468,13 @@ func withoutUnreadable(body, msg []byte) ([]byte, bool) {
+ 		return nil, false
+ 	}
+ 	if m := unreadableItem.FindSubmatch(msg); m != nil {
++		// Old iChat turns can contain hundreds of seals. Removing one
++		// per retry exhausts the native retry budget before they are gone.
++		if foreignReasoning.Match(msg) && anyInputItem(body, func(it []byte) bool {
++			return gjson.GetBytes(it, "type").String() == "reasoning" && gjson.GetBytes(it, "id").String() == string(m[1])
++		}) {
++			return withoutReasoning(body)
++		}
+ 		if b, ok := withoutItem(body, string(m[1])); ok {
+ 			return b, true
+ 		}
+@@ -2541,6 +2575,12 @@ func userMessage(text string) map[string]any { return codexsummary.UserMessage(t
+ // when none is left Codex is told so. One conversation's compaction that
+ // keeps failing stops being asked for a while (compactFails, #2274).
+ func (s *Server) codexCompact(w http.ResponseWriter, r *http.Request, body []byte) {
++	s.codexCompactUsing(w, r, body, func(out http.ResponseWriter, request *http.Request, history []byte) {
++		s.serve(out, request, provider.Responses, history)
++	}, false)
++}
++
++func (s *Server) codexCompactUsing(w http.ResponseWriter, r *http.Request, body []byte, send func(http.ResponseWriter, *http.Request, []byte), jsonResult bool) {
+ 	key, model := compactKey(body), modelOf(body)
+ 	if msg, held := s.compactFails.held(key, model); held {
+ 		log.Printf("codex compaction: %s", msg)
+@@ -2554,7 +2594,7 @@ func (s *Server) codexCompact(w http.ResponseWriter, r *http.Request, body []byt
+ 	r = askWhole(r)
+ 	ask := func(b []byte) (*recorder, compactResult, error) {
+ 		rec := &recorder{header: http.Header{}, status: 200}
+-		s.serve(rec, r, provider.Responses, b)
++		send(rec, r, b)
+ 		if rec.status >= 400 {
+ 			return rec, compactResult{}, nil
+ 		}
+@@ -2568,8 +2608,12 @@ func (s *Server) codexCompact(w http.ResponseWriter, r *http.Request, body []byt
+ 	}
+ 	rec, res, err := ask(body)
+ 	local := ""
+-	if first := rec.status; first == http.StatusNotFound || itemNotFound(rec) || upstreamFailed(rec) || protectionRefused(first, rec.body.Bytes()) ||
+-		err != nil && protectionWords.MatchString(err.Error()) {
++	plainFallback := rec.status == http.StatusNotFound || itemNotFound(rec) || upstreamFailed(rec) || protectionRefused(rec.status, rec.body.Bytes()) ||
++		err != nil && protectionWords.MatchString(err.Error())
++	if r.Context().Value(portableCompactionContextKey{}) == true && len(sealedCompactions(body)) > 0 {
++		plainFallback = false
++	}
++	if first := rec.status; plainFallback {
+ 		who, msg := compactFailure(body, rec)
+ 		if err != nil {
+ 			msg = "broken off: " + err.Error()
+@@ -2645,6 +2689,12 @@ func (s *Server) codexCompact(w http.ResponseWriter, r *http.Request, body []byt
+ 	if len(res.Usage) > 0 {
+ 		done["usage"] = res.Usage
+ 	}
++	if jsonResult {
++		done["object"], done["created_at"] = "response.compaction", time.Now().Unix()
++		w.Header().Set("Content-Type", "application/json")
++		json.NewEncoder(w).Encode(done)
++		return
++	}
+ 	h := w.Header()
+ 	h.Set("Content-Type", "text/event-stream")
+ 	h.Set("Cache-Control", "no-cache")
+diff --git a/internal/gateway/codex_portable_compaction.go b/internal/gateway/codex_portable_compaction.go
+new file mode 100644
+index 00000000..088d7307
+--- /dev/null
++++ b/internal/gateway/codex_portable_compaction.go
+@@ -0,0 +1,193 @@
++package gateway
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"net/http"
++	"sort"
++	"strings"
++
++	"github.com/yetone/magpie/internal/provider"
++)
++
++type portableCompactionContextKey struct{}
++
++func signedCodexRequest(r *http.Request) bool {
++	return !apiKey(r.Header) && r.Header.Get("chatgpt-account-id") != "" && strings.Count(r.Header.Get("Authorization"), ".") == 2
++}
++
++// A Codex sign-in can open its old native checkpoint before the request
++// moves to iChat. Return a portable compaction item so the client replaces
++// that checkpoint once, instead of dropping it or migrating every turn.
++func (s *Server) migrateCodexCompaction(w http.ResponseWriter, r *http.Request, body []byte, model string) bool {
++	if !signedCodexRequest(r) || len(sealedCompactions(body)) == 0 || s.nativeCompactionFor(model) {
++		return false
++	}
++	source := portableCompactionSource(model)
++	if source == "" {
++		return false
++	}
++	// Explicit native compaction remains bound to its recorded writer.
++	if writer, gone, _ := sealedCompact(r, source, body); writer != nil || gone != "" {
++		return false
++	}
++	checkpoint := &recorder{header: http.Header{}, status: 200}
++	s.codexPortableCompact(checkpoint, r, body, source, nil, true)
++	if checkpoint.status >= 400 {
++		w.WriteHeader(checkpoint.status)
++		w.Write(checkpoint.body.Bytes())
++		return true
++	}
++	var migrated obj
++	var output []json.RawMessage
++	if decodeJSON(checkpoint.body.Bytes(), &migrated) != nil || decodeJSON(migrated["output"], &output) != nil || len(output) != 1 {
++		writeError(w, provider.Responses, 502, "context migration produced no checkpoint")
++		return true
++	}
++	var request obj
++	var items []json.RawMessage
++	if decodeJSON(body, &request) != nil || decodeJSON(request["input"], &items) != nil {
++		writeError(w, provider.Responses, 400, "context migration requires an input history")
++		return true
++	}
++	kept := []json.RawMessage{output[0]}
++	for _, item := range items {
++		var kind struct {
++			Type string `json:"type"`
++		}
++		if decodeJSON(item, &kind) == nil && (kind.Type == "compaction" || kind.Type == "compaction_summary") {
++			continue
++		}
++		kept = append(kept, item)
++	}
++	request["input"] = raw(kept)
++	rewritten, _ := json.Marshal(request)
++	rewritten, _ = codexInputAs(rewritten, true, false)
++	continued := &recorder{header: http.Header{}, status: 200}
++	s.serveAgent(continued, askWhole(r), provider.Responses, rewritten)
++	if continued.status >= 400 {
++		w.WriteHeader(continued.status)
++		w.Write(continued.body.Bytes())
++		return true
++	}
++	reply, replyItems, ok := handoffResponse(continued.body.Bytes())
++	if !ok {
++		writeError(w, provider.Responses, 502, "context migration continuation returned no response")
++		return true
++	}
++	reply["output"] = raw(append(output, replyItems...))
++	reply["object"] = raw("response")
++	result, _ := json.Marshal(reply)
++	for key, values := range continued.header {
++		if !hopHeader(key) && !strings.EqualFold(key, "Content-Length") {
++			w.Header()[key] = values
++		}
++	}
++	if streamOf(body) {
++		w.Header().Set("Content-Type", "text/event-stream")
++		w.WriteHeader(200)
++		wholeAsStream(w, provider.Responses, result)
++	} else {
++		w.Header().Set("Content-Type", "application/json")
++		w.Write(result)
++	}
++	return true
++}
++
++// A relay can stream even when asked for a whole reply. Preserve its raw
++// items while buffering this one migration, then use the existing SSE
++// encoder to send the new checkpoint and the actual answer together.
++func handoffResponse(body []byte) (obj, []json.RawMessage, bool) {
++	var reply obj
++	var items []json.RawMessage
++	if decodeJSON(body, &reply) == nil && decodeJSON(reply["output"], &items) == nil && len(items) > 0 {
++		return reply, items, true
++	}
++	byIndex := map[int]json.RawMessage{}
++	completed := false
++	err := readSSE(bytes.NewReader(body), func(_, data string) error {
++		var event obj
++		if decodeJSON([]byte(data), &event) != nil {
++			return nil
++		}
++		switch str(event, "type") {
++		case "response.output_item.done":
++			var index int
++			if decodeJSON(event["output_index"], &index) == nil {
++				byIndex[index] = event["item"]
++			}
++		case "response.completed":
++			completed = decodeJSON(event["response"], &reply) == nil
++		}
++		return nil
++	})
++	if err != nil || !completed {
++		return nil, nil, false
++	}
++	if decodeJSON(reply["output"], &items) != nil || len(items) == 0 {
++		var indexes []int
++		for index := range byIndex {
++			indexes = append(indexes, index)
++		}
++		sort.Ints(indexes)
++		for _, index := range indexes {
++			items = append(items, byIndex[index])
++		}
++	}
++	return reply, items, len(items) > 0
++}
++
++func portableCompactionSource(model string) string {
++	if strings.HasPrefix(model, "ichat/gpt-") {
++		return strings.TrimPrefix(model, "ichat/")
++	}
++	_, members, found := provider.FindGroup(model)
++	if !found {
++		return ""
++	}
++	source, ichat := "", false
++	for _, member := range members {
++		if member.Provider.ID == "codex" && strings.HasPrefix(member.Model, "gpt-") {
++			source = member.Model
++		}
++		ichat = ichat || member.Provider.ID == "ichat"
++	}
++	if ichat {
++		return source
++	}
++	return ""
++}
++
++func (s *Server) codexPortableCompact(w http.ResponseWriter, r *http.Request, body []byte, model string, on *provider.Provider, jsonResult bool) {
++	body, _ = codexInput(withModel(body, model), false)
++	body = plainItemIDs(boundCallIDs(callItemIDs(body)))
++	var request map[string]json.RawMessage
++	var items []json.RawMessage
++	if decodeJSON(body, &request) != nil || decodeJSON(request["input"], &items) != nil {
++		writeError(w, provider.Responses, 400, "compaction requires an input history")
++		return
++	}
++	kept := items[:0:0]
++	for _, item := range items {
++		var kind struct {
++			Type string `json:"type"`
++		}
++		if decodeJSON(item, &kind) == nil && kind.Type == "compaction_trigger" {
++			continue
++		}
++		kept = append(kept, item)
++	}
++	prompt, _ := json.Marshal(userMessage(codexCompactPrompt + "\nPreserve concrete values from tool results and pending requests. Do not perform tasks or call tools."))
++	request["input"], _ = json.Marshal(append(kept, prompt))
++	request["stream"], request["store"], request["tools"] = json.RawMessage("true"), json.RawMessage("false"), json.RawMessage("[]")
++	request["parallel_tool_calls"] = json.RawMessage("false")
++	for _, field := range []string{"previous_response_id", "tool_choice", "response_format", "text"} {
++		delete(request, field)
++	}
++	body, _ = json.Marshal(request)
++	r = r.WithContext(context.WithValue(r.Context(), portableCompactionContextKey{}, true))
++	s.codexCompactUsing(w, r, body, func(out http.ResponseWriter, request *http.Request, history []byte) {
++		s.codexUpstreamOn(out, request, "/responses", history, on)
++	}, jsonResult)
++}
+diff --git a/internal/gateway/codex_portable_compaction_test.go b/internal/gateway/codex_portable_compaction_test.go
+new file mode 100644
+index 00000000..b5250577
+--- /dev/null
++++ b/internal/gateway/codex_portable_compaction_test.go
+@@ -0,0 +1,229 @@
++package gateway
++
++import (
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++
++	"github.com/yetone/magpie/internal/codexsummary"
++	"github.com/yetone/magpie/internal/provider"
++)
++
++func portableOutput(t *testing.T, body string) json.RawMessage {
++	t.Helper()
++	var response struct {
++		Output []json.RawMessage `json:"output"`
++	}
++	if strings.HasPrefix(strings.TrimSpace(body), "{") {
++		if err := json.Unmarshal([]byte(body), &response); err != nil {
++			t.Fatal(err)
++		}
++	} else {
++		for _, line := range strings.Split(body, "\n") {
++			if !strings.HasPrefix(line, "data: ") {
++				continue
++			}
++			var event struct {
++				Type     string          `json:"type"`
++				Response json.RawMessage `json:"response"`
++			}
++			json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event)
++			if event.Type == "response.completed" {
++				json.Unmarshal(event.Response, &response)
++			}
++		}
++	}
++	if len(response.Output) < 1 {
++		t.Fatalf("expected a portable checkpoint: %s", body)
++	}
++	var item struct {
++		Type string `json:"type"`
++		Enc  string `json:"encrypted_content"`
++	}
++	json.Unmarshal(response.Output[0], &item)
++	message, ours := codexsummary.Message(item.Enc)
++	if item.Type != "compaction" || !ours || message == nil {
++		t.Fatalf("checkpoint cannot move to iChat: %s", body)
++	}
++	b, _ := json.Marshal(message)
++	if !strings.Contains(string(b), "azalea-42") {
++		t.Fatalf("checkpoint lost the earlier tool result: %s", b)
++	}
++	return response.Output[0]
++}
++
++func TestNativeCompactionIsPortableWhenNativeIsOff(t *testing.T) {
++	setup(t, provider.Chat, &fake{t: t})
++	var path string
++	var request []byte
++	var mu sync.Mutex
++	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
++		b, _ := io.ReadAll(r.Body)
++		if r.Header.Get("X-OpenAI-Internal-Codex-Responses-Lite") == "true" {
++			var decoded obj
++			decodeJSON(b, &decoded)
++			if string(decoded["parallel_tool_calls"]) != "false" {
++				t.Error("Responses Lite summary lost parallel_tool_calls=false")
++			}
++		}
++		mu.Lock()
++		path, request = r.URL.Path, b
++		mu.Unlock()
++		w.Header().Set("Content-Type", "application/json")
++		if strings.HasSuffix(r.URL.Path, "/responses/compact") {
++			io.WriteString(w, `{"id":"resp_native","output":[{"type":"compaction","encrypted_content":"opaque-native"}]}`)
++			return
++		}
++		io.WriteString(w, `{"id":"resp_summary","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The earlier lookup returned azalea-42. Preserve this value."}]}]}`)
++	})
++	req := httptest.NewRequest("POST", CodexPath+"/responses/compact", strings.NewReader(`{"model":"gpt-6.1-sol","service_tier":"ultrafast","input":[{"type":"function_call","call_id":"c1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"azalea-42"},{"type":"message","role":"user","content":[{"type":"input_text","text":"remember the lookup"}]}]}`))
++	req.Header.Set("Authorization", "Bearer header.payload.signature")
++	req.Header.Set("chatgpt-account-id", "acct-native")
++	req.Header.Set("X-OpenAI-Internal-Codex-Responses-Lite", "true")
++	rec := httptest.NewRecorder()
++	New().Handler().ServeHTTP(rec, req)
++	if rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") {
++		t.Fatalf("native compact endpoint: %d %s", rec.Code, rec.Body.String())
++	}
++	portableOutput(t, rec.Body.String())
++	mu.Lock()
++	defer mu.Unlock()
++	if path != "/backend-api/codex/responses" || !strings.Contains(string(request), "function_call_output") || !strings.Contains(string(request), "ultrafast") {
++		t.Fatalf("summary did not preserve history and speed: %s %s", path, request)
++	}
++}
++
++func TestNativeCompactionTriggerIsPortable(t *testing.T) {
++	setup(t, provider.Chat, &fake{t: t})
++	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
++		b, _ := io.ReadAll(r.Body)
++		if strings.Contains(string(b), `"compaction_trigger"`) {
++			t.Error("the summary request still triggered native encryption")
++		}
++		w.Header().Set("Content-Type", "application/json")
++		io.WriteString(w, `{"id":"resp_summary","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Remember the tool value azalea-42."}]}]}`)
++	})
++	req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(`{"model":"gpt-6.1-sol","stream":true,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"remember the tool value"}]},{"type":"compaction_trigger"}]}`))
++	req.Header.Set("Authorization", "Bearer header.payload.signature")
++	req.Header.Set("chatgpt-account-id", "acct-native")
++	rec := httptest.NewRecorder()
++	New().Handler().ServeHTTP(rec, req)
++	if rec.Code != 200 {
++		t.Fatalf("trigger compaction failed: %d %s", rec.Code, rec.Body.String())
++	}
++	portableOutput(t, rec.Body.String())
++}
++
++func TestOldNativeCompactionMigratesBeforeIchat(t *testing.T) {
++	setup(t, provider.Chat, &fake{t: t})
++	var nativeCalls, ichatCalls atomic.Int64
++	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
++		nativeCalls.Add(1)
++		if r.Header.Get("Authorization") != "Bearer header.payload.signature" || r.Header.Get("chatgpt-account-id") != "acct-native" {
++			t.Error("migration changed the native sign-in")
++		}
++		w.Header().Set("Content-Type", "application/json")
++		io.WriteString(w, `{"id":"resp_summary","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The tool result from the previous native checkpoint is azalea-42."}]}]}`)
++	})
++	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		ichatCalls.Add(1)
++		b, _ := io.ReadAll(r.Body)
++		if strings.Contains(string(b), "opaque-native") || !strings.Contains(string(b), "azalea-42") {
++			w.WriteHeader(400)
++			io.WriteString(w, `{"error":{"code":"invalid_encrypted_content","message":"The encrypted content for item cmp_legacy could not be verified."}}`)
++			return
++		}
++		w.Header().Set("Content-Type", "text/event-stream")
++		io.WriteString(w, sse(`data: {"type":"response.output_text.delta","delta":"azalea-42"}`, `data: {"type":"response.completed","response":{"id":"reply","object":"response","status":"completed","output":[{"type":"message","id":"msg_reply","role":"assistant","content":[{"type":"output_text","text":"azalea-42"}]}]}}`))
++	}))
++	t.Cleanup(up.Close)
++	if err := provider.Save(provider.Provider{ID: "ichat", Name: "iChat", Key: "fixture", Models: []string{"gpt-6.1-sol"}, Responses: up.URL + "/v1"}); err != nil {
++		t.Fatal(err)
++	}
++	s := New()
++	turn := func(checkpoint string) *httptest.ResponseRecorder {
++		req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(`{"model":"ichat/gpt-6.1-sol","stream":true,"service_tier":"ultrafast","input":[`+checkpoint+`,{"type":"message","role":"user","content":[{"type":"input_text","text":"what was the lookup result?"}]}]}`))
++		req.Header.Set("Authorization", "Bearer header.payload.signature")
++		req.Header.Set("chatgpt-account-id", "acct-native")
++		req.Header.Set("session_id", "legacy-native")
++		rec := httptest.NewRecorder()
++		s.Handler().ServeHTTP(rec, req)
++		return rec
++	}
++	first := turn(`{"type":"compaction","id":"cmp_legacy","encrypted_content":"opaque-native"}`)
++	if first.Code != 200 {
++		t.Fatalf("migration failed: %d %s", first.Code, first.Body.String())
++	}
++	item := portableOutput(t, first.Body.String())
++	if nativeCalls.Load() != 1 || ichatCalls.Load() != 1 || !strings.Contains(first.Body.String(), `"delta":"azalea-42"`) {
++		t.Fatalf("legacy context reached the wrong source: native=%d ichat=%d", nativeCalls.Load(), ichatCalls.Load())
++	}
++	second := turn(string(item))
++	if second.Code != 200 || !strings.Contains(second.Body.String(), "azalea-42") || nativeCalls.Load() != 1 || ichatCalls.Load() != 2 {
++		t.Fatalf("portable replay failed: native=%d ichat=%d %d %s", nativeCalls.Load(), ichatCalls.Load(), second.Code, second.Body.String())
++	}
++}
++
++func TestNativeCompactionOptInIsPreserved(t *testing.T) {
++	setup(t, provider.Chat, &fake{t: t})
++	var compactCalls atomic.Int64
++	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
++		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/responses/compact") {
++			compactCalls.Add(1)
++		}
++		w.Header().Set("Content-Type", "application/json")
++		io.WriteString(w, `{"id":"resp_native","output":[{"type":"compaction","encrypted_content":"explicit-native"}]}`)
++	})
++	codexChatGPTAuth(t, "native@example.com")
++	nativeOn(t, "codex")
++	req := httptest.NewRequest("POST", CodexPath+"/responses/compact", strings.NewReader(`{"model":"gpt-6.1-sol","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"remember the value"}]}]}`))
++	req.Header.Set("Authorization", "Bearer header.payload.signature")
++	req.Header.Set("chatgpt-account-id", "acct-native")
++	rec := httptest.NewRecorder()
++	New().Handler().ServeHTTP(rec, req)
++	if rec.Code != 200 || compactCalls.Load() != 1 || !strings.Contains(rec.Body.String(), "explicit-native") {
++		t.Fatalf("explicit native compaction changed: calls=%d %d %s", compactCalls.Load(), rec.Code, rec.Body.String())
++	}
++}
++
++func TestLegacyMigrationNeverDropsAnUnreadableCheckpoint(t *testing.T) {
++	for _, status := range []int{400, 404} {
++		t.Run(fmt.Sprint(status), func(t *testing.T) {
++			setup(t, provider.Chat, &fake{t: t})
++			var nativeCalls, ichatCalls atomic.Int64
++			chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
++				nativeCalls.Add(1)
++				b, _ := io.ReadAll(r.Body)
++				w.Header().Set("Content-Type", "application/json")
++				if strings.Contains(string(b), "opaque-native") {
++					w.WriteHeader(status)
++					io.WriteString(w, `{"error":{"code":"invalid_encrypted_content","message":"The encrypted content for item cmp_legacy could not be verified."}}`)
++					return
++				}
++				io.WriteString(w, `{"id":"resp_lost","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"The previous context was lost."}]}]}`)
++			})
++			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				ichatCalls.Add(1)
++				w.WriteHeader(500)
++			}))
++			t.Cleanup(up.Close)
++			if err := provider.Save(provider.Provider{ID: "ichat", Name: "iChat", Key: "fixture", Models: []string{"gpt-6.1-sol"}, Responses: up.URL + "/v1"}); err != nil {
++				t.Fatal(err)
++			}
++			req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(`{"model":"ichat/gpt-6.1-sol","stream":true,"input":[{"type":"compaction","id":"cmp_legacy","encrypted_content":"opaque-native"},{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`))
++			req.Header.Set("Authorization", "Bearer header.payload.signature")
++			req.Header.Set("chatgpt-account-id", "acct-native")
++			rec := httptest.NewRecorder()
++			New().Handler().ServeHTTP(rec, req)
++			if rec.Code != status || nativeCalls.Load() != 1 || ichatCalls.Load() != 0 || strings.Contains(rec.Body.String(), "context was lost") {
++				t.Fatalf("unreadable history was silently discarded: native=%d ichat=%d %d %s", nativeCalls.Load(), ichatCalls.Load(), rec.Code, rec.Body.String())
++			}
++		})
++	}
++}
+diff --git a/internal/gateway/codex_reasoning_recovery.go b/internal/gateway/codex_reasoning_recovery.go
+new file mode 100644
+index 00000000..3bc0b15d
+--- /dev/null
++++ b/internal/gateway/codex_reasoning_recovery.go
+@@ -0,0 +1,50 @@
++package gateway
++
++import (
++	"crypto/sha256"
++	"encoding/json"
++	"fmt"
++	"net/http"
++
++	"github.com/yetone/magpie/internal/provider"
++)
++
++// Native Codex requests bypass candidate affinity. Scope refused reasoning
++// to the actual sign-in and conversation instead of sharing a native seat.
++func codexReasoningKey(r *http.Request, body []byte, base string, on *provider.Provider) string {
++	owner := base + "\x00" + r.Header.Get("Authorization") + "\x00" + r.Header.Get("chatgpt-account-id")
++	if on != nil && on.Account != nil {
++		owner += "\x00" + on.ID + "\x00" + on.Account.User
++	}
++	return fmt.Sprintf("codex-native/%x/%s|%s", sha256.Sum256([]byte(owner)), modelOf(body), conversationID(r.Header, body))
++}
++
++func recoverCodexReasoning(key string, body, refusal []byte, keepCompaction bool) ([]byte, bool) {
++	b, ok := withoutUnreadable(body, refusal)
++	if ok && keepCompaction && len(sealedCompactions(b)) < len(sealedCompactions(body)) {
++		return nil, false
++	}
++	if !ok || len(seals(b, "reasoning")) >= len(seals(body, "reasoning")) {
++		return b, ok
++	}
++	kept := map[[sha256.Size]byte]bool{}
++	for _, seal := range seals(b, "reasoning") {
++		kept[seal] = true
++	}
++	var original struct {
++		Input []sealedItem `json:"input"`
++	}
++	if decodeJSON(body, &original) != nil {
++		return b, ok
++	}
++	var removed []sealedItem
++	for _, item := range original.Input {
++		if item.Type == "reasoning" && item.Enc != "" && !kept[sha256.Sum256([]byte(item.Enc))] {
++			removed = append(removed, item)
++		}
++	}
++	if rejected, err := json.Marshal(map[string]any{"input": removed}); err == nil {
++		refused(key, "native", rejected, "reasoning")
++	}
++	return b, ok
++}
+diff --git a/internal/gateway/codex_reasoning_recovery_test.go b/internal/gateway/codex_reasoning_recovery_test.go
+new file mode 100644
+index 00000000..e9ccd305
+--- /dev/null
++++ b/internal/gateway/codex_reasoning_recovery_test.go
+@@ -0,0 +1,149 @@
++package gateway
++
++import (
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"testing"
++
++	"github.com/yetone/magpie/internal/provider"
++)
++
++// A real native Codex request can carry many reasoning items from iChat.
++// Recover before publishing content, then remember the refused seals only
++// for this conversation and sign-in. Messages, calls and speed stay intact.
++func TestCodexNativeForeignReasoningRecovery(t *testing.T) {
++	for _, streamedError := range []bool{false, true} {
++		t.Run(fmt.Sprint(streamedError), func(t *testing.T) {
++			setup(t, provider.Chat, &fake{t: t})
++			var mu sync.Mutex
++			var requests []map[string]json.RawMessage
++			chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
++				b, _ := io.ReadAll(r.Body)
++				var q map[string]json.RawMessage
++				if err := json.Unmarshal(b, &q); err != nil {
++					t.Error(err)
++					w.WriteHeader(500)
++					return
++				}
++				mu.Lock()
++				requests = append(requests, q)
++				mu.Unlock()
++				var items []struct {
++					Type string `json:"type"`
++					ID   string `json:"id"`
++					Enc  string `json:"encrypted_content"`
++				}
++				json.Unmarshal(q["input"], &items)
++				for _, item := range items {
++					if item.Type != "reasoning" || !strings.HasPrefix(item.Enc, "ichat-") {
++						continue
++					}
++					failure := fmt.Sprintf(`{"code":"invalid_encrypted_content","message":"The encrypted content for item %s could not be verified. Reason: Encrypted content could not be decrypted or parsed."}`, item.ID)
++					if streamedError {
++						w.Header().Set("Content-Type", "text/event-stream")
++						io.WriteString(w, sse(`data: {"type":"response.created","response":{"id":"rejected"}}`, `data: {"type":"response.failed","response":{"id":"rejected","error":`+failure+`}}`))
++					} else {
++						w.Header().Set("Content-Type", "application/json")
++						w.WriteHeader(400)
++						io.WriteString(w, `{"error":`+failure+`}`)
++					}
++					return
++				}
++				w.Header().Set("Content-Type", "text/event-stream")
++				io.WriteString(w, sse(`data: {"type":"response.output_text.delta","delta":"continued"}`, `data: {"type":"response.completed","response":{"id":"accepted","usage":{"input_tokens":7,"output_tokens":1}}}`))
++			})
++			server := New()
++			var history []string
++			for i := range 8 {
++				history = append(history, fmt.Sprintf(`{"type":"reasoning","id":"rs_%d","summary":[],"encrypted_content":"ichat-%d"}`, i, i))
++			}
++			public := `{"type":"message","role":"user","content":[{"type":"input_text","text":"Remember azalea-42"}]},{"type":"function_call","call_id":"c1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"azalea-42"}`
++			turn := func(session, account, suffix string) {
++				t.Helper()
++				body := `{"model":"gpt-6.1-sol","stream":true,"service_tier":"ultrafast","input":[` + strings.Join(history, ",") + "," + public + suffix + `]}`
++				req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(body))
++				req.Header.Set("Authorization", "Bearer test-"+account)
++				req.Header.Set("chatgpt-account-id", account)
++				req.Header.Set("session_id", session)
++				rec := httptest.NewRecorder()
++				server.Handler().ServeHTTP(rec, req)
++				if rec.Code != 200 || !strings.Contains(rec.Body.String(), "continued") || strings.Contains(rec.Body.String(), "invalid_encrypted_content") || strings.Contains(rec.Body.String(), "rejected") {
++					t.Fatalf("conversation did not continue: %d %s", rec.Code, rec.Body.String())
++				}
++			}
++			count := func() int { mu.Lock(); defer mu.Unlock(); return len(requests) }
++			turn("switch-session", "account-1", "")
++			if got := count(); got != 2 {
++				t.Fatalf("recover all foreign reasoning in one retry: got %d requests", got)
++			}
++			turn("switch-session", "account-1", `,{"type":"reasoning","id":"rs_own","summary":[],"encrypted_content":"native-own"}`)
++			if got := count(); got != 3 {
++				t.Fatalf("later turn replayed refused reasoning: got %d requests", got)
++			}
++			mu.Lock()
++			last, _ := json.Marshal(requests[2])
++			mu.Unlock()
++			if strings.Contains(string(last), "ichat-") || !strings.Contains(string(last), "native-own") || !strings.Contains(string(last), "azalea-42") || !strings.Contains(string(last), "function_call_output") || !strings.Contains(string(last), "ultrafast") {
++				t.Fatalf("recovery altered public history, own reasoning or speed: %s", last)
++			}
++			turn("other-session", "account-1", "")
++			turn("switch-session", "account-2", "")
++			if got := count(); got != 7 {
++				t.Fatalf("refused seals leaked across conversations or sign-ins: got %d requests", got)
++			}
++		})
++	}
++}
++
++func TestCodexNativeDoesNotReplayAfterOutput(t *testing.T) {
++	setup(t, provider.Chat, &fake{t: t})
++	var mu sync.Mutex
++	asks := 0
++	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
++		mu.Lock()
++		asks++
++		mu.Unlock()
++		w.Header().Set("Content-Type", "text/event-stream")
++		io.WriteString(w, sse(`data: {"type":"response.output_text.delta","delta":"already visible"}`, `data: {"type":"response.failed","response":{"id":"failed","error":{"code":"invalid_encrypted_content","message":"The encrypted content for item rs_old could not be verified."}}}`))
++	})
++	_, body := codexPost(t, `{"model":"gpt-6.1-sol","stream":true,"input":[{"type":"reasoning","id":"rs_old","summary":[],"encrypted_content":"foreign"},{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`)
++	mu.Lock()
++	defer mu.Unlock()
++	if asks != 1 || !strings.Contains(body, "already visible") || !strings.Contains(body, "response.failed") {
++		t.Fatalf("partially published response was replayed: asks=%d body=%s", asks, body)
++	}
++}
++
++func TestNativeRefusedReasoningConcurrentReaders(t *testing.T) {
++	key := "native-concurrent-recovery"
++	body := []byte(`{"input":[{"type":"reasoning","encrypted_content":"foreign"},{"type":"reasoning","encrypted_content":"current-own"}]}`)
++	refused(key, "native", []byte(`{"input":[{"type":"reasoning","encrypted_content":"foreign"}]}`), "reasoning")
++	start := make(chan struct{})
++	var workers sync.WaitGroup
++	workers.Add(2)
++	go func() {
++		defer workers.Done()
++		<-start
++		for range 1000 {
++			refused(key, "native", []byte(`{"input":[{"type":"reasoning","encrypted_content":"foreign"}]}`), "reasoning")
++		}
++	}()
++	go func() {
++		defer workers.Done()
++		<-start
++		for range 1000 {
++			clean, ok := withoutRefused(key, "native", body)
++			if !ok || strings.Contains(string(clean), `"foreign"`) || !strings.Contains(string(clean), "current-own") {
++				t.Error("concurrent recovery altered the current source's reasoning")
++				return
++			}
++		}
++	}()
++	close(start)
++	workers.Wait()
++}

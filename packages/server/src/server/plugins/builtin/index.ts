@@ -6,6 +6,7 @@ export const builtinPlugins = [
   "antigravity-provider",
   "claude-usage-source",
   "codex-usage-source",
+  "codex-theme",
   "copilot-usage-source",
   "cursor-usage-source",
   "grok-usage-source",
@@ -14,6 +15,7 @@ export const builtinPlugins = [
   "minimax-usage-source",
   "muse-provider",
   "opencode-go-usage-source",
+  "worktree-include",
   "zai-usage-source",
 ] as const;
 

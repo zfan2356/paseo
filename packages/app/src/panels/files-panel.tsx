@@ -1,3 +1,7 @@
+import {
+  useSessionDirectoryTarget,
+  SessionDirectoryToolbar,
+} from "@/session-navigation/directory-toolbar";
 import { Text, View } from "react-native";
 import { Files } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -21,16 +25,29 @@ const filesPanelPresentation = {
 function FilesPanel() {
   const { t } = useTranslation();
   const { serverId, workspaceId, target, openPreferredTarget, openTargetToSide } = usePaneContext();
-  const workspaceRoot = useWorkspaceDirectory(serverId, workspaceId);
-  const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId });
+  const defaultRoot = useWorkspaceDirectory(serverId, workspaceId);
+  const selection = useSessionDirectoryTarget();
+  const { directory, sessionAgentId } = selection;
+  const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId, directory });
   invariant(target.kind === "files", "FilesPanel requires files target");
+  const workspaceRoot = directory ?? defaultRoot;
   const onOpenFile = useCallback(
-    (path: string) => openPreferredTarget({ kind: "file", path }, "explorerFiles"),
-    [openPreferredTarget],
+    (path: string) =>
+      openPreferredTarget(
+        { kind: "file", path, directory: directory, sessionAgentId },
+        "explorerFiles",
+      ),
+    [openPreferredTarget, directory, sessionAgentId],
   );
   const onOpenFileToSide = useCallback(
-    (path: string) => openTargetToSide?.({ kind: "file", path }),
-    [openTargetToSide],
+    (path: string) =>
+      openTargetToSide?.({
+        kind: "file",
+        path,
+        directory: directory,
+        sessionAgentId: sessionAgentId,
+      }),
+    [openTargetToSide, directory, sessionAgentId],
   );
   if (!workspaceRoot) {
     return (
@@ -40,14 +57,23 @@ function FilesPanel() {
     );
   }
   return (
-    <FileExplorerPane
-      serverId={serverId}
-      workspaceId={workspaceId}
-      workspaceRoot={workspaceRoot}
-      onOpenFile={onOpenFile}
-      onOpenFileToSide={openTargetToSide ? onOpenFileToSide : undefined}
-      onAddToChat={canAddToChat ? addFile : undefined}
-    />
+    <View style={styles.fill}>
+      <SessionDirectoryToolbar selection={selection} />
+      {directory ? (
+        <Text selectable style={styles.path}>
+          {serverId} · {directory}
+        </Text>
+      ) : null}
+      <FileExplorerPane
+        serverId={serverId}
+        workspaceId={workspaceId}
+        sessionAgentId={sessionAgentId}
+        workspaceRoot={workspaceRoot}
+        onOpenFile={onOpenFile}
+        onOpenFileToSide={openTargetToSide ? onOpenFileToSide : undefined}
+        onAddToChat={canAddToChat ? addFile : undefined}
+      />
+    </View>
   );
 }
 
@@ -57,6 +83,12 @@ export const filesPanelRegistration = definePanel("files", {
 });
 
 const styles = StyleSheet.create((theme) => ({
+  fill: { flex: 1 },
+  path: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    padding: theme.spacing[2],
+  },
   centerState: {
     flex: 1,
     alignItems: "center",

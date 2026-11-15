@@ -1,4 +1,5 @@
 import { useHostFeatureMap } from "@/runtime/host-features";
+import type { WorkspaceSort } from "@/projects/workspace-structure";
 import { useCallback, useEffect, useMemo } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
@@ -86,6 +87,7 @@ const EMPTY_WORKSPACES: SidebarWorkspacePlacement[] = [];
 const EMPTY_PROJECT_NAMES = new Map<string, string>();
 
 export interface SidebarWorkspacesListResult {
+  workspaceSort?: WorkspaceSort;
   workspaceSortSupported: boolean;
   workspacePlacements: SidebarWorkspacePlacement[];
   projects: SidebarProjectEntry[];
@@ -144,7 +146,10 @@ export function useSidebarWorkspacesList(options?: {
   const groupMode = useSidebarViewStore((state) => state.groupMode);
   const sortSupport = useHostFeatureMap(directoryServerIds, "workspaceSortTimes");
   const workspaceSortSupported = [...sortSupport.values()].every(Boolean);
-  const sort = workspaceSortSupported && groupMode === "project" ? workspaceSort : undefined;
+  const sort =
+    groupMode === "project" && (workspaceSort === "manual" || workspaceSortSupported)
+      ? workspaceSort
+      : undefined;
   const { projects: hostProjects } = useWorkspaceStructure(directoryServerIds, sort);
 
   const selectPlacements = useMemo(createSidebarWorkspacePlacementSelector, []);
@@ -166,12 +171,16 @@ export function useSidebarWorkspacesList(options?: {
     const updates = computeSidebarOrderUpdates({
       projects,
       persistedProjectOrder,
+      getWorkspaceOrder: sort === "manual" ? orderStore.getWorkspaceOrder : undefined,
     });
 
     if (updates.projectOrder) {
       orderStore.setProjectOrder(updates.projectOrder);
     }
-  }, [persistedProjectOrder, projects]);
+    for (const update of updates.workspaceOrders) {
+      orderStore.setWorkspaceOrder(update.projectViewKey, update.order);
+    }
+  }, [persistedProjectOrder, projects, sort]);
 
   const refreshAll = useCallback(() => {
     if (!isActive) return;
@@ -193,6 +202,7 @@ export function useSidebarWorkspacesList(options?: {
   });
 
   return {
+    workspaceSort: sort,
     workspaceSortSupported,
     workspacePlacements,
     projects,

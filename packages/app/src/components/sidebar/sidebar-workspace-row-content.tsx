@@ -1,3 +1,4 @@
+import { PressHighlight } from "@/components/ui/press-highlight";
 import { memo, useMemo, useCallback, useState, type ReactNode } from "react";
 import { Text, View, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -16,7 +17,7 @@ import {
   type SidebarWorkspaceTrailing,
 } from "@/components/sidebar/workspace-trailing";
 import { useAppSettings } from "@/hooks/use-settings";
-import { densityIconBox } from "@/styles/density";
+import { density, densityIconBox } from "@/styles/density";
 import type { Theme } from "@/styles/theme";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { getStatusDotColor } from "@/utils/status-dot-color";
@@ -29,7 +30,11 @@ import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { DensityIcon } from "@/components/ui/density-icon";
-import { TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import { SCRIM_WIDTH, TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import {
+  ARCHIVE_BUTTON_SIZE,
+  SidebarWorkspaceArchiveButton,
+} from "@/components/sidebar/sidebar-workspace-menu";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 
 const needsInputColorMapping = (theme: Theme) => ({
@@ -124,7 +129,86 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
-  const workspaceBranchTextStyle = useMemo(
+  const leading = useMemo(
+    () =>
+      leadingProjectName ? (
+        <ProjectStatusIndicator
+          iconDataUri={leadingProjectIconDataUri}
+          displayName={leadingProjectName}
+          projectViewKey={workspace.projectViewKey}
+          statusBucket={workspace.statusBucket}
+          backdrop={backdrop}
+          loading={isLoading}
+          testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
+        />
+      ) : (
+        <WorkspaceStatusIndicator
+          bucket={workspace.statusBucket}
+          workspaceKind={workspace.workspaceKind}
+          loading={isLoading}
+          reserveIdleSpace={reserveIdleStatusIndicatorSpace}
+        />
+      ),
+    [
+      leadingProjectName,
+      leadingProjectIconDataUri,
+      workspace,
+      backdrop,
+      isLoading,
+      reserveIdleStatusIndicatorSpace,
+    ],
+  );
+  const metadata = useMemo(
+    () => (
+      <WorkspaceMetaRow
+        currentBranch={workspace.currentBranch}
+        projectName={leadingProjectName}
+        hostBadge={hostBadge ?? null}
+        prHint={workspace.prHint}
+        serviceSummary={serviceSummary}
+        labels={labels}
+      />
+    ),
+    [workspace, leadingProjectName, hostBadge, serviceSummary, labels],
+  );
+  return (
+    <SidebarCardContent
+      title={workspaceLabel}
+      titleTestID={`sidebar-workspace-title-${workspace.workspaceKey}`}
+      isHovered={isHovered}
+      isCreating={isCreating}
+      shortcutNumber={showShortcutBadge ? shortcutNumber : null}
+      leading={leading}
+      metadata={metadata}
+      trailing={children}
+    />
+  );
+});
+
+export function SidebarCardContent({
+  onPress,
+  selected = false,
+  title,
+  titleTestID,
+  leading,
+  metadata,
+  trailing,
+  isHovered,
+  isCreating = false,
+  shortcutNumber = null,
+}: {
+  onPress?: () => void;
+  selected?: boolean;
+  title: string;
+  titleTestID?: string;
+  leading: ReactNode;
+  metadata?: ReactNode;
+  trailing?: ReactNode;
+  isHovered: boolean;
+  isCreating?: boolean;
+  shortcutNumber?: number | null;
+}) {
+  const titleStyle = useMemo(
     () => [
       styles.workspaceBranchText,
       isHovered && styles.workspaceBranchTextHovered,
@@ -132,53 +216,49 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     ],
     [isHovered, isCreating],
   );
-
+  const selectedState = useMemo(() => ({ selected }), [selected]);
   return (
     <View style={styles.workspaceRowContent}>
       <View style={styles.workspaceRowMain}>
-        {leadingProjectName ? (
-          <ProjectStatusIndicator
-            iconDataUri={leadingProjectIconDataUri}
-            displayName={leadingProjectName}
-            projectViewKey={workspace.projectViewKey}
-            statusBucket={workspace.statusBucket}
-            backdrop={backdrop}
-            loading={isLoading}
-            testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
-          />
+        {onPress ? (
+          <PressHighlight onPress={onPress} accessible={false} style={styles.interactiveLeading}>
+            {leading}
+          </PressHighlight>
         ) : (
-          <WorkspaceStatusIndicator
-            bucket={workspace.statusBucket}
-            workspaceKind={workspace.workspaceKind}
-            loading={isLoading}
-            reserveIdleSpace={reserveIdleStatusIndicatorSpace}
-          />
+          leading
         )}
         <View style={styles.workspaceContentColumn}>
-          <View style={styles.workspaceTitleRow}>
-            <Text style={workspaceBranchTextStyle} numberOfLines={1}>
-              {workspaceLabel}
-            </Text>
-            <View style={sidebarWorkspaceRowStyles.rowRight}>{children}</View>
+          <View style={[styles.workspaceTitleRow, onPress && styles.interactiveTitleRow]}>
+            {onPress ? (
+              <PressHighlight
+                onPress={onPress}
+                accessibilityRole="button"
+                accessibilityState={selectedState}
+                aria-selected={selected}
+                style={styles.titlePress}
+              >
+                <Text style={titleStyle} numberOfLines={1} testID={titleTestID}>
+                  {title}
+                </Text>
+              </PressHighlight>
+            ) : (
+              <Text style={titleStyle} numberOfLines={1} testID={titleTestID}>
+                {title}
+              </Text>
+            )}
+            <View style={sidebarWorkspaceRowStyles.rowRight}>{trailing}</View>
           </View>
-          <WorkspaceMetaRow
-            currentBranch={workspace.currentBranch}
-            projectName={leadingProjectName}
-            hostBadge={hostBadge ?? null}
-            prHint={workspace.prHint}
-            serviceSummary={serviceSummary}
-            labels={labels}
-          />
+          {metadata}
         </View>
       </View>
-      {showShortcutBadge && shortcutNumber !== null ? (
+      {shortcutNumber !== null ? (
         <View style={styles.shortcutBadgeOverlay} pointerEvents="none">
           <SidebarWorkspaceShortcutBadge number={shortcutNumber} />
         </View>
       ) : null}
     </View>
   );
-});
+}
 
 function WorkspaceStatusIndicator({
   bucket,
@@ -330,6 +410,8 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
     position: "absolute",
     top: 0,
     right: 0,
+    flexDirection: "row",
+    alignItems: "flex-start",
   },
 }));
 
@@ -370,6 +452,7 @@ export function resolveTrailingActionVisibility({
 }): {
   trailingPresentation: SidebarWorkspaceTrailingPresentation;
   showKebab: boolean;
+  showArchiveButton: boolean;
   showScrim: boolean;
   renderSlot: boolean;
   reserveSlotWidth: boolean;
@@ -384,6 +467,9 @@ export function resolveTrailingActionVisibility({
   return {
     trailingPresentation,
     showKebab,
+    // One-click archive is a pointer affordance: on touch it would sit a few pixels from the
+    // kebab and turn a miss into an archive.
+    showArchiveButton: showKebab && isHovered && !isTouchPlatform,
     // The scrim paints the row's own hover background, so it can only be drawn on a hovered
     // row — over an unhovered one the gradient fades to the wrong color. That is also why
     // touch, which shows the kebab without ever hovering, never gets one.
@@ -432,23 +518,46 @@ export function SidebarWorkspaceTrailingActionBase({
   );
 }
 
+// The archive button plus the kebab's marginLeft, which is the gap between them.
+const ARCHIVE_BUTTON_SCRIM_WIDTH = ARCHIVE_BUTTON_SIZE + 2;
+
 export function SidebarWorkspaceTrailingActionOverlay({
   visible,
   scrimBackdrop,
+  workspaceKey,
+  onArchiveButtonPress,
   children,
 }: {
   visible: boolean;
   /** Fade the row into the kebab when something (the diff stat) is still rendered behind it. */
   scrimBackdrop?: SidebarSurfaceBackdrop;
+  workspaceKey: string;
+  /**
+   * Shows the archive button left of the kebab. It overlays the title like the kebab does, so
+   * the scrim widens to cover it rather than the slot reserving its width.
+   */
+  onArchiveButtonPress?: () => void;
   children: ReactNode;
 }) {
   if (!visible || !children) return null;
   return (
     <>
       {scrimBackdrop ? (
-        <TrailingActionScrim backdrop={scrimBackdrop} testID="sidebar-workspace-trailing-scrim" />
+        <TrailingActionScrim
+          backdrop={scrimBackdrop}
+          width={onArchiveButtonPress ? SCRIM_WIDTH + ARCHIVE_BUTTON_SCRIM_WIDTH : SCRIM_WIDTH}
+          testID="sidebar-workspace-trailing-scrim"
+        />
       ) : null}
-      <View style={sidebarWorkspaceRowStyles.trailingActionOverlay}>{children}</View>
+      <View style={sidebarWorkspaceRowStyles.trailingActionOverlay}>
+        {onArchiveButtonPress ? (
+          <SidebarWorkspaceArchiveButton
+            workspaceKey={workspaceKey}
+            onArchive={onArchiveButtonPress}
+          />
+        ) : null}
+        {children}
+      </View>
     </>
   );
 }
@@ -466,6 +575,9 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     width: "100%",
   },
+  titlePress: { flex: 1, minWidth: 0, minHeight: density.rowHeight, justifyContent: "center" },
+  interactiveLeading: { height: density.rowHeight, justifyContent: "center" },
+  interactiveTitleRow: { alignItems: "center" },
   workspaceContentColumn: {
     flex: 1,
     minWidth: 0,

@@ -13,6 +13,8 @@ Every pull request needs evidence for the questions its change touches. Pull req
 
 For plugin changes, verify the [SDK import boundaries](plugins.md#sdk-import-boundaries) before
 exercising contributions. Include the boundary tests and both runtime loaders in the evidence.
+The [external background work evidence](qa-evidence/external-background-work/README.md) is an
+example covering source isolation, permissions, delivery, and recovery across two daemons.
 
 ## Evidence
 

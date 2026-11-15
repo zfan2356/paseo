@@ -1,0 +1,105 @@
+{
+  "mr": {
+    "id": 99123,
+    "iid": 686,
+    "title": "Improve worker scheduling",
+    "description": "Fixture for the TGit v3 response contract.",
+    "state": "opened",
+    "source_branch": "feature/worker",
+    "target_branch": "main",
+    "source_project_id": 100,
+    "target_project_id": 100,
+    "source_commit": "abc123",
+    "updated_at": "2026-11-12T12:00:00+0000",
+    "work_in_progress": false,
+    "commit_check_state": "success",
+    "commit_check_block": false,
+    "labels": ["infra"]
+  },
+  "project": {
+    "id": 100,
+    "path_with_namespace": "example/repo"
+  },
+  "checks": {
+    "sha": "abc123",
+    "state": "success",
+    "block": false,
+    "total_count": 1,
+    "statuses": [
+      {
+        "id": 77,
+        "context": "unit",
+        "state": "success",
+        "target_url": "https://ci.example.test/runs/77",
+        "description": "Tests passed",
+        "target_branches": ["main"],
+        "detail": "### Test report\n\nAll checks passed."
+      }
+    ]
+  },
+  "review": {
+    "state": "approved",
+    "reviewers": [
+      {
+        "username": "reviewer",
+        "review_state": "approved"
+      }
+    ]
+  },
+  "conflict": {
+    "base_commit": "abc123",
+    "target_commit": "target123",
+    "has_conflicts": false
+  },
+  "branch": {
+    "commit": {
+      "id": "target123"
+    }
+  },
+  "comments": [
+    {
+      "id": 2,
+      "created_at": "2026-11-12T12:01:00+0000",
+      "author": {
+        "username": "reviewer",
+        "avatar_url": "https://git.woa.com/avatar.png"
+      },
+      "body": "Looks good",
+      "comments": [],
+      "parent_id": null
+    },
+    {
+      "id": 1,
+      "created_at": "2026-11-12T12:00:00+0000",
+      "author": {
+        "username": "author",
+        "avatar_url": null
+      },
+      "body": "Please review",
+      "comments": [
+        {
+          "id": 3,
+          "body": "Reply in thread",
+          "created_at": "2026-11-12T12:02:00+0000",
+          "author": {
+            "username": "reviewer",
+            "avatar_url": null
+          },
+          "parent_id": 1,
+          "comments": []
+        }
+      ],
+      "parent_id": null
+    }
+  ],
+  "issues": [
+    {
+      "iid": 12,
+      "title": "Scheduling issue",
+      "description": "Details",
+      "state": "opened",
+      "labels": [],
+      "updated_at": "2026-11-12T11:00:00+0000"
+    }
+  ]
+}

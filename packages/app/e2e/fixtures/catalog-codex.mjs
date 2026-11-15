@@ -38,6 +38,20 @@ function respond(method, params) {
       return { data: [] };
     case "thread/start":
       return { thread: { id: randomUUID() }, model: params.model };
+    case "thread/fork":
+      return {
+        thread: { id: randomUUID(), turns: [] },
+        model: params.model ?? models[0].id,
+        modelProvider: "fixture",
+        serviceTier: "default",
+        cwd: params.cwd ?? process.cwd(),
+        approvalPolicy: "never",
+        approvalsReviewer: "user",
+        sandbox: { type: "dangerFullAccess" },
+      };
+    case "thread/archive":
+    case "thread/unsubscribe":
+      return {};
     case "thread/resume":
       return { thread: { id: params.threadId } };
     case "thread/read":
