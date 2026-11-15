@@ -1,6 +1,7 @@
 import type { PluginLifecycle } from "../../plugins/lifecycle/index.js";
 import { describeHookWorkspace } from "../../plugins/lifecycle/index.js";
 import { basename, resolve } from "node:path";
+import { mkdir } from "node:fs/promises";
 import type { ProjectCheckoutLitePayload } from "@getpaseo/protocol/messages";
 import type { Logger } from "pino";
 import {
@@ -42,6 +43,7 @@ export interface ImportWorkspaceResult<T> {
 }
 
 export interface CreateWorktreeWorkspaceInput {
+  automatic?: boolean;
   sourceCwd: string;
   projectId?: string;
   workspaceId?: string;
@@ -73,6 +75,7 @@ export interface WorkspaceProvisioningService {
       workspaceId?: string;
       background?: boolean;
       callerWorkspaceId?: string;
+      automatic?: boolean;
     },
   ): Promise<PersistedWorkspaceRecord>;
   createWorkspaceForWorktree(
@@ -101,6 +104,7 @@ export class WorkspaceProvisioningError extends Error {
 }
 
 export function createWorkspaceProvisioningService(deps: {
+  automaticProjectRoot?: string;
   serverId?: string;
   workspaceRegistry: WorkspaceRegistry;
   projectRegistry: ProjectRegistry;
@@ -227,6 +231,38 @@ export function createWorkspaceProvisioningService(deps: {
     return project;
   }
 
+  async function resolveCreationProjectId(input: {
+    projectId?: string;
+    callerWorkspaceId?: string;
+    automatic?: boolean;
+  }): Promise<string | undefined> {
+    if (input.projectId) return input.projectId;
+    if (input.callerWorkspaceId) {
+      const parent = await workspaceRegistry.get(input.callerWorkspaceId);
+      if (!parent) throw new Error(`Caller workspace ${input.callerWorkspaceId} not found`);
+      return parent.projectId;
+    }
+    if (!input.automatic) return undefined;
+    const rootPath = deps.automaticProjectRoot;
+    if (!rootPath) throw new Error("Automatic task project root is not configured");
+    await mkdir(rootPath, { recursive: true });
+    const project = await projectRegistry.getOrCreateActiveByRoot({
+      rootPath,
+      reuseArchived: true,
+      kind: "non_git",
+      displayName: "自动任务",
+      projectKey: deriveProjectKey({
+        rootPath,
+        serverId,
+        remoteUrl: null,
+        worktreeRoot: null,
+        mainRepoRoot: null,
+      }),
+      timestamp: new Date().toISOString(),
+    });
+    return project.projectId;
+  }
+
   async function resolveCreationMetadata(input?: {
     workspaceId?: string;
     background?: boolean;
@@ -253,16 +289,15 @@ export function createWorkspaceProvisioningService(deps: {
       workspaceId?: string;
       background?: boolean;
       callerWorkspaceId?: string;
+      automatic?: boolean;
     },
   ): Promise<PersistedWorkspaceRecord> {
     const creationMetadata = await resolveCreationMetadata(context);
-    let ownerProjectId = projectId;
-    if (!ownerProjectId && creationMetadata.parentWorkspaceId) {
-      const parent = await workspaceRegistry.get(creationMetadata.parentWorkspaceId);
-      if (!parent)
-        throw new Error(`Caller workspace ${creationMetadata.parentWorkspaceId} not found`);
-      ownerProjectId = parent.projectId;
-    }
+    const ownerProjectId = await resolveCreationProjectId({
+      projectId,
+      callerWorkspaceId: creationMetadata.parentWorkspaceId,
+      automatic: context?.automatic,
+    });
     const normalizedCwd = resolve(cwd);
     const checkout = await workspaceGitService.getCheckout(normalizedCwd);
     const project = ownerProjectId
@@ -303,13 +338,15 @@ export function createWorkspaceProvisioningService(deps: {
   async function createWorkspaceForWorktree(
     input: CreateWorktreeWorkspaceInput,
   ): Promise<PersistedWorkspaceRecord> {
+    const creationMetadata = await resolveCreationMetadata(input);
+    const projectId = input.automatic ? await resolveCreationProjectId(input) : input.projectId;
     const sourceCwd = resolve(input.sourceCwd);
     const repoRoot = resolve(input.repoRoot);
     const cwd = resolve(input.cwd);
     const worktreeRoot = resolve(input.worktreeRoot);
     const project = await resolveSourceProjectForWorktree({
       sourceCwd,
-      projectId: input.projectId,
+      projectId,
       repoRoot,
     });
     const timestamp = new Date().toISOString();
@@ -328,7 +365,7 @@ export function createWorkspaceProvisioningService(deps: {
       createdAt: timestamp,
       updatedAt: timestamp,
       ...(input.untrustedSource ? { untrustedSource: input.untrustedSource } : {}),
-      ...(await resolveCreationMetadata(input)),
+      ...creationMetadata,
     });
     await workspaceRegistry.upsert(workspace, {
       expectsInitialAgent: input.expectsInitialAgent,

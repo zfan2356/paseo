@@ -120,6 +120,8 @@ From a human shell, a bare `paseo run` creates a new local workspace for the cur
 
 To keep a separate execution directory under an existing project, use `paseo run --new-workspace local --cwd /path/to/review --project <project-id> "review the diff"`. Get the project ID from `paseo project ls` on the target host. `--project` requires `--new-workspace`; it selects project ownership without reusing another workspace's directory.
 
+Inside a managed Multica task, `run` and `workspace create` select the explicit project first, then the verified caller's project, then the host's “自动任务” project. Execution directories stay independent. Update the target host if the CLI reports that automatic task projects are unsupported.
+
 Worktree creation accepts `--worktree-mode branch-off|checkout-branch|checkout-pr` plus the matching `--new-branch`/`--base`, `--branch`, or `--pr-number`/`--forge` options. Use `--worktree-slug` to choose the managed directory slug.
 
 When an existing Paseo agent runs the same command, Paseo recognizes it through `PASEO_AGENT_ID`. Without explicit placement, the new agent becomes its subagent in the same workspace. `--workspace` can place that subagent elsewhere without changing its parent.

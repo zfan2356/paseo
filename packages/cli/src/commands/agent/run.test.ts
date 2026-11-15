@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
-import { resolveCallerAgentId as resolveRunCallerAgentId } from "../../utils/caller-agent.js";
+import {
+  isAutomaticTaskInvocation,
+  resolveCallerAgentId as resolveRunCallerAgentId,
+} from "../../utils/caller-agent.js";
 import {
   resolveExistingRunWorkspace,
   runRunCommand,
@@ -32,6 +35,11 @@ describe("run wait policy", () => {
 });
 
 describe("managed agent caller context", () => {
+  it("marks managed task invocations without interpreting their task ID as a project", () => {
+    expect(isAutomaticTaskInvocation({ MULTICA_TASK_ID: "task-409" })).toBe(true);
+    expect(isAutomaticTaskInvocation({ MULTICA_TASK_ID: "  " })).toBe(false);
+    expect(isAutomaticTaskInvocation({})).toBe(false);
+  });
   it("uses a trimmed PASEO_AGENT_ID when the target daemon runs that agent", async () => {
     await expect(
       resolveRunCallerAgentId(daemonWithAgents("parent-agent"), {

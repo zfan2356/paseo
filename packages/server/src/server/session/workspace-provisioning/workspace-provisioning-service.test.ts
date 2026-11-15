@@ -118,6 +118,7 @@ beforeEach(async () => {
   await workspaceRegistry.initialize();
   await projectRegistry.initialize();
   provisioning = createWorkspaceProvisioningService({
+    automaticProjectRoot: path.join(tmpDir, "home", "automatic-tasks"),
     workspaceRegistry,
     projectRegistry,
     workspaceGitService: gitService(),
@@ -293,6 +294,7 @@ test.each([false, true])(
     await projects.initialize();
     await workspaces.initialize();
     const restored = createWorkspaceProvisioningService({
+      automaticProjectRoot: path.join(tmpDir, "home", "automatic-tasks"),
       workspaceRegistry: workspaces,
       projectRegistry: projects,
       workspaceGitService: gitService(),
@@ -322,6 +324,128 @@ test("an explicit project overrides the caller's project for a directory child",
   });
   expect(await projectRegistry.list()).toHaveLength(2);
 });
+
+test("automatic projects are distinct from namesakes and survive concurrent creation, rename and reload", async () => {
+  const manual = await provisioning.createWorkspaceForDirectory(path.join(tmpDir, "manual"));
+  await projectRegistry.update(manual.projectId, (project) => ({
+    ...project,
+    displayName: "自动任务",
+  }));
+  const children = await Promise.all(
+    [0, 1, 2, 3].map((index) =>
+      provisioning.createWorkspaceForDirectory(
+        path.join(tmpDir, `task-${index}`),
+        null,
+        undefined,
+        { automatic: true },
+      ),
+    ),
+  );
+  const projectId = children[0]!.projectId;
+  expect(new Set(children.map((child) => child.projectId))).toEqual(new Set([projectId]));
+  expect(new Set(children.map((child) => child.workspaceId)).size).toBe(4);
+  expect(children.map((child) => child.cwd)).toEqual(
+    [0, 1, 2, 3].map((index) => path.join(tmpDir, `task-${index}`)),
+  );
+  expect(projectId).not.toBe(manual.projectId);
+  expect(await projectRegistry.list()).toHaveLength(2);
+  expect(await projectRegistry.get(projectId)).toMatchObject({
+    rootPath: path.join(tmpDir, "home", "automatic-tasks"),
+    displayName: "自动任务",
+  });
+  await projectRegistry.update(projectId, (project) => ({ ...project, customName: "Renamed" }));
+  await projectRegistry.archive(projectId, ARCHIVED_AT);
+
+  const projects = new FileBackedProjectRegistry(
+    path.join(tmpDir, "projects", "projects.json"),
+    logger,
+  );
+  const workspaces = new FileBackedWorkspaceRegistry(
+    path.join(tmpDir, "projects", "workspaces.json"),
+    logger,
+  );
+  await projects.initialize();
+  await workspaces.initialize();
+  const restored = createWorkspaceProvisioningService({
+    automaticProjectRoot: path.join(tmpDir, "home", "automatic-tasks"),
+    workspaceRegistry: workspaces,
+    projectRegistry: projects,
+    workspaceGitService: gitService(),
+    isDirectory,
+    logger,
+  });
+  const recovered = await restored.createWorkspaceForDirectory(
+    path.join(tmpDir, "next-task"),
+    null,
+    undefined,
+    { automatic: true },
+  );
+  expect(recovered.projectId).toBe(projectId);
+  expect(await projects.list()).toHaveLength(2);
+  expect(await projects.get(projectId)).toMatchObject({ archivedAt: null, customName: "Renamed" });
+});
+
+test("automatic directory creation prioritizes explicit and caller projects without allocating a default", async () => {
+  const parent = await provisioning.createWorkspaceForDirectory(path.join(tmpDir, "parent"));
+  const explicit = await provisioning.createWorkspaceForDirectory(path.join(tmpDir, "explicit"));
+  const inherited = await provisioning.createWorkspaceForDirectory(
+    path.join(tmpDir, "inherited"),
+    null,
+    undefined,
+    {
+      callerWorkspaceId: parent.workspaceId,
+      automatic: true,
+    },
+  );
+  const selected = await provisioning.createWorkspaceForDirectory(
+    path.join(tmpDir, "selected"),
+    null,
+    explicit.projectId,
+    {
+      callerWorkspaceId: parent.workspaceId,
+      automatic: true,
+    },
+  );
+  expect(inherited.projectId).toBe(parent.projectId);
+  expect(selected.projectId).toBe(explicit.projectId);
+  await expect(
+    provisioning.createWorkspaceForDirectory(
+      path.join(tmpDir, "invalid"),
+      null,
+      "multica-project-uuid",
+      { automatic: true },
+    ),
+  ).rejects.toMatchObject({ code: "unknown_project" });
+  expect(await projectRegistry.list()).toHaveLength(2);
+});
+
+test.each([false, true])(
+  "automatic worktrees retain separate checkout placement with a caller: %s",
+  async (withCaller) => {
+    const sourceCwd = path.join(tmpDir, "repo");
+    gitRoots.add(sourceCwd);
+    const parent = await provisioning.createWorkspaceForDirectory(path.join(tmpDir, "parent"));
+    const cwd = path.join(tmpDir, "review-worktree");
+    const child = await provisioning.createWorkspaceForWorktree({
+      sourceCwd,
+      repoRoot: sourceCwd,
+      cwd,
+      worktreeRoot: cwd,
+      branch: "review",
+      baseBranch: "main",
+      title: null,
+      automatic: true,
+      callerWorkspaceId: withCaller ? parent.workspaceId : undefined,
+    });
+    expect(child.cwd).toBe(cwd);
+    expect(child.workspaceId).not.toBe(parent.workspaceId);
+    if (withCaller) expect(child.projectId).toBe(parent.projectId);
+    else
+      expect(await projectRegistry.get(child.projectId)).toMatchObject({
+        rootPath: path.join(tmpDir, "home", "automatic-tasks"),
+      });
+  },
+);
 
 test.each(["archived", "missing"])(
   "directory children reject a %s parent project without registering their cwd",

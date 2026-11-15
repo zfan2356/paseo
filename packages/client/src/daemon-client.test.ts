@@ -3942,6 +3942,25 @@ test("rejects an internal create before sending when the host predates internal 
   expect(mock.sent).toHaveLength(0);
 });
 
+test("automatic project creation refuses older hosts before sending a workspace request", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "automatic-project-test",
+    transportFactory: () => mock.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { creationLifecycle: true } });
+  await connected;
+  mock.sent.length = 0;
+  await expect(
+    client.createWorkspace({ source: { kind: "directory", path: "/tmp/review" }, automatic: true }),
+  ).rejects.toThrow("Update the host to use automatic task projects.");
+  expect(mock.sent).toHaveLength(0);
+});
+
 test("sends internal workspace creation and internal listings only to hosts that support them", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();

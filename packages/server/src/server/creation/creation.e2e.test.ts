@@ -37,6 +37,169 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+interface ReviewCliInput {
+  port: number;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+
+async function runReviewCli(input: ReviewCliInput): Promise<string> {
+  const result = await promisify(execFile)(
+    process.execPath,
+    [
+      "--conditions=source",
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("../../../../cli/src/index.ts", import.meta.url)),
+      "--host",
+      `127.0.0.1:${input.port}`,
+      "run",
+      "Review the change",
+      "--provider",
+      "codex",
+      "--no-wait",
+      "--new-workspace",
+      "local",
+      "--cwd",
+      input.cwd,
+      "--json",
+    ],
+    { env: input.env, timeout: 15000 },
+  );
+  return z.object({ agentId: z.string() }).parse(JSON.parse(result.stdout)).agentId;
+}
+
+test.each(["non-git", "linked-worktree"])(
+  "managed review CLI without project context shares a host project across concurrent calls and restart (%s)",
+  async (kind) => {
+    const directory = await mkdtemp(join(tmpdir(), "automatic-project-"));
+    const source = join(directory, "source");
+    const review = join(directory, "review-copy");
+    const next = join(directory, "slime-title");
+    const staticDir = join(directory, "static");
+    await mkdir(source);
+    await mkdir(next);
+    await mkdir(staticDir);
+    if (kind === "linked-worktree") {
+      execFileSync("git", ["init", source]);
+      execFileSync("git", [
+        "-C",
+        source,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "initial",
+      ]);
+      execFileSync("git", ["-C", source, "worktree", "add", "-b", "review", review]);
+    } else await mkdir(review);
+    const {
+      PASEO_AGENT_ID: _caller,
+      PASEO_WORKSPACE_ID: _workspace,
+      MULTICA_TASK_ID: _task,
+      ...manualEnv
+    } = process.env;
+    const env = { ...manualEnv, MULTICA_TASK_ID: "managed-review-task" };
+    const options = { paseoHomeRoot: join(directory, "daemon"), staticDir, cleanup: false };
+    let daemon = await createCreationDaemon(options);
+    let client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    let other: Awaited<ReturnType<typeof createCreationDaemon>> | null = null;
+    let otherClient: DaemonClient | null = null;
+    try {
+      await client.connect();
+      const agentIds = await Promise.all(
+        [review, next].map((cwd) => runReviewCli({ port: daemon.port, cwd, env })),
+      );
+      const agents = await Promise.all(agentIds.map((agentId) => client.fetchAgent({ agentId })));
+      const workspaces = (await client.fetchWorkspaces()).entries;
+      const projects = (await client.listProjects()).projects;
+      expect(projects).toHaveLength(1);
+      const project = projects[0];
+      if (!project) throw new Error("Automatic project missing");
+      expect(project).toMatchObject({
+        projectDisplayName: "自动任务",
+        projectRootPath: join(daemon.paseoHome, "automatic-tasks"),
+      });
+      expect(workspaces).toHaveLength(2);
+      expect(new Set(workspaces.map((workspace) => workspace.projectId))).toEqual(
+        new Set([project.projectId]),
+      );
+      expect(agents.map((agent) => agent?.agent.cwd)).toEqual([review, next]);
+      expect(agents[0]?.agent.workspaceId).not.toBe(agents[1]?.agent.workspaceId);
+
+      await client.close();
+      await daemon.close();
+      daemon = await createCreationDaemon(options);
+      client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+      await client.connect();
+      const recoveredId = await runReviewCli({ port: daemon.port, cwd: review, env });
+      const recovered = await client.fetchAgent({ agentId: recoveredId });
+      expect(recovered?.agent.cwd).toBe(review);
+      expect((await client.listProjects()).projects.map((entry) => entry.projectId)).toEqual([
+        project.projectId,
+      ]);
+
+      const workspaceCreation = await promisify(execFile)(
+        process.execPath,
+        [
+          "--conditions=source",
+          "--import",
+          "tsx",
+          fileURLToPath(new URL("../../../../cli/src/index.ts", import.meta.url)),
+          "--host",
+          `127.0.0.1:${daemon.port}`,
+          "workspace",
+          "create",
+          "--isolation",
+          "local",
+          "--path",
+          next,
+          "--json",
+        ],
+        { env, timeout: 15000 },
+      );
+      const createdWorkspace = z
+        .object({ workspaceId: z.string() })
+        .parse(JSON.parse(workspaceCreation.stdout));
+      expect(
+        (await client.fetchWorkspaces()).entries.find(
+          (entry) => entry.id === createdWorkspace.workspaceId,
+        )?.projectId,
+      ).toBe(project.projectId);
+      expect((await client.listProjects()).projects).toHaveLength(1);
+
+      const manualId = await runReviewCli({ port: daemon.port, cwd: review, env: manualEnv });
+      expect((await client.fetchAgent({ agentId: manualId }))?.agent.cwd).toBe(review);
+      expect((await client.listProjects()).projects).toHaveLength(2);
+
+      other = await createCreationDaemon({
+        paseoHomeRoot: join(directory, "other-host"),
+        staticDir,
+        cleanup: false,
+      });
+      otherClient = new DaemonClient({ url: `ws://127.0.0.1:${other.port}/ws` });
+      await otherClient.connect();
+      await runReviewCli({ port: other.port, cwd: review, env });
+      const otherProjects = (await otherClient.listProjects()).projects;
+      expect(otherProjects).toHaveLength(1);
+      expect(otherProjects[0]).toMatchObject({
+        projectRootPath: join(other.paseoHome, "automatic-tasks"),
+      });
+      expect(otherProjects[0]?.projectId).not.toBe(project.projectId);
+    } finally {
+      await otherClient?.close();
+      await other?.close();
+      await client.close();
+      await daemon.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  60000,
+);
+
 test.each(["non-git", "linked-worktree"])(
   "CLI directory child retains caller project with independent %s cwd",
   async (kind) => {

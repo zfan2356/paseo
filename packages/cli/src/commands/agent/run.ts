@@ -4,7 +4,7 @@ import {
   StructuredAgentResponseError,
 } from "@getpaseo/server/agent-response";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
-import { resolveCallerAgentId } from "../../utils/caller-agent.js";
+import { isAutomaticTaskInvocation, resolveCallerAgentId } from "../../utils/caller-agent.js";
 import { connectToDaemon } from "../../utils/client.js";
 import type {
   CommandOptions,
@@ -580,6 +580,7 @@ async function resolveRunWorkspace(
   const source = buildRunWorkspaceSource(options, cwd);
   const result = await client.createWorkspace({
     source,
+    ...(isAutomaticTaskInvocation() ? { automatic: true } : {}),
     ...(callerAgentId ? { callerAgentId } : {}),
   });
 
