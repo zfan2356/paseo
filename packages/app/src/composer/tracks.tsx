@@ -22,7 +22,7 @@ import { getStatusDotColor } from "@/utils/status-dot-color";
 import { STATUS_INDICATOR_FILLED_DOT_SIZE } from "@/utils/status-indicator-geometry";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { COMPOSER_PILL_CLEARANCE, composerPillStyles } from "./pill-styles";
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 
 /**
  * The strip of pills where a pane's ambient trackers and plugin actions live.

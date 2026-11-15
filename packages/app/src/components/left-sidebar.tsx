@@ -1,4 +1,4 @@
-import { sidebarMaterialColor } from "@/styles/sidebar-material-color";
+import { sidebarMaterialColor } from "@/fork/materials/sidebar-color";
 import { SidebarViewSlot } from "@/plugins/sidebar-view";
 import { useAddHost } from "@/hosts/add-host";
 import { router } from "expo-router";

@@ -1,4 +1,4 @@
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { ComposerDockBackground } from "@/composer/dock";
 import { useMemo, type ReactNode } from "react";
 import type { LayoutChangeEvent } from "react-native";

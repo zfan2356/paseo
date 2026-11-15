@@ -1,6 +1,6 @@
 import type { BottomSheetBackgroundProps } from "@gorhom/bottom-sheet";
 import { StyleSheet, View } from "react-native";
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "./slots";
 
 // Keep Gorhom's background geometry; the material marker owns the web surface.
 const styles = StyleSheet.create({ background: { backgroundColor: "white", borderRadius: 15 } });

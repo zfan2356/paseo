@@ -1,4 +1,4 @@
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { Modal } from "@/components/ui/modal";
 import {
@@ -1218,7 +1218,6 @@ function DesktopComboboxBody(props: DesktopBodyProps): ReactElement | null {
         <Pressable style={styles.desktopBackdrop} onPress={props.handleClose} />
         <FloatingSurface
           testID="combobox-desktop-container"
-          dataSet={MATERIAL_SLOTS.combobox}
           entering={props.shouldUseDesktopFade ? FadeIn.duration(100) : undefined}
           exiting={props.shouldUseDesktopFade ? FadeOut.duration(100) : undefined}
           style={styles.desktopContainer}

@@ -1,14 +1,12 @@
-// Stable data attributes shared by web/desktop materials.
+// `dataSet` values for fork hooks. Hooks that extend an existing upstream attribute write the
+// `data-material` value inline instead (menu, transcript, transcript-content, chat-find).
 export const MATERIAL_SLOTS = {
   scrollControls: { material: "scroll-controls" },
   composerTracks: { material: "composer-tracks" },
-  sessionRow: { material: "session-row" },
   tooltip: { material: "tooltip" },
   toast: { material: "toast" },
   popover: { material: "popover" },
-  combobox: { material: "combobox" },
   autocomplete: { material: "autocomplete" },
-  hoverCard: { material: "hover-card" },
   fullscreen: { material: "fullscreen" },
   chromeStatic: { material: "chrome-static" },
   chrome: { material: "chrome" },
@@ -18,7 +16,6 @@ export const MATERIAL_SLOTS = {
   banner: { material: "banner" },
   window: { material: "window" },
   header: { material: "header" },
-  menu: { material: "menu" },
   dialog: { material: "dialog" },
   sheet: { material: "sheet" },
   dock: { material: "dock" },

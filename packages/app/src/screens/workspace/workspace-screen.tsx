@@ -3862,7 +3862,7 @@ function WorkspaceScreenContent({
       {rendersDesktopSplitContent ? null : (
         <AdaptiveWorkspaceChrome
           compactHeader={compactWorkspaceHeader}
-          activeTab={activeTabDescriptor}
+          materialTab={activeTabDescriptor}
         >
           {fullWorkspaceActions}
           {renderWorkspaceScreenHeader()}

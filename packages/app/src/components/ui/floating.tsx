@@ -1,4 +1,4 @@
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { forwardRef, useMemo, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import {
   ScrollView,
@@ -20,7 +20,8 @@ export const FloatingSurface = forwardRef<View, FloatingSurfaceProps>(function F
   { frameStyle, style, dataSet, ...props },
   ref,
 ): ReactElement {
-  const materialData = useMemo(() => ({ ...MATERIAL_SLOTS.popover, ...dataSet }), [dataSet]);
+  const material = props.role === "tooltip" ? MATERIAL_SLOTS.tooltip : MATERIAL_SLOTS.popover;
+  const materialData = useMemo(() => ({ ...material, ...dataSet }), [material, dataSet]);
   const inlineFrameStyle = useMemo(() => {
     const flattened = StyleSheet.flatten(frameStyle);
     return flattened ? inlineUnistylesStyle(stripUnistylesMetadata(flattened)) : undefined;

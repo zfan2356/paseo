@@ -44,7 +44,7 @@ import {
   setupDragDropPrevention,
   buildStandardContextMenuItems,
 } from "./window/window-manager.js";
-import { materialWindowOptions, setupWindowMaterial } from "./window/material.js";
+import { materialWindowOptions, setupWindowMaterial } from "./fork/materials/window-material.js";
 import { setupDarwinCompositorWatchdog } from "./window/compositor-watchdog/index.js";
 import { showWindowWhenReady } from "./window/show-when-ready.js";
 import { resolveDesktopWindowChromeMode, windowChromeModeArgument } from "./window/chrome.js";
