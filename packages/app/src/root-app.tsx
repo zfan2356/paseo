@@ -1,4 +1,4 @@
-import { Materials } from "@/styles/materials";
+import { Materials } from "@/fork/materials/styles";
 import { RenderProfile } from "@/utils/render-profiler";
 import { useCallback, useState, type ComponentProps } from "react";
 import { ExpoRoot } from "expo-router";

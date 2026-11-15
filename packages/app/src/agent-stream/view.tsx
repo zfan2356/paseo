@@ -1,4 +1,4 @@
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { ChatFind, ChatFindExpansion } from "@/agent-stream/chat-find";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import React, {

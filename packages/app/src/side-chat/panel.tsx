@@ -1,4 +1,4 @@
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";

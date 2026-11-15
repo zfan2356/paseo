@@ -1,5 +1,5 @@
-import { isWeb } from "@/constants/platform";
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
+import { publishComposerClearance } from "@/fork/materials/floating-layout";
 export { ComposerDockBackground } from "./internal/background";
 export { ComposerFullscreenBody, ComposerFullscreenFooter } from "./internal/fullscreen";
 import { ScrollView } from "@/components/ui/scroll-view";
@@ -35,14 +35,6 @@ export function ComposerDock({
     const { width, height } = event.nativeEvent.layout;
     if (height > 0) setSurfaceSize({ width, height });
   }, []);
-  const measureComposer = useCallback((event: import("react-native").LayoutChangeEvent) => {
-    if (isWeb && surfaceRef.current instanceof HTMLElement) {
-      surfaceRef.current.style.setProperty(
-        "--paseo-composer-clearance",
-        event.nativeEvent.layout.height + "px",
-      );
-    }
-  }, []);
   if (centered) {
     return (
       <View ref={surfaceRef} style={styles.centered} onLayout={measureViewport}>
@@ -74,7 +66,7 @@ export function ComposerDock({
       <View style={styles.content}>{content}</View>
       <View
         dataSet={fullscreen ? MATERIAL_SLOTS.solid : MATERIAL_SLOTS.dockComposer}
-        onLayout={measureComposer}
+        onLayout={publishComposerClearance}
         style={
           fullscreen ? [styles.fullscreenComposer, fullscreenFrame] : [styles.composer, constraint]
         }

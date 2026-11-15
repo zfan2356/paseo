@@ -1,4 +1,4 @@
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { useAddHost } from "@/hosts/add-host";
 import { Modal } from "@/components/ui/modal";

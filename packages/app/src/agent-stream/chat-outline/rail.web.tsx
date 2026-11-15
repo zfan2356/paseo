@@ -1,4 +1,4 @@
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, Text, View, type PointerEvent as RNPointerEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";

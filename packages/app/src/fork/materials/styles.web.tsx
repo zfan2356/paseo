@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { getIsElectronMac } from "@/constants/platform";
 import { withUnistyles } from "react-native-unistyles";
-import { MATERIAL, type Theme } from "./theme";
+import type { Theme } from "@/styles/theme";
+import { MATERIAL } from "./tokens";
 
 type MaterialLevel = typeof MATERIAL.glass;
 // Fixed-size glyphs only; a percentage-sized svg (a scrim or fill) takes its box from its parent.
@@ -43,20 +44,20 @@ function MaterialStyles({ theme }: { theme: Theme }) {
     const root = "html";
     style.textContent = `
         ${root} [data-material="window"] { background: ${getIsElectronMac() ? "transparent" : palette.content} !important; }
-        ${root} [data-material="dock"], ${root} [data-testid="agent-chat-scroll"] { background: ${palette.content}; }
+        ${root} [data-material="dock"], ${root} [data-material="transcript"] { background: ${palette.content}; }
         ${root} [data-material="chrome"] {
           position: absolute; top: 0; left: 0; right: 0; z-index: 10;
         }
         ${root} [data-material="chrome"] div { border-color: transparent !important; }
         ${root} [data-material="chrome"] div:not([role="button"]) { background-color: transparent !important; }
         ${root} [data-material="chrome"] [data-material="header"] { background: transparent !important; backdrop-filter: none; }
-        ${root} [data-chat-find-widget="true"] { transform: translateY(var(--paseo-chrome-clearance, 0px)); }
+        ${root} [data-material="chat-find"] { transform: translateY(var(--paseo-chrome-clearance, 0px)); }
         ${root} [data-material="dock-composer"] { position: absolute; bottom: 0; }
         ${root} [data-material="dock"] [data-material="scroll-controls"], ${root} [data-material="dock"] [data-material="composer-tracks"] { transform: translateY(calc(-1 * var(--paseo-composer-clearance, 0px))); }
-        ${root} [data-testid="agent-chat-scroll"] > div::before {
+        ${root} [data-material="transcript-content"]::before {
           content: ""; display: block; flex-shrink: 0; height: calc(var(--paseo-chrome-clearance, 0px) + 40px);
         }
-        ${root} [data-material="dock"] [data-testid="agent-chat-scroll"] > div::after {
+        ${root} [data-material="dock"] [data-material="transcript-content"]::after {
           content: ""; display: block; flex-shrink: 0; height: var(--paseo-composer-clearance, 180px);
         }
         ${root} [data-material="secondary"], ${root} [data-material="secondary-expanded"] {

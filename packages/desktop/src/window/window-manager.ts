@@ -1,4 +1,4 @@
-import { updateMaterialBackground } from "./material.js";
+import { updateMaterialBackground } from "../fork/materials/window-material.js";
 import {
   app,
   BrowserWindow,

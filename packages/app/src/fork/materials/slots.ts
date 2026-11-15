@@ -1,4 +1,4 @@
-// Stable data attributes shared by web/desktop materials.
+// `data-material` values the fork sets on upstream components; styles.web.tsx selects only these.
 export const MATERIAL_SLOTS = {
   scrollControls: { material: "scroll-controls" },
   composerTracks: { material: "composer-tracks" },
@@ -6,9 +6,7 @@ export const MATERIAL_SLOTS = {
   tooltip: { material: "tooltip" },
   toast: { material: "toast" },
   popover: { material: "popover" },
-  combobox: { material: "combobox" },
   autocomplete: { material: "autocomplete" },
-  hoverCard: { material: "hover-card" },
   fullscreen: { material: "fullscreen" },
   chromeStatic: { material: "chrome-static" },
   chrome: { material: "chrome" },
@@ -25,4 +23,7 @@ export const MATERIAL_SLOTS = {
   dockComposer: { material: "dock-composer" },
   composer: { material: "composer" },
   solid: { material: "solid" },
+  transcript: { material: "transcript" },
+  transcriptContent: { material: "transcript-content" },
+  chatFind: { material: "chat-find" },
 } as const;

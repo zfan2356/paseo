@@ -44,7 +44,7 @@ const source = fs.readFileSync("packages/app/src/styles/theme.ts", "utf8");
 const tokens = runInNewContext(
   "(" + source.match(/export const MATERIAL = (\{[\s\S]*?\n\}) as const;/)[1] + ")",
 );
-const slotsSource = fs.readFileSync("packages/app/src/styles/material-slots.ts", "utf8");
+const slotsSource = fs.readFileSync("packages/app/src/fork/materials/slots.ts", "utf8");
 const slots = runInNewContext(
   "(" + slotsSource.match(/export const MATERIAL_SLOTS = (\{[\s\S]*?\n\}) as const;/)[1] + ")",
 );

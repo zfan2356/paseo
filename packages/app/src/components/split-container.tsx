@@ -786,7 +786,7 @@ const SplitPaneView = memo(function SplitPaneView({
         style={styles.pane}
         testID={`workspace-pane-${pane.id}`}
       >
-        <AdaptiveWorkspaceChrome compactHeader={compactHeader} activeTab={activeTabDescriptor}>
+        <AdaptiveWorkspaceChrome compactHeader={compactHeader} materialTab={activeTabDescriptor}>
           {renderMainHeader?.()}
           <WindowChromeRegion corners={focusModeEnabled ? "both" : "none"}>
             <WindowChromeSafeArea placement="inline" style={styles.paneTabs}>

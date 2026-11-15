@@ -29,7 +29,7 @@ const FAILURE_TEXT: Record<ChatFindFailure, string> = {
   historyChanged: "paneFind.historyChangedFailure",
   reveal: "paneFind.revealFailure",
 };
-const WIDGET_DATASET = { chatFindWidget: "true" };
+const WIDGET_DATASET = { chatFindWidget: "true", material: "chat-find" };
 const ROOT_STYLE = {
   display: "flex",
   flex: 1,

@@ -1,4 +1,4 @@
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import type { ReactElement } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";

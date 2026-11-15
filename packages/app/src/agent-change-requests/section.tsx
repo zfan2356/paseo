@@ -1,6 +1,6 @@
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { isWeb } from "@/constants/platform";
-import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { getForgeDefinitionOrNeutral } from "@getpaseo/protocol/forge-manifest";
 import { ControlSizeProvider } from "@/components/ui/control-size";
 import { useIsCompactFormFactor } from "@/constants/layout";
