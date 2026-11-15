@@ -5421,8 +5421,11 @@ export class DaemonClient {
     requestId?: string,
   ): Promise<WorkspaceCreatePayload> {
     const resolvedRequestId = this.createRequestId(requestId ?? input.requestId);
+    const needsAutomaticProjectSelection = input.automatic && !input.source.projectId;
+    const automaticProjectsSupported =
+      this.lastServerInfoMessage?.features?.automaticTaskProjects === true;
     // COMPAT(automaticTaskProjects): added in v0.15.3; remove after 2027-05-15.
-    if (input.automatic && this.lastServerInfoMessage?.features?.automaticTaskProjects !== true)
+    if (needsAutomaticProjectSelection && !automaticProjectsSupported)
       throw new Error("Update the host to use automatic task projects.");
     if (input.background !== undefined || input.callerAgentId) this.requireBackgroundWorkspaces();
     if (input.agent?.background !== undefined)
