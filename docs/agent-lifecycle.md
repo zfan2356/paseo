@@ -141,12 +141,13 @@ normal root agent immediately, and closing its still-open tab archives it.
 
 Agent-scoped directory workspace creation defaults to the caller workspace's project. An explicit
 project takes precedence; the child keeps its own workspace ID and execution directory. Worktree
-creation resolves its source project separately. Project identity is local to the target daemon;
+creation keeps a registered source project's ownership before considering caller/default ownership;
+clients use project kind to enable Git actions. Project identity is local to the target daemon;
 an external task system's project ID is not a Paseo project ID.
 
 The CLI marks workspace creation inside a managed Multica task using its existing `MULTICA_TASK_ID`
-environment marker. The value is never used as a Paseo ID. Automatic creation without an explicit
-project or verified caller uses the target daemon's “自动任务” project. Its dedicated root under
+environment marker. The value is never used as a Paseo ID. Automatic creation with no explicit or
+registered source project and no verified caller uses the target daemon's “自动任务” project. Its dedicated root under
 `PASEO_HOME/automatic-tasks` identifies it across concurrent calls, renames and restarts; a same-named
 project elsewhere is unrelated. A later automatic task restores that project if it was archived.
 Each task retains its own workspace and execution directory. Manual creation without caller or

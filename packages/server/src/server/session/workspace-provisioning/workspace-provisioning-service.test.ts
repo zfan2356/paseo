@@ -447,6 +447,68 @@ test.each([false, true])(
   },
 );
 
+test.each([
+  { registration: "workspace", withCaller: false },
+  { registration: "workspace", withCaller: true },
+  { registration: "project", withCaller: false },
+  { registration: "project", withCaller: true },
+])(
+  "automatic worktree keeps its registered $registration source project (caller: $withCaller)",
+  async ({ registration, withCaller }) => {
+    const sourceCwd = path.join(tmpDir, "registered-repo");
+    gitRoots.add(sourceCwd);
+    const sourceProject = await provisioning.findOrCreateProjectForDirectory(sourceCwd);
+    if (registration === "workspace")
+      await provisioning.createWorkspaceForDirectory(sourceCwd, null, sourceProject.projectId);
+    const caller = await provisioning.createWorkspaceForDirectory(
+      path.join(tmpDir, "other-project"),
+    );
+    const cwd = path.join(tmpDir, "registered-review");
+    const child = await provisioning.createWorkspaceForWorktree({
+      sourceCwd,
+      repoRoot: sourceCwd,
+      cwd,
+      worktreeRoot: cwd,
+      branch: "review",
+      baseBranch: "main",
+      title: null,
+      automatic: true,
+      callerWorkspaceId: withCaller ? caller.workspaceId : undefined,
+    });
+    expect(child).toMatchObject({ projectId: sourceProject.projectId, cwd });
+    expect(child.workspaceId).not.toBe(caller.workspaceId);
+    expect(await projectRegistry.get(child.projectId)).toMatchObject({ kind: "git" });
+    expect(await projectRegistry.list()).toHaveLength(2);
+  },
+);
+
+test("automatic default metadata stays consistent when the daemon home is inside Git", async () => {
+  gitRoots.add(tmpDir);
+  let writes = 0;
+  const unsubscribe = projectRegistry.subscribeToMutations(() => {
+    writes++;
+  });
+  try {
+    const first = await provisioning.createWorkspaceForDirectory(
+      path.join(tmpDir, "task-one"),
+      null,
+      undefined,
+      { automatic: true },
+    );
+    const second = await provisioning.createWorkspaceForDirectory(
+      path.join(tmpDir, "task-two"),
+      null,
+      undefined,
+      { automatic: true },
+    );
+    expect(second.projectId).toBe(first.projectId);
+    expect(await projectRegistry.get(first.projectId)).toMatchObject({ kind: "git" });
+    expect(writes).toBe(1);
+  } finally {
+    unsubscribe();
+  }
+});
+
 test.each(["archived", "missing"])(
   "directory children reject a %s parent project without registering their cwd",
   async (state) => {

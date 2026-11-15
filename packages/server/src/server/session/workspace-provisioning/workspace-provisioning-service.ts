@@ -64,6 +64,9 @@ type WorkspaceProjectSelection = Pick<
   "projectId" | "callerWorkspaceId" | "automatic"
 >;
 
+type WorktreeProjectSelection = WorkspaceProjectSelection &
+  Pick<CreateWorktreeWorkspaceInput, "sourceCwd" | "repoRoot">;
+
 export interface WorkspaceProvisioningService {
   runInImportWorkspace<T>(
     input: ImportWorkspaceInput,
@@ -237,6 +240,12 @@ export function createWorkspaceProvisioningService(deps: {
   }
 
   async function resolveCreationProjectId(
+    input: WorkspaceProjectSelection & { automatic: true },
+  ): Promise<string>;
+  async function resolveCreationProjectId(
+    input: WorkspaceProjectSelection,
+  ): Promise<string | undefined>;
+  async function resolveCreationProjectId(
     input: WorkspaceProjectSelection,
   ): Promise<string | undefined> {
     if (input.projectId) return input.projectId;
@@ -249,17 +258,19 @@ export function createWorkspaceProvisioningService(deps: {
     const rootPath = deps.automaticProjectRoot;
     if (!rootPath) throw new Error("Automatic task project root is not configured");
     await mkdir(rootPath, { recursive: true });
+    const checkout = await workspaceGitService.getCheckout(rootPath);
+    const kind = checkout.isGit ? "git" : "non_git";
     const project = await projectRegistry.getOrCreateActiveByRoot({
       rootPath,
       reuseArchived: true,
-      kind: "non_git",
+      kind,
       displayName: "自动任务",
       projectKey: deriveProjectKey({
         rootPath,
         serverId,
-        remoteUrl: null,
-        worktreeRoot: null,
-        mainRepoRoot: null,
+        remoteUrl: checkout.remoteUrl,
+        worktreeRoot: checkout.worktreeRoot,
+        mainRepoRoot: checkout.mainRepoRoot,
       }),
       timestamp: new Date().toISOString(),
     });
@@ -342,15 +353,16 @@ export function createWorkspaceProvisioningService(deps: {
     input: CreateWorktreeWorkspaceInput,
   ): Promise<PersistedWorkspaceRecord> {
     const creationMetadata = await resolveCreationMetadata(input);
-    const projectId = input.automatic ? await resolveCreationProjectId(input) : input.projectId;
     const sourceCwd = resolve(input.sourceCwd);
     const repoRoot = resolve(input.repoRoot);
     const cwd = resolve(input.cwd);
     const worktreeRoot = resolve(input.worktreeRoot);
     const project = await resolveSourceProjectForWorktree({
       sourceCwd,
-      projectId,
+      projectId: input.projectId,
       repoRoot,
+      automatic: input.automatic,
+      callerWorkspaceId: input.callerWorkspaceId,
     });
     const timestamp = new Date().toISOString();
     const workspace = createPersistedWorkspaceRecord({
@@ -383,11 +395,9 @@ export function createWorkspaceProvisioningService(deps: {
     });
   }
 
-  async function resolveSourceProjectForWorktree(input: {
-    sourceCwd: string;
-    projectId?: string;
-    repoRoot: string;
-  }): Promise<PersistedProjectRecord> {
+  async function resolveSourceProjectForWorktree(
+    input: WorktreeProjectSelection,
+  ): Promise<PersistedProjectRecord> {
     if (input.projectId) {
       return refreshProjectKind(await requireActiveProject(input.projectId));
     }
@@ -404,7 +414,23 @@ export function createWorkspaceProvisioningService(deps: {
       const project = await projectRegistry.get(sourceWorkspace.projectId);
       if (project) return refreshProjectKind(project);
       // COMPAT(worktreeMissingSourceProject): added in v0.1.107, remove after 2027-01-15.
-      // Orphaned legacy workspace FKs fall through to exact-root allocation.
+      // Orphaned legacy workspace FKs leave source ownership unresolved.
+    }
+
+    if (input.automatic) {
+      const projects = (await projectRegistry.list())
+        .filter((project) => !project.archivedAt)
+        .sort(
+          (left, right) =>
+            Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+            left.projectId.localeCompare(right.projectId),
+        );
+      const registeredSource =
+        projects.find((project) => areEquivalentPaths(project.rootPath, input.sourceCwd)) ??
+        projects.find((project) => areEquivalentPaths(project.rootPath, input.repoRoot));
+      if (registeredSource) return refreshProjectKind(registeredSource);
+      const ownerProjectId = await resolveCreationProjectId({ ...input, automatic: true });
+      return refreshProjectKind(await requireActiveProject(ownerProjectId));
     }
 
     const checkout = await workspaceGitService.getCheckout(input.repoRoot);

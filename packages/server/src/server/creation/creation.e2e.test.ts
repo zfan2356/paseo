@@ -42,6 +42,7 @@ interface ReviewCliInput {
   cwd: string;
   env: NodeJS.ProcessEnv;
   newWorkspace?: boolean;
+  isolation?: "local" | "worktree";
 }
 
 async function runReviewCli(input: ReviewCliInput): Promise<string> {
@@ -61,13 +62,92 @@ async function runReviewCli(input: ReviewCliInput): Promise<string> {
     input.cwd,
     "--json",
   ];
-  if (input.newWorkspace !== false) args.push("--new-workspace", "local");
+  if (input.newWorkspace !== false) args.push("--new-workspace", input.isolation ?? "local");
+  if (input.isolation === "worktree") {
+    args.push(
+      "--worktree-mode",
+      "branch-off",
+      "--worktree-slug",
+      "registered-review",
+      "--new-branch",
+      "review/registered-source",
+      "--base",
+      "main",
+    );
+  }
   const result = await promisify(execFile)(process.execPath, args, {
     env: input.env,
     timeout: 15000,
   });
   return z.object({ agentId: z.string() }).parse(JSON.parse(result.stdout)).agentId;
 }
+
+test("managed worktree CLI preserves an empty registered Git project across a foreign caller", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "automatic-source-project-"));
+  const source = join(directory, "registered-repo");
+  const callerDirectory = join(directory, "caller-project");
+  await mkdir(source);
+  await mkdir(callerDirectory);
+  execFileSync("git", ["init", source]);
+  execFileSync("git", [
+    "-C",
+    source,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "initial",
+  ]);
+  execFileSync("git", ["-C", source, "branch", "-M", "main"]);
+  const daemon = await createCreationDaemon();
+  const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+  try {
+    await client.connect();
+    await client.fetchAgents();
+    await client.addProject(source);
+    const project = (await client.listProjects()).projects.find(
+      (entry) => entry.projectRootPath === source,
+    );
+    if (!project) throw new Error("Registered source project missing");
+    const caller = await client.createWorkspace({
+      source: { kind: "directory", path: callerDirectory },
+      agent: { config: { provider: "codex", cwd: callerDirectory } },
+    });
+    if (!caller.agent || !caller.workspace) throw new Error("Caller creation failed");
+    expect((await client.fetchWorkspaces()).entries).toHaveLength(1);
+    const agentId = await runReviewCli({
+      port: daemon.port,
+      cwd: source,
+      isolation: "worktree",
+      env: {
+        ...process.env,
+        MULTICA_TASK_ID: "managed-source-review",
+        PASEO_AGENT_ID: caller.agent.id,
+      },
+    });
+    const agent = await client.fetchAgent({ agentId });
+    const workspace = (await client.fetchWorkspaces()).entries.find(
+      (entry) => entry.id === agent?.agent.workspaceId,
+    );
+    expect(workspace).toMatchObject({
+      projectId: project.projectId,
+      projectKind: "git",
+      workspaceKind: "worktree",
+      parentWorkspaceId: caller.workspace.id,
+    });
+    expect(agent?.agent.cwd).toBe(workspace?.workspaceDirectory);
+    expect(agent?.agent.cwd).not.toBe(source);
+    expect(workspace?.projectId).not.toBe(caller.workspace.projectId);
+    expect((await client.listProjects()).projects).toHaveLength(2);
+  } finally {
+    await client.close();
+    await daemon.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30000);
 
 test.each(["non-git", "linked-worktree"])(
   "managed review CLI without project context shares a host project across concurrent calls and restart (%s)",
