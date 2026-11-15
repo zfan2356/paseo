@@ -48,7 +48,7 @@ Fork-only feature files (`agent-change-requests/section.tsx`, `side-chat/panel.t
    npx playwright test e2e/browser/materials.spec.ts --project=browser
    ```
 
-   They check the sidebar, floating chrome geometry, composer pills and tab scrim against the real app. A failure means a selector or hook lost its target.
+   They check the sidebar, floating chrome geometry, composer pills and tab scrim against the real app. A failure means a selector or hook lost its target. The specs locate some elements by upstream `data-testid` (`agent-chat-scroll`, `context-window-details`, `combobox-desktop-container`); the stylesheet does not. When upstream renames one, the locator fails before any material check runs: update the locator, not the layer.
 
 4. If the merge touched any file in the hook list, compare pixels against the pre-merge revision. Capture on the old revision, then check on the new one:
 

@@ -1,8 +1,8 @@
-// `data-material` values the fork sets on upstream components; styles.web.tsx selects only these.
+// `dataSet` values for fork hooks. Hooks that extend an existing upstream attribute write the
+// `data-material` value inline instead (menu, transcript, transcript-content, chat-find).
 export const MATERIAL_SLOTS = {
   scrollControls: { material: "scroll-controls" },
   composerTracks: { material: "composer-tracks" },
-  sessionRow: { material: "session-row" },
   tooltip: { material: "tooltip" },
   toast: { material: "toast" },
   popover: { material: "popover" },
@@ -16,14 +16,10 @@ export const MATERIAL_SLOTS = {
   banner: { material: "banner" },
   window: { material: "window" },
   header: { material: "header" },
-  menu: { material: "menu" },
   dialog: { material: "dialog" },
   sheet: { material: "sheet" },
   dock: { material: "dock" },
   dockComposer: { material: "dock-composer" },
   composer: { material: "composer" },
   solid: { material: "solid" },
-  transcript: { material: "transcript" },
-  transcriptContent: { material: "transcript-content" },
-  chatFind: { material: "chat-find" },
 } as const;

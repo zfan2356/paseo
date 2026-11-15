@@ -66,7 +66,6 @@ function MaterialStyles({ theme }: { theme: Theme }) {
         }
         ${root} [data-material="secondary"] [role="button"] { min-height: 28px; padding: 4px 10px; }
         ${root} [data-material="secondary"] [role="button"] div { font-size: 12px !important; }
-        ${root} [data-material="session-row"] { margin: 2px 8px; border-radius: 12px; padding: 4px 8px; }
         ${root} [data-material="banner"] {
           margin: ${t.spacing.banner}px; width: calc(100% - ${t.spacing.banner * 2}px); padding: 16px;
           gap: ${t.spacing.banner}px;
