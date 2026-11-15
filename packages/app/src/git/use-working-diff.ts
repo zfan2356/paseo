@@ -9,11 +9,15 @@ import {
   useReviewAttachmentSnapshot,
   useReviewFeedback,
 } from "@/review";
+import { useSessionStore } from "@/stores/session-store";
+import { diffEntryHeaders } from "./diff-snapshot";
 import { useCheckoutDiffQuery } from "@/git/use-diff-query";
 import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useWorkingDiffComparison } from "@/git/working-diff-comparison";
 
 interface UseWorkingDiffOptions {
+  sessionAgentId?: string;
+  directory?: string;
   serverId: string;
   workspaceId?: string;
   cwd: string;
@@ -24,6 +28,8 @@ interface UseWorkingDiffOptions {
 }
 
 export function useWorkingDiff({
+  sessionAgentId,
+  directory,
   serverId,
   workspaceId,
   cwd,
@@ -44,13 +50,19 @@ export function useWorkingDiff({
   const statusErrorMessage =
     status?.error?.message ??
     (isStatusError && statusError instanceof Error ? statusError.message : null);
-  const baseRef = gitStatus?.baseRef ?? undefined;
+  const modernDiff = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.diffSubscription === true,
+  );
+  // COMPAT(diffSubscription): added in v0.15.0, remove after 2027-05-06.
+  const baseRef = (modernDiff ? gitStatus?.comparisonBaseRef : gitStatus?.baseRef) ?? undefined;
   const currentBranchName =
     gitStatus?.currentBranch && gitStatus.currentBranch !== "HEAD" ? gitStatus.currentBranch : null;
 
   const { comparison: diffMode, selectComparison } = useWorkingDiffComparison({
     serverId,
     workspaceId,
+    sessionAgentId,
+    directory,
     cwd,
   });
   const selectUncommitted = useCallback(() => selectComparison("uncommitted"), [selectComparison]);
@@ -59,6 +71,7 @@ export function useWorkingDiff({
 
   const {
     files,
+    entries,
     payloadError: diffPayloadError,
     diffTooLarge,
     isLoading: isDiffLoading,
@@ -71,17 +84,20 @@ export function useWorkingDiff({
     enabled: enabled && isGit,
     queryScope,
   });
+  const treeFiles = useMemo(() => (entries ? diffEntryHeaders(entries) : files), [entries, files]);
   const reviewDraftKey = useMemo(
     () =>
       buildReviewDraftKey({
         serverId,
         workspaceId,
+        sessionAgentId,
+        directory,
         cwd,
         mode: diffMode,
         baseRef,
         ignoreWhitespace,
       }),
-    [baseRef, cwd, diffMode, ignoreWhitespace, serverId, workspaceId],
+    [baseRef, cwd, diffMode, ignoreWhitespace, serverId, workspaceId, sessionAgentId, directory],
   );
   const reviewActions = useInlineReviewController({ reviewDraftKey, presentation });
   const reviewAttachment = useReviewAttachmentSnapshot({
@@ -112,6 +128,7 @@ export function useWorkingDiff({
     selectBase,
     selectAll,
     files,
+    treeFiles,
     diffPayloadError,
     diffTooLarge,
     isDiffLoading,
@@ -122,6 +139,8 @@ export function useWorkingDiff({
 }
 
 export function usePublishWorkingDiffAttachment({
+  directory,
+  sessionAgentId,
   serverId,
   workspaceId,
   cwd,
@@ -131,12 +150,15 @@ export function usePublishWorkingDiffAttachment({
   serverId: string;
   workspaceId?: string;
   cwd: string;
+  sessionAgentId?: string;
+  directory?: string;
   attachment: ReturnType<typeof useWorkingDiff>["reviewAttachment"];
   enabled: boolean;
 }) {
   const scopeKey = useMemo(
-    () => buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd }),
-    [cwd, serverId, workspaceId],
+    () =>
+      buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd, sessionAgentId, directory }),
+    [cwd, serverId, workspaceId, sessionAgentId, directory],
   );
   const setWorkspaceAttachments = useWorkspaceAttachmentsStore(
     (state) => state.setWorkspaceAttachments,

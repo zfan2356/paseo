@@ -211,6 +211,8 @@ paseo workspace rename <workspace-id> --reset   # back to the branch or director
 paseo workspace archive <workspace-id>
 ```
 
+Inside an agent session, `PASEO_WORKSPACE_ID` holds the agent's own workspace ID, so an agent can run `paseo workspace rename "$PASEO_WORKSPACE_ID" "Auth rework"` or `paseo workspace archive "$PASEO_WORKSPACE_ID"` even when other workspaces share its directory.
+
 Add `--forge <name>` to PR checkout when Paseo cannot infer the forge from the source checkout. See [Git worktrees](/docs/worktrees) for setup hooks and services.
 
 ## Terminals
@@ -267,7 +269,14 @@ paseo plugin logs my-plugin
 paseo plugin disable my-plugin
 paseo plugin enable my-plugin
 paseo plugin remove my-plugin
+paseo plugin rpc my-plugin method.name --input-json '{"key":"value"}' --json
 ```
+
+`plugin rpc` invokes a method contributed by an enabled plugin on the selected
+daemon. `--json` prints the method's output directly. Supply `--input-json -`
+to read JSON from stdin when input contains secrets; command-line arguments
+may be visible to other local processes. Invalid JSON fails before connecting.
+RPC errors exit nonzero, and the command closes its client after the response.
 
 `paseo plugin reload <id>` reports the result of the reload itself: it waits while the daemon stops
 and starts the plugin, however long that takes, and it queues behind the daemon's other plugin work.
@@ -289,10 +298,10 @@ behavior.
 
 ```bash
 paseo ls                    # Non-archived agents in active workspaces
-paseo ls -a                 # Also include archived agents
+paseo ls -a                 # Also include archived and background agents, with a BACKGROUND column
 paseo ls -g                 # Non-archived agents across all workspaces
 paseo ls -a -g --json       # All agents, including archived, as JSON
-paseo ls --background       # Also include agents in background workspaces
+paseo ls --background       # Also include background agents and agents in background workspaces
 ```
 
 ## Streaming output
@@ -316,9 +325,34 @@ paseo send <id> "now run the tests"
 paseo send <id> --image screenshot.png "what's wrong here?"
 paseo send <id> --no-wait "run this task"
 paseo send <id> --behavior interrupt "stop and do this instead"
+paseo send <id> --if-idle --message-id deploy-2026-10-23 --prompt-file task.md --no-wait --json
 ```
 
 Agent-originated sends (`PASEO_AGENT_ID` set) default to steering the running turn. Other sends default to interrupting it. Use `--behavior steer` or `--behavior interrupt` to override the default. Steering uses the same fallback as the client: if steering is unavailable, the running turn is interrupted and replaced.
+
+Use `--if-idle` when a message must only start a turn in an idle session. If a turn is active or being admitted, the host accepts nothing and the command fails with `agent_busy`; it never steers, interrupts, or queues the message. `--if-idle` requires a nonempty `--message-id` and cannot be combined with `--behavior`. Reuse the same `--message-id` when retrying: the host deduplicates completed messages and reports conflicting content.
+
+`--message-id` also works for ordinary sends. With `--json`, an idle-only rejection exits nonzero and writes the native reason to stderr:
+
+```json
+{ "error": { "code": "agent_busy", "message": "agent_busy" } }
+```
+
+Hosts without idle-only support fail with `DAEMON_UPDATE_REQUIRED` and an update instruction; they never fall back to a normal send. An accepted `--no-wait` result carries the canonical agent ID and `"status": "sent"`.
+
+Check the durable receipt for a stable message ID without sending it again:
+
+```bash
+paseo agent receipt <id> deploy-2026-10-23 --json
+```
+
+The result carries the canonical agent ID, the message ID, and one of these statuses:
+
+- `accepted`: the host's provider accepted the turn start for this identity.
+- `pending`: a receipt exists but completion was not recorded; the outcome is unknown. Do not retry blindly.
+- `absent`: no local receipt was found. This does not prove the message never ran.
+
+An unreadable receipt is an error, not `absent`. Hosts without receipt lookup fail with `DAEMON_UPDATE_REQUIRED`.
 
 ## Viewing logs
 

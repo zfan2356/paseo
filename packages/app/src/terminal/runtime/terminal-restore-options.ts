@@ -1,3 +1,4 @@
+import { i18n } from "@/i18n/i18next";
 import type { SubscribeTerminalRequest } from "@getpaseo/protocol/messages";
 
 // Visible-snapshot restore paints the current viewport only. Extra scrollback is
@@ -7,15 +8,16 @@ export const TERMINAL_VISIBLE_RESTORE_SCROLLBACK_LINES = 0;
 
 export interface ResolveTerminalRestoreOptionsInput {
   supportsTerminalRestoreModes: boolean;
+  scrollbackLines: number;
   canClaimSize: boolean;
   size: { rows: number; cols: number } | null;
 }
 
 export function resolveTerminalRestoreOptions(
   input: ResolveTerminalRestoreOptionsInput,
-): SubscribeTerminalRequest["restore"] | undefined {
+): NonNullable<SubscribeTerminalRequest["restore"]> {
   if (!input.supportsTerminalRestoreModes) {
-    return undefined;
+    throw new Error(i18n.t("workspace.terminal.restoreRequiresUpdate"));
   }
 
   return {

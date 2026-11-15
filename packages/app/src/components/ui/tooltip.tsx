@@ -1,3 +1,5 @@
+import { MATERIAL_SLOTS } from "@/styles/material-slots";
+import { Modal } from "@/components/ui/modal";
 import {
   Children,
   cloneElement,
@@ -16,7 +18,6 @@ import { createPortal } from "react-dom";
 import {
   Dimensions,
   Platform,
-  Modal,
   Pressable,
   View,
   type PressableProps,
@@ -27,6 +28,7 @@ import { FadeIn, FadeOut } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { FloatingSurface } from "@/components/ui/floating";
+import { useRetainedPanelActive } from "@/components/retained-panel";
 import { isNative, isWeb } from "@/constants/platform";
 import { getOverlayRoot, OVERLAY_Z } from "@/lib/overlay-root";
 
@@ -256,8 +258,15 @@ export function Tooltip({
   });
 
   const isCompact = useIsCompactFormFactor();
+  const active = useRetainedPanelActive();
   const opensOnPress = isNative || isCompact;
-  const enabled = opensOnPress ? enabledOnMobile : enabledOnDesktop;
+  const enabled = active && (opensOnPress ? enabledOnMobile : enabledOnDesktop);
+
+  // Remove the portal in the inactive commit, before the retained chat freezes.
+  // Closing also prevents the tooltip from returning when its panel is shown again.
+  useEffect(() => {
+    if (!active && isOpen) setIsOpen(false);
+  }, [active, isOpen, setIsOpen]);
 
   const value = useMemo<TooltipContextValue>(
     () => ({
@@ -328,6 +337,10 @@ export function TooltipTrigger({
       clearOpenTimer();
     };
   }, [clearOpenTimer]);
+
+  useEffect(() => {
+    if (!ctx.enabled) clearOpenTimer();
+  }, [ctx.enabled, clearOpenTimer]);
 
   const handleHoverIn = useCallback(
     (e?: unknown) => {
@@ -537,6 +550,7 @@ export function TooltipContent({
           exiting={FadeOut.duration(80)}
           collapsable={false}
           role="tooltip"
+          dataSet={MATERIAL_SLOTS.tooltip}
           testID={testID}
           onLayout={handleLayout}
           style={contentStyle}
@@ -564,6 +578,7 @@ export function TooltipContent({
           exiting={FadeOut.duration(80)}
           collapsable={false}
           role="tooltip"
+          dataSet={MATERIAL_SLOTS.tooltip}
           testID={testID}
           onLayout={handleLayout}
           style={contentStyle}
