@@ -3,6 +3,7 @@ import type { Theme } from "@/styles/theme";
 
 export function toPluginTheme(theme: Theme): PluginTheme {
   return {
+    colorScheme: theme.colorScheme,
     colors: {
       surface0: theme.colors.surface0,
       surface1: theme.colors.surface1,

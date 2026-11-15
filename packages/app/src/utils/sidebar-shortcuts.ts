@@ -5,6 +5,7 @@ import type {
 import type { StatusGroup } from "@/hooks/sidebar-status-view-model";
 
 export interface SidebarShortcutWorkspaceTarget {
+  agentId?: string;
   serverId: string;
   workspaceId: string;
 }
@@ -97,7 +98,8 @@ export function getRelativeSidebarShortcutTarget(input: {
   const currentIndex = input.targets.findIndex(
     (target) =>
       target.serverId === currentTarget.serverId &&
-      target.workspaceId === currentTarget.workspaceId,
+      target.workspaceId === currentTarget.workspaceId &&
+      (!currentTarget.agentId || target.agentId === currentTarget.agentId),
   );
   if (currentIndex < 0) {
     return input.targets[input.delta > 0 ? 0 : input.targets.length - 1] ?? null;

@@ -1,5 +1,7 @@
 import type { TerminalCell, TerminalState } from "./messages.js";
 
+// COMPAT(forkTerminalWorker): only draining NDJSON workers still return cell grids.
+// Remove this serializer with legacy-worker-connection.ts once those workers drain.
 interface TerminalStyle {
   fg: number | undefined;
   bg: number | undefined;

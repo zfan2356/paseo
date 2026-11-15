@@ -196,3 +196,13 @@ describe("plugin panel tab identity", () => {
     expect(agent).toBe("plugin_agent_6_review_7_details_7_agent-1");
   });
 });
+
+it("keeps explicit directory targets distinct across sessions and persisted normalization", () => {
+  const first = { kind: "files", directory: "/repo", sessionAgentId: "one" } as const;
+  const second = { kind: "files", directory: "/repo", sessionAgentId: "two" } as const;
+  expect(normalizeWorkspaceTabTarget(first)).toEqual(first);
+  expect(workspaceTabTargetsEqual(first, second)).toBe(false);
+  expect(
+    workspaceTabTargetsEqual(first, { kind: "files", directory: "/other", sessionAgentId: "one" }),
+  ).toBe(false);
+});

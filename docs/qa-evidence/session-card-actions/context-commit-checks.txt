@@ -1,0 +1,101 @@
+╭───────────────────────────────────╮
+│ lefthook v2.1.6  hook: pre-commit │
+╰───────────────────────────────────╯
+┃  format ❯ 
+
+
+> paseo@0.15.3 format:check:files
+> oxfmt --check packages/app/e2e/browser/sidebar-model-b.spec.ts packages/app/src/session-navigation/menu.tsx packages/app/src/session-navigation/operations.ts packages/app/src/session-navigation/sidebar.tsx
+
+Checking formatting...
+
+All matched files use the correct format.
+Finished in 274ms on 4 files using 32 threads.
+
+┃  lint ❯ 
+
+
+> paseo@0.15.3 lint
+> oxlint packages/app/e2e/browser/sidebar-model-b.spec.ts packages/app/src/session-navigation/menu.tsx packages/app/src/session-navigation/operations.ts packages/app/src/session-navigation/sidebar.tsx
+
+Found 0 warnings and 0 errors.
+Finished in 503ms on 4 files with 177 rules using 32 threads.
+
+┃  typecheck ❯ 
+
+
+> paseo@0.15.3 typecheck
+> npm run typecheck --workspaces --if-present
+
+
+> @getpaseo/builtin-plugins@0.15.3 typecheck
+> tsgo -p tsconfig.json --noEmit
+
+
+> @getpaseo/expo-two-way-audio@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/highlight@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/plugin@0.15.3 typecheck
+> tsgo --noEmit && npm run typecheck:examples
+
+
+> @getpaseo/plugin@0.15.3 typecheck:examples
+> npm --prefix ../../plugin-examples/markdown-panel install --ignore-scripts --no-audit --no-fund && tsgo -p tsconfig.examples.json --noEmit
+
+
+up to date in 280ms
+
+> @getpaseo/protocol@0.15.3 pretypecheck
+> npm run generate:validators
+
+
+> @getpaseo/protocol@0.15.3 generate:validators
+> node scripts/generate-validation-aot.mjs
+
+generated src/generated/validation/ws-outbound.aot.ts: envelope + 261 session message validators
+
+> @getpaseo/protocol@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/client@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/server@0.15.3 typecheck
+> tsgo -p tsconfig.server.typecheck.json --noEmit
+
+
+> @getpaseo/app@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/relay@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/website@0.15.3 typecheck
+> tsgo --noEmit
+
+
+> @getpaseo/desktop@0.15.3 typecheck
+> tsgo --noEmit -p tsconfig.json
+
+
+> @getpaseo/cli@0.15.3 typecheck
+> tsgo --noEmit
+
+
+                                      
+  ────────────────────────────────────
+summary: (done in 31.96 seconds)      
+✓ format (0.65 seconds)
+✓ lint (0.87 seconds)
+✓ typecheck (31.92 seconds)
+[agent/sol/work-389 983e03355] fix(app): keep basic session actions on hosts without context
+ 4 files changed, 90 insertions(+), 7 deletions(-)

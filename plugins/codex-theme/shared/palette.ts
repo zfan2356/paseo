@@ -1,0 +1,50 @@
+export const CODEX_THEME_ID = "codex-theme/theme/codex";
+
+export const codexPalette = {
+  surface0: "#212121",
+  surface1: "#262626",
+  surface2: "#2f2f2f",
+  surface3: "#3d3d3d",
+  surface4: "#4a4a4a",
+  surfaceDiffEmpty: "#282828",
+  surfaceSidebar: "#171717",
+  foregroundMuted: "#9b9b9b",
+  foregroundExtraMuted: "#6e6e6e",
+  border: "#2a2a2a",
+  borderAccent: "#333333",
+  accent: "#52a06f",
+  accentBright: "#6fba88",
+  accentForeground: "#ffffff",
+  destructive: "#d65d5e",
+  terminalBlack: "#171717",
+  terminalBrightBlack: "#3d3d3d",
+};
+
+export const codexTheme = {
+  id: "codex",
+  name: "Codex",
+  appearance: "dark" as const,
+  colors: {
+    background: codexPalette.surface0,
+    foreground: "#fafafa",
+    raised: codexPalette.surface1,
+    control: codexPalette.surface2,
+    border: codexPalette.border,
+    accent: codexPalette.accent,
+    mutedForeground: codexPalette.foregroundMuted,
+    ring: "#d4d4d8",
+  },
+  overrides: {
+    surface3: codexPalette.surface3,
+    surface4: codexPalette.surface4,
+    surfaceDiffEmpty: codexPalette.surfaceDiffEmpty,
+    surfaceSidebar: codexPalette.surfaceSidebar,
+    foregroundExtraMuted: codexPalette.foregroundExtraMuted,
+    borderAccent: codexPalette.borderAccent,
+    accentBright: codexPalette.accentBright,
+    accentForeground: codexPalette.accentForeground,
+    destructive: codexPalette.destructive,
+    terminalBlack: codexPalette.terminalBlack,
+    terminalBrightBlack: codexPalette.terminalBrightBlack,
+  },
+};
