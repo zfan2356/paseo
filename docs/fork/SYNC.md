@@ -6,7 +6,7 @@ This fork merges `getpaseo/paseo` `main` into `zfan2356/paseo` `main` every few 
 
 The fork owns these directories outright. Upstream never edits them, so they never conflict:
 
-- `packages/app/src/fork/materials/`: tokens, slot names, stylesheet, sidebar color, sheet background, floating layout.
+- `packages/app/src/fork/materials/`: tokens, slot names, stylesheet, sidebar color, sheet background, floating layout, workspace panel.
 - `packages/desktop/src/fork/materials/`: macOS window transparency and vibrancy.
 - `packages/app/e2e/browser/materials*.spec.ts`, `packages/app/playwright.materials.config.ts`.
 - `docs/fork/`, `scripts/fork/`, `docs/qa-evidence/materials/`.
@@ -27,6 +27,7 @@ It prints every line in an upstream-owned file that references the layer. The gr
 | Group                | Files                                                                                                                                                                                                                           | Hook                                                                                                                                |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Install              | `root-app.tsx`, `app/_layout.tsx` (`window` on its three root views)                                                                                                                                                            | `<Materials />` installs the stylesheet; `window` marks the app background.                                                         |
+| Window skeleton      | `app/_layout.tsx` (`WorkspacePanel` around the workspace children), `left-sidebar.tsx` (`sidebar` on the pinned sidebar)                                                                                                        | `panel-frame` and `panel` float the workspace; `sidebar` takes the floor and drops its right border.                                |
 | Floating primitives  | `ui/floating.tsx`, `ui/menu/menu-overlay.tsx`, `ui/autocomplete.tsx`, `ui/isolated-bottom-sheet-modal/index.tsx`                                                                                                                | `FloatingSurface` tags `popover`, or `tooltip` when `role="tooltip"`; menus `menu`; Gorhom sheets `sheet`.                          |
 | Dialogs and sheets   | `adaptive-modal-sheet.tsx`, `ui/combobox.tsx` (sheet background), `command-center.tsx`, `add-project-flow.tsx`, `hosts/host-chooser.tsx`, `agent-list.tsx`, `attachment-lightbox.tsx`, `mermaid/fullscreen-viewer.web.tsx`      | `dialog`, `sheet` or `fullscreen` on the panel root.                                                                                |
 | Workspace chrome     | `adaptive-workspace-chrome.tsx`, `split-container.tsx`, `workspace-screen.tsx` (`materialTab`), `headers/screen-header.tsx`, `headers/compact-header.tsx`, `workspace-desktop-tabs-row.tsx`                                     | `workspaceChromeSlot()` and `publishChromeClearance()`; `header` on headers.                                                        |
@@ -48,7 +49,7 @@ Fork-only feature files (`agent-change-requests/section.tsx`, `side-chat/panel.t
    npx playwright test e2e/browser/materials.spec.ts --project=browser
    ```
 
-   They check the sidebar, floating chrome geometry, composer pills and tab scrim against the real app. A failure means a selector or hook lost its target. The specs locate some elements by upstream `data-testid` (`agent-chat-scroll`, `context-window-details`, `combobox-desktop-container`); the stylesheet does not. When upstream renames one, the locator fails before any material check runs: update the locator, not the layer.
+   They check the sidebar, the window skeleton, floating chrome geometry, composer pills and tab scrim against the real app. A failure means a selector or hook lost its target. The specs locate some elements by upstream `data-testid` (`agent-chat-scroll`, `context-window-details`, `combobox-desktop-container`); the stylesheet does not. When upstream renames one, the locator fails before any material check runs: update the locator, not the layer.
 
 4. If the merge touched any file in the hook list, compare pixels against the pre-merge revision. Capture on the old revision, then check on the new one:
 
@@ -62,7 +63,7 @@ Fork-only feature files (`agent-change-requests/section.tsx`, `side-chat/panel.t
      npx playwright test -c playwright.materials.config.ts e2e/browser/materials-visual.spec.ts
    ```
 
-   It covers forced macOS desktop and plain web, 1440 and 390 widths, light and dark, with conversation, menu, dialog and sidebar scenes. A difference is either an upstream design change, which you accept, or a lost hook, which you fix.
+   It covers forced macOS desktop and plain web, 1440 and 390 widths, light and dark, with conversation, menu, dialog and sidebar scenes, plus collapsed sidebar, diff pane and directory menu at 1440. A difference is either an upstream design change, which you accept, or a lost hook, which you fix.
 
 ## Resolving conflicts
 

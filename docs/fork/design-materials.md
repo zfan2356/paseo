@@ -7,6 +7,7 @@ This fork adds glass materials and elevation to web and desktop. Native iOS and 
 - Tokens: `packages/app/src/fork/materials/tokens.ts` (`MATERIAL`). Upstream `theme.ts` stays untouched.
 - Slot names: `packages/app/src/fork/materials/slots.ts` (`MATERIAL_SLOTS`). A slot is a `data-material` attribute that the fork sets on a component. Hooks that extend an existing upstream `dataSet` or DOM attribute write the value inline; `node scripts/fork/material-layer.mjs hooks` lists both forms.
 - Stylesheet: `packages/app/src/fork/materials/styles.web.tsx`. It installs one `<style data-material-styles>` and is a no-op on native.
+- Workspace panel wrapper: `packages/app/src/fork/materials/workspace-panel.web.tsx`. Native renders the upstream single view.
 - macOS window vibrancy: `packages/desktop/src/fork/materials/`.
 
 Selectors target fork slots only. Inside a slot they may use generic elements (`div`, `svg`, `textarea`, `[role="button"]`), never an upstream `testID` or a path of upstream components. When you need a new surface, add a slot to `MATERIAL_SLOTS`, set it on the shared primitive, and add the selector. Don't style a surface by its upstream DOM path: upstream refactors silently break it.
@@ -17,9 +18,11 @@ Each slot belongs to one elevation level (`MATERIAL.elevation` in `tokens.ts`). 
 
 | Level   | Slots                                                                        | Radius | Material                             |
 | ------- | ---------------------------------------------------------------------------- | ------ | ------------------------------------ |
-| hint    | `tooltip`, `toast`, `secondary`                                              | 10     | protected: ≥ 96% opacity, blur ≤ 8px |
+| hint    | `tooltip`, `toast`, `secondary`, composer pills                              | 10     | protected: ≥ 96% opacity, blur ≤ 8px |
 | popover | `menu`, `popover`, `autocomplete`, `banner`, `callout`, `secondary-expanded` | 16     | glass                                |
 | modal   | `composer`, `dialog`, `sheet`, `fullscreen`                                  | 24     | glass                                |
+
+Composer pills are the buttons inside `composer-tracks`. They float over the transcript above the composer, so they take the hint fill, border, shadow and blur but keep their own pill radius.
 
 Glass is `surface` at 76% opacity with `blur(20px) saturate(1.3)`. Under `prefers-reduced-transparency: reduce` every material is the opaque `surface` with no blur.
 
@@ -27,21 +30,44 @@ The workspace chrome (`chrome`, `header`) is glass without border or shadow. On 
 
 On Electron macOS the window is transparent with `sidebar` vibrancy, and the sidebar uses `--paseo-sidebar-material` (74% `surface`). Other platforms keep the opaque `content` background.
 
+## Window skeleton
+
+On wide web and desktop layouts the sidebar material is the window's floor and the workspace floats on it as one panel. There is one skeleton; there is no switch.
+
+- **Floor.** The pinned sidebar and the frame around the panel share `--paseo-floor`: the sidebar material with `MATERIAL.panel.floorShade` black mixed in, so the panel reads as raised in both schemes. On Electron macOS the sidebar material is translucent over window vibrancy. Elsewhere it is the opaque `surfaceSidebar`.
+- **Panel.** Everything right of the sidebar (tabs, panes, Explorer) is one panel: `MATERIAL.panel.inset` (8px) from every window edge and from the sidebar, `MATERIAL.panel.radius` (12px) corners, `MATERIAL.panel.border` and `MATERIAL.panel.shadow`, filled with opaque `MATERIAL.<scheme>.content`.
+- **No dividing line.** The pinned sidebar has no right border. The floor and the panel edge separate the two regions.
+- **Slots.** `panel-frame` and `panel` come from `WorkspacePanel` in `app/_layout.tsx`; `sidebar` is set on the pinned sidebar in `left-sidebar.tsx`. Both wrappers always render and only their slots change, so toggling focus mode or the sidebar never remounts the workspace.
+
+| State                                | Behavior                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| Sidebar pinned                       | Floor under the sidebar; panel inset on all four sides                   |
+| Sidebar collapsed                    | Panel keeps all four insets; the floor frames it                         |
+| Narrow wide window (overlay sidebar) | The overlay sidebar keeps its own surface and slides over the panel      |
+| Workspace focus mode                 | No panel: the workspace fills the window                                 |
+| macOS full screen                    | Same as windowed                                                         |
+| Compact (`md` and below, e.g. 390px) | Unchanged full-screen workspace                                          |
+| Native iOS and Android               | Unchanged upstream rendering                                             |
+| Off macOS                            | Opaque floor; geometry, border and shadow unchanged                      |
+| Reduce Transparency                  | The sidebar material becomes opaque `surface`, so the floor turns opaque |
+
 ## Upstream clauses this overrides
 
 These apply on web and desktop only. Native follows upstream.
 
-| Upstream clause                                                                | Fork rule                                                                                                                                  |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| §5 Borders: pane chrome uses a single bottom border.                           | The workspace chrome and headers have no border or shadow. The glass edge separates them from content.                                     |
-| §6 Pickers: `AdaptiveModalSheet` sits on `surface0`.                           | Dialogs and sheets use the modal material: glass `surface`, 24px radius, modal shadow, at most 560px wide.                                 |
-| §11 States: sidebar callouts are top-border-only with full-width actions.      | Sidebar callouts are banner cards: popover material, 12px margin and gap, 16px padding; text actions use the `control` fill.               |
-| §3 Hierarchy: placeholders use `foregroundMuted` from the theme.               | The composer placeholder uses the material palette's `foregroundMuted`.                                                                    |
-| §4 Buttons: toolbar glyphs follow `toolbarGlyphsFor` and the icon size tokens. | Fixed-size glyphs in header, menu and banner are 16px; composer glyphs are 20px; all at 1.5 stroke. Percentage-sized SVGs keep their size. |
-| §14 Forbidden: no hardcoded hex outside the palette.                           | The material palette in `tokens.ts` is the exception, the same way the identity color table is upstream.                                   |
+| Upstream clause                                                                | Fork rule                                                                                                                                   |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| §9 Responsiveness: the pinned sidebar sits beside the content pane.            | The content pane floats as one inset panel on the sidebar floor ([Window skeleton](#window-skeleton)).                                      |
+| §5 Borders: the pinned sidebar meets the workspace at a 1px right border.      | No line between the sidebar and the workspace. The panel takes a border and a shadow; pane chrome inside it keeps one border and no shadow. |
+| §5 Borders: pane chrome uses a single bottom border.                           | The workspace chrome and headers have no border or shadow. The glass edge separates them from content.                                      |
+| §6 Pickers: `AdaptiveModalSheet` sits on `surface0`.                           | Dialogs and sheets use the modal material: glass `surface`, 24px radius, modal shadow, at most 560px wide.                                  |
+| §11 States: sidebar callouts are top-border-only with full-width actions.      | Sidebar callouts are banner cards: popover material, 12px margin and gap, 16px padding; text actions use the `control` fill.                |
+| §3 Hierarchy: placeholders use `foregroundMuted` from the theme.               | The composer placeholder uses the material palette's `foregroundMuted`.                                                                     |
+| §4 Buttons: toolbar glyphs follow `toolbarGlyphsFor` and the icon size tokens. | Fixed-size glyphs in header, menu and banner are 16px; composer glyphs are 20px; all at 1.5 stroke. Percentage-sized SVGs keep their size.  |
+| §14 Forbidden: no hardcoded hex outside the palette.                           | The material palette in `tokens.ts` is the exception, the same way the identity color table is upstream.                                    |
 
 Typography inside chrome, menu, banner, composer and dialog uses the system UI stack in `MATERIAL.font`.
 
 ## Evidence
 
-[`docs/qa-evidence/materials/README.md`](../qa-evidence/materials/README.md) records the original coverage and the Mac verification gaps.
+[`docs/qa-evidence/materials/README.md`](../qa-evidence/materials/README.md) records the original coverage and the Mac verification gaps. [`skeleton-a/README.md`](../qa-evidence/materials/skeleton-a/README.md) records the window skeleton before/after pairs and its own Mac checks.
