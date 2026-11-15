@@ -33,8 +33,10 @@ export const MATERIAL = {
       material: { name: "glass", minimumOpacity: 0, maximumBlur: 20 },
     },
   },
-  // Window skeleton: the workspace floats as one panel on the sidebar-material floor.
+  // Window skeleton: the workspace panel is flush with the window and floats off the
+  // sidebar-material floor only beside the pinned sidebar.
   panel: {
+    // Gap between the pinned sidebar and the panel.
     inset: 8,
     radius: 12,
     // Black mixed into the floor so the panel reads as raised in both schemes.

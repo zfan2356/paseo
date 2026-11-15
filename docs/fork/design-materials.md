@@ -32,24 +32,25 @@ On Electron macOS the window is transparent with `sidebar` vibrancy, and the sid
 
 ## Window skeleton
 
-On wide web and desktop layouts the sidebar material is the window's floor and the workspace floats on it as one panel. There is one skeleton; there is no switch.
+On wide web and desktop layouts the sidebar material is the window's floor and the workspace is one panel that meets the window's top, right and bottom edges. It floats off the floor only beside the pinned sidebar. There is one skeleton; there is no switch.
 
-- **Floor.** The pinned sidebar and the frame around the panel share `--paseo-floor`: the sidebar material with `MATERIAL.panel.floorShade` black mixed in, so the panel reads as raised in both schemes. On Electron macOS the sidebar material is translucent over window vibrancy. Elsewhere it is the opaque `surfaceSidebar`.
-- **Panel.** Everything right of the sidebar (tabs, panes, Explorer) is one panel: `MATERIAL.panel.inset` (8px) from every window edge and from the sidebar, `MATERIAL.panel.radius` (12px) corners, `MATERIAL.panel.border` and `MATERIAL.panel.shadow`, filled with opaque `MATERIAL.<scheme>.content`.
+- **Floor.** The pinned sidebar and the gap beside the panel share `--paseo-floor`: the sidebar material with `MATERIAL.panel.floorShade` black mixed in, so the panel reads as raised in both schemes. On Electron macOS the sidebar material is translucent over window vibrancy. Elsewhere it is the opaque `surfaceSidebar`.
+- **Panel.** Everything right of the sidebar (tabs, panes, Explorer) is one panel filled with opaque `MATERIAL.<scheme>.content`. Its top, right and bottom edges touch the window; on Electron macOS the window's own corners round the right side. Beside the pinned sidebar it keeps `MATERIAL.panel.inset` (8px), `MATERIAL.panel.radius` (12px) on the two left corners, `MATERIAL.panel.border` on the left edge and `MATERIAL.panel.shadow`.
 - **No dividing line.** The pinned sidebar has no right border. The floor and the panel edge separate the two regions.
 - **Slots.** `panel-frame` and `panel` come from `WorkspacePanel` in `app/_layout.tsx`; `sidebar` is set on the pinned sidebar in `left-sidebar.tsx`. Both wrappers always render and only their slots change, so toggling focus mode or the sidebar never remounts the workspace.
+- **Pinned detection.** The left inset, corners, border and shadow apply under `html:has([data-material="sidebar"])`. A collapsed sidebar switches to the overlay presentation, which carries no `sidebar` slot, so the panel goes flush without an extra hook.
 
-| State                                | Behavior                                                                 |
-| ------------------------------------ | ------------------------------------------------------------------------ |
-| Sidebar pinned                       | Floor under the sidebar; panel inset on all four sides                   |
-| Sidebar collapsed                    | Panel keeps all four insets; the floor frames it                         |
-| Narrow wide window (overlay sidebar) | The overlay sidebar keeps its own surface and slides over the panel      |
-| Workspace focus mode                 | No panel: the workspace fills the window                                 |
-| macOS full screen                    | Same as windowed                                                         |
-| Compact (`md` and below, e.g. 390px) | Unchanged full-screen workspace                                          |
-| Native iOS and Android               | Unchanged upstream rendering                                             |
-| Off macOS                            | Opaque floor; geometry, border and shadow unchanged                      |
-| Reduce Transparency                  | The sidebar material becomes opaque `surface`, so the floor turns opaque |
+| State                                | Behavior                                                                                         |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Sidebar pinned                       | Floor under the sidebar; 8px gap and rounded left corners beside it; top, right and bottom flush |
+| Sidebar collapsed                    | Panel flush on all four sides; the header keeps its traffic-light clearance                      |
+| Narrow wide window (overlay sidebar) | Panel flush; the overlay sidebar keeps its own surface and slides over it                        |
+| Workspace focus mode                 | No panel: the workspace fills the window                                                         |
+| macOS full screen                    | Same as windowed                                                                                 |
+| Compact (`md` and below, e.g. 390px) | Unchanged full-screen workspace                                                                  |
+| Native iOS and Android               | Unchanged upstream rendering                                                                     |
+| Off macOS                            | Opaque floor; same geometry, border and shadow                                                   |
+| Reduce Transparency                  | The sidebar material becomes opaque `surface`, so the floor turns opaque                         |
 
 ## Upstream clauses this overrides
 
@@ -57,7 +58,7 @@ These apply on web and desktop only. Native follows upstream.
 
 | Upstream clause                                                                | Fork rule                                                                                                                                   |
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| §9 Responsiveness: the pinned sidebar sits beside the content pane.            | The content pane floats as one inset panel on the sidebar floor ([Window skeleton](#window-skeleton)).                                      |
+| §9 Responsiveness: the pinned sidebar sits beside the content pane.            | The content pane is one panel, flush with the window and inset from the sidebar floor ([Window skeleton](#window-skeleton)).                |
 | §5 Borders: the pinned sidebar meets the workspace at a 1px right border.      | No line between the sidebar and the workspace. The panel takes a border and a shadow; pane chrome inside it keeps one border and no shadow. |
 | §5 Borders: pane chrome uses a single bottom border.                           | The workspace chrome and headers have no border or shadow. The glass edge separates them from content.                                      |
 | §6 Pickers: `AdaptiveModalSheet` sits on `surface0`.                           | Dialogs and sheets use the modal material: glass `surface`, 24px radius, modal shadow, at most 560px wide.                                  |
@@ -70,4 +71,4 @@ Typography inside chrome, menu, banner, composer and dialog uses the system UI s
 
 ## Evidence
 
-[`docs/qa-evidence/materials/README.md`](../qa-evidence/materials/README.md) records the original coverage and the Mac verification gaps. [`skeleton-a/README.md`](../qa-evidence/materials/skeleton-a/README.md) records the window skeleton before/after pairs and its own Mac checks.
+[`docs/qa-evidence/materials/README.md`](../qa-evidence/materials/README.md) records the original coverage and the Mac verification gaps. [`skeleton-a/README.md`](../qa-evidence/materials/skeleton-a/README.md) records the floating-panel skeleton and its own Mac checks. [`skeleton-flush/README.md`](../qa-evidence/materials/skeleton-flush/README.md) records the move to flush top, right and bottom edges.

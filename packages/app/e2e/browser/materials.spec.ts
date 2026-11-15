@@ -675,8 +675,9 @@ test("header icon sizing leaves the tab close scrim at full width", async ({ pag
   }
 });
 
-// Window skeleton: the workspace floats as one rounded panel on the sidebar-material floor,
-// with no line between the sidebar and the workspace. See docs/fork/design-materials.md.
+// Window skeleton: the workspace panel is flush with the window's top, right and bottom edges and
+// floats off the sidebar-material floor only beside the pinned sidebar, with no line between the
+// two. See docs/fork/design-materials.md.
 for (const platform of ["darwin", "web"] as const) {
   test(`window skeleton floats the workspace panel (${platform})`, async ({ page }) => {
     test.setTimeout(180_000);
@@ -715,8 +716,8 @@ for (const platform of ["darwin", "web"] as const) {
             top: Math.round(p.top),
             bottom: Math.round(window.innerHeight - p.bottom),
             right: Math.round(window.innerWidth - p.right),
-            radius: style.borderTopLeftRadius,
-            border: style.borderTopWidth,
+            radius: [style.borderTopLeftRadius, style.borderTopRightRadius],
+            border: [style.borderLeftWidth, style.borderTopWidth],
             shadow: style.boxShadow !== "none",
             floor: getComputedStyle(frame).backgroundColor,
           };
@@ -737,21 +738,30 @@ for (const platform of ["darwin", "web"] as const) {
         });
       const floating = {
         left: 8,
-        top: 8,
-        bottom: 8,
-        right: 8,
-        radius: "12px",
-        border: "1px",
+        top: 0,
+        bottom: 0,
+        right: 0,
+        radius: ["12px", "0px"],
+        border: ["1px", "0px"],
         shadow: true,
+      };
+      const flush = {
+        left: 0,
+        top: 0,
+        bottom: 0,
+        right: 0,
+        radius: ["0px", "0px"],
+        border: ["0px", "0px"],
+        shadow: false,
       };
       await expect.poll(panelGeometry).toMatchObject(floating);
       const floor = (await panelGeometry())?.floor;
       await expect.poll(sidebarGeometry).toEqual({ gap: 8, rule: "0px", floor });
 
-      // Collapsed sidebar: the panel keeps all four insets and the floor frames it.
+      // Collapsed sidebar: the panel is flush on all four sides.
       await page.getByTestId("menu-button").filter({ visible: true }).first().click();
       await expect.poll(() => page.locator('[data-material="sidebar"]:visible').count()).toBe(0);
-      await expect.poll(panelGeometry).toMatchObject(floating);
+      await expect.poll(panelGeometry).toMatchObject(flush);
       await page.getByTestId("menu-button").filter({ visible: true }).first().click();
       await expect.poll(sidebarGeometry).toMatchObject({ gap: 8, rule: "0px" });
 
