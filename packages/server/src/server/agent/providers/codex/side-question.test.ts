@@ -86,7 +86,7 @@ describe("CodexSideQuestionRun", () => {
     expect(run.answerText()).toBe("streamed text");
   });
 
-  it("joins multiple messages and strips the compact boundary prefix", () => {
+  it("joins multiple messages without rewriting authored Markdown", () => {
     const run = new CodexSideQuestionRun();
     run.handleNotification({
       kind: "item_completed",
@@ -96,7 +96,7 @@ describe("CodexSideQuestionRun", () => {
       kind: "item_completed",
       item: { id: "m2", type: "agentMessage", text: "---\nSecond." },
     });
-    expect(run.answerText()).toBe("First.\n\nSecond.");
+    expect(run.answerText()).toBe("First.\n\n---\nSecond.");
   });
 
   it("ignores non-message items and unrelated notification kinds", () => {

@@ -1,5 +1,6 @@
+import { usePaneContext } from "@/panels/pane-context";
 import { useEffect, useMemo, useState } from "react";
-import type { PluginFile, PluginFileTab } from "@getpaseo/plugin/client";
+import type { PluginFile, PluginFilePanelParams, PluginTab } from "@getpaseo/plugin/client";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -70,13 +71,9 @@ export function FilePane({
       anchor: location.anchor,
       lineStart: location.lineStart,
       lineEnd: location.lineEnd,
-      revision: navigationRevision,
+      path,
     }),
-    [location.anchor, location.lineEnd, location.lineStart, navigationRevision],
-  );
-  const panelTarget = useMemo(
-    () => ({ serverId, workspaceRoot: root, path }),
-    [path, root, serverId],
+    [location.anchor, location.lineEnd, location.lineStart, path],
   );
 
   let body;
@@ -94,7 +91,7 @@ export function FilePane({
         <Text style={styles.errorText}>
           {snapshot.status === "error" ? snapshot.error : t("panels.file.notFound")}
         </Text>
-        <Button variant="outline" size="sm" onPress={handle.retry}>
+        <Button variant="outline" onPress={handle.retry}>
           {t("common.actions.retry")}
         </Button>
       </>
@@ -114,8 +111,8 @@ export function FilePane({
           key={`${panel.id}:${targetKey}`}
           panel={panel}
           file={handle.file}
-          location={panelLocation}
-          target={panelTarget}
+          params={panelLocation}
+          revision={navigationRevision}
           onModifiedChange={setModified}
         />
       </View>
@@ -132,21 +129,27 @@ export function FilePane({
 function MountedFilePanel({
   panel,
   file,
-  location,
-  target,
+  params,
+  revision,
   onModifiedChange,
 }: {
   panel: FilePanel;
   file: PluginFile;
-  location: { lineStart?: number; lineEnd?: number; revision: number };
-  target: { serverId: string; workspaceRoot: string; path: string };
+  params: PluginFilePanelParams;
+  revision: number;
   onModifiedChange: (modified: boolean) => void;
 }) {
-  const [tab] = useState<PluginFileTab>(() => ({
-    setModified: (modified) => onModifiedChange(modified),
-  }));
+  const { state, setCurrentTabState } = usePaneContext();
+  const tab = useMemo<PluginTab>(
+    () => ({
+      setModified: onModifiedChange,
+      state,
+      setState: setCurrentTabState,
+    }),
+    [onModifiedChange, state, setCurrentTabState],
+  );
   useEffect(() => () => onModifiedChange(false), [onModifiedChange]);
-  return <FilePanelView panel={panel} file={file} tab={tab} location={location} target={target} />;
+  return <FilePanelView panel={panel} file={file} tab={tab} params={params} revision={revision} />;
 }
 
 const styles = StyleSheet.create((theme) => ({

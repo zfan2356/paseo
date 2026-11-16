@@ -193,3 +193,33 @@ describe("workspace attachments store", () => {
     ).toEqual([draftContext, workspaceContext]);
   });
 });
+
+it("isolates explicit directory review context from another session and checkout", () => {
+  const input = { serverId: "srv", workspaceId: "shared", cwd: "/repo", sessionAgentId: "one" };
+  const key = buildWorkspaceAttachmentScopeKey(input);
+  expect(key).not.toBe(buildWorkspaceAttachmentScopeKey({ ...input, sessionAgentId: "two" }));
+  expect(key).not.toBe(buildWorkspaceAttachmentScopeKey({ ...input, cwd: "/other" }));
+});
+
+it("matches the composer binding scope while a nested-directory diff uses the checkout root", () => {
+  const composer = buildWorkspaceAttachmentScopeKey({
+    serverId: "s",
+    sessionAgentId: "a",
+    cwd: "/repo/sub",
+  });
+  const diff = buildWorkspaceAttachmentScopeKey({
+    serverId: "s",
+    sessionAgentId: "a",
+    cwd: "/repo",
+    directory: "/repo/sub",
+  });
+  expect(diff).toBe(composer);
+  expect(diff).not.toBe(
+    buildWorkspaceAttachmentScopeKey({
+      serverId: "s",
+      sessionAgentId: "a",
+      cwd: "/repo",
+      directory: "/repo/other",
+    }),
+  );
+});
