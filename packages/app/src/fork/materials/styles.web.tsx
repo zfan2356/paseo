@@ -122,7 +122,6 @@ function MaterialStyles({
         }
         ${root} [data-material="banner"] [role="button"]:not([aria-label]) div { color: ${palette.foreground} !important; }
         ${root} [data-material="composer"] { padding: ${t.spacing.composer}px; gap: 16px; }
-        ${root} [data-material="composer"] textarea::placeholder { color: ${palette.foregroundMuted} !important; opacity: 1; }
         ${root} [data-material="menu"] { padding: ${t.spacing.menu}px; min-width: min(${t.menuMinWidth}px, calc(100vw - 32px)); }
         ${root} [data-material="dialog"] { max-width: 560px; }
         ${root} [data-material="dialog"] > div { border-color: transparent !important; }

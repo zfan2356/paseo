@@ -16,6 +16,9 @@ mapping, before its subscription is installed. Passing the theme proxy through t
 leaves the material layer on the startup system palette while text adopts the saved palette.
 `materials.spec.ts` covers opposite system/app themes and theme changes without reloading.
 
+Composer placeholders keep the selected theme's `foregroundExtraMuted`; the material
+layer does not override text-input placeholder colors.
+
 Selectors target fork slots only. Inside a slot they may use generic elements (`div`, `svg`, `textarea`, `[role="button"]`), never an upstream `testID` or a path of upstream components. When you need a new surface, add a slot to `MATERIAL_SLOTS`, set it on the shared primitive, and add the selector. Don't style a surface by its upstream DOM path: upstream refactors silently break it.
 
 ## Elevation
@@ -69,7 +72,6 @@ These apply on web and desktop only. Native follows upstream.
 | §5 Borders: pane chrome uses a single bottom border.                           | The workspace chrome and headers have no border or shadow. The glass edge separates them from content.                                      |
 | §6 Pickers: `AdaptiveModalSheet` sits on `surface0`.                           | Dialogs and sheets use the modal material: glass `surface`, 24px radius, modal shadow, at most 560px wide.                                  |
 | §11 States: sidebar callouts are top-border-only with full-width actions.      | Sidebar callouts are banner cards: popover material, 12px margin and gap, 16px padding; text actions use the `control` fill.                |
-| §3 Hierarchy: placeholders use `foregroundMuted` from the theme.               | The composer placeholder uses the material palette's `foregroundMuted`.                                                                     |
 | §4 Buttons: toolbar glyphs follow `toolbarGlyphsFor` and the icon size tokens. | Fixed-size glyphs in header, menu and banner are 16px; composer glyphs are 20px; all at 1.5 stroke. Percentage-sized SVGs keep their size.  |
 | §14 Forbidden: no hardcoded hex outside the palette.                           | The material palette in `tokens.ts` is the exception, the same way the identity color table is upstream.                                    |
 

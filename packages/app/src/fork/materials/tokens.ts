@@ -56,14 +56,12 @@ export const MATERIAL = {
     surface: "#ffffff",
     content: "#f7f9f6",
     foreground: "#151b18",
-    foregroundMuted: "#303a33",
     control: "rgba(24,46,34,0.08)",
   },
   dark: {
     surface: "#121a16",
     content: "#171e1b",
     foreground: "#ffffff",
-    foregroundMuted: "#f0f4f1",
     control: "rgba(255,255,255,0.12)",
   },
 } as const;
