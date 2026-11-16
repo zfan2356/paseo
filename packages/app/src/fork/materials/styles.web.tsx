@@ -38,9 +38,9 @@ function elevationCss(root: string, scheme: Scheme, material: MaterialLevel): st
 // Window skeleton: the workspace panel meets the window on its top, right and bottom edges and
 // floats off the sidebar-material floor only beside the pinned sidebar. The overlay sidebar
 // (collapsed, or a narrow wide window) carries no `sidebar` slot, so the panel then fills the frame.
-function skeletonCss(root: string, scheme: Scheme, sidebarColor: string): string {
+function skeletonCss(root: string, scheme: Theme["colorScheme"], surfaceSidebar: string): string {
   const { panel } = MATERIAL;
-  const sidebarMaterial = `var(--paseo-sidebar-material, ${sidebarColor})`;
+  const sidebarMaterial = `var(--paseo-sidebar-material, ${surfaceSidebar})`;
   const pinned = `${root}:has([data-material="sidebar"])`;
   return `
     ${root} { --paseo-floor: color-mix(in srgb, ${sidebarMaterial}, black ${panel.floorShade[scheme]}%); }
@@ -108,10 +108,10 @@ function composerPillCss(root: string, scheme: Scheme): string {
 
 function MaterialStyles({
   colorScheme,
-  sidebarColor,
+  surfaceSidebar,
 }: {
-  colorScheme: Scheme;
-  sidebarColor: string;
+  colorScheme: Theme["colorScheme"];
+  surfaceSidebar: string;
 }) {
   useEffect(() => {
     const t = MATERIAL;
@@ -122,7 +122,7 @@ function MaterialStyles({
     const root = "html";
     style.textContent = `
         ${root} [data-material="window"] { background: ${getIsElectronMac() ? "transparent" : palette.content} !important; }
-        ${skeletonCss(root, colorScheme, sidebarColor)}
+        ${skeletonCss(root, colorScheme, surfaceSidebar)}
         ${composerPillCss(root, colorScheme)}
         ${root} [data-material="dock"], ${root} [data-material="transcript"] { background: ${palette.content}; }
         ${root} [data-material="chrome"] {
@@ -191,12 +191,11 @@ function MaterialStyles({
       `;
     document.head.append(style);
     return () => style.remove();
-  }, [colorScheme, sidebarColor]);
+  }, [colorScheme, surfaceSidebar]);
   return null;
 }
-// The mapper must read the theme fields it passes on: Unistyles subscribes the wrapper only to
-// what the mapper reads, and this component mounts before the persisted theme is applied.
+// Read theme fields during render so Unistyles subscribes before saved appearance loads.
 export const Materials = withUnistyles(MaterialStyles, (theme) => ({
   colorScheme: theme.colorScheme,
-  sidebarColor: theme.colors.surfaceSidebar,
+  surfaceSidebar: theme.colors.surfaceSidebar,
 }));

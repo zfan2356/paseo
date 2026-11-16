@@ -10,6 +10,12 @@ This fork adds glass materials and elevation to web and desktop. Native iOS and 
 - Workspace panel wrapper: `packages/app/src/fork/materials/workspace-panel.web.tsx`. Native renders the upstream single view.
 - macOS window vibrancy: `packages/desktop/src/fork/materials/`.
 
+The material stylesheet follows the selected app theme, including saved plugin themes and
+live system-theme changes. Read `colorScheme` and `surfaceSidebar` inside the `withUnistyles`
+mapping, before its subscription is installed. Passing the theme proxy through to an effect
+leaves the material layer on the startup system palette while text adopts the saved palette.
+`materials.spec.ts` covers opposite system/app themes and theme changes without reloading.
+
 Selectors target fork slots only. Inside a slot they may use generic elements (`div`, `svg`, `textarea`, `[role="button"]`), never an upstream `testID` or a path of upstream components. When you need a new surface, add a slot to `MATERIAL_SLOTS`, set it on the shared primitive, and add the selector. Don't style a surface by its upstream DOM path: upstream refactors silently break it.
 
 ## Elevation
@@ -30,10 +36,7 @@ The workspace chrome (`chrome`, `header`) is glass without border or shadow. On 
 
 On Electron macOS the window is transparent with `sidebar` vibrancy, and the sidebar uses `--paseo-sidebar-material` (74% `surface`). Other platforms keep the opaque `content` background.
 
-Every surface follows the App theme, never the system appearance:
-
-- The stylesheet mounts in `root-app.tsx`, before `AppearanceProvider` applies the persisted theme. `withUnistyles` subscribes the wrapper only to the theme fields its mapper reads, so the mapper passes `colorScheme` and `surfaceSidebar` explicitly. Passing the whole `theme` object reads nothing, and the stylesheet stays on the startup (system) theme.
-- Vibrancy samples the native appearance, so the desktop sets `nativeTheme.themeSource` from the user's theme choice. After `AppearanceProvider` applies a theme, `syncDesktopThemePreference()` (`fork/materials/desktop-theme.ts`) sends `themePreference` on the `updateChrome` IPC: `system` for Auto, otherwise the chosen theme's scheme, plugin themes included. The desktop applies it on macOS only. Send the preference, never a scheme inferred from colors: Auto has to stay on `system`, because a pinned `themeSource` also pins the renderer's `prefers-color-scheme`, and Auto would then never follow the system again.
+Vibrancy samples the native appearance, so the desktop sets `nativeTheme.themeSource` from the user's theme choice. After `AppearanceProvider` applies a theme, `syncDesktopThemePreference()` (`fork/materials/desktop-theme.ts`) sends `themePreference` on the `updateChrome` IPC: `system` for Auto, otherwise the chosen theme's scheme, plugin themes included. The desktop applies it on macOS only. Send the preference, never a scheme inferred from colors: Auto has to stay on `system`, because a pinned `themeSource` also pins the renderer's `prefers-color-scheme`, and Auto would then never follow the system again.
 
 ## Window skeleton
 
