@@ -37,10 +37,9 @@ function elevationCss(root: string, scheme: Theme["colorScheme"], material: Mate
 // Window skeleton: the workspace panel meets the window on its top, right and bottom edges and
 // floats off the sidebar-material floor only beside the pinned sidebar. The overlay sidebar
 // (collapsed, or a narrow wide window) carries no `sidebar` slot, so the panel then fills the frame.
-function skeletonCss(root: string, theme: Theme): string {
-  const scheme = theme.colorScheme;
+function skeletonCss(root: string, scheme: Theme["colorScheme"], surfaceSidebar: string): string {
   const { panel } = MATERIAL;
-  const sidebarMaterial = `var(--paseo-sidebar-material, ${theme.colors.surfaceSidebar})`;
+  const sidebarMaterial = `var(--paseo-sidebar-material, ${surfaceSidebar})`;
   const pinned = `${root}:has([data-material="sidebar"])`;
   return `
     ${root} { --paseo-floor: color-mix(in srgb, ${sidebarMaterial}, black ${panel.floorShade[scheme]}%); }
@@ -74,18 +73,24 @@ function composerPillCss(root: string, scheme: Theme["colorScheme"]): string {
   `;
 }
 
-function MaterialStyles({ theme }: { theme: Theme }) {
+function MaterialStyles({
+  colorScheme,
+  surfaceSidebar,
+}: {
+  colorScheme: Theme["colorScheme"];
+  surfaceSidebar: string;
+}) {
   useEffect(() => {
     const t = MATERIAL;
-    const palette = t[theme.colorScheme];
+    const palette = t[colorScheme];
     const style = document.createElement("style");
     style.dataset.materialStyles = "true";
     const material = t.glass;
     const root = "html";
     style.textContent = `
         ${root} [data-material="window"] { background: ${getIsElectronMac() ? "transparent" : palette.content} !important; }
-        ${skeletonCss(root, theme)}
-        ${composerPillCss(root, theme.colorScheme)}
+        ${skeletonCss(root, colorScheme, surfaceSidebar)}
+        ${composerPillCss(root, colorScheme)}
         ${root} [data-material="dock"], ${root} [data-material="transcript"] { background: ${palette.content}; }
         ${root} [data-material="chrome"] {
           position: absolute; top: 0; left: 0; right: 0; z-index: 10;
@@ -146,14 +151,18 @@ function MaterialStyles({ theme }: { theme: Theme }) {
           ${root} [data-material="composer"], ${root} [data-material="menu"],
           ${root} [data-material="dialog"], ${root} [data-material="sheet"] { background: ${palette.surface} !important; backdrop-filter: none; }
         }
-        ${elevationCss(root, theme.colorScheme, material)}
+        ${elevationCss(root, colorScheme, material)}
         @media (prefers-reduced-motion: no-preference) {
           ${root} [data-material="composer"] { transition: border-color ${t.motion.duration}ms ${t.motion.easing}; }
         }
       `;
     document.head.append(style);
     return () => style.remove();
-  }, [theme]);
+  }, [colorScheme, surfaceSidebar]);
   return null;
 }
-export const Materials = withUnistyles(MaterialStyles, (theme) => ({ theme }));
+// Read theme fields during render so Unistyles subscribes before saved appearance loads.
+export const Materials = withUnistyles(MaterialStyles, (theme) => ({
+  colorScheme: theme.colorScheme,
+  surfaceSidebar: theme.colors.surfaceSidebar,
+}));

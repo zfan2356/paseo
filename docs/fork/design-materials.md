@@ -10,6 +10,12 @@ This fork adds glass materials and elevation to web and desktop. Native iOS and 
 - Workspace panel wrapper: `packages/app/src/fork/materials/workspace-panel.web.tsx`. Native renders the upstream single view.
 - macOS window vibrancy: `packages/desktop/src/fork/materials/`.
 
+The material stylesheet follows the selected app theme, including saved plugin themes and
+live system-theme changes. Read `colorScheme` and `surfaceSidebar` inside the `withUnistyles`
+mapping, before its subscription is installed. Passing the theme proxy through to an effect
+leaves the material layer on the startup system palette while text adopts the saved palette.
+`materials.spec.ts` covers opposite system/app themes and theme changes without reloading.
+
 Selectors target fork slots only. Inside a slot they may use generic elements (`div`, `svg`, `textarea`, `[role="button"]`), never an upstream `testID` or a path of upstream components. When you need a new surface, add a slot to `MATERIAL_SLOTS`, set it on the shared primitive, and add the selector. Don't style a surface by its upstream DOM path: upstream refactors silently break it.
 
 ## Elevation

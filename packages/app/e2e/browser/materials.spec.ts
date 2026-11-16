@@ -4,6 +4,76 @@ import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { openAttachmentMenu } from "../support/helpers/composer";
 import { openChangesPanel } from "../support/helpers/workspace-tabs";
+import { openSettingsSection } from "../support/helpers/settings";
+
+for (const scenario of [
+  {
+    theme: "codex",
+    system: "light",
+    background: "rgb(23, 30, 27)",
+    foreground: "rgb(250, 250, 250)",
+  },
+  {
+    theme: "light",
+    system: "dark",
+    background: "rgb(247, 249, 246)",
+    foreground: "rgb(26, 26, 30)",
+  },
+] as const) {
+  test(`materials follow saved ${scenario.theme} on a ${scenario.system} system`, async ({
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ colorScheme: scenario.system });
+    await page.addInitScript((theme) => {
+      localStorage.setItem("@paseo:app-settings", JSON.stringify({ theme }));
+    }, scenario.theme);
+    const session = await seedMockAgentWorkspace({
+      repoPrefix: "material-theme-",
+      title: "Readable theme",
+      initialPrompt: "Check the theme.",
+      featureValues: { mockAssistantResponse: "The conversation remains readable." },
+    });
+    try {
+      await session.client.waitForFinish(session.agentId, 30_000);
+      await openAgentRoute(page, session);
+      await expect(page.getByTestId("message-input-root")).toBeVisible();
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(page.locator('[data-material="transcript"]:visible')).toHaveCSS(
+          "background-color",
+          scenario.background,
+        );
+        await expect(
+          page.getByText("The conversation remains readable.", { exact: true }),
+        ).toHaveCSS("color", scenario.foreground);
+        await page.screenshot({ path: testInfo.outputPath(`saved-theme-${width}.png`) });
+      }
+    } finally {
+      await session.cleanup();
+    }
+  });
+}
+
+test("materials follow theme changes without reloading", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/settings");
+  await openSettingsSection(page, "appearance");
+  const window = page.getByTestId("wide-shell");
+  await expect(window).toHaveCSS("background-color", "rgb(247, 249, 246)");
+
+  await page.getByRole("radio", { name: "Codex", exact: true }).click();
+  await expect(window).toHaveCSS("background-color", "rgb(23, 30, 27)");
+  await page.getByRole("radio", { name: "Light", exact: true }).click();
+  await expect(window).toHaveCSS("background-color", "rgb(247, 249, 246)");
+
+  await page.getByRole("radio", { name: "System", exact: true }).click();
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(window).toHaveCSS("background-color", "rgb(23, 30, 27)");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(window).toHaveCSS("background-color", "rgb(247, 249, 246)");
+  await expect(page.locator("style[data-material-styles]")).toHaveCount(1);
+});
+
 // Real renderer/daemon coverage and raw scroll samples for default materials.
 test("default material evidence", async ({ page }, testInfo) => {
   test.skip(process.env.E2E_PERFORMANCE !== "1", "Explicit visual/performance evidence capture");
