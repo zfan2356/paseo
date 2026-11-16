@@ -863,6 +863,97 @@ for (const platform of ["darwin", "web"] as const) {
   });
 }
 
+// The stylesheet follows theme changes made while the App runs: picking a theme in Settings, and
+// the system appearance changing under the System theme. Each step reads the floor and the
+// floating panel against the theme the App renders with.
+test("material stylesheet follows runtime theme changes (darwin)", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  await page.addInitScript(() => {
+    (window as unknown as { paseoDesktop: unknown }).paseoDesktop = {
+      platform: "darwin",
+      events: { on: () => () => {} },
+      invoke: async () => null,
+    };
+  });
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "material-runtime-theme-",
+    title: "Runtime theme",
+    initialPrompt: "hello",
+    featureValues: { mockAssistantResponse: "ok" },
+  });
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await openAgentRoute(page, session);
+    await page.evaluate(() =>
+      localStorage.setItem("@paseo:app-settings", JSON.stringify({ theme: "dark" })),
+    );
+    await page.reload();
+    await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible({
+      timeout: 60_000,
+    });
+    await openSettings(page);
+    await page.getByRole("button", { name: "Appearance", exact: true }).click();
+    const picker = page.getByRole("radiogroup", { name: "Theme" });
+    await expect(picker).toBeVisible();
+    // Scheme of each surface by luminance, and of the text the App renders.
+    const schemes = () =>
+      page.evaluate(() => {
+        const probe = document.createElement("canvas").getContext("2d")!;
+        const dark = (color: string) => {
+          probe.clearRect(0, 0, 1, 1);
+          probe.fillStyle = color;
+          probe.fillRect(0, 0, 1, 1);
+          const [r, g, b] = probe.getImageData(0, 0, 1, 1).data;
+          return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128 ? "dark" : "light";
+        };
+        const style = (selector: string) => {
+          const el = document.querySelector(selector);
+          return el ? getComputedStyle(el) : null;
+        };
+        const settings = '[data-material="settings"] > * > ';
+        // The settings detail pane, or the workspace panel and its transcript.
+        const settingsDetail = document.querySelector(`${settings}:last-child`);
+        const detail = settingsDetail ?? document.querySelector('[data-material="panel"]');
+        const textRoot =
+          settingsDetail ?? document.querySelector('[data-testid="assistant-message"]');
+        const walker = document.createTreeWalker(textRoot ?? document.body, NodeFilter.SHOW_TEXT);
+        let text = "";
+        for (let node = walker.nextNode(); node && !text; node = walker.nextNode()) {
+          if (node.nodeValue?.trim() && node.parentElement) {
+            text = getComputedStyle(node.parentElement).color;
+          }
+        }
+        return {
+          // Light text means the dark theme.
+          text: dark(text) === "dark" ? "light" : "dark",
+          floor: dark(style('[data-material="panel-frame"]')?.backgroundColor ?? ""),
+          detail: dark(detail ? getComputedStyle(detail).backgroundColor : ""),
+        };
+      });
+    const expectScheme = async (scheme: "light" | "dark", step: string) => {
+      await expect
+        .poll(schemes, { message: step })
+        .toEqual({ text: scheme, floor: scheme, detail: scheme });
+      await page.screenshot({ path: testInfo.outputPath(`runtime-${step}.png`) });
+    };
+    await expectScheme("dark", "1-dark-on-light-system");
+    await picker.getByRole("radio", { name: "Light", exact: true }).click();
+    await expectScheme("light", "2-light");
+    await picker.getByRole("radio", { name: "Dark", exact: true }).click();
+    await expectScheme("dark", "3-dark-again");
+    await picker.getByRole("radio", { name: "System", exact: true }).click();
+    await expectScheme("light", "4-system-light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    // Upstream settings content does not refresh on an adaptive switch; read the workspace.
+    await page.getByTestId("settings-back-to-workspace").click();
+    await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible();
+    await expectScheme("dark", "5-system-turns-dark");
+  } finally {
+    await session.cleanup();
+  }
+});
+
 // Every surface follows the App theme, not the system appearance the page starts in. The material
 // stylesheet mounts before the persisted theme is applied, so a mismatch is the case that breaks.
 // Backgrounds are composited down to the system appearance's backdrop: the worst case for the

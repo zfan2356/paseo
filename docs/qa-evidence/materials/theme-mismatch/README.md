@@ -23,6 +23,7 @@ Before/after pairs: left is `main` at `484ac21f`, right is this change. Capture:
 In `e2e/browser/materials.spec.ts`, failing on `484ac21f` and passing here:
 
 - `material surfaces follow the App theme against the system appearance (darwin)`: transcript, sidebar, header, composer and menu text at ≥ 4.5:1 in all four combinations, backgrounds composited down to the system appearance.
+- `material stylesheet follows runtime theme changes (darwin)`: starts on Dark under a light system, then picks Light, Dark and System in Settings and turns the system dark. After each step the floor, the panel or settings detail pane, and the App's text share one scheme. `484ac21f` fails at the first step: Dark is selected and the floor and panel are light.
 - `composer pills stay above the floating composer`: no clipping ancestor within the shadow's reach (12px above, 16px beside, 20px below).
 - `window skeleton floats the workspace panel`: settings navigation shows the floor with no rule; the detail pane has the 8px gap, 12px left corners and shadow.
 
