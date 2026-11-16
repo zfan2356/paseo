@@ -1,6 +1,6 @@
 # Fork design: materials
 
-This fork adds glass materials and elevation to web and desktop. Native iOS and Android keep upstream rendering. Read [`docs/design.md`](../design.md) first; this doc lists only where the fork departs from it. The layer's code and hooks are in [SYNC.md](SYNC.md).
+This fork adds glass materials and elevation to web and desktop, and a glass preview on Android bottom sheets and the floating compact header ([Android glass preview](#android-glass-preview)). iOS keeps upstream rendering. Read [`docs/design.md`](../design.md) first; this doc lists only where the fork departs from it. The layer's code and hooks are in [SYNC.md](SYNC.md).
 
 ## Where the code lives
 
@@ -54,24 +54,25 @@ On wide web and desktop layouts the sidebar material is the window's floor and t
 - **Settings.** The desktop settings screen carries the `settings` slot and takes the same skeleton inside the workspace panel: the panel and its wrappers go clear, the settings navigation sits on the floor with no right border, and the detail pane floats off it with the panel's gap, corners, border and shadow. The stylesheet reaches the two halves as `[role="navigation"]` and the last child of the settings row.
 - **Pinned detection.** The left inset, corners, border and shadow apply under `html:has([data-material="sidebar"])`. A collapsed sidebar switches to the overlay presentation, which carries no `sidebar` slot, so the panel goes flush without an extra hook.
 
-| State                                | Behavior                                                                                         |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| Sidebar pinned                       | Floor under the sidebar; 8px gap and rounded left corners beside it; top, right and bottom flush |
-| Explorer docked                      | Floor under the Explorer; 8px gap and rounded right corners beside it                            |
-| Both docked                          | The workspace column floats with 8px on each side and four rounded corners                       |
-| Sidebar collapsed, Explorer closed   | Panel flush on all four sides; the header keeps its traffic-light clearance                      |
-| Narrow wide window (overlay sidebar) | Panel flush; the overlay sidebar keeps its own surface and slides over it                        |
-| Settings (wide)                      | Navigation on the floor; detail pane floats like the panel beside the pinned sidebar             |
-| Workspace focus mode                 | No panel and no Explorer: the workspace fills the window                                         |
-| macOS full screen                    | Same as windowed                                                                                 |
-| Compact (`md` and below, e.g. 390px) | Unchanged full-screen workspace; the Explorer stays an overlay sheet                             |
-| Native iOS and Android               | Unchanged upstream rendering                                                                     |
-| Off macOS                            | Opaque floor; same geometry, border and shadow                                                   |
-| Reduce Transparency                  | The sidebar material becomes opaque `surface`, so the floor turns opaque                         |
+| State                                | Behavior                                                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Sidebar pinned                       | Floor under the sidebar; 8px gap and rounded left corners beside it; top, right and bottom flush                |
+| Explorer docked                      | Floor under the Explorer; 8px gap and rounded right corners beside it                                           |
+| Both docked                          | The workspace column floats with 8px on each side and four rounded corners                                      |
+| Sidebar collapsed, Explorer closed   | Panel flush on all four sides; the header keeps its traffic-light clearance                                     |
+| Narrow wide window (overlay sidebar) | Panel flush; the overlay sidebar keeps its own surface and slides over it                                       |
+| Settings (wide)                      | Navigation on the floor; detail pane floats like the panel beside the pinned sidebar                            |
+| Workspace focus mode                 | No panel and no Explorer: the workspace fills the window                                                        |
+| macOS full screen                    | Same as windowed                                                                                                |
+| Compact (`md` and below, e.g. 390px) | Unchanged full-screen workspace; the Explorer stays an overlay sheet                                            |
+| Native iOS                           | Unchanged upstream rendering                                                                                    |
+| Native Android                       | Unchanged skeleton; sheets and the floating header take glass ([Android glass preview](#android-glass-preview)) |
+| Off macOS                            | Opaque floor; same geometry, border and shadow                                                                  |
+| Reduce Transparency                  | The sidebar material becomes opaque `surface`, so the floor turns opaque                                        |
 
 ## Upstream clauses this overrides
 
-These apply on web and desktop only. Native follows upstream.
+These apply on web and desktop only. Native follows upstream, except the Android glass surfaces below.
 
 | Upstream clause                                                                                                             | Fork rule                                                                                                                                                                                     |
 | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -85,6 +86,33 @@ These apply on web and desktop only. Native follows upstream.
 | §14 Forbidden: no hardcoded hex outside the palette.                                                                        | The material palette in `tokens.ts` is the exception, the same way the identity color table is upstream.                                                                                      |
 
 Typography inside chrome, menu, banner, composer and dialog uses the system UI stack in `MATERIAL.font`.
+
+## Android glass preview
+
+Android 12 and later blurs two surfaces: every Gorhom bottom sheet that uses `SheetBackground` (adaptive modal sheets, menus, sheet tabs) and the compact header while it floats over an agent or draft tab. List rows, the transcript and the composer stay opaque. The code is `packages/app/src/fork/materials/glass.android.tsx`; `glass.tsx` is the iOS and web build and renders the upstream elements unchanged.
+
+- **Targets.** expo-blur blurs a `BlurTargetView`, and a target may not contain a `BlurView` that samples it. Each glass surface blurs a sibling: sheets sample `GlassAppTarget`, which wraps the app inside `BottomSheetModalProvider` because Gorhom renders its portal host after those children; the header samples the `GlassTarget` beside it in `FloatingHeaderLayout`. Don't move a target up to a common ancestor of its glass: the blur would sample itself.
+- **Strength.** The blur matches CSS `blur(MATERIAL.glass.blur)`. RenderEffect takes a radius in px and converts it to sigma as `0.57735 * radius + 0.5`, so the radius is derived from the token and the screen density. expo-blur also derives a tint from `intensity`, so glass passes intensity 1 and sets the radius through `blurReductionFactor`. Over the blur sits `MATERIAL[scheme].surface` at `MATERIAL.glass.opacity`, following the App theme's scheme. Android has no `saturate()`.
+- **Fallback.** Below Android 12, and while "High contrast text" is on, glass is `surface` at the protected opacity (`MATERIAL.elevation.hint.material.minimumOpacity`) with no blur. Android exposes no reduce-transparency setting to React Native; high-contrast text is the closest signal.
+- **Header fade.** The floating header's upstream `EdgeFade` is replaced by glass that ends at the header's bottom edge.
+- **Composer.** The native composer sits below the transcript, so there is nothing behind it to blur. Glass there would mean floating it over the transcript, which changes the native dock and the transcript's end-follow scrolling.
+
+Build a sideloadable APK that installs next to the store app (`sh.paseo.glasspreview`, "Paseo Glass Preview", debug-signed, embedded bundle):
+
+```bash
+cd packages/app
+APP_VARIANT=glass-preview npx expo prebuild --platform android --no-install --clean
+cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+```
+
+Device checklist:
+
+- Open a menu and an adaptive sheet over a busy transcript: the content behind blurs, the top corners stay rounded, and the sheet follows the App theme in light and dark.
+- Open a sheet from the sidebar: it blurs the sidebar, not the workspace.
+- Scroll an agent transcript under the floating header: text behind the header blurs and the header stays legible; scrolling stays smooth.
+- Switch the App theme while a sheet is open.
+- Turn on Settings → Accessibility → High contrast text: sheets and header turn into the near-opaque fill.
+- On Android 11 or earlier: the near-opaque fill, no blur.
 
 ## Evidence
 
