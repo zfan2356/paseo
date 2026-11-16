@@ -5,7 +5,7 @@ import { getServerId } from "../support/helpers/server-id";
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { openAttachmentMenu } from "../support/helpers/composer";
-import { openChangesPanel } from "../support/helpers/workspace-tabs";
+import { openChangesPanel, openChangesTreePanel } from "../support/helpers/workspace-tabs";
 import { openSettings } from "../support/helpers/app";
 
 // Pixel comparison of the material layer between two revisions; see docs/fork/SYNC.md.
@@ -159,8 +159,15 @@ for (const platform of PLATFORMS) {
         await sidebarToggle.click();
         await expect(row).toHaveCount(0);
         await shot("1440-sidebar-collapsed");
+        await openChangesTreePanel(page);
+        // The tree header settles on the checkout once a changed file renders.
+        await expect(
+          page.locator('[data-testid^="diff-tree-file-"]').filter({ visible: true }).first(),
+        ).toBeVisible();
+        await shot("1440-explorer");
         await sidebarToggle.click();
         await expect(row).toBeVisible();
+        await shot("1440-both-sidebars");
 
         await openChangesPanel(page);
         await shot("1440-diff");

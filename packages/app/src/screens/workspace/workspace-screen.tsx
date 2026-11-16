@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import {
   AdaptiveWorkspaceChrome,
   type WorkspaceCompactHeaderActions,
@@ -856,7 +857,11 @@ function WorkspacePanelSurface({
     <WorkspaceComposerEditingSessionsProvider workspaceKey={workspaceKey} tabIds={tabIds}>
       <NewTabLauncherProvider value={launcher}>
         <SheetHostScope enabled={!isCompact}>
-          <View style={styles.threePaneRow} onLayout={onLayout}>
+          <View
+            style={styles.threePaneRow}
+            onLayout={onLayout}
+            dataSet={MATERIAL_SLOTS.workspaceRow}
+          >
             {children}
           </View>
         </SheetHostScope>

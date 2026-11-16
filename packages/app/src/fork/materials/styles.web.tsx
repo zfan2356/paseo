@@ -52,7 +52,53 @@ function skeletonCss(root: string, scheme: Theme["colorScheme"], surfaceSidebar:
       border-radius: ${panel.radius}px 0 0 ${panel.radius}px;
       border-left: ${panel.border[scheme]}; box-shadow: ${panel.shadow[scheme]};
     }
+    /* The sidebar's resize handle (its last child, a lone focusable strip) straddles the sidebar
+       edge; centre it on the gap. The sidebar's ancestors stop clipping it, and the panel's wrappers
+       let pointers through the gap so it stays hittable under them; the panel itself still takes
+       pointers. */
+    ${pinned} [data-material="sidebar"] > :last-child > [tabindex]:only-child { transform: translateX(${panel.inset / 2}px); }
+    ${pinned} div:has([data-material="sidebar"]):not(:has([data-material="panel-frame"])) { overflow: visible; }
+    ${pinned} div:has([data-material="panel-frame"]):not(:has([data-material="sidebar"])),
+    ${pinned} [data-material="panel-frame"] { pointer-events: none; }
+    ${root} [data-material="panel"] { pointer-events: auto; }
+    ${explorerCss(root, scheme)}
     ${settingsCss(root, scheme)}
+  `;
+}
+
+// The docked Explorer sits on the floor like the pinned sidebar, so only the workspace column
+// floats. Its resize separator renders only while the Explorer is docked open on the active
+// workspace, which makes it the open-state signal. The panel and every layer down to the
+// workspace row go clear; the column takes the panel's fill, corners, border and shadow.
+function explorerCss(root: string, scheme: Scheme): string {
+  const { panel } = MATERIAL;
+  const row = '[data-material="workspace-row"]';
+  const separator = '[role="separator"][aria-orientation="vertical"]';
+  // The row's other children include the workspace portal host; only the one holding the
+  // separator is the Explorer. `:has()` does not nest, so the open check spells it out.
+  const explorer = `${row} > :not(:first-child):has(${separator})`;
+  const panelOpen = `[data-material="panel"]:has(${row} > :not(:first-child) ${separator})`;
+  const open = `${root} ${panelOpen}`;
+  const pinned = `${root}:has([data-material="sidebar"]) ${panelOpen}`;
+  return `
+    ${open} { background: transparent; border-radius: 0; border-left: 0; box-shadow: none; overflow: visible; }
+    ${open} div:has(${row}), ${open} ${row} { background: transparent !important; }
+    ${open} ${row} > :first-child {
+      margin-right: ${panel.inset}px; background: ${MATERIAL[scheme].content}; overflow: hidden;
+      border-top-right-radius: ${panel.radius}px; border-bottom-right-radius: ${panel.radius}px;
+      border-right: ${panel.border[scheme]}; box-shadow: ${panel.shadow[scheme]};
+    }
+    ${pinned} ${row} > :first-child {
+      border-top-left-radius: ${panel.radius}px; border-bottom-left-radius: ${panel.radius}px;
+      border-left: ${panel.border[scheme]};
+    }
+    ${open} ${explorer} { --colors-surface-sidebar: transparent; }
+    ${open} ${explorer} div:has(${separator}) { background: transparent !important; overflow: visible; }
+    ${open} ${explorer} [data-material="header"] { background: transparent !important; backdrop-filter: none; }
+    ${open} ${explorer} :has(> ${separator}) {
+      background: transparent !important; transform: translateX(-${panel.inset / 2}px);
+    }
+    ${open} ${explorer} ${separator} { transform: translateX(-50%); }
   `;
 }
 

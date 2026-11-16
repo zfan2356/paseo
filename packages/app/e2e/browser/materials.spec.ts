@@ -3,7 +3,12 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { openAttachmentMenu } from "../support/helpers/composer";
-import { openChangesPanel } from "../support/helpers/workspace-tabs";
+import {
+  ensureExplorerSidebar,
+  openChangesPanel,
+  openChangesTreePanel,
+  openFilesPanel,
+} from "../support/helpers/workspace-tabs";
 import { openSettings } from "../support/helpers/app";
 import { openSettingsSection } from "../support/helpers/settings";
 
@@ -923,6 +928,193 @@ for (const platform of ["darwin", "web"] as const) {
       await page.screenshot({ path: testInfo.outputPath(`settings-${platform}.png`) });
       await page.goBack();
       await expect(page.getByTestId("settings-sidebar")).toHaveCount(0);
+
+      // Compact layouts keep the full-screen workspace.
+      await page.setViewportSize({ width: 390, height: 900 });
+      await expect.poll(() => page.locator('[data-material="panel"]').count()).toBe(0);
+    } finally {
+      await session.cleanup();
+    }
+  });
+}
+
+// The docked Explorer sits on the floor like the pinned sidebar, so only the workspace column
+// floats between them. Both resize handles centre on their gap, where the dividing line reads.
+for (const platform of ["darwin", "web"] as const) {
+  test(`docked Explorer mirrors the sidebar on the floor (${platform})`, async ({ page }) => {
+    test.setTimeout(180_000);
+    if (platform === "darwin") {
+      await page.addInitScript(() => {
+        (window as unknown as { paseoDesktop: unknown }).paseoDesktop = {
+          platform: "darwin",
+          events: { on: () => () => {} },
+          invoke: async () => null,
+        };
+      });
+    }
+    const session = await seedMockAgentWorkspace({
+      repoPrefix: "material-explorer-",
+      title: "Explorer skeleton",
+      initialPrompt: "hello",
+      featureValues: { mockAssistantResponse: "ok" },
+    });
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openAgentRoute(page, session);
+      await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible({
+        timeout: 60_000,
+      });
+      await page.waitForFunction(() => document.querySelector("[data-material-styles]"));
+      const skeleton = () =>
+        page.evaluate(() => {
+          const visible = (selector: string) =>
+            [...document.querySelectorAll(selector)].find(
+              (el) => el.getBoundingClientRect().width > 0,
+            ) ?? null;
+          const frame = document.querySelector('[data-material="panel-frame"]');
+          const column = document.querySelector('[data-material="workspace-row"] > :first-child');
+          if (!frame || !column) return null;
+          const sidebar = document.querySelector('[data-material="sidebar"]');
+          const explorer = visible('[data-testid="workspace-explorer-sidebar"]');
+          // The floating box: the column beside a docked Explorer, otherwise the whole panel.
+          const floating = explorer ? column : document.querySelector('[data-material="panel"]')!;
+          const c = floating.getBoundingClientRect();
+          const style = getComputedStyle(floating);
+          // Distance from a handle's hit area centre to its gap centre, and whether a pointer at
+          // the gap centre lands on the handle.
+          const handle = (target: Element | null, gapStart: number, gapEnd: number) => {
+            if (!target) return null;
+            const box = target.getBoundingClientRect();
+            const centre = (gapStart + gapEnd) / 2;
+            const hit = document.elementFromPoint(centre, window.innerHeight / 2);
+            return {
+              offset: Math.round((box.left + box.right) / 2 - centre) || 0,
+              hit: hit !== null && (hit === target || target.contains(hit)),
+            };
+          };
+          // Any opaque surface in the Explorer (its tab rail, the Files or Changes toolbar and
+          // content) or between it and the panel frame would cover the floor. A surface spans
+          // the Explorer's width; rows (≤ 28px), chips and 1px rules stay out.
+          const fill = (node: Element) => getComputedStyle(node).backgroundColor;
+          const clear = (node: Element) => fill(node) === "rgba(0, 0, 0, 0)";
+          const opaqueIn = (root: Element) => {
+            const width = root.getBoundingClientRect().width;
+            const found: string[] = [];
+            for (
+              let node: Element | null = root;
+              node && node !== frame;
+              node = node.parentElement
+            ) {
+              if (!clear(node)) found.push(fill(node));
+            }
+            for (const node of root.querySelectorAll("*")) {
+              const box = node.getBoundingClientRect();
+              const surface = box.width >= width * 0.9 && box.height >= 32;
+              if (!surface || clear(node)) continue;
+              const name = node.getAttribute("data-testid") ?? node.tagName;
+              found.push(`${name} ${Math.round(box.height)}px ${fill(node)}`);
+            }
+            return found;
+          };
+          const separator = document.querySelector(
+            '[data-material="workspace-row"] > :not(:first-child) [role="separator"]',
+          );
+          const s = sidebar?.getBoundingClientRect();
+          const e = explorer?.getBoundingClientRect();
+          return {
+            left: s ? Math.round(c.left - s.right) : Math.round(c.left),
+            right: e ? Math.round(e.left - c.right) : Math.round(window.innerWidth - c.right),
+            top: Math.round(c.top),
+            bottom: Math.round(window.innerHeight - c.bottom),
+            radius: [
+              style.borderTopLeftRadius,
+              style.borderTopRightRadius,
+              style.borderBottomRightRadius,
+              style.borderBottomLeftRadius,
+            ],
+            border: [style.borderLeftWidth, style.borderRightWidth],
+            shadow: style.boxShadow !== "none",
+            explorerOpaque: explorer ? opaqueIn(explorer) : null,
+            // The Explorer's resize handle used to draw the dividing line.
+            explorerRule: separator?.parentElement ? fill(separator.parentElement) : null,
+            floor: fill(frame),
+            leftHandle: s
+              ? handle(
+                  document.querySelector('[data-testid="left-sidebar-resize-handle"]'),
+                  s.right,
+                  c.left,
+                )
+              : null,
+            rightHandle: e ? handle(separator, c.right, e.left) : null,
+          };
+        });
+      const centred = { offset: 0, hit: true };
+      const translucent = (color: string | undefined) => /\/\s*0?\.\d+\)$/.test(color ?? "");
+      const layout = async () => {
+        const { floor: _floor, ...rest } = (await skeleton()) ?? {};
+        return rest;
+      };
+
+      // Sidebar only: the panel floats beside the sidebar, and the handle sits in the gap.
+      await expect.poll(skeleton).toMatchObject({ left: 8, right: 0, leftHandle: centred });
+
+      // Both open: the column floats 8px off each sidebar with four rounded corners.
+      await ensureExplorerSidebar(page);
+      await openFilesPanel(page);
+      const both = {
+        left: 8,
+        right: 8,
+        top: 0,
+        bottom: 0,
+        radius: ["12px", "12px", "12px", "12px"],
+        border: ["1px", "1px"],
+        shadow: true,
+        explorerOpaque: [],
+        explorerRule: "rgba(0, 0, 0, 0)",
+        leftHandle: centred,
+        rightHandle: centred,
+      };
+      await expect.poll(layout).toEqual(both);
+      expect(translucent((await skeleton())?.floor)).toBe(platform === "darwin");
+
+      // Changes renders its own toolbar and tree; they show the floor too.
+      await openChangesTreePanel(page);
+      await expect.poll(layout).toEqual(both);
+
+      // Explorer only: flush on the left, floating on the right.
+      const sidebarToggle = page.getByTestId("menu-button").filter({ visible: true }).first();
+      await sidebarToggle.click();
+      await expect.poll(() => page.locator('[data-material="sidebar"]:visible').count()).toBe(0);
+      await expect.poll(skeleton).toMatchObject({
+        left: 0,
+        right: 8,
+        radius: ["0px", "12px", "12px", "0px"],
+        border: ["0px", "1px"],
+        explorerOpaque: [],
+        explorerRule: "rgba(0, 0, 0, 0)",
+        rightHandle: centred,
+      });
+      await sidebarToggle.click();
+      await expect.poll(layout).toEqual(both);
+
+      // Reduce Transparency keeps the geometry and turns the floor opaque.
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-reduced-transparency", value: "reduce" }],
+      });
+      await expect.poll(layout).toEqual(both);
+      await expect.poll(async () => translucent((await skeleton())?.floor)).toBe(false);
+      await cdp.send("Emulation.setEmulatedMedia", { features: [] });
+
+      if (platform === "web") {
+        // Focus mode hides the Explorer and drops the panel.
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.keyboard.press("Control+Shift+F");
+        await expect(page.getByRole("button", { name: "Exit focus mode" })).toBeVisible();
+        await expect.poll(() => page.locator('[data-material="panel"]').count()).toBe(0);
+        await page.getByRole("button", { name: "Exit focus mode" }).click();
+        await expect.poll(layout).toEqual(both);
+      }
 
       // Compact layouts keep the full-screen workspace.
       await page.setViewportSize({ width: 390, height: 900 });
