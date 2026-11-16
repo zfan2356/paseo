@@ -4,7 +4,7 @@ import {
   StructuredAgentResponseError,
 } from "@getpaseo/server/agent-response";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
-import { resolveCallerAgentId } from "../../utils/caller-agent.js";
+import { isAutomaticTaskInvocation, resolveCallerAgentId } from "../../utils/caller-agent.js";
 import { connectToDaemon } from "../../utils/client.js";
 import type {
   CommandOptions,
@@ -47,6 +47,7 @@ export function addRunOptions(cmd: Command): Command {
       .option("--thinking <id>", "Thinking option ID to use for this run")
       .option("--mode <mode>", "Provider-specific mode (e.g., plan, default, bypass)")
       .option("--new-workspace <local|worktree>", "Create a separate local or worktree workspace")
+      .option("--project <id>", "Use an existing project for --new-workspace")
       .addOption(new Option("--worktree <name>", "Legacy workspace isolation alias").hideHelp())
       .option(
         "--worktree-mode <mode>",
@@ -124,6 +125,7 @@ export interface AgentRunOptions extends CommandOptions {
   thinking?: string;
   mode?: string;
   newWorkspace?: string;
+  project?: string;
   worktree?: string;
   worktreeMode?: string;
   worktreeSlug?: string;
@@ -150,6 +152,7 @@ function buildRunWorkspaceSource(options: AgentRunOptions, cwd: string) {
   return buildWorkspaceSource({
     daemonTarget: options.daemonTarget,
     isolation: newWorkspace,
+    project: options.project,
     path: cwd,
     mode: options.worktreeMode,
     worktreeSlug: options.worktreeSlug ?? options.worktree,
@@ -317,6 +320,14 @@ function structuredRunSchema(output: Record<string, unknown>): OutputSchema<Agen
 
 function validateRunWorkspaceOptions(options: AgentRunOptions): void {
   const newWorkspace = resolveNewWorkspaceKind(options);
+  if (options.project && !newWorkspace) {
+    throw {
+      code: "INVALID_OPTIONS",
+      message: "--project requires --new-workspace",
+      details:
+        "Use --new-workspace local or --new-workspace worktree to keep a separate execution directory",
+    } satisfies CommandError;
+  }
   if (
     options.newWorkspace &&
     options.newWorkspace !== "local" &&
@@ -537,9 +548,9 @@ export async function resolveExistingRunWorkspace(
 
 // Workspace policy for `paseo run`. Precedence:
 //   1. --workspace <id>            -> run in that existing workspace
-//   2. caller agent                -> daemon resolves the caller's workspace
-//   3. $PASEO_WORKSPACE_ID         -> exported by workspace terminals
-//   4. --new-workspace <kind>      -> mint a new workspace explicitly
+//   2. --new-workspace or managed  -> create a separate workspace, select project on the host
+//   3. caller agent                -> daemon resolves the caller's workspace
+//   4. $PASEO_WORKSPACE_ID         -> exported by workspace terminals
 //   5. bare run                    -> mint a new local-backed workspace for cwd
 async function resolveRunWorkspace(
   client: ConnectedDaemonClient,
@@ -548,17 +559,19 @@ async function resolveRunWorkspace(
   callerAgentId: string | undefined,
 ): Promise<RunWorkspace> {
   const newWorkspace = resolveNewWorkspaceKind(options);
+  const automatic = isAutomaticTaskInvocation();
+  const separateWorkspace = Boolean(newWorkspace) || automatic;
   const explicit = newWorkspace ? undefined : options.workspace?.trim();
   if (explicit) {
     console.error(`Using workspace ${explicit}`);
     return resolveExistingRunWorkspace(client, explicit);
   }
 
-  if (!newWorkspace && callerAgentId) {
+  if (!separateWorkspace && callerAgentId) {
     return { cwd };
   }
 
-  const ambientWorkspaceId = newWorkspace ? undefined : process.env.PASEO_WORKSPACE_ID?.trim();
+  const ambientWorkspaceId = separateWorkspace ? undefined : process.env.PASEO_WORKSPACE_ID?.trim();
   if (ambientWorkspaceId) {
     console.error(`Using workspace ${ambientWorkspaceId}`);
     return resolveExistingRunWorkspace(client, ambientWorkspaceId);
@@ -569,6 +582,7 @@ async function resolveRunWorkspace(
   const source = buildRunWorkspaceSource(options, cwd);
   const result = await client.createWorkspace({
     source,
+    ...(automatic ? { automatic: true } : {}),
     ...(callerAgentId ? { callerAgentId } : {}),
   });
 

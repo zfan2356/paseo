@@ -1,0 +1,54 @@
+
+ RUN  v4.1.7 /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-374-6a7559c252c5/worktree
+
+ ❯ packages/app/src/session-navigation/model.work-374-baseline.test.ts (12 tests | 1 failed | 11 skipped) 161ms
+   × keeps all nine pins in one ordered section across project/status grouping and filters 159ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/app/src/session-navigation/model.work-374-baseline.test.ts > keeps all nine pins in one ordered section across project/status grouping and filters
+AssertionError: expected [ [ 'ungrouped', …(1) ] ] to deeply equal [ [ 'pinned-sessions', …(1) ], …(1) ]
+
+- Expected
++ Received
+
+  [
+    [
+-     "pinned-sessions",
++     "ungrouped",
+      [
+        "8",
+        "7",
+        "6",
+        "5",
+        "4",
+        "3",
+        "2",
+        "1",
+        "0",
+-     ],
+-   ],
+-   [
+-     "ungrouped",
+-     [
+        "9",
+      ],
+    ],
+  ]
+
+ ❯ packages/app/src/session-navigation/model.work-374-baseline.test.ts:230:5
+    228|   expect(
+    229|     projectSessions(input).map((group) => [group.key, group.agents.map…
+    230|   ).toEqual([
+       |     ^
+    231|     [PINNED_SESSION_GROUP, ["8", "7", "6", "5", "4", "3", "2", "1", "0…
+    232|     ["ungrouped", ["9"]],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 11 skipped (12)
+   Start at  09:25:22
+   Duration  485ms (transform 188ms, setup 0ms, import 99ms, tests 161ms, environment 0ms)
+

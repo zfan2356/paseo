@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
+import {
+  MagpieCodexUsage,
+  usageInputSchema,
+} from "../../../../plugins/codex-usage-source/server/magpie";
 import { expect, test } from "../support/fixtures";
 import { gotoAppShell, openSettings } from "../support/helpers/app";
 import { addConnectedHostAndReload } from "../support/helpers/hosts";
@@ -135,6 +139,82 @@ async function refreshUsageAndWaitForReports(page: Page, usage: UsageReportsFixt
   await expect(group.getByText("41% used", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Refresh all", exact: true })).toBeEnabled();
 }
+
+test("shows and independently refreshes both Magpie Codex subscriptions", async ({ page }) => {
+  let plusUsed = 3;
+  const magpie = new MagpieCodexUsage(async (resource) => {
+    if (resource === "/api/providers")
+      return {
+        providers: [
+          {
+            id: "codex",
+            account: {
+              logins: [
+                { user: "promax@example.com", on: true },
+                { user: "plus@example.com", on: true },
+                { user: "disabled@example.com", on: false },
+              ],
+            },
+          },
+        ],
+      };
+    return [
+      {
+        provider: "codex",
+        user: "promax@example.com",
+        plan: "promax",
+        windows: [{ name: "7 days", used: 53, resetsAt: "2027-01-01T00:00:00Z" }],
+      },
+      {
+        provider: "codex",
+        user: "plus@example.com",
+        plan: "plus",
+        windows: [{ name: "7 days", used: plusUsed, resetsAt: "2027-01-02T00:00:00Z" }],
+      },
+    ];
+  });
+  const accounts = await magpie.discover({ kind: "global" }, []);
+  async function reportFor(account: (typeof accounts)[number]): Promise<UsageReportEntry> {
+    const { route } = usageInputSchema.parse(account.input);
+    if (route.store !== "magpie") throw new Error("Expected Magpie account");
+    return {
+      id: `codex:${account.key}`,
+      sourceId: "codex",
+      sourceLabel: "Codex",
+      account: { label: account.label },
+      fetchedAt: new Date().toISOString(),
+      report: await magpie.fetch(route),
+    };
+  }
+  const reports = await Promise.all(accounts.map(reportFor));
+  const promax = reports.find((entry) => entry.account.label === "promax@example.com")!;
+  const plus = reports.find((entry) => entry.account.label === "plus@example.com")!;
+  plusUsed = 18;
+  const refreshed = await Promise.all(
+    accounts.filter((account) => account.label === "plus@example.com").map(reportFor),
+  );
+  const usage = await installUsageReportsFixture(page, {
+    lists: [(request) => (request.forceRefresh ? refreshed : reports)],
+  });
+  await gotoAppShell(page);
+  await openUsageFromItem(page);
+  const first = page.getByTestId(`usage-report-${promax.id}`);
+  const second = page.getByTestId(`usage-report-${plus.id}`);
+  await expect(first.getByText("promax@example.com")).toBeVisible();
+  await expect(first.getByText("promax", { exact: true })).toBeVisible();
+  await expect(first.getByText("53% used")).toBeVisible();
+  await expect(second.getByText("plus@example.com")).toBeVisible();
+  await expect(second.getByText("plus", { exact: true })).toBeVisible();
+  await expect(second.getByText("3% used")).toBeVisible();
+  await expect(page.getByText("disabled@example.com")).toHaveCount(0);
+  await second.getByTestId("usage-refresh").click();
+  await expect(second.getByText("18% used")).toBeVisible();
+  await expect(first.getByText("53% used")).toBeVisible();
+  await expect
+    .poll(() => forcedRefreshes(usage))
+    .toEqual([{ forceRefresh: true, reportIds: [plus.id] }]);
+  await qaScreenshot(page, "magpie-codex-subscriptions");
+});
 
 test.describe("usage modal", () => {
   test("opens from the sidebar on the host's reports, with no host filter for one host", async ({
@@ -717,15 +797,15 @@ test("open usage clocks advance without refreshing or reopening", async ({ page 
     await openCompactUsageWithClock(page, now);
     const card = page.getByTestId("usage-report-login-journey:account");
     await expect(card.getByTestId("usage-freshness")).toHaveText("Updated just now");
-    await expect(card.getByText("resets 30m", { exact: false }).first()).toBeVisible();
+    await expect(card.getByText("resets in 30m", { exact: false }).first()).toBeVisible();
     // The shared minute clock is wall-aligned, and the daemon timestamps use real time.
     // After two browser minutes the latest displayed tick is one or two minutes old.
     await advanceUsageClock(page, 120_000);
     await expect(card.getByTestId("usage-freshness")).toHaveText(/^Updated [12]m ago$/);
-    await expect(card.getByText(/resets (28|29)m/).first()).toBeVisible();
-    await expect(card.getByText(/runs out (28|29)m/)).toBeVisible();
+    await expect(card.getByText(/resets in (28|29)m/).first()).toBeVisible();
+    await expect(card.getByText(/runs out in (28|29)m/)).toBeVisible();
     await expect(card.getByTestId("provider-usage-balance-credits-reset")).toHaveText(
-      /^resets (28|29)m$/,
+      /^resets in (28|29)m\s·\s/,
     );
   } finally {
     await login.cleanup();

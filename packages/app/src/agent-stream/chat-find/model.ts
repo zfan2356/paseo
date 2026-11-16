@@ -190,7 +190,13 @@ export class ChatFindModel {
         before = Math.max(before, seq);
         continue;
       }
-      const sameRole = item.kind === `${location.role}_message`;
+      const isReport =
+        item.kind === "tool_call" &&
+        item.payload.source === "agent" &&
+        (item.payload.data.agentMessage?.event === "message" ||
+          item.payload.data.agentMessage?.event === "finished");
+      const sameRole =
+        item.kind === `${location.role}_message` || (location.role === "user" && isReport);
       if (sameRole && (!exact || seq === location.seq)) return { id: item.id, seq, before };
       // A prompt is a hard boundary; never resolve an assistant hit in a later response.
       if (item.kind === "user_message") return null;

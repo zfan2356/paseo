@@ -22,6 +22,58 @@ function message(seq: number, text = "target"): StreamItem {
   };
 }
 
+it("resolves report search hits to the canonical agent message row", async () => {
+  const history = hydrateStreamState(
+    [
+      {
+        event: {
+          type: "timeline" as const,
+          provider: "codex" as const,
+          item: {
+            type: "tool_call" as const,
+            callId: "report",
+            name: "agent_message",
+            status: "completed" as const,
+            error: null,
+            detail: { type: "plain_text" as const, text: "needle" },
+            agentMessage: {
+              event: "message" as const,
+              sender: { id: "reviewer" },
+              text: "needle",
+            },
+          },
+        },
+        timestamp: new Date(0),
+        timelineCursor: { epoch: "epoch", seq: 1 },
+      },
+    ],
+    { source: "canonical" },
+  );
+  const revealed: string[] = [];
+  const model = new ChatFindModel({
+    async search() {
+      return response([{ seq: 1, role: "user", count: 1 }]);
+    },
+    async load() {
+      throw new Error("Report is already loaded");
+    },
+    async reveal(id) {
+      revealed.push(id);
+      return { count: 1, occurrence: 0 };
+    },
+    clear() {},
+  });
+  try {
+    model.updateHistory("epoch", history);
+    model.open();
+    model.setQuery("needle");
+    await expect.poll(() => model.getSnapshot().phase).toBe("ready");
+    expect(revealed).toEqual([history[0]!.id]);
+  } finally {
+    model.close();
+  }
+});
+
 it("loads an older location and searches a response merged across suppressed tasks once", async () => {
   const source = [
     { type: "assistant_message" as const, text: "first **target** " },

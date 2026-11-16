@@ -11,7 +11,27 @@ export async function openNewAgentComposer(page: Page): Promise<void> {
  * Wait for the sidebar to show at least one project row. Use this after a spec
  * seeds a workspace/project; zero-project flows need their own assertion.
  */
+export async function openDirectoryResources(page: Page): Promise<void> {
+  const sheet = page.getByTestId("workspace-resources-sheet").filter({ visible: true });
+  if (await sheet.isVisible()) return;
+  const explorerToggle = page
+    .getByTestId("workspace-explorer-toggle")
+    .filter({ visible: true })
+    .first();
+  if (await explorerToggle.isVisible()) {
+    const { ensureExplorerSidebar } = await import("./workspace-tabs");
+    const explorer = await ensureExplorerSidebar(page);
+    await explorer.getByTestId("workspace-resources-open").click();
+  } else {
+    const home = page.getByTestId("open-project-workspace-resources");
+    if (!(await home.isVisible())) await page.goto("/open-project");
+    await home.click();
+  }
+  await expect(sheet).toBeVisible();
+}
+
 export async function waitForSidebarHydration(page: Page, timeout = 60_000): Promise<void> {
+  await openDirectoryResources(page);
   await page
     .locator('[data-testid^="sidebar-project-row-"]')
     .first()
@@ -19,6 +39,7 @@ export async function waitForSidebarHydration(page: Page, timeout = 60_000): Pro
 }
 
 export async function waitForNoProjectsInSidebar(page: Page, timeout = 60_000): Promise<void> {
+  await openDirectoryResources(page);
   await page.getByTestId("sidebar-project-empty-state").waitFor({ state: "visible", timeout });
 }
 
@@ -32,6 +53,7 @@ export async function expectSidebarWorkspaceSelected(input: {
   workspaceId: string;
   selected?: boolean;
 }): Promise<void> {
+  await openDirectoryResources(input.page);
   const row = workspaceRowLocator(input.page, input.serverId, input.workspaceId);
   await expect(row).toBeVisible({ timeout: 30_000 });
   const expected = input.selected === false ? "false" : "true";
@@ -70,6 +92,7 @@ export async function waitForWorkspaceInSidebar(
   page: Page,
   input: { serverId: string; workspaceId: string },
 ): Promise<void> {
+  await openDirectoryResources(page);
   await workspaceRowLocator(page, input.serverId, input.workspaceId).waitFor({
     state: "visible",
     timeout: 60_000,
