@@ -4,6 +4,12 @@ interface CallerLookupClient {
   fetchAgent(options: { agentId: string }): Promise<{ agent: { id: string } } | null>;
 }
 
+export function isAutomaticTaskInvocation(
+  env: { MULTICA_TASK_ID?: string } = process.env,
+): boolean {
+  return Boolean(env.MULTICA_TASK_ID?.trim());
+}
+
 // PASEO_AGENT_ID belongs to the daemon that launched this shell. Commands
 // targeting another daemon (--host or --home) have no caller on that daemon.
 export async function resolveCallerAgentId(

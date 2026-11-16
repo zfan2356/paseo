@@ -1,0 +1,8 @@
+
+ RUN  v4.1.7 /data/home/jayjayzhang/.local/share/multica-trial/workspaces/multica-tri-69d0f2ebb1fd/work-416-c43212430886/worktree/packages/app
+
+
+ Test Files  2 passed (2)
+      Tests  53 passed (53)
+   Start at  23:26:28
+   Duration  1.23s (transform 1.56s, setup 102ms, import 1.81s, tests 42ms, environment 1ms)

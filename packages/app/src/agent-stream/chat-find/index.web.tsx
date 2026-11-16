@@ -15,7 +15,7 @@ import { PaneFind, findShortcutPlatform, isFindShortcut, type PaneFindHandle } f
 import { Button } from "@/components/ui/button";
 import { usePaneFocus } from "@/panels/pane-context";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import { hasActiveWebOverlay } from "@/lib/overlay-root";
+import { hasActiveOverlay } from "@/keyboard";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { planTimelinePromptJump } from "@/timeline/timeline-sync-plan";
@@ -29,7 +29,7 @@ const FAILURE_TEXT: Record<ChatFindFailure, string> = {
   historyChanged: "paneFind.historyChangedFailure",
   reveal: "paneFind.revealFailure",
 };
-const WIDGET_DATASET = { chatFindWidget: "true" };
+const WIDGET_DATASET = { chatFindWidget: "true", material: "chat-find" };
 const ROOT_STYLE = {
   display: "flex",
   flex: 1,
@@ -104,7 +104,7 @@ export function ChatFind({
   useEffect(() => {
     if (!active || !isInteractive) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || hasActiveWebOverlay() || isImeComposingKeyboardEvent(event))
+      if (event.defaultPrevented || hasActiveOverlay() || isImeComposingKeyboardEvent(event))
         return;
       if (isFindShortcut(event, findShortcutPlatform())) {
         event.preventDefault();
@@ -147,7 +147,7 @@ export function ChatFind({
           {state.failure && (
             <View style={styles.error}>
               <Text style={styles.errorText}>{t(FAILURE_TEXT[state.failure])}</Text>
-              <Button size="xs" variant="ghost" onPress={model.retry}>
+              <Button size="sm" variant="ghost" onPress={model.retry}>
                 {t("paneFind.retry")}
               </Button>
             </View>

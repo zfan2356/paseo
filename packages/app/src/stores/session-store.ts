@@ -74,6 +74,7 @@ export interface Agent {
   id: string;
   provider: AgentProvider;
   status: AgentLifecycleStatus;
+  backgroundWork?: { count: number };
   turn: TurnLiveness;
   createdAt: Date;
   updatedAt: Date;
@@ -97,12 +98,15 @@ export interface Agent {
   attentionReason?: "finished" | "error" | "permission" | null;
   attentionTimestamp?: Date | null;
   archivedAt?: Date | null;
+  /** Background agents stay out of tabs, the subagent track and agent lists. Open them by id. */
+  background?: boolean;
   parentAgentId: string | null;
   labels: Record<string, string>;
   projectPlacement?: ProjectPlacementPayload | null;
 }
 
 export interface WorkspaceDescriptor {
+  parentWorkspaceId?: string;
   createdAt: Date | null;
   lastUserMessageAt: Date | null;
   id: string;
@@ -160,6 +164,7 @@ export function normalizeWorkspaceDescriptor(
     projectKind: payload.projectKind,
     workspaceKind: payload.workspaceKind,
     background: payload.background ?? false,
+    parentWorkspaceId: payload.parentWorkspaceId,
     name: payload.name,
     title: payload.title ?? null,
     pinnedAt: payload.pinnedAt ?? null,
@@ -260,6 +265,7 @@ interface ExplorerRequestState {
 }
 
 export interface AgentFileExplorerState {
+  listingGeneration: number;
   directories: Map<string, ExplorerDirectory>;
   isLoading: boolean;
   lastError: string | null;
@@ -277,6 +283,7 @@ export interface DaemonServerInfo {
   desktopManaged?: boolean;
   capabilities?: ServerCapabilities;
   features?: ServerInfoStatusPayload["features"];
+  permissions?: ServerInfoStatusPayload["permissions"];
 }
 
 export function toDaemonServerInfo(serverInfo: ServerInfoStatusPayload): DaemonServerInfo {
@@ -289,6 +296,7 @@ export function toDaemonServerInfo(serverInfo: ServerInfoStatusPayload): DaemonS
       : {}),
     ...(serverInfo.capabilities ? { capabilities: serverInfo.capabilities } : {}),
     ...(serverInfo.features ? { features: serverInfo.features } : {}),
+    ...(serverInfo.permissions ? { permissions: serverInfo.permissions } : {}),
   };
 }
 
@@ -330,6 +338,26 @@ export function selectAgentTimelineState(
     };
   }
   return items.length > 0 ? { status: "painted", items } : { status: "cold" };
+}
+
+/** Text of the loaded user messages, newest first, with back-to-back repeats collapsed. */
+export function selectAgentSentMessages(
+  session: SessionState | undefined,
+  agentId: string,
+): string[] {
+  if (!session) return [];
+  const items = [
+    ...(session.agentStreamTail.get(agentId) ?? []),
+    ...(session.agentStreamHead.get(agentId) ?? []),
+  ];
+  const messages: string[] = [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind !== "user_message" || item.text.trim().length === 0) continue;
+    if (messages[messages.length - 1] === item.text) continue;
+    messages.push(item.text);
+  }
+  return messages;
 }
 
 export function selectAgentTurnPresentation(
@@ -685,6 +713,7 @@ function isSessionServerInfoUnchanged(input: {
   nextDesktopManaged: boolean | undefined;
   nextCapabilities: ServerCapabilities | undefined;
   nextFeatures: ServerInfoStatusPayload["features"] | undefined;
+  nextPermissions: ServerInfoStatusPayload["permissions"];
   nextServerId: string;
 }): boolean {
   const {
@@ -703,6 +732,7 @@ function isSessionServerInfoUnchanged(input: {
     prevVersion === nextVersion &&
     currentServerInfo?.desktopManaged === nextDesktopManaged &&
     areServerCapabilitiesEqual(currentServerInfo?.capabilities, nextCapabilities) &&
+    JSON.stringify(currentServerInfo?.permissions) === JSON.stringify(input.nextPermissions) &&
     areServerInfoFeaturesEqual(currentServerInfo?.features, nextFeatures)
   );
 }
@@ -851,6 +881,7 @@ export const useSessionStore = create<SessionStore>()(
               nextCapabilities,
               nextFeatures,
               nextServerId: info.serverId,
+              nextPermissions: info.permissions,
             })
           ) {
             return prev;
@@ -871,6 +902,7 @@ export const useSessionStore = create<SessionStore>()(
                     : {}),
                   ...(nextCapabilities ? { capabilities: nextCapabilities } : {}),
                   ...(nextFeatures ? { features: nextFeatures } : {}),
+                  ...(info.permissions ? { permissions: info.permissions } : {}),
                 },
               },
             },

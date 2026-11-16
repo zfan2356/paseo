@@ -1,0 +1,102 @@
+
+> @getpaseo/app@0.15.3 build
+> npm run build:web
+
+
+> @getpaseo/app@0.15.3 build:web
+> npm --prefix ../.. run build:app-deps && expo export --platform web
+
+
+> paseo@0.15.3 build:app-deps
+> npm run build:highlight && npm run build:client && npm run build:plugin && npm run build --workspace=@getpaseo/expo-two-way-audio
+
+
+> paseo@0.15.3 build:highlight
+> npm run build --workspace=@getpaseo/highlight
+
+
+> @getpaseo/highlight@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+> paseo@0.15.3 build:client
+> npm run build --workspace=@getpaseo/client
+
+
+> @getpaseo/client@0.15.3 build
+> npm run build --workspace=@getpaseo/protocol && npm run build --workspace=@getpaseo/relay && tsc -p tsconfig.json --incremental false
+
+
+> @getpaseo/protocol@0.15.3 prebuild
+> npm run generate:validators
+
+
+> @getpaseo/protocol@0.15.3 generate:validators
+> node scripts/generate-validation-aot.mjs
+
+generated src/generated/validation/ws-outbound.aot.ts: envelope + 261 session message validators
+
+> @getpaseo/protocol@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+> @getpaseo/relay@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+> paseo@0.15.3 build:plugin
+> npm run build --workspace=@getpaseo/plugin
+
+
+> @getpaseo/plugin@0.15.3 build
+> tsc -p tsconfig.json --incremental false
+
+
+> @getpaseo/expo-two-way-audio@0.15.3 build
+> tsc
+
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Expo Autolinking module resolution enabled
+Starting Metro Bundler
+
+| (node:985003) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+| (Use `node --trace-warnings ...` to show where the warning was created)
+Web Bundled 4335ms packages/app/index.ts (5816 modules)
+
+› Assets (25):
+../../node_modules/expo-router/assets/arrow_down.017bc6ba3fc25503e5eb5e53826d48a8.png (9.5KB)
+../../node_modules/expo-router/assets/error.d1ea1496f9057eb392d5bbf3732a61b7.png (469B)
+../../node_modules/expo-router/assets/file.19eeb73b9593a38f8e9f418337fc7d10.png (138B)
+../../node_modules/expo-router/assets/forward.d8b800c443b8972542883e0b9de2bdc6.png (188B)
+../../node_modules/expo-router/assets/pkg.ab19f4cbc543357183a20571f68380a3.png (364B)
+../../node_modules/expo-router/assets/react-navigation/elements/back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653B)
+../../node_modules/expo-router/assets/react-navigation/elements/back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207B)
+../../node_modules/expo-router/assets/react-navigation/elements/clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425B)
+../../node_modules/expo-router/assets/react-navigation/elements/close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235B)
+../../node_modules/expo-router/assets/react-navigation/elements/search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928B)
+../../node_modules/expo-router/assets/sitemap.412dd9275b6b48ad28f5e3d81bb1f626.png (465B)
+../../node_modules/expo-router/assets/unmatched.20e71bdf79e3a97bf55fd9e164041578.png (4.8KB)
+assets/images/favicon-dark-attention.882b3a27dcb2073e9e31b334f9ed9728.png (2.2KB)
+assets/images/favicon-dark-running.8112342ff0d39e047a7f8d4fad9402f3.png (2.2KB)
+assets/images/favicon-dark.8005ed36ac07a5a7c60de25780897bd4.png (1.7KB)
+assets/images/favicon-light-attention.882b3a27dcb2073e9e31b334f9ed9728.png (2.2KB)
+assets/images/favicon-light-running.8112342ff0d39e047a7f8d4fad9402f3.png (2.2KB)
+assets/images/favicon-light.8005ed36ac07a5a7c60de25780897bd4.png (1.7KB)
+assets/images/notification-icon.3bf81d33ddbf380606bdd248ba83e158.png (2.3KB)
+
+› web bundles (7):
+_expo/static/css/xterm-3bb1704bf6cb0876640973dc0244b4cb.css (4.2KB)
+_expo/static/js/web/desktop-attachment-bridge-f2548e5b5428712e5f9914b945a24d8d.js (644B)
+_expo/static/js/web/desktop-attachment-store-1619361af34b9a4d05005a80211f81c6.js (2.9KB)
+_expo/static/js/web/index-8736f39e5d3c2b1d5fee722a8838d62c.js (25MB)
+_expo/static/js/web/index-d79a4141fb654e77dd7633418bd3fb66.js (45KB)
+_expo/static/js/web/indexeddb-attachment-store-bf9ef050700504e2db8cddf44a8e017e.js (3.2KB)
+_expo/static/js/web/native-file-attachment-store-cd45a82e4cf6e7879cf0034d1a7aedf3.js (4.3KB)
+
+› Files (3):
+favicon.ico (15KB)
+index.html (3.3KB)
+metadata.json (49B)
+
+Exported: dist

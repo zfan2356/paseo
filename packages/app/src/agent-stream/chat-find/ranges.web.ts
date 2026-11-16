@@ -31,6 +31,8 @@ function renderedTextGroups(row: HTMLElement): Text[][] {
     ? [row]
     : row.querySelectorAll<HTMLElement>('[data-message-text="true"]');
   for (const content of contents) {
+    const owner = content.closest("[data-message-id]");
+    if (!pluginRow && owner && owner !== row) continue;
     let group: { block: Element; texts: Text[] } | undefined;
     const walker = document.createTreeWalker(
       content,

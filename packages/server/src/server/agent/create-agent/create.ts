@@ -1,4 +1,5 @@
-import type { AgentPromptSource, AgentMessageDelivery } from "../agent-messages/index.js";
+import type { FinishSubscriptions } from "../finish-subscriptions/index.js";
+import type { AgentPromptSource } from "../agent-messages/index.js";
 import type { Logger } from "pino";
 
 import type { TerminalManager } from "../../../terminal/terminal-manager.js";
@@ -15,15 +16,25 @@ import type { AgentPromptInput, AgentRunOptions, AgentSessionConfig } from "../a
 import type { AgentStorage } from "../agent-storage.js";
 import type { AgentOwner } from "../agent-owner.js";
 import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
-import { setupFinishNotification, startCreatedAgentInitialPrompt } from "../agent-prompt.js";
+import { startCreatedAgentInitialPrompt } from "../agent-prompt.js";
 import { resolveCreateAgentTitles } from "../create-agent-title.js";
 import { buildAgentPrompt } from "../prompt-attachments.js";
 import { normalizeClientMessageId, resolveClientMessageId } from "../../client-message-id.js";
 import { resolveRequiredProviderModel, type ResolvedProviderModel } from "../mcp-shared.js";
-import { resolveCreateAgentIntent } from "./intent.js";
+import {
+  inheritAgentBackground,
+  inheritWorkspaceBackground,
+  resolveCreateAgentIntent,
+} from "./intent.js";
+
+/** How a workspace this creation makes inherits its creator's visibility. */
+interface McpWorkspaceIntent {
+  background?: boolean;
+  callerWorkspaceId?: string;
+}
 
 export interface CreateAgentCommandDependencies {
-  agentMessages?: AgentMessageDelivery;
+  finishSubscriptions?: FinishSubscriptions;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
   logger: Logger;
@@ -39,7 +50,7 @@ export interface CreateAgentCommandDependencies {
 export type EnsureWorkspaceForCreate = (
   cwd: string,
   firstAgentContext?: FirstAgentContext,
-  context?: { callerWorkspaceId?: string },
+  context?: { background?: boolean; callerWorkspaceId?: string },
 ) => Promise<string>;
 
 export interface CreateAgentFromSessionInput {
@@ -48,6 +59,7 @@ export interface CreateAgentFromSessionInput {
   agentId?: string;
   config: AgentSessionConfig;
   workspaceId: string;
+  background: boolean;
   initialPrompt?: string;
   source?: AgentPromptSource;
   clientMessageId?: string;
@@ -76,6 +88,8 @@ export interface CreateAgentFromMcpInput {
   promptFailure?: CreateAgentPromptFailureMode;
   notifyOnFinish: boolean;
   internal?: boolean;
+  /** Omitted with a caller, the caller agent's own background applies. */
+  background?: boolean;
   detached?: boolean;
   owner?: AgentOwner;
   env?: Record<string, string>;
@@ -175,28 +189,29 @@ export async function createAgentCommand(
   if (input.kind === "mcp") {
     input.onCreated?.({ agentId: snapshot.id, createdWorktree: resolved.createdWorktree ?? null });
   }
-  const stopNotification =
+  const notification =
     input.kind === "mcp" &&
     input.notifyOnFinish &&
     input.callerAgentId &&
     resolved.prompt !== undefined
-      ? setupFinishNotification({
-          agentMessages: requireAgentMessages(dependencies),
-          agentManager: dependencies.agentManager,
-          agentStorage: dependencies.agentStorage,
-          childAgentId: snapshot.id,
-          callerAgentId: input.callerAgentId,
-          // Detached agents have no parent label, but still notify their creator.
-          requireParentOwnership: !(input.detached ?? false),
-          logger: dependencies.logger,
-        })
+      ? await requireFinishSubscriptions(dependencies).register(
+          {
+            childAgentId: snapshot.id,
+            callerAgentId: input.callerAgentId,
+            requireParentOwnership: !(input.detached ?? false),
+          },
+          true,
+        )
       : undefined;
 
   if (resolved.prompt !== undefined) {
-    const sendResult = await sendInitialPrompt(dependencies, resolved, snapshot).catch((error) => {
-      stopNotification?.();
-      throw error;
-    });
+    const sendResult = await sendInitialPrompt(dependencies, resolved, snapshot).catch(
+      async (error) => {
+        await notification?.reject();
+        throw error;
+      },
+    );
+    notification?.accept();
     initialPromptStarted = sendResult.started;
     liveSnapshot = sendResult.liveSnapshot;
     initialPromptError = sendResult.error ?? null;
@@ -253,6 +268,7 @@ async function resolveSessionCreateAgent(
       // provider session either. Same as the daemon's own ephemeral helpers.
       ...(sessionConfig.internal ? { persistSession: false } : {}),
       workspaceId: requireResolvedWorkspaceId(workspaceId),
+      background: input.background,
     },
     prompt: hasPromptContent ? prompt : undefined,
     source: input.source,
@@ -275,12 +291,16 @@ async function resolveMcpCreateAgent(
     ? requireParentAgent(dependencies.agentManager, input.callerAgentId)
     : null;
   const cwd = resolveMcpInitialCwd(input, parentAgent);
+  const workspaceIntent = {
+    background: inheritWorkspaceBackground(input.background, parentAgent),
+    callerWorkspaceId: parentAgent?.workspaceId,
+  };
   const { resolvedCwd, createdWorkspaceId, createdWorktree } = await resolveMcpCwd({
     dependencies,
     cwd,
     worktree: input.worktree,
     initialPrompt: input.initialPrompt ?? "",
-    callerWorkspaceId: parentAgent?.workspaceId,
+    workspaceIntent,
   });
   if (createdWorktree) input.onWorktreeCreated?.(createdWorktree);
   const intent = await resolveCreateAgentIntent({
@@ -298,7 +318,7 @@ async function resolveMcpCreateAgent(
           dependencies,
           resolvedCwd,
           input.initialPrompt ?? "",
-          parentAgent?.workspaceId,
+          workspaceIntent,
         ),
       ),
       cwd: resolvedCwd,
@@ -327,6 +347,7 @@ async function resolveMcpCreateAgent(
       ...(Object.keys(intent.labels).length > 0 ? { labels: intent.labels } : {}),
       workspaceId: intent.workspaceId,
       owner: input.owner,
+      background: inheritAgentBackground(input.background, parentAgent),
       env: input.env,
     },
     prompt: trimmedPrompt ? trimmedPrompt : undefined,
@@ -408,16 +429,12 @@ async function ensureWorkspaceForMcpCreate(
   dependencies: CreateAgentCommandDependencies,
   cwd: string,
   initialPrompt: string,
-  callerWorkspaceId?: string,
+  workspaceIntent: McpWorkspaceIntent,
 ): Promise<string | undefined> {
   if (!dependencies.ensureWorkspaceForCreate) {
     return undefined;
   }
-  return dependencies.ensureWorkspaceForCreate(
-    cwd,
-    { prompt: initialPrompt },
-    { callerWorkspaceId },
-  );
+  return dependencies.ensureWorkspaceForCreate(cwd, { prompt: initialPrompt }, workspaceIntent);
 }
 
 async function sendInitialPrompt(
@@ -510,7 +527,7 @@ async function resolveMcpCwd(params: {
   dependencies: CreateAgentCommandDependencies;
   cwd: string;
   initialPrompt: string;
-  callerWorkspaceId?: string;
+  workspaceIntent: McpWorkspaceIntent;
   worktree: CreateAgentFromMcpInput["worktree"];
 }): Promise<{
   resolvedCwd: string;
@@ -540,7 +557,7 @@ async function resolveMcpCwd(params: {
   const createdWorktree = await createMcpWorktree({
     input: {
       cwd: params.cwd,
-      callerWorkspaceId: params.callerWorkspaceId,
+      ...params.workspaceIntent,
       worktreeSlug: worktree.worktreeName,
       branchName: worktree.branchName,
       refName: worktree.refName,
@@ -561,7 +578,9 @@ async function resolveMcpCwd(params: {
   };
 }
 
-function requireAgentMessages(dependencies: CreateAgentCommandDependencies): AgentMessageDelivery {
-  if (!dependencies.agentMessages) throw new Error("Agent message delivery is not configured");
-  return dependencies.agentMessages;
+function requireFinishSubscriptions(
+  dependencies: CreateAgentCommandDependencies,
+): FinishSubscriptions {
+  if (!dependencies.finishSubscriptions) throw new Error("Finish subscriptions are not configured");
+  return dependencies.finishSubscriptions;
 }
