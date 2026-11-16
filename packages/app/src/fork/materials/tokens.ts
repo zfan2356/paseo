@@ -7,6 +7,8 @@ export const MATERIAL = {
       radius: 10,
       shadow: { light: "0 4px 16px rgba(24,46,34,0.14)", dark: "0 4px 16px rgba(0,0,0,0.38)" },
       border: { light: "1px solid rgba(24,46,34,0.10)", dark: "1px solid rgba(255,255,255,0.16)" },
+      // How far the shadow reaches past the box: blur minus the y offset above, plus it below.
+      shadowReach: { top: 12, side: 16, bottom: 20 },
       material: { name: "protected", minimumOpacity: 0.96, maximumBlur: 8 },
     },
     popover: {

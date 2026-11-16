@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { useHardwareKeyboardPresent } from "@/keyboard";
 import { useAddHost } from "@/hosts/add-host";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -1396,7 +1397,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
   // region + traffic-light padding; detail pane renders whatever header the
   // selected section provides.
   return (
-    <View style={styles.container}>
+    <View style={styles.container} dataSet={MATERIAL_SLOTS.settings}>
       <View style={desktopStyles.row}>
         <WindowChromeRegion corners="top-left">
           <SettingsSidebar

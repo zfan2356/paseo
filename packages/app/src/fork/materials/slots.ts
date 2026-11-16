@@ -18,6 +18,7 @@ export const MATERIAL_SLOTS = {
   panelFrame: { material: "panel-frame" },
   panel: { material: "panel" },
   sidebar: { material: "sidebar" },
+  settings: { material: "settings" },
   header: { material: "header" },
   dialog: { material: "dialog" },
   sheet: { material: "sheet" },
