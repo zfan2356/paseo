@@ -1,4 +1,5 @@
 import { MATERIAL_SLOTS } from "@/fork/materials/slots";
+import { GlassSheetFill } from "@/fork/materials/glass";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
@@ -271,7 +272,9 @@ export function SheetBackground({ style }: BottomSheetBackgroundProps) {
     [style, theme.colors.surface0, theme.borderRadius],
   );
   return (
-    <Animated.View dataSet={MATERIAL_SLOTS.sheet} pointerEvents="none" style={combinedStyle} />
+    <Animated.View dataSet={MATERIAL_SLOTS.sheet} pointerEvents="none" style={combinedStyle}>
+      <GlassSheetFill />
+    </Animated.View>
   );
 }
 

@@ -1,5 +1,6 @@
 import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { WorkspacePanel } from "@/fork/materials/workspace-panel";
+import { GlassAppTarget } from "@/fork/materials/glass";
 import { useHardwareKeyboardPresent } from "@/keyboard";
 import {
   WindowLayoutProvider,
@@ -952,7 +953,7 @@ function RootOverlayProviders({ children }: { children: ReactNode }) {
     <ToastProvider>
       <PortalProvider>
         <BottomSheetModalProvider>
-          {children}
+          <GlassAppTarget>{children}</GlassAppTarget>
           <WindowLayoutActionsHost />
         </BottomSheetModalProvider>
       </PortalProvider>
