@@ -14,9 +14,22 @@ Before/after pairs: left is `main` at `484ac21f`, right is this change. Capture:
 
 ## Root causes
 
-- **Theme mismatch.** `<Materials />` mounts in `root-app.tsx` before `AppearanceProvider` applies the persisted theme. Its `withUnistyles` mapper passed the whole theme and read no field, so Unistyles never subscribed it to theme changes: the stylesheet kept the startup theme, which is the system appearance. On a Mac, window vibrancy also followed the system appearance.
+- **Theme mismatch.** `<Materials />` mounts in `root-app.tsx` before `AppearanceProvider` applies the persisted theme. Its `withUnistyles` mapper passed the whole theme and read no field, so Unistyles never subscribed it to theme changes: the stylesheet kept the startup theme, which is the system appearance. On a Mac, window vibrancy also followed the system appearance: the desktop never set `nativeTheme.themeSource`.
 - **Pill shadow.** The composer track is a horizontal `ScrollView`; its overflow clips to the 32px pill height.
 - **Settings.** The settings screen renders its own sidebar (`surfaceSidebar`, 1px right border) inside the workspace panel, outside the `sidebar` and `panel` slots.
+
+## Upstream hooks
+
+Six lines against `484ac21f`, as `node scripts/fork/material-layer.mjs hooks` prints them:
+
+| File                                            | Line                                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `packages/app/src/screens/settings-screen.tsx`  | `import { MATERIAL_SLOTS } from "@/fork/materials/slots";`                               |
+| `packages/app/src/screens/settings-screen.tsx`  | `<View style={styles.container} dataSet={MATERIAL_SLOTS.settings}>` (attribute added)    |
+| `packages/app/src/appearance/provider.tsx`      | `import { syncDesktopThemePreference } from "@/fork/materials/desktop-theme";`           |
+| `packages/app/src/appearance/provider.tsx`      | `syncDesktopThemePreference();` after `applyTheme(...)`                                  |
+| `packages/desktop/src/window/window-manager.ts` | `import { applyMaterialThemePreference } from "../fork/materials/window-material.js";`   |
+| `packages/desktop/src/window/window-manager.ts` | `applyMaterialThemePreference(update);` first in the `paseo:window:updateChrome` handler |
 
 ## Regression coverage
 
@@ -27,7 +40,7 @@ In `e2e/browser/materials.spec.ts`, failing on `484ac21f` and passing here:
 - `composer pills stay above the floating composer`: no clipping ancestor within the shadow's reach (12px above, 16px beside, 20px below).
 - `window skeleton floats the workspace panel`: settings navigation shows the floor with no rule; the detail pane has the 8px gap, 12px left corners and shadow.
 
-`material-controller.test.ts` covers the macOS `themeSource` sync.
+`material-controller.test.ts` covers the macOS `themeSource` sync: system, light and dark preferences, Auto when the system changes before the renderer reports, invalid payloads, and no effect off macOS. `desktop-theme.test.ts` covers the preference mapping. The runtime test also checks the `themePreference` each step sends and that the floor stays translucent (vibrancy on) for Dark on a light system.
 
 `materials-visual.spec.ts` gains a `1440-settings` scene. Against the `484ac21f` baseline, all other 56 scenes stay pixel-identical (`maxDiffPixels: 0`); the four settings scenes change as above. The pill shadow change is below the default per-pixel threshold, so the conversation scenes do not register it; the geometry assertion does.
 
@@ -37,7 +50,7 @@ The forced-macOS captures have no vibrancy and no `nativeTheme`. Check on a Mac:
 
 - App Dark with macOS Light, and App Light with macOS Dark: the sidebar and floor take the App's scheme, not the system's.
 - Switching macOS appearance while the App is on Dark or Light keeps the App's scheme; with the App on Auto the window follows macOS.
-- macOS Auto appearance: `AppleInterfaceStyle` tracks the current appearance.
-- Known gap: with the App on Dark and macOS on Light, switching the App to Auto keeps Dark until macOS changes appearance or the App restarts. `themeSource` is pinned to dark at that moment, so `prefers-color-scheme` reports dark and the renderer sends no new background. Closing it needs the renderer to report its theme preference, which is an upstream IPC change.
+- With the App on Auto, switching macOS appearance switches the vibrancy and the text together; switching the App from Dark to Auto under a light system returns to light.
+- Native context menus and message boxes take the App's scheme once `themeSource` is set.
 - The `2 in progress` pill in light mode has a rounded shadow and no gray blocks.
 - Settings matches the workspace skeleton beside vibrancy.

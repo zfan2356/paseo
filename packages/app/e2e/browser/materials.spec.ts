@@ -868,13 +868,27 @@ for (const platform of ["darwin", "web"] as const) {
 // floating panel against the theme the App renders with.
 test("material stylesheet follows runtime theme changes (darwin)", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
+  // The desktop bridge records the theme preference each `updateChrome` call carries.
   await page.addInitScript(() => {
+    const preferences: unknown[] = [];
+    (window as unknown as { themePreferences: unknown[] }).themePreferences = preferences;
     (window as unknown as { paseoDesktop: unknown }).paseoDesktop = {
       platform: "darwin",
       events: { on: () => () => {} },
       invoke: async () => null,
+      window: {
+        getCurrentWindow: () => ({
+          updateChrome: async (update: { themePreference?: unknown }) => {
+            if (update.themePreference) preferences.push(update.themePreference);
+          },
+        }),
+      },
     };
   });
+  const lastPreference = () =>
+    page.evaluate(() =>
+      (window as unknown as { themePreferences: unknown[] }).themePreferences.at(-1),
+    );
   const session = await seedMockAgentWorkspace({
     repoPrefix: "material-runtime-theme-",
     title: "Runtime theme",
@@ -931,24 +945,35 @@ test("material stylesheet follows runtime theme changes (darwin)", async ({ page
           detail: dark(detail ? getComputedStyle(detail).backgroundColor : ""),
         };
       });
-    const expectScheme = async (scheme: "light" | "dark", step: string) => {
+    const expectScheme = async (
+      scheme: "light" | "dark",
+      preference: "system" | "light" | "dark",
+      step: string,
+    ) => {
       await expect
         .poll(schemes, { message: step })
         .toEqual({ text: scheme, floor: scheme, detail: scheme });
+      await expect.poll(lastPreference, { message: `${step} preference` }).toBe(preference);
       await page.screenshot({ path: testInfo.outputPath(`runtime-${step}.png`) });
     };
-    await expectScheme("dark", "1-dark-on-light-system");
+    await expectScheme("dark", "dark", "1-dark-on-light-system");
+    // Vibrancy stays on: the floor lets the window material through.
+    const floor = await page.evaluate(
+      () =>
+        getComputedStyle(document.querySelector('[data-material="panel-frame"]')!).backgroundColor,
+    );
+    expect(floor).toMatch(/\/\s*0?\.\d+\)$/);
     await picker.getByRole("radio", { name: "Light", exact: true }).click();
-    await expectScheme("light", "2-light");
+    await expectScheme("light", "light", "2-light");
     await picker.getByRole("radio", { name: "Dark", exact: true }).click();
-    await expectScheme("dark", "3-dark-again");
+    await expectScheme("dark", "dark", "3-dark-again");
     await picker.getByRole("radio", { name: "System", exact: true }).click();
-    await expectScheme("light", "4-system-light");
+    await expectScheme("light", "system", "4-system-light");
     await page.emulateMedia({ colorScheme: "dark" });
     // Upstream settings content does not refresh on an adaptive switch; read the workspace.
     await page.getByTestId("settings-back-to-workspace").click();
     await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible();
-    await expectScheme("dark", "5-system-turns-dark");
+    await expectScheme("dark", "system", "5-system-turns-dark");
   } finally {
     await session.cleanup();
   }

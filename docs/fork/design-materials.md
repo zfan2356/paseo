@@ -33,7 +33,7 @@ On Electron macOS the window is transparent with `sidebar` vibrancy, and the sid
 Every surface follows the App theme, never the system appearance:
 
 - The stylesheet mounts in `root-app.tsx`, before `AppearanceProvider` applies the persisted theme. `withUnistyles` subscribes the wrapper only to the theme fields its mapper reads, so the mapper passes `colorScheme` and `surfaceSidebar` explicitly. Passing the whole `theme` object reads nothing, and the stylesheet stays on the startup (system) theme.
-- Vibrancy samples the native appearance. The desktop material pins `nativeTheme.themeSource` to the App's scheme while it differs from the macOS appearance, read from `AppleInterfaceStyle`, and returns to `system` when they match, so the App's Auto theme keeps following `prefers-color-scheme`. The App scheme comes from the window background the renderer already sends through `updateChrome`.
+- Vibrancy samples the native appearance, so the desktop sets `nativeTheme.themeSource` from the user's theme choice. After `AppearanceProvider` applies a theme, `syncDesktopThemePreference()` (`fork/materials/desktop-theme.ts`) sends `themePreference` on the `updateChrome` IPC: `system` for Auto, otherwise the chosen theme's scheme, plugin themes included. The desktop applies it on macOS only. Send the preference, never a scheme inferred from colors: Auto has to stay on `system`, because a pinned `themeSource` also pins the renderer's `prefers-color-scheme`, and Auto would then never follow the system again.
 
 ## Window skeleton
 

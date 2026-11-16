@@ -1,3 +1,4 @@
+import { syncDesktopThemePreference } from "@/fork/materials/desktop-theme";
 import { resolveThemeSelection } from "./theme-selection";
 import {
   createContext,
@@ -72,6 +73,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       preference: fallbackPreference,
       contributedTheme: selected,
     });
+    syncDesktopThemePreference();
     applyAppearance({
       uiFontFamily: settings.uiFontFamily,
       monoFontFamily: settings.monoFontFamily,

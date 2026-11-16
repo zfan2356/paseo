@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
-import { createWindowMaterial, isDarkColor } from "./material-controller";
+import { createWindowMaterial } from "./material-controller";
 
 class TestTheme extends EventEmitter {
   prefersReducedTransparency = false;
@@ -13,18 +13,6 @@ class TestTheme extends EventEmitter {
     this.#source = value;
     this.sources.push(value);
     this.emit("updated");
-  }
-}
-class TestSystem {
-  dark = false;
-  listeners: (() => void)[] = [];
-  isDark = () => this.dark;
-  onChange = (callback: () => void) => {
-    this.listeners.push(callback);
-  };
-  set(dark: boolean) {
-    this.dark = dark;
-    for (const listener of this.listeners) listener();
   }
 }
 class TestWindow extends EventEmitter {
@@ -44,7 +32,7 @@ class TestWindow extends EventEmitter {
 
 describe("window material", () => {
   it("enables macOS sidebar sampling and follows activation", () => {
-    const material = createWindowMaterial("darwin", new TestTheme(), new TestSystem());
+    const material = createWindowMaterial("darwin", new TestTheme());
     expect(material.options("#111111")).toEqual({
       transparent: true,
       backgroundColor: "#00000000",
@@ -55,7 +43,7 @@ describe("window material", () => {
   it("restores the latest opaque color on live accessibility changes and releases its listener", () => {
     const theme = new TestTheme();
     const win = new TestWindow();
-    const material = createWindowMaterial("darwin", theme, new TestSystem());
+    const material = createWindowMaterial("darwin", theme);
     material.setup(win, "#111111");
     material.updateBackground(win, "#eeeeee");
     expect(win.color).toBe("#00000000");
@@ -76,38 +64,59 @@ describe("window material", () => {
     it(`keeps ${platform} opaque without native listeners`, () => {
       const theme = new TestTheme();
       const win = new TestWindow();
-      const material = createWindowMaterial(platform, theme, new TestSystem());
+      const material = createWindowMaterial(platform, theme);
       expect(material.options("#112233")).toEqual({ backgroundColor: "#112233" });
       material.setup(win, "#112233");
       material.updateBackground(win, "#445566");
       expect(win.color).toBe("#445566");
       expect(theme.listenerCount("updated")).toBe(0);
+      material.applyThemePreference({ themePreference: "dark" });
       expect(theme.themeSource).toBe("system");
     });
   }
-  it("pins vibrancy to the App theme only while it differs from the system appearance", () => {
+  it("sets themeSource from the App's theme preference and keeps vibrancy on", () => {
     const theme = new TestTheme();
-    const system = new TestSystem();
     const win = new TestWindow();
-    const material = createWindowMaterial("darwin", theme, system);
+    const material = createWindowMaterial("darwin", theme);
     material.setup(win, "#ffffff");
-    material.updateBackground(win, "#181B1A");
+    material.applyThemePreference({ themePreference: "dark", backgroundColor: "#181B1A" });
     expect(theme.themeSource).toBe("dark");
-    system.set(true);
-    expect(theme.themeSource).toBe("system");
-    material.updateBackground(win, "#ffffff");
+    expect(win.vibrancy).toBe("sidebar");
+    material.applyThemePreference({ themePreference: "light" });
     expect(theme.themeSource).toBe("light");
-    system.set(false);
+    material.applyThemePreference({ themePreference: "system" });
     expect(theme.themeSource).toBe("system");
-    expect(theme.sources).toEqual(["dark", "system", "light", "system"]);
+    expect(win.vibrancy).toBe("sidebar");
+    expect(win.color).toBe("#00000000");
+    expect(theme.sources).toEqual(["dark", "light", "system"]);
   });
-  it("classifies theme backgrounds", () => {
-    expect(isDarkColor("#181B1A")).toBe(true);
-    expect(isDarkColor("#000000")).toBe(true);
-    expect(isDarkColor("#ffffff")).toBe(false);
-    expect(isDarkColor("#f7f9f6")).toBe(false);
-    expect(isDarkColor("rgb(24, 27, 26)")).toBe(true);
-    expect(isDarkColor("rgba(250, 250, 250, 1)")).toBe(false);
-    expect(isDarkColor("oklch(0.2 0 0)")).toBeNull();
+  it("leaves Auto on the system appearance when the system changes first", () => {
+    const theme = new TestTheme();
+    const win = new TestWindow();
+    const material = createWindowMaterial("darwin", theme);
+    material.setup(win, "#ffffff");
+    material.applyThemePreference({ themePreference: "system" });
+    // The system turns dark; the renderer reports its new background afterwards.
+    theme.emit("updated");
+    material.updateBackground(win, "#181B1A");
+    material.applyThemePreference({ themePreference: "system", backgroundColor: "#181B1A" });
+    expect(theme.themeSource).toBe("system");
+    expect(theme.sources).toEqual([]);
+    expect(win.vibrancy).toBe("sidebar");
+  });
+  it("ignores payloads without a valid preference", () => {
+    const theme = new TestTheme();
+    const material = createWindowMaterial("darwin", theme);
+    for (const update of [
+      undefined,
+      null,
+      "dark",
+      {},
+      { backgroundColor: "#000000" },
+      { themePreference: "midnight" },
+    ]) {
+      material.applyThemePreference(update);
+    }
+    expect(theme.sources).toEqual([]);
   });
 });
