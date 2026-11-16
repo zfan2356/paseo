@@ -992,11 +992,13 @@ for (const platform of ["darwin", "web"] as const) {
               hit: hit !== null && (hit === target || target.contains(hit)),
             };
           };
-          // Any opaque surface in the Explorer (its rail, the Files or Changes content) or between
-          // it and the panel frame would cover the floor. Rows, chips and 1px rules stay out.
+          // Any opaque surface in the Explorer (its tab rail, the Files or Changes toolbar and
+          // content) or between it and the panel frame would cover the floor. A surface spans
+          // the Explorer's width; rows (≤ 28px), chips and 1px rules stay out.
           const fill = (node: Element) => getComputedStyle(node).backgroundColor;
           const clear = (node: Element) => fill(node) === "rgba(0, 0, 0, 0)";
           const opaqueIn = (root: Element) => {
+            const width = root.getBoundingClientRect().width;
             const found: string[] = [];
             for (
               let node: Element | null = root;
@@ -1007,8 +1009,10 @@ for (const platform of ["darwin", "web"] as const) {
             }
             for (const node of root.querySelectorAll("*")) {
               const box = node.getBoundingClientRect();
-              if (box.width < 100 || box.height < 40 || clear(node)) continue;
-              found.push(`${node.getAttribute("data-testid") ?? node.tagName} ${fill(node)}`);
+              const surface = box.width >= width * 0.9 && box.height >= 32;
+              if (!surface || clear(node)) continue;
+              const name = node.getAttribute("data-testid") ?? node.tagName;
+              found.push(`${name} ${Math.round(box.height)}px ${fill(node)}`);
             }
             return found;
           };

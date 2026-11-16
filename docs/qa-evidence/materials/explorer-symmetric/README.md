@@ -42,7 +42,6 @@ Two lines against `e30992ca`, as `node scripts/fork/material-layer.mjs hooks` pr
 The forced-macOS captures have no window vibrancy. Check on a Mac:
 
 - With enough Explorer tabs to scroll, the tab rail's overflow fades: they take a hex `surfaceSidebar` through `withUnistyles`, not the CSS variable, so they may show as opaque gradients over the floor.
-
 - With both sidebars open, the Explorer shows the same vibrancy as the left sidebar, with no tint step between its tab rail, Files and Changes.
 - The workspace column's right corners and the window's right edge meet cleanly, top and bottom.
 - Dragging on either divider resizes the sidebar on that side, and the hover highlight sits in the gap.
