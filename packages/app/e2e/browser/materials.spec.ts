@@ -6,6 +6,7 @@ import { openAttachmentMenu } from "../support/helpers/composer";
 import {
   ensureExplorerSidebar,
   openChangesPanel,
+  openChangesTreePanel,
   openFilesPanel,
 } from "../support/helpers/workspace-tabs";
 import { openSettings } from "../support/helpers/app";
@@ -991,12 +992,29 @@ for (const platform of ["darwin", "web"] as const) {
               hit: hit !== null && (hit === target || target.contains(hit)),
             };
           };
-          // Opaque layers between the Explorer and the panel frame would cover the floor.
-          const opaque: string[] = [];
-          for (let node = explorer; node && node !== frame; node = node.parentElement) {
-            const color = getComputedStyle(node).backgroundColor;
-            if (color !== "rgba(0, 0, 0, 0)") opaque.push(color);
-          }
+          // Any opaque surface in the Explorer (its rail, the Files or Changes content) or between
+          // it and the panel frame would cover the floor. Rows, chips and 1px rules stay out.
+          const fill = (node: Element) => getComputedStyle(node).backgroundColor;
+          const clear = (node: Element) => fill(node) === "rgba(0, 0, 0, 0)";
+          const opaqueIn = (root: Element) => {
+            const found: string[] = [];
+            for (
+              let node: Element | null = root;
+              node && node !== frame;
+              node = node.parentElement
+            ) {
+              if (!clear(node)) found.push(fill(node));
+            }
+            for (const node of root.querySelectorAll("*")) {
+              const box = node.getBoundingClientRect();
+              if (box.width < 100 || box.height < 40 || clear(node)) continue;
+              found.push(`${node.getAttribute("data-testid") ?? node.tagName} ${fill(node)}`);
+            }
+            return found;
+          };
+          const separator = document.querySelector(
+            '[data-material="workspace-row"] > :not(:first-child) [role="separator"]',
+          );
           const s = sidebar?.getBoundingClientRect();
           const e = explorer?.getBoundingClientRect();
           return {
@@ -1012,7 +1030,10 @@ for (const platform of ["darwin", "web"] as const) {
             ],
             border: [style.borderLeftWidth, style.borderRightWidth],
             shadow: style.boxShadow !== "none",
-            explorerOpaque: explorer ? opaque : null,
+            explorerOpaque: explorer ? opaqueIn(explorer) : null,
+            // The Explorer's resize handle used to draw the dividing line.
+            explorerRule: separator?.parentElement ? fill(separator.parentElement) : null,
+            floor: fill(frame),
             leftHandle: s
               ? handle(
                   document.querySelector('[data-testid="left-sidebar-resize-handle"]'),
@@ -1020,18 +1041,15 @@ for (const platform of ["darwin", "web"] as const) {
                   c.left,
                 )
               : null,
-            rightHandle: e
-              ? handle(
-                  document.querySelector(
-                    '[data-material="workspace-row"] > :not(:first-child) [role="separator"]',
-                  ),
-                  c.right,
-                  e.left,
-                )
-              : null,
+            rightHandle: e ? handle(separator, c.right, e.left) : null,
           };
         });
       const centred = { offset: 0, hit: true };
+      const translucent = (color: string | undefined) => /\/\s*0?\.\d+\)$/.test(color ?? "");
+      const layout = async () => {
+        const { floor: _floor, ...rest } = (await skeleton()) ?? {};
+        return rest;
+      };
 
       // Sidebar only: the panel floats beside the sidebar, and the handle sits in the gap.
       await expect.poll(skeleton).toMatchObject({ left: 8, right: 0, leftHandle: centred });
@@ -1048,10 +1066,16 @@ for (const platform of ["darwin", "web"] as const) {
         border: ["1px", "1px"],
         shadow: true,
         explorerOpaque: [],
+        explorerRule: "rgba(0, 0, 0, 0)",
         leftHandle: centred,
         rightHandle: centred,
       };
-      await expect.poll(skeleton).toEqual(both);
+      await expect.poll(layout).toEqual(both);
+      expect(translucent((await skeleton())?.floor)).toBe(platform === "darwin");
+
+      // Changes renders its own toolbar and tree; they show the floor too.
+      await openChangesTreePanel(page);
+      await expect.poll(layout).toEqual(both);
 
       // Explorer only: flush on the left, floating on the right.
       const sidebarToggle = page.getByTestId("menu-button").filter({ visible: true }).first();
@@ -1063,17 +1087,19 @@ for (const platform of ["darwin", "web"] as const) {
         radius: ["0px", "12px", "12px", "0px"],
         border: ["0px", "1px"],
         explorerOpaque: [],
+        explorerRule: "rgba(0, 0, 0, 0)",
         rightHandle: centred,
       });
       await sidebarToggle.click();
-      await expect.poll(skeleton).toEqual(both);
+      await expect.poll(layout).toEqual(both);
 
       // Reduce Transparency keeps the geometry and turns the floor opaque.
       const cdp = await page.context().newCDPSession(page);
       await cdp.send("Emulation.setEmulatedMedia", {
         features: [{ name: "prefers-reduced-transparency", value: "reduce" }],
       });
-      await expect.poll(skeleton).toEqual(both);
+      await expect.poll(layout).toEqual(both);
+      await expect.poll(async () => translucent((await skeleton())?.floor)).toBe(false);
       await cdp.send("Emulation.setEmulatedMedia", { features: [] });
 
       if (platform === "web") {
@@ -1083,7 +1109,7 @@ for (const platform of ["darwin", "web"] as const) {
         await expect(page.getByRole("button", { name: "Exit focus mode" })).toBeVisible();
         await expect.poll(() => page.locator('[data-material="panel"]').count()).toBe(0);
         await page.getByRole("button", { name: "Exit focus mode" }).click();
-        await expect.poll(skeleton).toEqual(both);
+        await expect.poll(layout).toEqual(both);
       }
 
       // Compact layouts keep the full-screen workspace.

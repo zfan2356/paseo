@@ -73,9 +73,11 @@ function skeletonCss(root: string, scheme: Theme["colorScheme"], surfaceSidebar:
 function explorerCss(root: string, scheme: Scheme): string {
   const { panel } = MATERIAL;
   const row = '[data-material="workspace-row"]';
-  const explorer = `${row} > :not(:first-child)`;
   const separator = '[role="separator"][aria-orientation="vertical"]';
-  const panelOpen = `[data-material="panel"]:has(${explorer} ${separator})`;
+  // The row's other children include the workspace portal host; only the one holding the
+  // separator is the Explorer. `:has()` does not nest, so the open check spells it out.
+  const explorer = `${row} > :not(:first-child):has(${separator})`;
+  const panelOpen = `[data-material="panel"]:has(${row} > :not(:first-child) ${separator})`;
   const open = `${root} ${panelOpen}`;
   const pinned = `${root}:has([data-material="sidebar"]) ${panelOpen}`;
   return `

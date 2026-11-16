@@ -17,7 +17,7 @@ Before/after pairs: left half is `main` at `e30992ca`, right half is this change
 ## Root causes
 
 - **Explorer.** `WorkspacePanel` wraps the whole workspace screen, and the Explorer renders inside it as the second child of the workspace row. It painted `surfaceSidebar` inside the floating panel, and its web resize handle draws a 1px `border` line.
-- **Sidebar handle.** The pointer handle straddles the sidebar edge (5px each side), while the visual divider is the panel edge 8px further right. Two `overflow: hidden` ancestors of the sidebar also clipped the half outside the sidebar, so only the 5px inside it took a drag.
+- **Sidebar handle.** The pointer handle straddles the sidebar edge (5px each side), while the visual divider is the panel edge 8px further right. Only the 5px inside the sidebar took a drag, for two reasons that also hold on upstream `3d30aaec`: the docked panel's `overflow: hidden` (`mobile-panels/presentation.tsx`, two ancestors) clips the outer half, and the workspace branch, later in the DOM, paints over it even without the clip. In the fork the divider also sits 8px further right than on upstream.
 
 ## Upstream hooks
 
@@ -40,6 +40,8 @@ Two lines against `e30992ca`, as `node scripts/fork/material-layer.mjs hooks` pr
 ## Mac verification still needed
 
 The forced-macOS captures have no window vibrancy. Check on a Mac:
+
+- With enough Explorer tabs to scroll, the tab rail's overflow fades: they take a hex `surfaceSidebar` through `withUnistyles`, not the CSS variable, so they may show as opaque gradients over the floor.
 
 - With both sidebars open, the Explorer shows the same vibrancy as the left sidebar, with no tint step between its tab rail, Files and Changes.
 - The workspace column's right corners and the window's right edge meet cleanly, top and bottom.

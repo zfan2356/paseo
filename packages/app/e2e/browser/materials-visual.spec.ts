@@ -160,6 +160,10 @@ for (const platform of PLATFORMS) {
         await expect(row).toHaveCount(0);
         await shot("1440-sidebar-collapsed");
         await openChangesTreePanel(page);
+        // The tree header settles on the checkout once a changed file renders.
+        await expect(
+          page.locator('[data-testid^="diff-tree-file-"]').filter({ visible: true }).first(),
+        ).toBeVisible();
         await shot("1440-explorer");
         await sidebarToggle.click();
         await expect(row).toBeVisible();
