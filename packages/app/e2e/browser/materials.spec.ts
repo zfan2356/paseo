@@ -4,6 +4,7 @@ import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { openAttachmentMenu } from "../support/helpers/composer";
 import { openChangesPanel } from "../support/helpers/workspace-tabs";
+import { openSettings } from "../support/helpers/app";
 import { openSettingsSection } from "../support/helpers/settings";
 
 for (const scenario of [
@@ -705,6 +706,32 @@ for (const platform of ["darwin", "web"] as const) {
       expect(material.blur).toContain("blur(8px)");
       expect(material.shadow).not.toBe("none");
       expect(material.fill).toMatch(/\/ 0\.96\)$/);
+      // The shadow keeps the pill's radius: no clipping ancestor cuts it to the pill's box.
+      // Reach of 0 4px 16px: 12px above, 16px to the sides, 20px below.
+      const room = await pill.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        for (let node = el.parentElement; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+          const clip = node.getBoundingClientRect();
+          return {
+            top: Math.round(box.top - clip.top),
+            left: Math.round(box.left - clip.left),
+            bottom: Math.round(clip.bottom - box.bottom),
+          };
+        }
+        return null;
+      });
+      expect(room?.top).toBeGreaterThanOrEqual(12);
+      expect(room?.left).toBeGreaterThanOrEqual(16);
+      expect(room?.bottom).toBeGreaterThanOrEqual(20);
+      const pillBox = await pill.boundingBox();
+      if (pillBox) {
+        await page.screenshot({
+          path: testInfo.outputPath(`pill-zoom-${platform}.png`),
+          clip: { x: pillBox.x - 40, y: pillBox.y - 30, width: 240, height: 100 },
+        });
+      }
     } finally {
       await session.cleanup();
     }
@@ -749,7 +776,7 @@ test("header icon sizing leaves the tab close scrim at full width", async ({ pag
 // floats off the sidebar-material floor only beside the pinned sidebar, with no line between the
 // two. See docs/fork/design-materials.md.
 for (const platform of ["darwin", "web"] as const) {
-  test(`window skeleton floats the workspace panel (${platform})`, async ({ page }) => {
+  test(`window skeleton floats the workspace panel (${platform})`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     if (platform === "darwin") {
       await page.addInitScript(() => {
@@ -857,6 +884,46 @@ for (const platform of ["darwin", "web"] as const) {
       await expect.poll(panelGeometry).toMatchObject(floating);
       await cdp.send("Emulation.setEmulatedMedia", { features: [] });
 
+      // Settings takes the same skeleton: navigation on the floor, the detail pane floating off it.
+      await openSettings(page);
+      await expect(page.getByTestId("settings-sidebar")).toBeVisible();
+      const settingsSkeleton = () =>
+        page.evaluate(() => {
+          const sidebar = document.querySelector<HTMLElement>('[data-testid="settings-sidebar"]');
+          const frame = document.querySelector('[data-material="panel-frame"]');
+          const detail = document.querySelector('[data-testid="settings-detail-pane"]');
+          if (!sidebar || !frame || !detail) return null;
+          // Every layer between the sidebar and the panel frame lets the floor through.
+          const opaque: string[] = [];
+          for (let node: HTMLElement | null = sidebar; node && node !== frame; ) {
+            const color = getComputedStyle(node).backgroundColor;
+            if (color !== "rgba(0, 0, 0, 0)") opaque.push(color);
+            node = node.parentElement;
+          }
+          const style = getComputedStyle(detail);
+          return {
+            opaque,
+            rule: getComputedStyle(sidebar).borderRightWidth,
+            floor: getComputedStyle(frame).backgroundColor,
+            gap: Math.round(
+              detail.getBoundingClientRect().left - sidebar.getBoundingClientRect().right,
+            ),
+            radius: [style.borderTopLeftRadius, style.borderTopRightRadius],
+            shadow: style.boxShadow !== "none",
+          };
+        });
+      await expect.poll(settingsSkeleton).toEqual({
+        opaque: [],
+        rule: "0px",
+        floor,
+        gap: 8,
+        radius: ["12px", "0px"],
+        shadow: true,
+      });
+      await page.screenshot({ path: testInfo.outputPath(`settings-${platform}.png`) });
+      await page.goBack();
+      await expect(page.getByTestId("settings-sidebar")).toHaveCount(0);
+
       // Compact layouts keep the full-screen workspace.
       await page.setViewportSize({ width: 390, height: 900 });
       await expect.poll(() => page.locator('[data-material="panel"]').count()).toBe(0);
@@ -865,6 +932,257 @@ for (const platform of ["darwin", "web"] as const) {
     }
   });
 }
+
+// The stylesheet follows theme changes made while the App runs: picking a theme in Settings, and
+// the system appearance changing under the System theme. Each step reads the floor and the
+// floating panel against the theme the App renders with.
+test("material stylesheet follows runtime theme changes (darwin)", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  // The desktop bridge records the theme preference each `updateChrome` call carries.
+  await page.addInitScript(() => {
+    const preferences: unknown[] = [];
+    (window as unknown as { themePreferences: unknown[] }).themePreferences = preferences;
+    (window as unknown as { paseoDesktop: unknown }).paseoDesktop = {
+      platform: "darwin",
+      events: { on: () => () => {} },
+      invoke: async () => null,
+      window: {
+        getCurrentWindow: () => ({
+          updateChrome: async (update: { themePreference?: unknown }) => {
+            if (update.themePreference) preferences.push(update.themePreference);
+          },
+        }),
+      },
+    };
+  });
+  const lastPreference = () =>
+    page.evaluate(() =>
+      (window as unknown as { themePreferences: unknown[] }).themePreferences.at(-1),
+    );
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "material-runtime-theme-",
+    title: "Runtime theme",
+    initialPrompt: "hello",
+    featureValues: { mockAssistantResponse: "ok" },
+  });
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await openAgentRoute(page, session);
+    await page.evaluate(() =>
+      localStorage.setItem("@paseo:app-settings", JSON.stringify({ theme: "dark" })),
+    );
+    await page.reload();
+    await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible({
+      timeout: 60_000,
+    });
+    await openSettings(page);
+    await page.getByRole("button", { name: "Appearance", exact: true }).click();
+    const picker = page.getByRole("radiogroup", { name: "Theme" });
+    await expect(picker).toBeVisible();
+    // Scheme of each surface by luminance, and of the text the App renders.
+    const schemes = () =>
+      page.evaluate(() => {
+        const probe = document.createElement("canvas").getContext("2d")!;
+        const dark = (color: string) => {
+          probe.clearRect(0, 0, 1, 1);
+          probe.fillStyle = color;
+          probe.fillRect(0, 0, 1, 1);
+          const [r, g, b] = probe.getImageData(0, 0, 1, 1).data;
+          return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128 ? "dark" : "light";
+        };
+        const style = (selector: string) => {
+          const el = document.querySelector(selector);
+          return el ? getComputedStyle(el) : null;
+        };
+        const settings = '[data-material="settings"] > * > ';
+        // The settings detail pane, or the workspace panel and its transcript.
+        const settingsDetail = document.querySelector(`${settings}:last-child`);
+        const detail = settingsDetail ?? document.querySelector('[data-material="panel"]');
+        const textRoot =
+          settingsDetail ?? document.querySelector('[data-testid="assistant-message"]');
+        const walker = document.createTreeWalker(textRoot ?? document.body, NodeFilter.SHOW_TEXT);
+        let text = "";
+        for (let node = walker.nextNode(); node && !text; node = walker.nextNode()) {
+          if (node.nodeValue?.trim() && node.parentElement) {
+            text = getComputedStyle(node.parentElement).color;
+          }
+        }
+        return {
+          // Light text means the dark theme.
+          text: dark(text) === "dark" ? "light" : "dark",
+          floor: dark(style('[data-material="panel-frame"]')?.backgroundColor ?? ""),
+          detail: dark(detail ? getComputedStyle(detail).backgroundColor : ""),
+        };
+      });
+    const expectScheme = async (
+      scheme: "light" | "dark",
+      preference: "system" | "light" | "dark",
+      step: string,
+    ) => {
+      await expect
+        .poll(schemes, { message: step })
+        .toEqual({ text: scheme, floor: scheme, detail: scheme });
+      await expect.poll(lastPreference, { message: `${step} preference` }).toBe(preference);
+      await page.screenshot({ path: testInfo.outputPath(`runtime-${step}.png`) });
+    };
+    await expectScheme("dark", "dark", "1-dark-on-light-system");
+    // Vibrancy stays on: the floor lets the window material through.
+    const floor = await page.evaluate(
+      () =>
+        getComputedStyle(document.querySelector('[data-material="panel-frame"]')!).backgroundColor,
+    );
+    expect(floor).toMatch(/\/\s*0?\.\d+\)$/);
+    await picker.getByRole("radio", { name: "Light", exact: true }).click();
+    await expectScheme("light", "light", "2-light");
+    await picker.getByRole("radio", { name: "Dark", exact: true }).click();
+    await expectScheme("dark", "dark", "3-dark-again");
+    await picker.getByRole("radio", { name: "System", exact: true }).click();
+    await expectScheme("light", "system", "4-system-light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    // Upstream settings content does not refresh on an adaptive switch; read the workspace.
+    await page.getByTestId("settings-back-to-workspace").click();
+    await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible();
+    await expectScheme("dark", "system", "5-system-turns-dark");
+  } finally {
+    await session.cleanup();
+  }
+});
+
+// Every surface follows the App theme, not the system appearance the page starts in. The material
+// stylesheet mounts before the persisted theme is applied, so a mismatch is the case that breaks.
+// Backgrounds are composited down to the system appearance's backdrop: the worst case for the
+// translucent macOS surfaces, whose vibrancy would otherwise sample it.
+test("material surfaces follow the App theme against the system appearance (darwin)", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  await page.addInitScript(() => {
+    (window as unknown as { paseoDesktop: unknown }).paseoDesktop = {
+      platform: "darwin",
+      events: { on: () => () => {} },
+      invoke: async () => null,
+    };
+  });
+  const session = await seedMockAgentWorkspace({
+    repoPrefix: "material-appearance-",
+    title: "Appearance mismatch",
+    initialPrompt: "Review the workspace",
+    featureValues: { mockAssistantResponse: "Body text has to stay readable.\n\n".repeat(30) },
+  });
+  try {
+    await session.client.waitForFinish(session.agentId, 30_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    for (const [app, system] of [
+      ["dark", "light"],
+      ["light", "dark"],
+      ["light", "light"],
+      ["dark", "dark"],
+    ] as const) {
+      await page.emulateMedia({ colorScheme: system });
+      await openAgentRoute(page, session);
+      await page.evaluate(
+        (theme) =>
+          localStorage.setItem(
+            "@paseo:app-settings",
+            JSON.stringify({ theme, chatDisplay: "full" }),
+          ),
+        app,
+      );
+      await page.reload();
+      await expect(page.getByTestId("message-input-root").filter({ visible: true })).toBeVisible({
+        timeout: 60_000,
+      });
+      await page.waitForFunction(() => document.querySelector("[data-material-styles]"));
+      await page.getByRole("textbox", { name: "Message agent..." }).first().fill("Draft reply");
+      await page.mouse.move(0, 0);
+      await page.screenshot({ path: testInfo.outputPath(`app-${app}-system-${system}.png`) });
+      const surfaces = {
+        transcript: '[data-testid="assistant-message"]',
+        sidebar: `[data-testid="sidebar-workspace-row-${getServerId()}:${session.workspaceId}"]`,
+        header: '[data-material="header"]',
+        composer: '[data-material="composer"] textarea',
+      };
+      const measure = (targets: Record<string, string>) =>
+        page.evaluate(
+          ({ selectors, backdrop }) => {
+            type Rgba = [number, number, number, number];
+            const probe = document.createElement("canvas").getContext("2d")!;
+            const parse = (color: string): Rgba => {
+              probe.clearRect(0, 0, 1, 1);
+              probe.fillStyle = color;
+              probe.fillRect(0, 0, 1, 1);
+              const [r, g, b, a] = probe.getImageData(0, 0, 1, 1).data;
+              return [r, g, b, a / 255];
+            };
+            const over = (top: Rgba, bottom: Rgba): Rgba => [
+              top[0] * top[3] + bottom[0] * (1 - top[3]),
+              top[1] * top[3] + bottom[1] * (1 - top[3]),
+              top[2] * top[3] + bottom[2] * (1 - top[3]),
+              1,
+            ];
+            const luminance = ([r, g, b]: Rgba) =>
+              [r, g, b]
+                .map((channel) => {
+                  const value = channel / 255;
+                  return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+                })
+                .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+            const textOf = (root: Element) => {
+              const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+              for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                if (node.nodeValue?.trim() && node.parentElement?.checkVisibility()) {
+                  return node.parentElement;
+                }
+              }
+              return root;
+            };
+            const result: Record<string, number> = {};
+            for (const [name, selector] of Object.entries(selectors)) {
+              const root = Array.from(document.querySelectorAll(selector)).find((el) =>
+                el.checkVisibility(),
+              );
+              if (!root) continue;
+              const text = root instanceof HTMLTextAreaElement ? root : textOf(root);
+              const layers: Rgba[] = [];
+              for (let node: Element | null = text; node; node = node.parentElement) {
+                const color = parse(getComputedStyle(node).backgroundColor);
+                if (color[3] > 0) layers.push(color);
+                if (color[3] === 1) break;
+              }
+              const background = layers.reduceRight<Rgba>(
+                (below, layer) => over(layer, below),
+                parse(backdrop),
+              );
+              const foreground = over(parse(getComputedStyle(text).color), background);
+              const [lighter, darker] = [luminance(foreground), luminance(background)].sort(
+                (a, b) => b - a,
+              );
+              result[name] = Math.round(((lighter + 0.05) / (darker + 0.05)) * 10) / 10;
+            }
+            return result;
+          },
+          { selectors: targets, backdrop: system === "light" ? "#ffffff" : "#000000" },
+        );
+      const contrast = await measure(surfaces);
+      await openAttachmentMenu(page);
+      Object.assign(contrast, await measure({ menu: '[data-material="menu"] [role="menuitem"]' }));
+      await page.keyboard.press("Escape");
+      expect(Object.keys(contrast).sort()).toEqual([
+        "composer",
+        "header",
+        "menu",
+        "sidebar",
+        "transcript",
+      ]);
+      for (const [surface, ratio] of Object.entries(contrast)) {
+        expect(ratio, `${surface} (App ${app}, system ${system})`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  } finally {
+    await session.cleanup();
+  }
+});
 
 // The diff pane header is one row: the checkout path lives in the directory selector's tooltip,
 // and every directory action starts its title on the same rail after a leading icon.

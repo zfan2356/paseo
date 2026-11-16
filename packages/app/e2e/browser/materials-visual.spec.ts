@@ -6,6 +6,7 @@ import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { openAttachmentMenu } from "../support/helpers/composer";
 import { openChangesPanel } from "../support/helpers/workspace-tabs";
+import { openSettings } from "../support/helpers/app";
 
 // Pixel comparison of the material layer between two revisions; see docs/fork/SYNC.md.
 // Run once with --update-snapshots on the baseline revision, then without it on the candidate.
@@ -177,6 +178,12 @@ for (const platform of PLATFORMS) {
         await expect(page.getByRole("menuitem").first()).toBeVisible();
         await shot("1440-directory-select");
         await page.keyboard.press("Escape");
+
+        await openSettings(page);
+        await expect(page.getByTestId("settings-sidebar")).toBeVisible();
+        await shot("1440-settings");
+        await page.goBack();
+        await expect(diffPane).toBeVisible();
 
         await page.setViewportSize({ width: 390, height: 900 });
         await page.waitForTimeout(600);

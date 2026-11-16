@@ -31,13 +31,15 @@ Each slot belongs to one elevation level (`MATERIAL.elevation` in `tokens.ts`). 
 | popover | `menu`, `popover`, `autocomplete`, `banner`, `callout`, `secondary-expanded` | 16     | glass                                |
 | modal   | `composer`, `dialog`, `sheet`, `fullscreen`                                  | 24     | glass                                |
 
-Composer pills are the buttons inside `composer-tracks`. They float over the transcript above the composer, so they take the hint fill, border, shadow and blur but keep their own pill radius.
+Composer pills are the buttons inside `composer-tracks`. They float over the transcript above the composer, so they take the hint fill, border, shadow and blur but keep their own pill radius. The pills sit in a horizontal scroller that clips to the pill height, which cuts the shadow into gray rectangles at the corners. The stylesheet pads that scroller by `MATERIAL.elevation.hint.shadowReach` and cancels the padding with negative margins, so the shadow keeps the pill's radius and the layout does not move.
 
 Glass is `surface` at 76% opacity with `blur(20px) saturate(1.3)`. Under `prefers-reduced-transparency: reduce` every material is the opaque `surface` with no blur.
 
 The workspace chrome (`chrome`, `header`) is glass without border or shadow. On an agent tab it floats over the transcript, and the transcript reserves `--paseo-chrome-clearance` at the top and `--paseo-composer-clearance` at the bottom. Scroll controls and composer pills lift by the composer clearance.
 
 On Electron macOS the window is transparent with `sidebar` vibrancy, and the sidebar uses `--paseo-sidebar-material` (74% `surface`). Other platforms keep the opaque `content` background.
+
+Vibrancy samples the native appearance, so the desktop sets `nativeTheme.themeSource` from the user's theme choice. After `AppearanceProvider` applies a theme, `syncDesktopThemePreference()` (`fork/materials/desktop-theme.ts`) sends `themePreference` on the `updateChrome` IPC: `system` for Auto, otherwise the chosen theme's scheme, plugin themes included. The desktop applies it on macOS only. Send the preference, never a scheme inferred from colors: Auto has to stay on `system`, because a pinned `themeSource` also pins the renderer's `prefers-color-scheme`, and Auto would then never follow the system again.
 
 ## Window skeleton
 
@@ -47,6 +49,7 @@ On wide web and desktop layouts the sidebar material is the window's floor and t
 - **Panel.** Everything right of the sidebar (tabs, panes, Explorer) is one panel filled with opaque `MATERIAL.<scheme>.content`. Its top, right and bottom edges touch the window; on Electron macOS the window's own corners round the right side. Beside the pinned sidebar it keeps `MATERIAL.panel.inset` (8px), `MATERIAL.panel.radius` (12px) on the two left corners, `MATERIAL.panel.border` on the left edge and `MATERIAL.panel.shadow`.
 - **No dividing line.** The pinned sidebar has no right border. The floor and the panel edge separate the two regions.
 - **Slots.** `panel-frame` and `panel` come from `WorkspacePanel` in `app/_layout.tsx`; `sidebar` is set on the pinned sidebar in `left-sidebar.tsx`. Both wrappers always render and only their slots change, so toggling focus mode or the sidebar never remounts the workspace.
+- **Settings.** The desktop settings screen carries the `settings` slot and takes the same skeleton inside the workspace panel: the panel and its wrappers go clear, the settings navigation sits on the floor with no right border, and the detail pane floats off it with the panel's gap, corners, border and shadow. The stylesheet reaches the two halves as `[role="navigation"]` and the last child of the settings row.
 - **Pinned detection.** The left inset, corners, border and shadow apply under `html:has([data-material="sidebar"])`. A collapsed sidebar switches to the overlay presentation, which carries no `sidebar` slot, so the panel goes flush without an extra hook.
 
 | State                                | Behavior                                                                                         |
@@ -54,6 +57,7 @@ On wide web and desktop layouts the sidebar material is the window's floor and t
 | Sidebar pinned                       | Floor under the sidebar; 8px gap and rounded left corners beside it; top, right and bottom flush |
 | Sidebar collapsed                    | Panel flush on all four sides; the header keeps its traffic-light clearance                      |
 | Narrow wide window (overlay sidebar) | Panel flush; the overlay sidebar keeps its own surface and slides over it                        |
+| Settings (wide)                      | Navigation on the floor; detail pane floats like the panel beside the pinned sidebar             |
 | Workspace focus mode                 | No panel: the workspace fills the window                                                         |
 | macOS full screen                    | Same as windowed                                                                                 |
 | Compact (`md` and below, e.g. 390px) | Unchanged full-screen workspace                                                                  |
@@ -79,4 +83,4 @@ Typography inside chrome, menu, banner, composer and dialog uses the system UI s
 
 ## Evidence
 
-[`docs/qa-evidence/materials/README.md`](../qa-evidence/materials/README.md) records the original coverage and the Mac verification gaps. [`skeleton-a/README.md`](../qa-evidence/materials/skeleton-a/README.md) records the floating-panel skeleton and its own Mac checks. [`skeleton-flush/README.md`](../qa-evidence/materials/skeleton-flush/README.md) records the move to flush top, right and bottom edges.
+[`docs/qa-evidence/materials/README.md`](../qa-evidence/materials/README.md) records the original coverage and the Mac verification gaps. [`skeleton-a/README.md`](../qa-evidence/materials/skeleton-a/README.md) records the floating-panel skeleton and its own Mac checks. [`skeleton-flush/README.md`](../qa-evidence/materials/skeleton-flush/README.md) records the move to flush top, right and bottom edges. [`theme-mismatch/README.md`](../qa-evidence/materials/theme-mismatch/README.md) records App theme against system appearance, the pill shadow and the settings skeleton.

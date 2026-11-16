@@ -4,6 +4,16 @@ import { createWindowMaterial } from "./material-controller";
 
 class TestTheme extends EventEmitter {
   prefersReducedTransparency = false;
+  sources: string[] = [];
+  #source: "system" | "light" | "dark" = "system";
+  get themeSource() {
+    return this.#source;
+  }
+  set themeSource(value: "system" | "light" | "dark") {
+    this.#source = value;
+    this.sources.push(value);
+    this.emit("updated");
+  }
 }
 class TestWindow extends EventEmitter {
   color = "";
@@ -60,6 +70,53 @@ describe("window material", () => {
       material.updateBackground(win, "#445566");
       expect(win.color).toBe("#445566");
       expect(theme.listenerCount("updated")).toBe(0);
+      material.applyThemePreference({ themePreference: "dark" });
+      expect(theme.themeSource).toBe("system");
     });
   }
+  it("sets themeSource from the App's theme preference and keeps vibrancy on", () => {
+    const theme = new TestTheme();
+    const win = new TestWindow();
+    const material = createWindowMaterial("darwin", theme);
+    material.setup(win, "#ffffff");
+    material.applyThemePreference({ themePreference: "dark", backgroundColor: "#181B1A" });
+    expect(theme.themeSource).toBe("dark");
+    expect(win.vibrancy).toBe("sidebar");
+    material.applyThemePreference({ themePreference: "light" });
+    expect(theme.themeSource).toBe("light");
+    material.applyThemePreference({ themePreference: "system" });
+    expect(theme.themeSource).toBe("system");
+    expect(win.vibrancy).toBe("sidebar");
+    expect(win.color).toBe("#00000000");
+    expect(theme.sources).toEqual(["dark", "light", "system"]);
+  });
+  it("leaves Auto on the system appearance when the system changes first", () => {
+    const theme = new TestTheme();
+    const win = new TestWindow();
+    const material = createWindowMaterial("darwin", theme);
+    material.setup(win, "#ffffff");
+    material.applyThemePreference({ themePreference: "system" });
+    // The system turns dark; the renderer reports its new background afterwards.
+    theme.emit("updated");
+    material.updateBackground(win, "#181B1A");
+    material.applyThemePreference({ themePreference: "system", backgroundColor: "#181B1A" });
+    expect(theme.themeSource).toBe("system");
+    expect(theme.sources).toEqual([]);
+    expect(win.vibrancy).toBe("sidebar");
+  });
+  it("ignores payloads without a valid preference", () => {
+    const theme = new TestTheme();
+    const material = createWindowMaterial("darwin", theme);
+    for (const update of [
+      undefined,
+      null,
+      "dark",
+      {},
+      { backgroundColor: "#000000" },
+      { themePreference: "midnight" },
+    ]) {
+      material.applyThemePreference(update);
+    }
+    expect(theme.sources).toEqual([]);
+  });
 });

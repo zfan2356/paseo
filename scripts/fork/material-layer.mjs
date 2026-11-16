@@ -10,7 +10,7 @@
 import { execFileSync } from "node:child_process";
 
 const MARKER =
-  /MATERIAL_SLOTS|@\/fork\/materials|fork\/materials\/|data-material|\bmaterial: "|materialTab|sidebarMaterialColor|<\/?WorkspacePanel\b|materialSheetBackground|<Materials\b|\bMaterials\b.*from|paseo-(chrome|composer)-clearance|paseo-sidebar-material|publish(Chrome|Composer)Clearance|materialWindowOptions|setupWindowMaterial|updateMaterialBackground|\bMATERIAL\b|E2E_GPU_COMPOSITING|qa-evidence\/materials/;
+  /MATERIAL_SLOTS|@\/fork\/materials|fork\/materials\/|data-material|\bmaterial: "|materialTab|sidebarMaterialColor|<\/?WorkspacePanel\b|materialSheetBackground|<Materials\b|\bMaterials\b.*from|paseo-(chrome|composer)-clearance|paseo-sidebar-material|publish(Chrome|Composer)Clearance|materialWindowOptions|setupWindowMaterial|updateMaterialBackground|applyMaterialThemePreference|syncDesktopThemePreference|\bMATERIAL\b|E2E_GPU_COMPOSITING|qa-evidence\/materials/;
 // Pre-layer revisions threaded the active tab into the workspace chrome under this name.
 const LEGACY_MARKER = /activeTab=\{activeTabDescriptor\}/;
 const isMaterialLine = (line) => MARKER.test(line) || LEGACY_MARKER.test(line);

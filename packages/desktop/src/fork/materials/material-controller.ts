@@ -6,13 +6,29 @@ export interface MaterialWindow {
   isDestroyed(): boolean;
   once(event: "closed", callback: () => void): unknown;
 }
+const THEME_SOURCES = ["system", "light", "dark"] as const;
+type ThemeSource = (typeof THEME_SOURCES)[number];
 interface MaterialTheme {
   prefersReducedTransparency: boolean;
+  themeSource: ThemeSource;
   on(event: "updated", callback: () => void): unknown;
   removeListener(event: "updated", callback: () => void): unknown;
 }
 
-/** Own the last opaque color so accessibility changes restore the current theme. */
+function readThemePreference(update: unknown): ThemeSource | null {
+  if (!update || typeof update !== "object") return null;
+  const value = (update as { themePreference?: unknown }).themePreference;
+  return THEME_SOURCES.find((source) => source === value) ?? null;
+}
+
+/**
+ * Own the last opaque color so accessibility changes restore the current theme.
+ *
+ * Window vibrancy samples the native appearance. The renderer sends the user's theme preference
+ * (`themePreference` on the `updateChrome` IPC) and it becomes `nativeTheme.themeSource`, so
+ * vibrancy follows the App theme. Auto maps to "system", which keeps `prefers-color-scheme` on the
+ * real system appearance.
+ */
 export function createWindowMaterial(platform: string, theme: MaterialTheme) {
   const enabled = platform === "darwin";
   const backgrounds = new WeakMap<MaterialWindow, string>();
@@ -31,6 +47,12 @@ export function createWindowMaterial(platform: string, theme: MaterialTheme) {
       };
     },
     updateBackground,
+    /** Takes the raw `updateChrome` payload; ignores it unless it carries a valid preference. */
+    applyThemePreference(update: unknown) {
+      const source = readThemePreference(update);
+      if (!enabled || !source || theme.themeSource === source) return;
+      theme.themeSource = source;
+    },
     setup(win: MaterialWindow, color: string) {
       if (!enabled) return;
       backgrounds.set(win, color);

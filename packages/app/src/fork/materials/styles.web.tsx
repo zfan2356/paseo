@@ -5,10 +5,11 @@ import type { Theme } from "@/styles/theme";
 import { MATERIAL } from "./tokens";
 
 type MaterialLevel = typeof MATERIAL.glass;
+type Scheme = Theme["colorScheme"];
 // Fixed-size glyphs only; a percentage-sized svg (a scrim or fill) takes its box from its parent.
 const ICON = 'svg:not([width$="%"])';
 
-function elevationCss(root: string, scheme: Theme["colorScheme"], material: MaterialLevel): string {
+function elevationCss(root: string, scheme: Scheme, material: MaterialLevel): string {
   const palette = MATERIAL[scheme];
   const rules = Object.values(MATERIAL.elevation).map((elevation) => {
     const selector = elevation.surfaces
@@ -51,15 +52,47 @@ function skeletonCss(root: string, scheme: Theme["colorScheme"], surfaceSidebar:
       border-radius: ${panel.radius}px 0 0 ${panel.radius}px;
       border-left: ${panel.border[scheme]}; box-shadow: ${panel.shadow[scheme]};
     }
+    ${settingsCss(root, scheme)}
+  `;
+}
+
+// Settings uses the same skeleton inside the workspace panel: its navigation sits on the floor and
+// its detail pane floats off it. Everything between the panel frame and the settings root goes
+// clear so the floor (and the macOS vibrancy under it) shows through once, as beside the sidebar.
+function settingsCss(root: string, scheme: Scheme): string {
+  const { panel } = MATERIAL;
+  const settings = '[data-material="settings"]';
+  return `
+    ${root} [data-material="panel-frame"]:has(${settings}) { padding-left: 0; }
+    ${root} [data-material="panel"]:has(${settings}) {
+      background: transparent; border-radius: 0; border-left: 0; box-shadow: none;
+    }
+    ${root} [data-material="panel"] div:has(${settings}), ${root} ${settings} { background: transparent !important; }
+    ${root} ${settings} > * > [role="navigation"] { background: transparent !important; border-right-width: 0 !important; }
+    ${root} ${settings} > * > :last-child {
+      margin-left: ${panel.inset}px; background: ${MATERIAL[scheme].content}; overflow: hidden;
+      border-radius: ${panel.radius}px 0 0 ${panel.radius}px;
+      border-left: ${panel.border[scheme]}; box-shadow: ${panel.shadow[scheme]};
+    }
   `;
 }
 
 // Composer pills float over the transcript, so each one takes the hint material.
-function composerPillCss(root: string, scheme: Theme["colorScheme"]): string {
+function composerPillCss(root: string, scheme: Scheme): string {
   const hint = MATERIAL.elevation.hint;
+  const tracks = `${root} [data-material="composer-tracks"]`;
   // Outermost buttons only: a control nested inside a pill keeps the pill's material.
-  const pill = `${root} [data-material="composer-tracks"] [role="button"]:not([role="button"] [role="button"])`;
+  const pill = `${tracks} [role="button"]:not([role="button"] [role="button"])`;
+  // The pills sit in a horizontal scroller (scroller > content > track > pill) that clips to the
+  // pill height. Pad the scroller by the shadow's reach and pull it back with negative margins, so
+  // the shadow keeps the pill's radius instead of being cut to its bounding box.
+  const room = hint.shadowReach;
+  const scroller = `${tracks} :has(> * > * > [role="button"]):not([role="button"], [role="button"] *)`;
   return `
+    ${scroller} {
+      padding: ${room.top}px ${room.side}px ${room.bottom}px;
+      margin: -${room.top}px -${room.side}px -${room.bottom}px;
+    }
     ${pill} { border: ${hint.border[scheme]} !important; box-shadow: ${hint.shadow[scheme]}; }
     @media (prefers-reduced-transparency: no-preference) {
       ${pill} {
