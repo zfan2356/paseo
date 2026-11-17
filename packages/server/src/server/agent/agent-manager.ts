@@ -292,7 +292,6 @@ export type AgentManagerEvent =
       seq?: number;
       epoch?: string;
       timestamp?: string;
-      fromHistory?: boolean;
     };
 
 export type AgentSubscriber = (event: AgentManagerEvent) => void;
@@ -5107,7 +5106,6 @@ export class AgentManager {
           seq: row.seq,
           epoch: this.timelineStore.getEpoch(agent.id),
           timestamp: row.timestamp,
-          fromHistory: true,
         });
       }
     }
@@ -5179,7 +5177,6 @@ export class AgentManager {
           seq: row.seq,
           epoch: this.timelineStore.getEpoch(agent.id),
           timestamp: row.timestamp,
-          fromHistory: true,
         });
       }
     }
@@ -5196,7 +5193,6 @@ export class AgentManager {
         seq: row.seq,
         epoch: this.timelineStore.getEpoch(agent.id),
         timestamp: row.timestamp,
-        fromHistory: true,
       });
     }
   }
@@ -6086,7 +6082,6 @@ export class AgentManager {
       seq?: number;
       epoch?: string;
       timestamp?: string;
-      fromHistory?: boolean;
     },
   ): void {
     if (event.type === "timeline") {

@@ -4545,7 +4545,7 @@ describe("Claude import descriptor scheduling", () => {
   });
 });
 
-describe("Claude Bash create evidence", () => {
+describe("Claude Bash result mapping", () => {
   async function mappedBash(
     result: Record<string, unknown> | undefined,
     isError = false,
