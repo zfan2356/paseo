@@ -142,7 +142,6 @@ test("default material evidence", async ({ page }, testInfo) => {
       await page.reload();
       await expect(page.getByTestId("message-input-root")).toBeVisible({ timeout: 60_000 });
       await page.waitForFunction(() => document.querySelector("[data-material-styles]"));
-      await expect(page.getByTestId("agent-change-requests-toggle")).toHaveCount(0);
       const input = page.getByRole("textbox", { name: "Message agent..." }).first();
       await input.fill("Keep the transcript crisp; soften only the floating surfaces.");
       await input.blur();

@@ -4607,15 +4607,6 @@ describe("Claude Bash create evidence", () => {
         },
       },
     });
-    if (
-      item?.type !== "timeline" ||
-      item.item.type !== "tool_call" ||
-      item.item.detail.type !== "shell"
-    )
-      throw new Error("Missing Bash result");
-    const { createdChangeRequest } =
-      await import("../../../../server/agent-change-requests/identity.js");
-    expect(createdChangeRequest(item.item.detail, "git@git.woa.com:team/repo.git")?.number).toBe(7);
   });
   test("retains only actual structured output as create evidence", async () => {
     const events = await mappedBash({ stdout: "", stderr: "", interrupted: false });

@@ -611,3 +611,46 @@ describe("terminal collection protocol compatibility", () => {
     ).toMatchObject({ payload: { terminals: [{ isScript: true, createdAt: null }] } });
   });
 });
+
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients and daemons are unsupported.
+test("accepts retired session link frames from old clients and daemons", () => {
+  const request = {
+    type: "agent.change_requests.update.request",
+    requestId: "legacy",
+    agentId: "a",
+    addUrl: "https://github.com/acme/repo/pull/7",
+    removeKey: "removed",
+    autoLink: false,
+  };
+  expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+  const response = {
+    type: "agent.change_requests.update",
+    payload: {
+      subscriptionId: "legacy",
+      snapshot: {
+        agentId: "a",
+        autoLink: true,
+        items: [
+          {
+            reference: {
+              key: "old",
+              forge: "github",
+              host: "github.com",
+              projectPath: "acme/repo",
+              number: 7,
+              url: "https://github.com/acme/repo/pull/7",
+              source: "tool",
+              addedAt: "2026-11-13T00:00:00Z",
+              callId: "call",
+            },
+            status: null,
+            availability: "pending",
+            refreshedAt: null,
+            stale: true,
+          },
+        ],
+      },
+    },
+  };
+  expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
+});

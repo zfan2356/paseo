@@ -1,7 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
+import { WebSocket } from "ws";
+import { WSSessionOutboundSchema, type SessionOutboundMessage } from "@getpaseo/protocol/messages";
 
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
@@ -257,56 +259,145 @@ function toAgentEntrySummary(entry: AgentDirectoryEntrySummaryInput) {
   };
 }
 
-test("session MR RPCs persist independent repository links and own their subscriptions", async () => {
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
+function legacyRequest(
+  ws: WebSocket,
+  frame: unknown,
+  type: SessionOutboundMessage["type"],
+): Promise<SessionOutboundMessage> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Legacy RPC timed out"));
+    }, 10000);
+    function cleanup() {
+      clearTimeout(timeout);
+      ws.off("message", onMessage);
+      ws.off("close", onClose);
+    }
+    function onClose() {
+      cleanup();
+      reject(new Error("Legacy connection closed"));
+    }
+    function onMessage(data: Buffer) {
+      const parsed = WSSessionOutboundSchema.safeParse(JSON.parse(data.toString()));
+      if (!parsed.success || parsed.data.message.type !== type) return;
+      cleanup();
+      resolve(parsed.data.message);
+    }
+    ws.on("message", onMessage);
+    ws.once("close", onClose);
+    ws.send(JSON.stringify(frame));
+  });
+}
+
+test("retired session MR RPCs answer legacy clients without disconnecting or changing records", async () => {
   const fixture = seedStaleAgentFixture();
   let daemon: TestPaseoDaemon | null = null;
-  let client: DaemonClient | null = null;
+  let ws: WebSocket | null = null;
   try {
     daemon = await createTestPaseoDaemon({ paseoHomeRoot: fixture.paseoHomeRoot, cleanup: false });
-    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
-    await client.connect();
-    expect(client.supportsAgentChangeRequests()).toBe(true);
-    const missing = client.observeAgentChangeRequests("missing-agent");
-    await expect(missing.ready).rejects.toThrow("Agent not found");
-    await missing.release();
-    const agentId = fixture.healthyAgentId;
-    expect((await client.listAgentChangeRequests(agentId)).items).toEqual([]);
-    const observed: unknown[] = [];
-    const observation = client.observeAgentChangeRequests(agentId);
-    observation.subscribe({
-      snapshot: () => {},
-      update: (message) => {
-        if (message.type === "agent.change_requests.update")
-          observed.push(message.payload.snapshot);
+    ws = new WebSocket(`ws://127.0.0.1:${daemon.port}/ws`);
+    await new Promise<void>((resolve, reject) => {
+      ws!.once("open", resolve);
+      ws!.once("error", reject);
+    });
+    const info = await legacyRequest(
+      ws,
+      {
+        type: "hello",
+        clientId: "retired-links-client",
+        clientType: "cli",
+        protocolVersion: 1,
+        capabilities: { owned_subscriptions: true },
       },
-    });
-    await observation.ready;
-    await client.updateAgentChangeRequests(agentId, { autoLink: false });
-    await vi.waitFor(() =>
-      expect(observed).toContainEqual({ agentId, autoLink: false, items: [] }),
+      "status",
     );
-    await observation.release();
-    const linked = await client.updateAgentChangeRequests(agentId, {
-      addUrl: "https://git.woa.com/another/project/merge_requests/7",
+    expect(info).toMatchObject({ type: "status", payload: { status: "server_info" } });
+    expect(info).not.toHaveProperty("payload.features.agentChangeRequests", true);
+    const agentsDir = path.join(daemon.paseoHome, "agents");
+    const agentFile = path.join(
+      agentsDir,
+      readdirSync(agentsDir, { recursive: true, encoding: "utf8" }).find((file) =>
+        file.endsWith(fixture.healthyAgentId + ".json"),
+      )!,
+    );
+    const before = readFileSync(agentFile, "utf8");
+    for (const operation of ["list", "update"]) {
+      const response = await legacyRequest(
+        ws,
+        {
+          type: "session",
+          message: {
+            type: `agent.change_requests.${operation}.request`,
+            requestId: operation,
+            agentId: fixture.healthyAgentId,
+            addUrl: "https://github.com/acme/repo/pull/7",
+            autoLink: true,
+          },
+        },
+        operation === "list"
+          ? "agent.change_requests.list.response"
+          : "agent.change_requests.update.response",
+      );
+      expect(response).toEqual({
+        type: `agent.change_requests.${operation}.response`,
+        payload: {
+          requestId: operation,
+          snapshot: null,
+          error: "Session PR/MR links are now provided by the Multica plugin.",
+        },
+      });
+    }
+    const subscription = await legacyRequest(
+      ws,
+      {
+        type: "session",
+        message: {
+          type: "agent.change_requests.subscribe.request",
+          requestId: "subscribe",
+          agentIds: [fixture.healthyAgentId, "missing"],
+        },
+      },
+      "agent.change_requests.subscribe.response",
+    );
+    if (subscription.type !== "agent.change_requests.subscribe.response")
+      throw new Error("Missing subscription response");
+    const released = await legacyRequest(
+      ws,
+      {
+        type: "session",
+        message: {
+          type: "subscription.release.request",
+          requestId: "release",
+          subscriptionId: subscription.payload.subscriptionId,
+        },
+      },
+      "subscription.release.response",
+    );
+    expect(released).toMatchObject({
+      type: "subscription.release.response",
+      payload: { requestId: "release" },
     });
-    expect(linked.items[0].reference).toMatchObject({
-      forge: "tgit",
-      projectPath: "another/project",
-      number: 7,
+    expect(readFileSync(agentFile, "utf8")).toBe(before);
+    const detail = await legacyRequest(
+      ws,
+      {
+        type: "session",
+        message: {
+          type: "fetch_agent_request",
+          requestId: "after-retired-rpcs",
+          agentId: fixture.healthyAgentId,
+        },
+      },
+      "fetch_agent_response",
+    );
+    expect(detail).toMatchObject({
+      type: "fetch_agent_response",
+      payload: { agent: { id: fixture.healthyAgentId } },
     });
-    await client.close();
-    client = null;
-    await daemon.close();
-    daemon = null;
-    daemon = await createTestPaseoDaemon({ paseoHomeRoot: fixture.paseoHomeRoot, cleanup: false });
-    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
-    await client.connect();
-    const restored = await client.listAgentChangeRequests(agentId);
-    expect(restored).toEqual(linked);
-    await client.updateAgentChangeRequests(agentId, { removeKey: restored.items[0].reference.key });
-    expect((await client.listAgentChangeRequests(agentId)).items).toEqual([]);
   } finally {
-    await client?.close();
+    ws?.terminate();
     await daemon?.close();
     for (const target of fixture.cleanupPaths) rmSync(target, { recursive: true, force: true });
   }

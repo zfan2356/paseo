@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { FolderPlus, GitBranch, Link, Unlink } from "lucide-react-native";
+import { FolderPlus, GitBranch, Unlink } from "lucide-react-native";
 import type { Theme } from "@/styles/theme";
 import { useShallow } from "zustand/shallow";
 import { useSessionStore } from "@/stores/session-store";
@@ -27,15 +27,11 @@ import {
 } from "./model";
 import { BindDirectory, CreateSessionWorktree, useContextMutation } from "./actions";
 import { permitsSessionOperation } from "./operations";
-import { isWeb } from "@/constants/platform";
-import { ChangeRequestsDialog } from "@/agent-change-requests/section";
 
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
-const ThemedLink = withUnistyles(Link);
 const ThemedFolderPlus = withUnistyles(FolderPlus);
 const ThemedGitBranch = withUnistyles(GitBranch);
 const ThemedUnlink = withUnistyles(Unlink);
-const LINK_ICON = <ThemedLink size={16} uniProps={mutedColorMapping} />;
 const BIND_ICON = <ThemedFolderPlus size={16} uniProps={mutedColorMapping} />;
 const WORKTREE_ICON = <ThemedGitBranch size={16} uniProps={mutedColorMapping} />;
 const REMOVE_ICON = <ThemedUnlink size={16} uniProps={mutedColorMapping} />;
@@ -176,7 +172,6 @@ export function SessionDirectoryToolbar({
       directory={directory}
       checkoutRoot={checkoutRoot}
       canManage={connected && permitsSessionOperation(permissions, "workspace.manage")}
-      canWrite={connected && permitsSessionOperation(permissions, "workspace.write")}
       onBind={openBinding}
       onWorktree={repository ? openWorktree : undefined}
       onSelect={selectDirectory}
@@ -210,7 +205,6 @@ function DirectoryChoices({
   directory,
   checkoutRoot,
   canManage,
-  canWrite,
   onBind,
   onWorktree,
   onSelect,
@@ -223,17 +217,12 @@ function DirectoryChoices({
   directory?: string;
   checkoutRoot?: string;
   canManage: boolean;
-  canWrite: boolean;
   onBind(): void;
   onWorktree?: () => void;
   onSelect(path: string): void;
   children: import("react").ReactNode;
 }) {
   const { t } = useTranslation();
-  const [linkingChangeRequests, setLinkingChangeRequests] = useState(false);
-  const openChangeRequests = useCallback(() => setLinkingChangeRequests(true), []);
-  const closeChangeRequests = useCallback(() => setLinkingChangeRequests(false), []);
-  const supportsChangeRequests = isWeb && client.supportsAgentChangeRequests();
   const mutation = useContextMutation(client, serverId, agentId);
   const directories = sessionDirectories(context);
   const paths = directories.map(({ path }) => path);
@@ -284,16 +273,6 @@ function DirectoryChoices({
             <Text style={styles.menu}>⋯</Text>
           </DropdownMenuTrigger>
           <DropdownMenuContent sheetTitle={t("sessionNavigation.selectDirectory")}>
-            {supportsChangeRequests ? (
-              <DropdownMenuItem
-                disabled={!canWrite}
-                onSelect={openChangeRequests}
-                leading={LINK_ICON}
-                testID="session-directory-link-change-request"
-              >
-                {t("agentChangeRequests.link")}
-              </DropdownMenuItem>
-            ) : null}
             <DropdownMenuItem
               disabled={!canManage || mutation.isPending}
               onSelect={onBind}
@@ -328,14 +307,6 @@ function DirectoryChoices({
         </Text>
       ) : null}
       {children}
-      {linkingChangeRequests ? (
-        <ChangeRequestsDialog
-          key={agentId}
-          client={client}
-          agentId={agentId}
-          onClose={closeChangeRequests}
-        />
-      ) : null}
     </View>
   );
 }

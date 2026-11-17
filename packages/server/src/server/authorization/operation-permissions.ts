@@ -24,6 +24,7 @@ const INBOUND_PERMISSION = {
   "agent.message.get_receipt.request": ["workspace.read", "hub.execute"],
   "agent.provider_subagents.list.request": "workspace.read",
   "agent.background_work.list.request": "workspace.read",
+  // COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
   "agent.change_requests.list.request": "workspace.read",
   "agent.change_requests.subscribe.request": "workspace.read",
   "agent.change_requests.update.request": "workspace.write",
@@ -270,6 +271,7 @@ const OUTBOUND_PERMISSION = {
   "agent.provider_subagents.timeline.get.response": "workspace.read",
   "agent.provider_subagents.update": "workspace.read",
   "agent.background_work.list.response": "workspace.read",
+  // COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
   "agent.change_requests.list.response": "workspace.read",
   "agent.change_requests.subscribe.response": "workspace.read",
   "agent.change_requests.update.response": "workspace.read",

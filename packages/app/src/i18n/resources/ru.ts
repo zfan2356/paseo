@@ -75,7 +75,6 @@ export const ru: TranslationResources = {
     execution: "Выполнение: {{path}}",
     changesHint: "Изменения в этом каталоге могут включать работу других сеансов и инструментов.",
   },
-  agentChangeRequests: en.agentChangeRequests,
   paneFind: {
     connectionFailure:
       "Не удалось выполнить поиск в чате. Проверьте подключение к хосту и повторите попытку.",

@@ -1,7 +1,5 @@
 import { projectBackgroundWork } from "./agent/background-work/projection.js";
 import type { SessionContextStore } from "./session-context-store.js";
-import type { AgentChangeRequestsSnapshot } from "@getpaseo/protocol/messages";
-import type { AgentChangeRequests } from "./agent-change-requests/service.js";
 import { DiffSession } from "./diff/index.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
@@ -513,7 +511,6 @@ export interface SessionOptions {
   worktreesRoot?: string;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
-  agentChangeRequests?: AgentChangeRequests;
   messageReceipts: Pick<MessageReceipts, "send" | "lookup">;
   agentMessages: AgentMessageDelivery;
   creationService: Pick<CreationService, "create" | "subscribe">;
@@ -814,7 +811,6 @@ export class Session {
   private readonly github: ForgeService;
   private readonly renameCurrentBranch: typeof renameCurrentBranchDefault;
   private readonly workspaceGitService: WorkspaceGitService;
-  private readonly agentChangeRequests?: AgentChangeRequests;
   private readonly workspaceRuntimeStore: WorkspaceRuntimeStore;
   private readonly workspaceAutoName: WorkspaceAutoName;
   private readonly gitMutation: GitMutationService;
@@ -898,7 +894,6 @@ export class Session {
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
 
   constructor(options: SessionOptions) {
-    this.agentChangeRequests = options.agentChangeRequests;
     const {
       clientId,
       permissions,
@@ -2764,66 +2759,35 @@ export class Session {
     });
   }
 
-  private dispatchAgentChangeRequestsMessage(
+  // COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
+  private dispatchRetiredChangeRequestsMessage(
     msg: SessionInboundMessage,
   ): Promise<void> | undefined {
-    const service = this.agentChangeRequests;
-    if (!service) return undefined;
     switch (msg.type) {
       case "agent.change_requests.list.request":
       case "agent.change_requests.update.request":
-        return (async () => {
-          const snapshot =
+        this.emit({
+          type:
             msg.type === "agent.change_requests.list.request"
-              ? await service.list(msg.agentId)
-              : await service.update(msg.agentId, msg);
-          this.emit({
-            type:
-              msg.type === "agent.change_requests.list.request"
-                ? "agent.change_requests.list.response"
-                : "agent.change_requests.update.response",
-            payload: { requestId: msg.requestId, snapshot, error: null },
-          });
-        })();
-      case "agent.change_requests.subscribe.request":
-        return (async () => {
-          let active = true;
-          let ready = false;
-          const initial = new Map<string, AgentChangeRequestsSnapshot>();
-          const stops: (() => void)[] = [];
-          const owner = this.delivery.begin("agent-change-requests", undefined, () => {
-            active = false;
-            for (const stop of stops) stop();
-          });
-          try {
-            const emitSnapshot = (snapshot: AgentChangeRequestsSnapshot) => {
-              if (!active) return;
-              if (!ready) {
-                initial.set(snapshot.agentId, snapshot);
-                return;
-              }
-              owner.emit({
-                type: "agent.change_requests.update",
-                payload: { subscriptionId: owner.responseId, snapshot },
-              });
-            };
-            for (const agentId of new Set(msg.agentIds)) {
-              const stop = await service.subscribe(agentId, emitSnapshot);
-              if (active) stops.push(stop);
-              else stop();
-            }
-            if (!active) return;
-            this.emit({
-              type: "agent.change_requests.subscribe.response",
-              payload: { requestId: msg.requestId, subscriptionId: owner.responseId },
-            });
-            ready = true;
-            for (const snapshot of initial.values()) emitSnapshot(snapshot);
-          } catch (error) {
-            await owner.release();
-            throw error;
-          }
-        })();
+              ? "agent.change_requests.list.response"
+              : "agent.change_requests.update.response",
+          payload: {
+            requestId: msg.requestId,
+            snapshot: null,
+            error: "Session PR/MR links are now provided by the Multica plugin.",
+          },
+        });
+        return Promise.resolve();
+      case "agent.change_requests.subscribe.request": {
+        // The legacy subscription response has no error field. A releasable empty
+        // subscription lets old clients finish setup; their list request reports removal.
+        const owner = this.delivery.begin("retired-session-change-requests", undefined, () => {});
+        this.emit({
+          type: "agent.change_requests.subscribe.response",
+          payload: { requestId: msg.requestId, subscriptionId: owner.responseId },
+        });
+        return Promise.resolve();
+      }
       default:
         return undefined;
     }
@@ -2834,7 +2798,7 @@ export class Session {
     source?: object,
   ): Promise<void> | undefined {
     if (msg.type.startsWith("agent.change_requests."))
-      return this.dispatchAgentChangeRequestsMessage(msg);
+      return this.dispatchRetiredChangeRequestsMessage(msg);
     if (msg.type === "workspace.setup.subscribe.request") return this.subscribeWorkspaceSetup(msg);
     if (msg.type === "browser.host.register.request") return this.registerBrowserHost(msg);
     if (msg.type === "browser.automation.execute.response") {
