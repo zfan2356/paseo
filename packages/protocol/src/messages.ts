@@ -1,5 +1,4 @@
 import { SessionContextSchema, SessionContextMutationSchema } from "./session-context.js";
-import { LinkedChangeRequestSchema } from "./agent-change-requests.js";
 import { AgentMessageSchema } from "./agent-message.js";
 import {
   HostsListRequestSchema,
@@ -2061,12 +2060,13 @@ export const ProviderSubagentListRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
-export const AgentChangeRequestsListRequestSchema = z.object({
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
+const AgentChangeRequestsListRequestSchema = z.object({
   type: z.literal("agent.change_requests.list.request"),
   requestId: z.string(),
   agentId: z.string(),
 });
-export const AgentChangeRequestsUpdateRequestSchema = z.object({
+const AgentChangeRequestsUpdateRequestSchema = z.object({
   type: z.literal("agent.change_requests.update.request"),
   requestId: z.string(),
   agentId: z.string(),
@@ -2074,7 +2074,7 @@ export const AgentChangeRequestsUpdateRequestSchema = z.object({
   removeKey: z.string().optional(),
   autoLink: z.boolean().optional(),
 });
-export const AgentChangeRequestsSubscribeRequestSchema = z.object({
+const AgentChangeRequestsSubscribeRequestSchema = z.object({
   type: z.literal("agent.change_requests.subscribe.request"),
   requestId: z.string(),
   agentIds: z.array(z.string()),
@@ -3962,7 +3962,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(workspaceLabelCreate): added in v0.15.3, remove after 2027-11-14.
         workspaceLabelCreate: z.boolean().optional(),
         sessionContext: z.boolean().optional(),
-        // COMPAT(agentChangeRequests): added after v0.15.3, remove after 2027-05-13.
+        // COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
         agentChangeRequests: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
         // COMPAT(workspaceBaseBranch): added after v0.11.2, remove gate after 2027-10-14.
@@ -7492,12 +7492,23 @@ export const AgentSkillsImportLegacySelectionResponseSchema = z.object({
   }),
 });
 
-export const AgentChangeRequestsSnapshotSchema = z.object({
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
+const AgentChangeRequestsSnapshotSchema = z.object({
   agentId: z.string(),
   autoLink: z.boolean(),
   items: z.array(
     z.object({
-      reference: LinkedChangeRequestSchema,
+      reference: z.object({
+        key: z.string(),
+        forge: z.string(),
+        host: z.string(),
+        projectPath: z.string(),
+        number: z.number().int().positive(),
+        url: z.string(),
+        source: z.enum(["manual", "attachment", "tool"]),
+        addedAt: z.string(),
+        callId: z.string().optional(),
+      }),
       status: CheckoutPrStatusSchema.nullable(),
       availability: z.string(),
       refreshedAt: z.string().nullable(),
@@ -7505,8 +7516,7 @@ export const AgentChangeRequestsSnapshotSchema = z.object({
     }),
   ),
 });
-export type AgentChangeRequestsSnapshot = z.infer<typeof AgentChangeRequestsSnapshotSchema>;
-export const AgentChangeRequestsListResponseSchema = z.object({
+const AgentChangeRequestsListResponseSchema = z.object({
   type: z.literal("agent.change_requests.list.response"),
   payload: z.object({
     requestId: z.string(),
@@ -7514,7 +7524,7 @@ export const AgentChangeRequestsListResponseSchema = z.object({
     error: z.string().nullable(),
   }),
 });
-export const AgentChangeRequestsUpdateResponseSchema = z.object({
+const AgentChangeRequestsUpdateResponseSchema = z.object({
   type: z.literal("agent.change_requests.update.response"),
   payload: z.object({
     requestId: z.string(),
@@ -7522,11 +7532,11 @@ export const AgentChangeRequestsUpdateResponseSchema = z.object({
     error: z.string().nullable(),
   }),
 });
-export const AgentChangeRequestsSubscribeResponseSchema = z.object({
+const AgentChangeRequestsSubscribeResponseSchema = z.object({
   type: z.literal("agent.change_requests.subscribe.response"),
   payload: z.object({ requestId: z.string(), subscriptionId: z.string() }),
 });
-export const AgentChangeRequestsChangedSchema = z.object({
+const AgentChangeRequestsChangedSchema = z.object({
   type: z.literal("agent.change_requests.update"),
   payload: z.object({ subscriptionId: z.string(), snapshot: AgentChangeRequestsSnapshotSchema }),
 });

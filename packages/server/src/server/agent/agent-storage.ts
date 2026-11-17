@@ -1,7 +1,3 @@
-import {
-  AgentChangeRequestSettingsSchema,
-  type AgentChangeRequestSettings,
-} from "@getpaseo/protocol/agent-change-requests";
 import { promises as fs, type Dirent } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -47,8 +43,9 @@ const PERSISTENCE_HANDLE_SCHEMA = z
   .nullable()
   .optional();
 
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy agent files are rewritten.
+// Zod strips the retired association fields when loading old records.
 const STORED_AGENT_SCHEMA = z.object({
-  ...AgentChangeRequestSettingsSchema.shape,
   id: z.string(),
   provider: z.string(),
   cwd: z.string(),
@@ -101,15 +98,6 @@ export type SerializableAgentConfig = Pick<
 export type StoredAgentRecord = z.infer<typeof STORED_AGENT_SCHEMA>;
 export function parseStoredAgentRecord(value: unknown): StoredAgentRecord {
   return STORED_AGENT_SCHEMA.parse(value);
-}
-
-function changeRequestSettings(record: StoredAgentRecord | null): AgentChangeRequestSettings {
-  if (!record) return {};
-  return {
-    linkedChangeRequests: record.linkedChangeRequests,
-    autoLinkChangeRequests: record.autoLinkChangeRequests,
-    excludedChangeRequestKeys: record.excludedChangeRequestKeys,
-  };
 }
 
 export class AgentStorage {
@@ -286,11 +274,7 @@ export class AgentStorage {
   }
 
   private queueRecordWrite(record: StoredAgentRecord): Promise<void> {
-    // Association settings belong to mutateChangeRequests, not runtime snapshots.
-    return this.queueRecordMutation(record.id, (existing) => ({
-      ...record,
-      ...changeRequestSettings(existing ?? record),
-    }));
+    return this.queueRecordMutation(record.id, () => record);
   }
 
   private queueRecordMutation(
@@ -411,23 +395,11 @@ export class AgentStorage {
       if (existing && existing.archivedAt !== undefined) {
         record.archivedAt = existing.archivedAt;
       }
-      Object.assign(record, changeRequestSettings(existing));
       // Background is fixed at creation; a runtime opened without it cannot clear it.
       if (existing?.background) record.background = true;
       record.resumeOnStartup =
         existing?.resumeOnStartup && agent.lifecycle !== "idle" && agent.lifecycle !== "error";
       return record;
-    });
-  }
-
-  async mutateChangeRequests(
-    agentId: string,
-    mutate: (settings: AgentChangeRequestSettings) => AgentChangeRequestSettings,
-  ): Promise<void> {
-    await this.load();
-    await this.queueRecordMutation(agentId, (existing) => {
-      if (!existing) throw new Error("Agent not found");
-      return { ...existing, ...mutate(existing) };
     });
   }
 

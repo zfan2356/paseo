@@ -74,7 +74,6 @@ export const ko: TranslationResources = {
     execution: "실행: {{path}}",
     changesHint: "이 디렉터리의 변경 사항에는 다른 세션이나 도구의 작업이 포함될 수 있습니다.",
   },
-  agentChangeRequests: en.agentChangeRequests,
   paneFind: {
     connectionFailure: "이 채팅을 검색할 수 없습니다. 호스트 연결을 확인하고 다시 시도하세요.",
     historyChangedFailure: "검색 중에 채팅이 변경되었습니다. 다시 검색하세요.",

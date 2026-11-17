@@ -8,14 +8,10 @@ Paseo executes `index.server.ts` in a subprocess and `index.client.tsx` in every
 
 ## Session change requests
 
-`paseo.agents.ref(id).changeRequests.list()` returns the session’s linked PRs/MRs
-and cached status. `subscribe(listener, { onError })` delivers current snapshots
-and returns a release function. Subscriptions restore on reconnect and release
-when the plugin API is disposed. This namespace has no mutation methods. Gate
-the feature on `server_info.features.agentChangeRequests`; an older host requires
-an update. Use each reference’s `key` to deduplicate session links when combining
-them with task links. [Forge providers](forge-providers.md#session-prmr-links)
-owns collection and polling rules.
+Multica owns session PR/MR associations on its issues. Use the paseo-multica
+plugin panel to view them; Paseo no longer stores or collects session links.
+Workspace PR tabs and `forge_change_request` prompt attachments remain separate
+Paseo features.
 
 ## Install a directory source
 

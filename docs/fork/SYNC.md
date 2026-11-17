@@ -37,7 +37,7 @@ It prints every line in an upstream-owned file that references the layer. The gr
 | Other floating       | `toast-host.tsx`, `download-toast.tsx`, `pane-find/index.tsx`, `desktop/browser/pane/index.electron.tsx`                                                                                                                                                          | `toast`, `popover`.                                                                                                                                                                                                                 |
 | Desktop              | `packages/desktop/src/main.ts`, `packages/desktop/src/window/window-manager.ts`                                                                                                                                                                                   | `materialWindowOptions()`, `setupWindowMaterial()`, `updateMaterialBackground()`; `applyMaterialThemePreference()` reads `themePreference` from the raw `updateChrome` payload before upstream parses it.                           |
 
-Fork-only feature files (`agent-change-requests/section.tsx`, `side-chat/panel.tsx`) also carry slots; they are not upstream files and never conflict.
+Fork-only feature files (`side-chat/panel.tsx`) also carry slots; they are not upstream files and never conflict.
 
 ## After every merge
 

@@ -693,55 +693,46 @@ describe("AgentStorage", () => {
   });
 });
 
-test("preserves linked change requests and opt-out keys across live snapshots and reload", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-linked-storage-"));
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy agent files are rewritten.
+test("loads legacy session links and drops retired fields on disk rewrite", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-retired-links-"));
   try {
+    const seed = new AgentStorage(dir, createTestLogger());
+    const agent = createManagedAgent({ id: "legacy-agent" });
+    await seed.applySnapshot(agent);
+    const record = await seed.get(agent.id);
+    const files = await fs.readdir(dir, { recursive: true });
+    const recordPath = path.join(dir, files.find((file) => file.endsWith("legacy-agent.json"))!);
+    await fs.writeFile(
+      recordPath,
+      JSON.stringify({
+        ...record,
+        linkedChangeRequests: [
+          {
+            key: "old",
+            forge: "tgit",
+            host: "git.woa.com",
+            projectPath: "team/repo",
+            number: 7,
+            url: "https://git.woa.com/team/repo/merge_requests/7",
+            source: "manual",
+            addedAt: "2026-11-13T00:00:00Z",
+          },
+        ],
+        autoLinkChangeRequests: false,
+        excludedChangeRequestKeys: ["removed"],
+      }),
+    );
     const storage = new AgentStorage(dir, createTestLogger());
-    const agent = createManagedAgent({ id: "linked-agent" });
-    await storage.applySnapshot(agent);
-    const reference = {
-      key: "key",
-      forge: "tgit",
-      host: "git.woa.com",
-      projectPath: "group/repo",
-      number: 12,
-      url: "https://git.woa.com/group/repo/merge_requests/12",
-      source: "manual" as const,
-      addedAt: "2026-11-13T00:00:00Z",
-    };
-    const stale = (await storage.get(agent.id))!;
-    await storage.mutateChangeRequests(agent.id, () => ({
-      linkedChangeRequests: [reference],
-      autoLinkChangeRequests: false,
-      excludedChangeRequestKeys: ["removed"],
-    }));
-    await storage.upsert({ ...stale, title: "changed concurrently" });
+    expect(await storage.get(agent.id)).toEqual(record);
+    await storage.setTitle(agent.id, "Updated title");
+    expect(JSON.parse(await fs.readFile(recordPath, "utf8"))).toEqual({
+      ...record,
+      title: "Updated title",
+    });
     await storage.applySnapshot(agent);
     const restored = new AgentStorage(dir, createTestLogger());
-    expect(await restored.get(agent.id)).toMatchObject({
-      linkedChangeRequests: [reference],
-      autoLinkChangeRequests: false,
-      excludedChangeRequestKeys: ["removed"],
-    });
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("a failed link mutation does not discard the runtime snapshot queued behind it", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-linked-write-failure-"));
-  try {
-    const storage = new AgentStorage(dir, createTestLogger());
-    const agent = createManagedAgent({ id: "write-after-failure" });
-    await storage.applySnapshot(agent);
-    const record = (await storage.get(agent.id))!;
-    const failed = storage.mutateChangeRequests(agent.id, () => {
-      throw new Error("Link limit");
-    });
-    const next = storage.upsert({ ...record, title: "Later snapshot" });
-    await expect(failed).rejects.toThrow("Link limit");
-    await next;
-    expect((await storage.get(agent.id))?.title).toBe("Later snapshot");
+    expect(await restored.get(agent.id)).toEqual({ ...record, title: "Updated title" });
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
