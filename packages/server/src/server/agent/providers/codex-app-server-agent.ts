@@ -24,6 +24,7 @@ import {
   type AgentRuntimeInfo,
   type AgentSession,
   type AgentSessionConfig,
+  type AgentSubagentDefaults,
   type SteerActiveTurnOptions,
   type SteerResult,
   type AgentSlashCommand,
@@ -4795,6 +4796,24 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.sharedResumeTurnPending = false;
       yield { type: "turn_started", provider: CODEX_PROVIDER, turnId: this.activeForegroundTurnId };
     }
+  }
+
+  async getSubagentDefaults(): Promise<AgentSubagentDefaults> {
+    await this.connect();
+    const response = toObjectRecord(
+      await this.client!.request("config/read", { cwd: this.config.cwd ?? null }),
+    );
+    const config = toObjectRecord(response?.config);
+    const agents = toObjectRecord(config?.agents);
+    const model = agents?.default_subagent_model;
+    const effort = agents?.default_subagent_reasoning_effort;
+    return {
+      model:
+        normalizeCodexModelId(typeof model === "string" ? model : undefined) ?? this.config.model,
+      thinkingOptionId:
+        normalizeCodexThinkingOptionId(typeof effort === "string" ? effort : undefined) ??
+        normalizeCodexThinkingOptionId(this.config.thinkingOptionId),
+    };
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {

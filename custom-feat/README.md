@@ -52,6 +52,7 @@ stays authoritative for intent and design.
 | [codex-appearance-theme.md](codex-appearance-theme.md)                     | Codex charcoal appearance theme                                                       |
 | [codex-gpt6-fast-mode.md](codex-gpt6-fast-mode.md)                         | Expose Codex Fast for supported GPT-6 models                                          |
 | [codex-goal-control.md](codex-goal-control.md)                             | User-directed Codex goal control through the existing Paseo tool path                 |
+| [codex-subagent-defaults.md](codex-subagent-defaults.md)                   | Read subagent model and reasoning defaults from Codex configuration                   |
 | [acp-stale-feature-fallback.md](acp-stale-feature-fallback.md)             | Start ACP sessions when a saved feature has been retired                              |
 | [acp-serialized-error.md](acp-serialized-error.md)                         | Treat a serialized provider error in assistant text as a failed, retried turn         |
 | [shared-codex-app-server.md](shared-codex-app-server.md)                   | Share Codex native conversations, live output, and interruption across clients        |

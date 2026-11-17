@@ -1356,6 +1356,54 @@ describe("Codex app-server provider", () => {
     }
   });
 
+  test("reads current cwd-resolved subagent configuration without caching or hiding errors", async () => {
+    let agents: Record<string, string> = {
+      default_subagent_model: "configured-child",
+      default_subagent_reasoning_effort: "high",
+    };
+    let failRead = false;
+    const appServer = createFakeCodexAppServer({
+      "config/read": () => {
+        if (failRead) throw new Error("configuration unavailable");
+        return { config: { agents } };
+      },
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ thinkingOptionId: "medium" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+    try {
+      await session.connect();
+      await expect(session.getSubagentDefaults()).resolves.toEqual({
+        model: "configured-child",
+        thinkingOptionId: "high",
+      });
+      expect(appServer.requests().at(-1)).toMatchObject({
+        method: "config/read",
+        params: { cwd: "/tmp/codex-question-test" },
+      });
+      agents = {
+        default_subagent_model: "updated-child",
+        default_subagent_reasoning_effort: "low",
+      };
+      await expect(session.getSubagentDefaults()).resolves.toEqual({
+        model: "updated-child",
+        thinkingOptionId: "low",
+      });
+      agents = {};
+      await expect(session.getSubagentDefaults()).resolves.toEqual({
+        model: "gpt-5.4",
+        thinkingOptionId: "medium",
+      });
+      failRead = true;
+      await expect(session.getSubagentDefaults()).rejects.toThrow("configuration unavailable");
+    } finally {
+      await session.close();
+    }
+  });
+
   test("keeps the default effort when a session without one is resumed after a restart", async () => {
     const beforeRestart = createFakeCodexAppServer();
     const firstSession = await createProviderWithFakeAppServer(beforeRestart).createSession(

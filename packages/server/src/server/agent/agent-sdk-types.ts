@@ -702,6 +702,8 @@ export interface AgentUsageSession {
   sessionKey: string;
 }
 
+export type AgentSubagentDefaults = Pick<AgentSessionConfig, "model" | "thinkingOptionId">;
+
 export interface AgentSession {
   usageSession?(): AgentUsageSession | null;
   readonly provider: AgentProvider;
@@ -717,6 +719,8 @@ export interface AgentSession {
   subscribe(callback: (event: AgentStreamEvent) => void): () => void;
   streamHistory(): AsyncGenerator<AgentStreamEvent>;
   getRuntimeInfo(): Promise<AgentRuntimeInfo>;
+  /** Read provider configuration when creating a child; explicit selections override these defaults. */
+  getSubagentDefaults?(): Promise<AgentSubagentDefaults>;
   getAvailableModes(): Promise<AgentMode[]>;
   getCurrentMode(): Promise<string | null>;
   setMode(modeId: string): Promise<void | AgentProviderNotice>;

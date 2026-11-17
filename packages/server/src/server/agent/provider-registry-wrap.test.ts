@@ -33,6 +33,7 @@ const OPTIONAL_AGENT_SESSION_METHOD_NAMES = [
   "forkForSideChat",
   "disposeSideChatFork",
   "askSideQuestion",
+  "getSubagentDefaults",
   "tryHandleOutOfBand",
 ] as const satisfies readonly OptionalAgentSessionMethodName[];
 
@@ -192,6 +193,11 @@ class FakeSession implements AgentSession {
     return { response: "side answer", synthetic: false };
   }
 
+  async getSubagentDefaults() {
+    this.recordedCalls.push("getSubagentDefaults");
+    return { model: "configured-child", thinkingOptionId: "high" };
+  }
+
   tryHandleOutOfBand(_prompt: AgentPromptInput) {
     this.recordedCalls.push("tryHandleOutOfBand");
     return {
@@ -236,6 +242,10 @@ describe("wrapSessionProvider", () => {
       nativeHandle: "side-session-1",
     });
     const sideAnswer = await wrapped.askSideQuestion?.({ question: "What happened?" });
+    await expect(wrapped.getSubagentDefaults?.()).resolves.toEqual({
+      model: "configured-child",
+      thinkingOptionId: "high",
+    });
     const handler = wrapped.tryHandleOutOfBand?.("/compact");
     await handler?.run({ emit: () => {} });
 
@@ -255,6 +265,7 @@ describe("wrapSessionProvider", () => {
       "forkForSideChat",
       "disposeSideChatFork",
       "askSideQuestion",
+      "getSubagentDefaults",
       "tryHandleOutOfBand",
       "tryHandleOutOfBand.run",
     ]);

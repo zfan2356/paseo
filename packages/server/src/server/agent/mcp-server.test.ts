@@ -1565,6 +1565,96 @@ describe("create_agent MCP tool", () => {
   });
   const ensureWorkspaceForCreate = async () => "workspace-created";
 
+  it("reads subagent defaults for each creation and preserves explicit overrides", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const getSubagentDefaults = vi.fn(async () => ({
+      model: "configured-child",
+      thinkingOptionId: "high",
+    }));
+    const parent = {
+      id: "parent-agent",
+      provider: "codex",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+      currentModeId: "full-access",
+      config: {},
+      session: { getSubagentDefaults },
+    } as unknown as ManagedAgent;
+    const child = {
+      id: "child-agent",
+      provider: "codex",
+      cwd: existingCwd,
+      lifecycle: "idle",
+      currentModeId: "full-access",
+      availableModes: [],
+      config: {},
+    } as ManagedAgent;
+    spies.agentManager.getAgent.mockImplementation((id: string) =>
+      id === parent.id ? parent : child,
+    );
+    spies.agentManager.createAgent.mockResolvedValue(child);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: parent.id,
+      logger,
+    });
+    const tool = registeredTool(server, "create_agent");
+    const input = { title: "Child", initialPrompt: "Do work" };
+    expect((await tool.inputSchema.safeParseAsync(input)).success).toBe(true);
+    await tool.handler(input);
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      provider: "codex",
+      model: "configured-child",
+      thinkingOptionId: "high",
+    });
+
+    getSubagentDefaults.mockResolvedValue({ model: "updated-child", thinkingOptionId: "low" });
+    await tool.handler(input);
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      model: "updated-child",
+      thinkingOptionId: "low",
+    });
+    await tool.handler({ ...input, provider: "codex/explicit-child" });
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      model: "explicit-child",
+      thinkingOptionId: "low",
+    });
+    await tool.handler({ ...input, settings: { thinkingOptionId: "high" } });
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      model: "updated-child",
+      thinkingOptionId: "high",
+    });
+    getSubagentDefaults.mockClear();
+    await tool.handler({
+      ...input,
+      provider: "claude/other-model",
+      settings: { modeId: "bypassPermissions" },
+    });
+    expect(getSubagentDefaults).not.toHaveBeenCalled();
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      provider: "claude",
+      model: "other-model",
+    });
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0].thinkingOptionId).toBeUndefined();
+    getSubagentDefaults.mockRejectedValue(new Error("configuration unavailable"));
+    const creationCount = spies.agentManager.createAgent.mock.calls.length;
+    await expect(tool.handler(input)).rejects.toThrow("configuration unavailable");
+    expect(spies.agentManager.createAgent).toHaveBeenCalledTimes(creationCount);
+    getSubagentDefaults.mockClear();
+    await tool.handler({
+      ...input,
+      provider: "codex/explicit-child",
+      settings: { thinkingOptionId: "high" },
+    });
+    expect(getSubagentDefaults).not.toHaveBeenCalled();
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      model: "explicit-child",
+      thinkingOptionId: "high",
+    });
+  });
+
   it("requires a concise title no longer than 60 characters", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({

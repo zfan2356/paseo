@@ -15,6 +15,7 @@ import { ensureValidJson } from "../../json-utils.js";
 import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
+import { resolveSubagentSelection } from "./subagent-defaults.js";
 import type { AgentManager } from "../agent-manager.js";
 import {
   goalControlToolDescription,
@@ -1195,9 +1196,14 @@ function createToolCatalog(
       .min(1, "Title is required")
       .max(60, "Title must be 60 characters or fewer")
       .describe("Short descriptive title (<= 60 chars) summarizing the agent's focus."),
-    provider: ProviderModelInputSchema.describe(
-      "Required provider/model pair, for example codex/gpt-5.4.",
-    ),
+    provider:
+      scope === "agent"
+        ? ProviderModelInputSchema.optional().describe(
+            "Optional provider/model override. Omit to use the caller provider's configured subagent defaults.",
+          )
+        : ProviderModelInputSchema.describe(
+            "Required provider/model pair, for example codex/gpt-5.4.",
+          ),
     labels: z.record(z.string(), z.string()).optional().describe("Labels to set on the agent"),
     settings: CreateAgentSettingsInputSchema.optional().describe(
       "Initial runtime settings for the new agent.",
@@ -1613,7 +1619,7 @@ function createToolCatalog(
     {
       title: "Create agent",
       description:
-        "Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Top-level creation without workspaceId creates a new local workspace. Requires provider/model (for example codex/gpt-5.4) and an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Do not guess; call list_providers and list_models first if uncertain.",
+        "Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Omit provider and settings.thinkingOptionId to use the caller provider's configured subagent defaults; specify them only to override those defaults. Top-level creation requires provider/model (for example codex/gpt-5.4) and creates a new local workspace when workspaceId is omitted. Requires an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Do not guess; call list_providers and list_models first if uncertain.",
       inputSchema: createAgentInputSchema,
       outputSchema: {
         agentId: z.string(),
@@ -1635,7 +1641,13 @@ function createToolCatalog(
       } else {
         notifyOnFinish = resolvedArgs.parsedArgs.notifyOnFinish ?? false;
       }
-      const selectedProvider = resolveRequiredProviderModel(parsedArgs.provider).provider;
+      const { provider, thinkingOptionId } = await resolveSubagentSelection({
+        caller: resolveCallerAgent(),
+        detached: resolvedArgs.detached,
+        provider: parsedArgs.provider,
+        thinkingOptionId: parsedArgs.settings?.thinkingOptionId,
+      });
+      const selectedProvider = resolveRequiredProviderModel(provider).provider;
       const inheritedConfig = resolveInheritedProviderConfig(selectedProvider);
       const { snapshot, initialPromptStarted } = await createAgentCommand(
         {
@@ -1654,13 +1666,13 @@ function createToolCatalog(
         },
         {
           kind: "mcp",
-          provider: parsedArgs.provider,
+          provider,
           title: parsedArgs.title,
           initialPrompt: parsedArgs.initialPrompt,
           config: inheritedConfig,
           cwd: resolvedArgs.cwd,
           workspaceId: resolvedArgs.workspaceId,
-          thinking: parsedArgs.settings?.thinkingOptionId,
+          thinking: thinkingOptionId,
           features: parsedArgs.settings?.features,
           labels: {
             ...parsedArgs.labels,

@@ -492,6 +492,7 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
       ? (handle) => disposeSideChatFork({ ...handle, provider: inner.provider })
       : undefined,
     askSideQuestion: inner.askSideQuestion?.bind(inner),
+    getSubagentDefaults: inner.getSubagentDefaults?.bind(inner),
     tryHandleOutOfBand: inner.tryHandleOutOfBand?.bind(inner),
   } satisfies ForwardedAgentSession;
 }
