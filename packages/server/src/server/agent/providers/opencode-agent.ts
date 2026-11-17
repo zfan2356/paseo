@@ -349,7 +349,11 @@ type OpenCodeAgentConfig = Omit<AgentSessionConfig, "providerOptions"> & {
   providerOptions: OpenCodeProviderOptions;
 };
 
-const OPENCODE_SESSION_ENV_KEYS = new Set(["PASEO_AGENT_ID", "PASEO_AGENT_CWD"]);
+const OPENCODE_SESSION_ENV_KEYS = new Set([
+  "PASEO_AGENT_ID",
+  "PASEO_AGENT_CWD",
+  "PASEO_WORKSPACE_ID",
+]);
 
 function requiresDedicatedOpenCodeServer(
   config: OpenCodeAgentConfig,
@@ -4846,15 +4850,6 @@ class OpenCodeAgentSession implements AgentSession {
             ...item,
             status: "failed",
             error,
-            detail:
-              item.detail.type === "sub_agent"
-                ? {
-                    ...item.detail,
-                    log: [item.detail.log, error.message]
-                      .filter((entry) => entry.trim().length > 0)
-                      .join("\n"),
-                  }
-                : item.detail,
           },
         },
         turnId,
@@ -5053,6 +5048,43 @@ class OpenCodeAgentSession implements AgentSession {
         ...(this.config.model ? { model: this.config.model } : {}),
       },
     };
+  }
+
+  async canStopRuntime(): Promise<boolean> {
+    if (
+      this.closed ||
+      this.serverExited ||
+      this.reconnection ||
+      this.turnState.status !== "idle" ||
+      this.runningToolCalls.size ||
+      this.pendingPermissions.size ||
+      this.pendingSteerSubmissions.length
+    )
+      return false;
+    const request = { signal: AbortSignal.timeout(10_000) };
+    const family = new Map([[this.sessionId, this.config.cwd]]);
+    const inspected = new Set<string>();
+    for (const [sessionId, directory] of family) {
+      if (!inspected.has(directory)) {
+        const statuses = await this.client.session.status({ directory }, request);
+        if (statuses.error || !statuses.data)
+          throw new Error("Unable to inspect OpenCode executions");
+        if (Object.values(statuses.data).some((status) => status.type !== "idle")) return false;
+        const terminals = await this.client.pty.list({ directory }, request);
+        if (terminals.error || !terminals.data)
+          throw new Error("Unable to inspect OpenCode terminals");
+        if (terminals.data.some((terminal) => terminal.status === "running")) return false;
+        inspected.add(directory);
+      }
+      const response = await this.client.session.children(
+        { sessionID: sessionId, directory },
+        request,
+      );
+      const children = readOpenCodeChildSessionInfosFromResponse(response);
+      if (!children) throw new Error("Unable to inspect OpenCode child sessions");
+      for (const child of children) family.set(child.id, child.directory ?? directory);
+    }
+    return true;
   }
 
   async close(): Promise<void> {

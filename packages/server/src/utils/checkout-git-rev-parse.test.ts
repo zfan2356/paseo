@@ -87,6 +87,48 @@ describe("checkout git rev-parse path handling", () => {
     );
   });
 
+  it("finds the primary checkout for two linked worktrees without a main branch or remote", async () => {
+    const root = makeTempDir();
+    const primary = join(root, "primary");
+    mkdirSync(primary);
+    execFileSync("git", ["init", "-b", "trunk"], { cwd: primary, stdio: "ignore" });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "Initial",
+      ],
+      { cwd: primary, stdio: "ignore" },
+    );
+    const first = join(root, "first");
+    const second = join(root, "second");
+    execFileSync("git", ["worktree", "add", "-b", "one", first], { cwd: primary, stdio: "ignore" });
+    execFileSync("git", ["worktree", "add", "-b", "two", second], {
+      cwd: primary,
+      stdio: "ignore",
+    });
+    mkdirSync(join(second, "nested"));
+    const { getPrimaryWorktreeRoot } = await import("./checkout-git.js");
+    const expected = gitCanonicalize(primary);
+    expect(await getPrimaryWorktreeRoot(primary)).toBe(expected);
+    expect(await getPrimaryWorktreeRoot(first)).toBe(expected);
+    expect(await getPrimaryWorktreeRoot(join(second, "nested"))).toBe(expected);
+    expect(await getPrimaryWorktreeRoot(root)).toBeNull();
+    const bare = join(root, "bare.git");
+    execFileSync("git", ["clone", "--bare", primary, bare], { stdio: "ignore" });
+    const bareWorktree = join(root, "bare-checkout");
+    execFileSync("git", ["--git-dir", bare, "worktree", "add", bareWorktree, "trunk"], {
+      stdio: "ignore",
+    });
+    expect(await getPrimaryWorktreeRoot(bareWorktree)).toBeNull();
+  });
+
   it("rejects multi-line rev-parse stdout and never calls the removed path-format command", async () => {
     // Pre-2.31 Git is difficult to install in CI; inject its multi-line stdout
     // shape at the exact production command boundary that consumes rev-parse.

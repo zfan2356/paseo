@@ -2,6 +2,7 @@ import { requirePluginText } from "@getpaseo/plugin/client/host";
 import type { createPluginHosts } from "./hosts";
 import { openExternalUrl } from "@/utils/open-external-url";
 import * as pluginUiRuntime from "./react-native/ui";
+import { useRevealedText } from "@/hooks/use-revealed-text";
 import { useSettings } from "./settings/use-settings";
 import * as pluginSharedRuntime from "@getpaseo/plugin";
 import * as pluginClientRuntime from "@getpaseo/plugin/client";
@@ -15,6 +16,8 @@ import * as Zod from "zod";
 import { type PluginCleanup } from "@getpaseo/plugin";
 import {
   type PluginClientContext,
+  type PluginAgentPanelContribution,
+  type PluginWorkspacePanelContribution as WorkspacePanelInput,
   type PluginScreenProps,
   type PluginScreenTitle,
   type PluginText,
@@ -108,9 +111,14 @@ export type PluginClientRuntime = Pick<
   | "openScreen"
   | "openSurface"
   | "openPanel"
+  | "subscribe"
   | "addComposerPill"
   | "addHeaderButton"
 > & { hosts: ReturnType<typeof createPluginHosts> };
+
+// COMPAT(pluginReactNativeEntrypoint): added in v0.13.0, remove after 2027-04-20
+// The 0.12 entry exposed the reveal hook as well as UI components.
+const pluginReactNativeCompatRuntime = { ...pluginUiRuntime, useRevealedText };
 
 export function runPluginClientBundle(
   id: string,
@@ -121,6 +129,7 @@ export function runPluginClientBundle(
   const collector: Omit<EvaluatedPlugin, "id" | "cleanup"> = {
     surfaces: [],
     settingsScreens: [],
+    sidebarViews: [],
     sidebarItems: { header: [], footer: [] },
     legacySidebarItems: [],
     filePanels: [],
@@ -133,6 +142,7 @@ export function runPluginClientBundle(
     timelineRenderers: [],
   };
   const surfaceIds = new Set<string>();
+  const sidebarViewIds = new Set<string>();
   const settingsScreenIds = new Set<string>();
   const sidebarItemIds: Record<PluginSidebarSection, Set<string>> = {
     header: new Set(),
@@ -206,8 +216,43 @@ export function runPluginClientBundle(
       () => ids.delete(normalizedId),
     );
   }
+  function registerPanel(contribution: PluginWorkspacePanelContribution): PluginCleanup {
+    const normalizedId = requireId(contribution.id, "workspace panel id");
+    if (workspacePanelIds.has(normalizedId)) {
+      throw new Error(`Duplicate workspace panel: ${normalizedId}`);
+    }
+    const title = normalizePluginText(contribution.title);
+    if (!title) throw new Error(`Workspace panel ${normalizedId} has no title`);
+    const icon = parsePluginIcon(`Workspace panel ${normalizedId}`, contribution.icon);
+    if (typeof contribution.Component !== "function") {
+      throw new Error(`Workspace panel ${normalizedId} is not a component`);
+    }
+    const locations = normalizePanelLocations(normalizedId, contribution.locations);
+    workspacePanelIds.add(normalizedId);
+    return register(
+      collector.workspacePanels,
+      {
+        ...contribution,
+        id: normalizedId,
+        title,
+        icon,
+        locations,
+      },
+      () => workspacePanelIds.delete(normalizedId),
+    );
+  }
   const pluginContext: PluginClientContext = {
     ...runtime,
+    features: { composerExtensions: true, themeOverrides: true },
+    addComposerExtension(contribution) {
+      const extensionId = requireId(contribution.id, "composer extension id");
+      const extensions = (collector.composerExtensions ??= []);
+      if (extensions.some((entry) => entry.id === extensionId))
+        throw new Error(`Duplicate composer extension: ${extensionId}`);
+      if (!isComponentType(contribution.Component))
+        throw new Error(`Composer extension ${extensionId} is not a component`);
+      return register(extensions, { ...contribution, id: extensionId }, () => {});
+    },
     addSettingsScreen(contribution) {
       const screenId = requireId(contribution.id, "settings screen id");
       if (settingsScreenIds.has(screenId))
@@ -235,6 +280,18 @@ export function runPluginClientBundle(
         collector.surfaces,
         { id: normalizedId, title, Component: contribution.Component },
         () => surfaceIds.delete(normalizedId),
+      );
+    },
+    addSidebarView(contribution) {
+      const normalizedId = requireId(contribution.id, "sidebar view id");
+      if (sidebarViewIds.has(normalizedId))
+        throw new Error(`Duplicate sidebar view: ${normalizedId}`);
+      if (!isComponentType(contribution.Component))
+        throw new Error(`Sidebar view ${normalizedId} is not a component`);
+      const title = requirePluginText(contribution.title);
+      sidebarViewIds.add(normalizedId);
+      return register(collector.sidebarViews, { ...contribution, id: normalizedId, title }, () =>
+        sidebarViewIds.delete(normalizedId),
       );
     },
     addSidebarHeaderItem(contribution: PluginSidebarItemContribution) {
@@ -313,33 +370,17 @@ export function runPluginClientBundle(
         () => filePanelIds.delete(panelId),
       );
     },
-    addWorkspacePanel(contribution: PluginWorkspacePanelContribution) {
-      const normalizedId = requireId(contribution.id, "workspace panel id");
-      if (workspacePanelIds.has(normalizedId)) {
-        throw new Error(`Duplicate workspace panel: ${normalizedId}`);
+    addAgentPanel(contribution: PluginAgentPanelContribution<PluginText>) {
+      return registerPanel({ ...contribution, context: "agent" });
+    },
+    addWorkspacePanel(input: WorkspacePanelInput<PluginText>) {
+      // COMPAT(pluginAgentPanelAlias): added in v0.13.0, remove after 2027-04-23
+      if (input.context === "agent") return pluginContext.addAgentPanel(input);
+      // COMPAT(pluginPanelFlatProps): added in v0.13.0, remove after 2027-04-23
+      if (input.context !== undefined && input.context !== "workspace") {
+        throw new Error(`Workspace panel ${input.id} has invalid context`);
       }
-      const title = normalizePluginText(contribution.title);
-      if (!title) throw new Error(`Workspace panel ${normalizedId} has no title`);
-      const icon = parsePluginIcon(`Workspace panel ${normalizedId}`, contribution.icon);
-      if (contribution.context !== "workspace" && contribution.context !== "agent") {
-        throw new Error(`Workspace panel ${normalizedId} has invalid context`);
-      }
-      if (typeof contribution.Component !== "function") {
-        throw new Error(`Workspace panel ${normalizedId} is not a component`);
-      }
-      const locations = normalizePanelLocations(normalizedId, contribution.locations);
-      workspacePanelIds.add(normalizedId);
-      return register(
-        collector.workspacePanels,
-        {
-          ...contribution,
-          id: normalizedId,
-          title,
-          icon,
-          locations,
-        },
-        () => workspacePanelIds.delete(normalizedId),
-      );
+      return registerPanel({ ...input, context: "workspace" });
     },
     addCommandCenterItem(contribution: PluginCommandCenterItemContribution) {
       const normalizedId = requireId(contribution.id, "Command Center item id");
@@ -492,7 +533,7 @@ export function runPluginClientBundle(
   };
   const runtimeRequire = (name: string): unknown => {
     // COMPAT(pluginReactNativeEntrypoint): added in v0.13.0, remove after 2027-04-20
-    if (name === "@getpaseo/plugin/client/react-native") return pluginUiRuntime;
+    if (name === "@getpaseo/plugin/client/react-native") return pluginReactNativeCompatRuntime;
     if (name === "@getpaseo/plugin/client/ui") return pluginUiRuntime;
     if (name === "react") return React;
     if (name === "react/jsx-runtime") return ReactJsxRuntime;
@@ -501,7 +542,8 @@ export function runPluginClientBundle(
     if (name === "@getpaseo/plugin/client")
       return {
         ...pluginClientRuntime,
-        useSettings,
+        useSettings: (definition: import("@getpaseo/plugin").SettingsDefinition) =>
+          useSettings(definition, id),
         openExternalUrl,
         getPaseoClient: (serverId: string) => runtime.hosts.getPaseoClient(serverId),
         useHosts: () =>
@@ -566,10 +608,12 @@ export function runPluginClientBundle(
     cleanup,
     surfaces: collector.surfaces,
     settingsScreens: collector.settingsScreens,
+    sidebarViews: collector.sidebarViews,
     sidebarItems: collector.sidebarItems,
     legacySidebarItems: collector.legacySidebarItems,
     filePanels: collector.filePanels,
     workspacePanels: collector.workspacePanels as EvaluatedPlugin["workspacePanels"],
+    composerExtensions: collector.composerExtensions,
     commandCenterItems: collector.commandCenterItems,
     clientSlashCommands: collector.clientSlashCommands,
     attachmentSources: collector.attachmentSources,

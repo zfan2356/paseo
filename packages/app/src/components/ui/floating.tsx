@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { forwardRef, useMemo, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import {
   ScrollView,
@@ -16,9 +17,11 @@ export interface FloatingSurfaceProps extends Omit<ComponentProps<typeof Animate
 }
 
 export const FloatingSurface = forwardRef<View, FloatingSurfaceProps>(function FloatingSurface(
-  { frameStyle, style, ...props },
+  { frameStyle, style, dataSet, ...props },
   ref,
 ): ReactElement {
+  const material = props.role === "tooltip" ? MATERIAL_SLOTS.tooltip : MATERIAL_SLOTS.popover;
+  const materialData = useMemo(() => ({ ...material, ...dataSet }), [material, dataSet]);
   const inlineFrameStyle = useMemo(() => {
     const flattened = StyleSheet.flatten(frameStyle);
     return flattened ? inlineUnistylesStyle(stripUnistylesMetadata(flattened)) : undefined;
@@ -27,7 +30,7 @@ export const FloatingSurface = forwardRef<View, FloatingSurfaceProps>(function F
     () => appendStyle(style, inlineFrameStyle),
     [inlineFrameStyle, style],
   );
-  return <Animated.View {...props} ref={ref} style={surfaceStyle} />;
+  return <Animated.View {...props} dataSet={materialData} ref={ref} style={surfaceStyle} />;
 });
 
 export interface FloatingScrollViewProps {

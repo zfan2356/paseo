@@ -27,7 +27,7 @@ type ReplicaQueryInput<TQueryFnData, TError, TData, TQueryKey extends QueryKey> 
 
 type FetchQueryInput<TQueryFnData, TError, TData, TQueryKey extends QueryKey> = Omit<
   UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>,
-  "initialData" | "placeholderData" | "queryFn" | "refetchOnMount" | "staleTime"
+  "initialData" | "placeholderData" | "queryFn" | "staleTime"
 > & {
   dataShape: "list" | "value";
   queryFn: QueryFnOption<TQueryFnData, TError, TData, TQueryKey>;
@@ -41,8 +41,11 @@ export function useReplicaQuery<
   TError = Error,
   TData = TQueryFnData,
   TQueryKey extends QueryKey = QueryKey,
->(input: ReplicaQueryInput<TQueryFnData, TError, TData, TQueryKey>): UseQueryResult<TData, TError> {
-  return useQuery(replicaQueryOptions(input));
+>(
+  input: ReplicaQueryInput<TQueryFnData, TError, TData, TQueryKey>,
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> {
+  return useQuery(replicaQueryOptions(input), queryClient);
 }
 
 export function useFetchQuery<
@@ -55,6 +58,12 @@ export function useFetchQuery<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> {
   return useQuery(fetchQueryOptions(input), queryClient);
+}
+
+export function useReplicaQueries<TData>(
+  inputs: ReplicaQueryInput<TData, Error, TData, QueryKey>[],
+): UseQueryResult<TData, Error>[] {
+  return useQueries({ queries: inputs.map((input) => replicaQueryOptions(input)) });
 }
 
 export function useFetchQueries<TData>(
@@ -113,7 +122,7 @@ export function fetchQueryOptions<
         dataShape,
       },
     },
-    refetchOnMount: immutableWhen ? true : "always",
+    refetchOnMount: options.refetchOnMount ?? (immutableWhen ? true : "always"),
     staleTime: immutableWhen
       ? (query) =>
           query.state.data !== undefined && immutableWhen(query.state.data) ? Infinity : 0

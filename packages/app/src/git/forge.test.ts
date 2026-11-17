@@ -105,3 +105,15 @@ describe("buildForgeSignInCommand", () => {
     expect(buildForgeSignInCommand("bitbucket", "bitbucket.org")).toBeNull();
   });
 });
+
+describe("TGit presentation", () => {
+  it("uses MR terminology and recognizes 工蜂 remotes", () => {
+    expect(forgeFromRemoteUrl("git@git.woa.com:example/repo.git")).toBe("tgit");
+    expect(getForgePresentation("tgit")).toMatchObject({
+      brandLabel: "工蜂 (TGit)",
+      changeRequestAbbrev: "MR",
+      numberPrefix: "!",
+      signInCli: null,
+    });
+  });
+});

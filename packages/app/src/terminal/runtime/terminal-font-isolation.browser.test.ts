@@ -63,7 +63,6 @@ describe("terminal font isolation", () => {
       runtime.mount({
         root,
         host,
-        initialSnapshot: null,
         scrollback: 100,
         fontFamily: "monospace",
         theme: { background: "#222222", foreground: "#dddddd" },

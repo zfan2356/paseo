@@ -1,3 +1,4 @@
+import { WorkspaceResourcesButton } from "@/session-navigation/workspace-resources";
 import { useCallback, useMemo, type ReactNode } from "react";
 import { View } from "react-native";
 import { useWorkspaceTabDrag } from "@/components/workspace-tab-drag-context";
@@ -156,6 +157,7 @@ export function ExplorerSidebarDock({
                 onReorderTabs={handleReorderTabs}
               />
             </View>
+            <WorkspaceResourcesButton />
             {headerAction ? <View style={styles.headerAction}>{headerAction}</View> : null}
             <View pointerEvents="none" style={styles.tabRailDivider} />
           </WindowChromeSafeArea>

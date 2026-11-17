@@ -1,4 +1,3 @@
-import { ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN } from "../../assistant-message-boundary.js";
 import type { CodexThreadForkParams } from "./app-server-transport.js";
 
 // Codex has no native side-question channel, so a side question rides a forked
@@ -67,12 +66,6 @@ export interface CodexSideQuestionNotification {
 
 function isAgentMessageItemType(type: unknown): boolean {
   return type === "agentMessage" || type === "AgentMessage" || type === "agent_message";
-}
-
-function stripBoundaryPrefix(text: string): string {
-  return text.startsWith(ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN)
-    ? text.slice(ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN.length)
-    : text;
 }
 
 /**
@@ -155,9 +148,9 @@ export class CodexSideQuestionRun {
     const parts: string[] = [];
     for (const itemId of this.itemOrder) {
       const text = this.finalTextByItemId.get(itemId) ?? this.deltaTextByItemId.get(itemId) ?? "";
-      const stripped = stripBoundaryPrefix(text).trim();
-      if (stripped) {
-        parts.push(stripped);
+      const trimmed = text.trim();
+      if (trimmed) {
+        parts.push(trimmed);
       }
     }
     return parts.length > 0 ? parts.join("\n\n") : null;

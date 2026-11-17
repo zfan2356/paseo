@@ -436,3 +436,22 @@ describe("routeKeyboardShortcut — unknown actions", () => {
     ).toEqual<ShortcutAction>({ kind: "none" });
   });
 });
+
+it("routes same-workspace session shortcuts to the named agent", () => {
+  const targets = [
+    { serverId: "srv", workspaceId: "shared", agentId: "one" },
+    { serverId: "srv", workspaceId: "shared", agentId: "two" },
+  ];
+  expect(
+    routeKeyboardShortcut(
+      { action: "workspace.navigate.index", payload: { index: 2 } },
+      makeCtx({ sidebarShortcutTargets: targets }),
+    ),
+  ).toEqual({ kind: "navigate-workspace", ...targets[1] });
+  expect(
+    routeKeyboardShortcut(
+      { action: "workspace.navigate.relative", payload: { delta: -1 } },
+      makeCtx({ sidebarShortcutTargets: targets, navigationActiveWorkspace: targets[1] }),
+    ),
+  ).toEqual({ kind: "navigate-workspace", ...targets[0] });
+});

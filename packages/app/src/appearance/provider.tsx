@@ -1,3 +1,5 @@
+import { syncDesktopThemePreference } from "@/fork/materials/desktop-theme";
+import { resolveThemeSelection } from "./theme-selection";
 import {
   createContext,
   type ReactNode,
@@ -60,14 +62,18 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   const { settings, updateSettings, isLoading } = useAppSettings();
   const [hasAppliedAppearance, setHasAppliedAppearance] = useState(false);
   const options = usePluginThemeCatalog();
+  const { requestedId, fallbackPreference } = resolveThemeSelection(settings);
   const selected = useMemo(() => {
-    if (settings.theme !== PLUGIN_THEME_PREFERENCE) return null;
-    return options.find((option) => option.id === settings.pluginThemeId) ?? null;
-  }, [options, settings.pluginThemeId, settings.theme]);
+    return options.find((option) => option.id === requestedId) ?? null;
+  }, [options, requestedId]);
 
   useEffect(() => {
     if (isLoading) return;
-    applyTheme({ preference: settings.theme, contributedTheme: selected });
+    applyTheme({
+      preference: fallbackPreference,
+      contributedTheme: selected,
+    });
+    syncDesktopThemePreference();
     applyAppearance({
       uiFontFamily: settings.uiFontFamily,
       monoFontFamily: settings.monoFontFamily,
@@ -81,7 +87,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   }, [
     isLoading,
     selected,
-    settings.theme,
+    fallbackPreference,
     settings.uiFontFamily,
     settings.monoFontFamily,
     settings.uiBaseFontSize,
