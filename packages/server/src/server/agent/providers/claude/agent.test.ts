@@ -4590,7 +4590,7 @@ describe("Claude Bash create evidence", () => {
     iid: 7,
     web_url: "https://git.woa.com/team/repo/merge_requests/7",
   });
-  test("uses a settled native Bash success to recognize an actual create result", async () => {
+  test("maps settled native Bash success after stderr normalization", async () => {
     const events = await mappedBash({ stdout, stderr: "git push progress", interrupted: false });
     const item = events.find(
       (event) => event.type === "timeline" && event.item.type === "tool_call",
@@ -4608,7 +4608,7 @@ describe("Claude Bash create evidence", () => {
       },
     });
   });
-  test("retains only actual structured output as create evidence", async () => {
+  test("retains an empty structured Bash output", async () => {
     const events = await mappedBash({ stdout: "", stderr: "", interrupted: false });
     const calls = events.flatMap((event) =>
       event.type === "timeline" && event.item.type === "tool_call" ? [event.item] : [],

@@ -131,10 +131,6 @@ review aggregate, and merge conflicts are separate signals. Missing gate data
 stays pending, and conflict results apply only to their reported source/target
 commits. Lists and timelines are bounded to 1,000 records per read.
 
-## Session PR/MR links
-
-See [Plugins](plugins.md#session-change-requests) for session associations.
-
 ## App
 
 Each app forge splits into two modules so pure logic never imports the client
