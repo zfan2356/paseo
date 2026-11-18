@@ -4,6 +4,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { Portal, PortalHost } from "@gorhom/portal";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { EdgeFade } from "@/components/ui/edge-fade";
+import { GlassFade, GlassHeaderFill, GlassScope, GlassTarget } from "@/fork/materials/glass";
 
 const OverlayClearanceContext = createContext(0);
 const OverlayHostContext = createContext<string | null>(null);
@@ -47,29 +48,32 @@ export function FloatingHeaderLayout({ header, floating, children }: FloatingHea
   const overlayClearance = floating ? headerHeight : 0;
 
   return (
-    <View style={styles.root}>
+    <GlassScope style={styles.root}>
       {floating ? null : header}
-      <View style={styles.content}>
+      <GlassTarget style={styles.content}>
         <OverlayClearanceContext.Provider value={overlayClearance}>
           <OverlayHostContext.Provider value={floating ? overlayHostName : null}>
             {children(floating ? headerHeight : 0)}
           </OverlayHostContext.Provider>
         </OverlayClearanceContext.Provider>
-      </View>
+      </GlassTarget>
       {floating ? (
         <View style={styles.overlay} pointerEvents="box-none">
-          <EdgeFade
-            edge="top"
-            solidFraction={FADE_SOLID_FRACTION}
-            backdrop="surfaceWorkspace"
-            style={styles.fade}
-          />
+          <GlassFade>
+            <EdgeFade
+              edge="top"
+              solidFraction={FADE_SOLID_FRACTION}
+              backdrop="surfaceWorkspace"
+              style={styles.fade}
+            />
+          </GlassFade>
           <View
             testID="floating-header"
             collapsable={false}
             pointerEvents="box-none"
             onLayout={handleHeaderLayout}
           >
+            <GlassHeaderFill />
             {header}
           </View>
         </View>
@@ -77,7 +81,7 @@ export function FloatingHeaderLayout({ header, floating, children }: FloatingHea
       <View style={styles.statusOverlay} pointerEvents="box-none">
         <PortalHost name={overlayHostName} />
       </View>
-    </View>
+    </GlassScope>
   );
 }
 

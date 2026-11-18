@@ -92,6 +92,8 @@ const variants = {
       fallbackRelativePath: "./.secrets/GoogleService-Info.debug.plist",
     }),
   },
+  // Sideloadable preview builds that install next to the store app (no push credentials).
+  "glass-preview": { name: "Paseo Glass Preview", packageId: "sh.paseo.glasspreview" },
 };
 
 const variant = variants[appVariant] ?? variants.production;
