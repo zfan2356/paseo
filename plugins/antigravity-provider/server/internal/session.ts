@@ -72,7 +72,9 @@ export class Session {
       cwd: this.config.cwd,
       title: this.config.title,
     });
-    this.publishFullAccessNotice();
+    if (this.options.launch.env.PASEO_ANTIGRAVITY_ACK_FULL_ACCESS !== "1") {
+      this.publishFullAccessNotice();
+    }
     this.publishConfig();
     this.emit({ type: "session.commands", sessionId: this.options.id, commands: [] });
     this.emit({ type: "session.ready", requestId, sessionId: this.options.id });

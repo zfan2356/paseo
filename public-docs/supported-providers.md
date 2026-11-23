@@ -32,6 +32,10 @@ including shell commands, runs without asking. Each session starts with a warnin
 this, including when you reopen a chat. Antigravity's own policy can still deny
 an action.
 
+If you accept full access on this host, set `PASEO_ANTIGRAVITY_ACK_FULL_ACCESS` to `"1"` in
+`agents.providers.antigravity.env` in `~/.paseo/config.json` to skip the timeline warning on
+subsequent session opens. The mode menu still displays **Full access**.
+
 After a daemon restart, Antigravity remembers the conversation, but Paseo's transcript starts
 fresh because `agy` does not replay its history.
 
