@@ -25,6 +25,8 @@ nav: 支持的 Provider
 
 **Full access** 是唯一的权限模式。当由其他应用驱动时，Antigravity 无法请求权限，因此 Paseo 会以 `--dangerously-skip-permissions` 启动 `agy`。每次工具调用（包括 shell 命令）都不会询问就直接运行。每个会话开始时都会显示一条说明此事的警告，重新打开聊天时也会显示。Antigravity 自己的策略仍然可以拒绝某个操作。
 
+如果你接受此主机上的完全访问权限，可在 `~/.paseo/config.json` 的 `agents.providers.antigravity.env` 中将 `PASEO_ANTIGRAVITY_ACK_FULL_ACCESS` 设为 `"1"`。之后打开会话时，时间线不再显示这条警告，模式菜单仍显示 **Full access**。
+
 daemon 重启后，Antigravity 会记得对话，但 Paseo 的对话记录会重新开始，因为 `agy` 不会重放它的历史。
 
 此集成使用你已安装的 CLI 和登录状态，未经 Google 认可。

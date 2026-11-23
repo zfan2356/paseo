@@ -470,6 +470,15 @@ it("emits one full-access warning per open, none on respawn, and one again on re
   expect(resumed.events.filter((event) => event.type === "session.notice")).toEqual([warning]);
 });
 
+it("omits the full-access notice when acknowledged and keeps the full-access launch", async () => {
+  const session = await harness({ PASEO_ANTIGRAVITY_ACK_FULL_ACCESS: "1" });
+  await session.open();
+  expect(session.events.filter((event) => event.type === "session.notice")).toEqual([]);
+  await session.completed(await session.prompt("HELLO"));
+  const launch = (await session.records()).find((entry) => entry.args?.includes("--input-format"));
+  expect(launch?.args).toContain("--dangerously-skip-permissions");
+});
+
 it("defers model and mode changes until the next prompt, then respawns with validated flags", async () => {
   const h = await harness();
   await h.open();
