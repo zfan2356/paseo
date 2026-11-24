@@ -68,7 +68,8 @@ export function useMenuBarQuotas(): MenuBarQuotaReport[] {
             configQueries[index].data.usage?.enabled !== false)),
       dataShape: "value",
       staleTimeMs: 60_000,
-      refetchInterval: 300_000,
+      // Daemon usage reports are cached for 5 minutes; polling every minute picks up fresh data promptly.
+      refetchInterval: 60_000,
       refetchIntervalInBackground: true,
       retry: false,
       notifyOnChangeProps: "all",

@@ -89,6 +89,15 @@ describe("Magpie board actions", () => {
     expect(state.invoke).not.toHaveBeenCalled();
   });
 
+  it("reports both failures when Magpie and native usage refresh both fail", async () => {
+    state.catalog.mockResolvedValue([{ id: "magpie" }]);
+    state.invoke.mockResolvedValue({ available: false, quotas: [] });
+    state.nativeRefresh.mockRejectedValue(new Error("Antigravity 额度刷新失败"));
+    await expect(executeMagpieAction({ kind: "refresh", hostId: "host" })).rejects.toThrow(
+      "Magpie 网关不可用，请打开账号管理检查服务。；Antigravity 额度刷新失败",
+    );
+  });
+
   it("rejects offline and unknown hosts before invoking any RPC", async () => {
     state.online = false;
     await expect(executeMagpieAction({ kind: "refresh", hostId: "host" })).rejects.toThrow(

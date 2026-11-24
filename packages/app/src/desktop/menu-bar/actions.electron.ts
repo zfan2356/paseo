@@ -35,7 +35,12 @@ export async function executeMagpieAction(raw: unknown): Promise<void> {
       }).then(publish),
       refreshUsageSource(queryClient, host.serverId, "antigravity"),
     ]);
-    for (const result of results) if (result.status === "rejected") throw result.reason;
+    const errors = results
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) =>
+        result.reason instanceof Error ? result.reason.message : String(result.reason),
+      );
+    if (errors.length) throw new Error(errors.join("；"));
     return;
   }
   const method = action.kind === "source" ? "magpie.source.set" : "magpie.ultra.set";

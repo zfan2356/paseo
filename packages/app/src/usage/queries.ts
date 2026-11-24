@@ -165,20 +165,30 @@ export async function refreshUsageSource(
       ?.enabled === false
   )
     return;
+  const client = requireClient(serverId);
   const queryKey = usageReportsQueryKey(serverId);
   const entries = queryClient.getQueryData<UsageReportEntry[]>(queryKey) ?? [];
   const reportIds = entries.filter((entry) => entry.sourceId === sourceId).map((entry) => entry.id);
-  if (!reportIds.length) return;
-  const { reports } = await requireClient(serverId).listUsageReports({
-    reportIds,
-    forceRefresh: true,
-  });
-  queryClient.setQueryData<UsageReportEntry[]>(queryKey, (current) =>
-    reportIds.reduce(
-      (updated, id) => replaceReport(updated, id, reports.find((entry) => entry.id === id) ?? null),
-      current ?? [],
-    ),
-  );
+  let reports: UsageReportEntry[];
+  if (reportIds.length) {
+    ({ reports } = await client.listUsageReports({
+      reportIds,
+      forceRefresh: true,
+    }));
+    queryClient.setQueryData<UsageReportEntry[]>(queryKey, (current) =>
+      reportIds.reduce(
+        (updated, id) =>
+          replaceReport(updated, id, reports.find((entry) => entry.id === id) ?? null),
+        current ?? [],
+      ),
+    );
+  } else {
+    if (!supportsUsageReports(client.getLastServerInfoMessage()?.features)) return;
+    await refreshReports(queryClient, serverId);
+    reports = (queryClient.getQueryData<UsageReportEntry[]>(queryKey) ?? []).filter(
+      (entry) => entry.sourceId === sourceId,
+    );
+  }
   const failed = reports.find(
     (entry) => entry.report.status !== "available" && entry.defaultEnabled !== false,
   );

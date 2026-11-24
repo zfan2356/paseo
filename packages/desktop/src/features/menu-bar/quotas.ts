@@ -138,6 +138,20 @@ export function menuBarQuotaItems(
   return Array.from(observations.values(), (observation) => accountQuotaItem(observation, now));
 }
 
+const MAGPIE_CACHE_MAX_AGE_MS = 300_000;
+// Daemon usage reports are cached for 5 minutes and polled every minute.
+const USAGE_CACHE_MAX_AGE_MS = 420_000;
+
+function isQuotaStale(account: QuotaAccount, report: MenuBarQuotaReport, now: number): boolean {
+  const readAt = Date.parse(account.readAt);
+  const maxAgeMs = account.usageId ? USAGE_CACHE_MAX_AGE_MS : MAGPIE_CACHE_MAX_AGE_MS;
+  return (
+    !Number.isFinite(readAt) ||
+    now - readAt > maxAgeMs ||
+    (!account.usageId && now - report.checkedAt > 120_000)
+  );
+}
+
 function accountQuotaItem(
   { accountId, account, report, sources }: AccountObservation,
   now: number,
@@ -146,11 +160,7 @@ function accountQuotaItem(
   const remaining = limited.length
     ? percentage(Math.min(...limited.map((window) => window.remaining)))
     : null;
-  const readAt = Date.parse(account.readAt);
-  const cached =
-    !Number.isFinite(readAt) ||
-    now - readAt > 300_000 ||
-    (!account.usageId && now - report.checkedAt > 120_000);
+  const cached = isQuotaStale(account, report, now);
   let summary = account.balance || "暂无额度数据";
   if (account.windows.length > 0) summary = "不限额";
   if (remaining !== null) summary = `剩余 ${remaining}%`;

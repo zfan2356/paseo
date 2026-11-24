@@ -37,6 +37,17 @@ describe("quota presentation", () => {
     expect(item.cached).toBe(true);
     expect(item.summary).toBe("剩余 24.1%（缓存）");
   });
+  it("allows daemon-cached native usage reports across the 5-minute TTL before marking stale", () => {
+    const nativeReport: MenuBarQuotaReport = {
+      ...report,
+      checkedAt: 0,
+      accounts: [
+        { ...report.accounts[0], usageId: "antigravity:profile", provider: "antigravity" },
+      ],
+    };
+    expect(menuBarQuotaItems([nativeReport], now + 360_000)[0].cached).toBe(false);
+    expect(menuBarQuotaItems([nativeReport], now + 421_000)[0].cached).toBe(true);
+  });
   it("does not show a percentage for failed or disconnected accounts", () => {
     const failed = { ...report, accounts: [{ ...report.accounts[0], error: "failed" }] };
     expect(menuBarQuotaItems([failed], now)[0].remaining).toBeNull();
