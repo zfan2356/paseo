@@ -28,6 +28,8 @@ nav: 支持的 Provider
 如果你接受此主机上的完全访问权限，可在 `~/.paseo/config.json` 的 `agents.providers.antigravity.env` 中将 `PASEO_ANTIGRAVITY_ACK_FULL_ACCESS` 设为 `"1"`。之后打开会话时，时间线不再显示这条警告，模式菜单仍显示 **Full access**。
 
 daemon 重启后，Antigravity 会记得对话，但 Paseo 的对话记录会重新开始，因为 `agy` 不会重放它的历史。
+这是旧版 Paseo 只使用 `agy` 打印模式时的表现。当前版本会在打开会话时通过 ACP `session/load`
+恢复聊天记录。若 CLI 不支持或读取失败，Paseo 会显示提示，你仍可继续对话。
 
 此集成使用你已安装的 CLI 和登录状态，未经 Google 认可。
 

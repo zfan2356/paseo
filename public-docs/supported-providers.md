@@ -37,7 +37,8 @@ If you accept full access on this host, set `PASEO_ANTIGRAVITY_ACK_FULL_ACCESS` 
 subsequent session opens. The mode menu still displays **Full access**.
 
 After a daemon restart, Antigravity remembers the conversation, but Paseo's transcript starts
-fresh because `agy` does not replay its history.
+empty if the CLI cannot replay it. With ACP `session/load` support, Paseo restores the saved
+messages when you reopen the chat. If the read fails, you can continue after a warning.
 
 This integration uses your installed CLI and sign-in. It is not endorsed by Google.
 
