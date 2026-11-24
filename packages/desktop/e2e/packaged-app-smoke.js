@@ -874,12 +874,15 @@ async function smokePackagedDesktopApp({
   executablePath = getExecutablePath(appPath),
   launchArgs = [],
   expectedSandbox,
+  verifyRenderer,
+  prepareUserData,
 }) {
   assertExecutable(executablePath, "Packaged app executable");
   assertLinuxDesktopIdentity(appPath);
   await smokeColdCliDaemonStart({ appPath });
 
   const userData = createTempDir("paseo-smoke-user-data-");
+  if (prepareUserData) await prepareUserData(userData);
   const daemonHome = createTempDir("paseo-smoke-daemon-home-");
   const daemonPort = await reserveLocalTcpPort();
   let cdpPort = await reserveLocalTcpPort();
@@ -952,6 +955,7 @@ async function smokePackagedDesktopApp({
     console.log("Packaged desktop smoke: renderer-started desktop daemon reported running");
     await assertBuiltinPluginsStarted(listen);
     console.log("Packaged desktop smoke: every built-in plugin started");
+    if (verifyRenderer) await verifyRenderer(page);
     await smokeCliShim({ appPath, env });
     await smokeCliTerminal({ appPath, env });
     if (expectedSandbox !== undefined) {

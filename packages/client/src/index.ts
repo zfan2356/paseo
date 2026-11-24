@@ -66,6 +66,7 @@ import type {
   FetchAgentTimelinePayload,
   FetchAgentTimelineProjection,
   SendMessageOptions,
+  SendMessageIfIdleOptions,
   WaitForFinishResult,
 } from "./daemon-client.js";
 
@@ -315,6 +316,7 @@ export interface PaseoAgentTimelineRefetchOptions {
 }
 
 export type PaseoAgentSendOptions = SendMessageOptions;
+export type PaseoAgentSendIfIdleOptions = SendMessageIfIdleOptions;
 
 export interface PaseoAgentRunOptions extends PaseoAgentSendOptions {
   timeoutMs?: number;
@@ -433,6 +435,13 @@ export interface PaseoAgentHandle {
   readonly metadata: NonNullable<PaseoAgent["metadata"]> | null;
   readonly runtimeInfo: NonNullable<PaseoAgent["runtimeInfo"]> | null;
   readonly archivedAt: NonNullable<PaseoAgent["archivedAt"]> | null;
+  readonly context: {
+    get(): ReturnType<DaemonClient["getSessionContext"]>;
+    observe(options?: { signal?: AbortSignal }): ReturnType<DaemonClient["observeSessionContext"]>;
+    mutate(
+      mutation: import("@getpaseo/protocol/session-context").SessionContextMutation,
+    ): ReturnType<DaemonClient["mutateSessionContext"]>;
+  };
   readonly timeline: PaseoAgentTimelineHandle;
   readonly backgroundWork: PaseoAgentBackgroundWorkHandle;
   current(): PaseoAgent | null;
@@ -1016,6 +1025,11 @@ function createAgentHandleFactory(
         serverId ??= daemonClient.getLastServerInfoMessage()?.serverId;
         if (!serverId) throw new Error("Connect to a host before obtaining an agent address");
         return { serverId, agentId: id };
+      },
+      context: {
+        get: () => daemonClient.getSessionContext(id),
+        observe: (options) => daemonClient.observeSessionContext(id, options),
+        mutate: (mutation) => daemonClient.mutateSessionContext(id, mutation),
       },
       timeline: {
         append: (item) => daemonClient.appendAgentTimelineItem(id, item),

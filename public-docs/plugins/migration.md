@@ -114,6 +114,9 @@ All panel kinds share [params, revision, and persisted tab state](./reference.md
 | Beta file `location.lineStart`, `location.lineEnd`, `location.revision` | `params.lineStart`, `params.lineEnd`, `revision` |
 | Beta `PluginFileTab`, `PluginFileLocation`                              | `PluginTab`, `PluginFilePanelParams`             |
 
+The fork carries Markdown heading fragments in optional `params.anchor`; repeated navigation uses
+the shared `revision` prop. File panels no longer receive `location`.
+
 The 0.12 aliases remain available until removal after 2027-04-23. The beta file API changes
 outright. Declare `requirements.paseo` as `>=0.13.0` when adopting the new API.
 

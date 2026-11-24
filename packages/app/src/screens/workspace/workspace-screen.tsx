@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import {
   AdaptiveWorkspaceChrome,
   type WorkspaceCompactHeaderTabs,
@@ -43,10 +44,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, type Href } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { useTranslation } from "react-i18next";
+import { ArrowLeftRight, MessageCircleQuestionMark } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
 import invariant from "tiny-invariant";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { HeaderToggleButton } from "@/components/headers/header-toggle-button";
 import { SidebarMenuToggle } from "@/components/headers/sidebar-menu-toggle";
 import { ScreenHeader } from "@/components/headers/screen-header";
 import { MenuHeader } from "@/components/headers/menu-header";
@@ -118,6 +122,10 @@ import type {
 } from "@/keyboard/keyboard-action-dispatcher";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { normalizeWorkspaceTabTarget, workspaceTabTargetsEqual } from "@/workspace-tabs/identity";
+import { useWorkspaceConversationSurface } from "@/conversation-surface/use-workspace-conversation-surface";
+import { useSideChatHeader } from "@/side-chat/use-side-chat-header";
+import { closeSideChatPanel } from "@/side-chat/lifecycle";
+import { sideChatKey } from "@/side-chat/model";
 import { useVisibleAgentIds } from "./visible-agent-ids";
 import {
   getHostRuntimeStore,
@@ -231,6 +239,35 @@ import { useWorkspacePullRequestDiscovery } from "@/panels/pull-request";
 const NO_SHEETS: readonly SheetTab[] = [];
 const WORKSPACE_FLOATING_PANEL_PORTAL_HOST_PREFIX = "workspace-floating-panels";
 const EMPTY_UI_TABS: WorkspaceTab[] = [];
+
+function openConversationTerminalTab(input: {
+  persistenceKey: string | null;
+  agentId: string;
+  terminalId: string | null;
+  replaceTabId: string;
+  replaceWorkspaceTabTarget: (
+    workspaceKey: string,
+    tabId: string,
+    target: WorkspaceTabTarget,
+  ) => string | null;
+  createTerminal: (createInput: { agentId: string; destination: TerminalTabDestination }) => void;
+}): void {
+  if (!input.terminalId) {
+    input.createTerminal({
+      agentId: input.agentId,
+      destination: { kind: "replace", tabId: input.replaceTabId },
+    });
+    return;
+  }
+  if (!input.persistenceKey) {
+    return;
+  }
+  input.replaceWorkspaceTabTarget(input.persistenceKey, input.replaceTabId, {
+    kind: "terminal",
+    terminalId: input.terminalId,
+  });
+}
+
 const EMPTY_WORKSPACE_SCRIPTS: WorkspaceDescriptor["scripts"] = [];
 const EMPTY_PINNED_AGENT_IDS = new Set<string>();
 const EMPTY_SET = new Set<string>();
@@ -271,8 +308,14 @@ function buildWorkspaceFileLocation(
 }
 
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
+const ThemedArrowLeftRight = withUnistyles(ArrowLeftRight);
+const ThemedMessageCircleQuestionMark = withUnistyles(MessageCircleQuestionMark);
 
+const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const extraMutedColorMapping = (theme: Theme) => ({
+  color: theme.colors.foregroundExtraMuted,
+});
 
 interface WorkspaceScreenProps {
   serverId: string;
@@ -806,7 +849,9 @@ function WorkspacePanelSurface({
     <WorkspaceComposerEditingSessionsProvider workspaceKey={workspaceKey} tabIds={tabIds}>
       <NewTabLauncherProvider value={launcher}>
         <SheetHostScope enabled={!isCompact}>
-          <View style={styles.threePaneRow}>{children}</View>
+          <View style={styles.threePaneRow} dataSet={MATERIAL_SLOTS.workspaceRow}>
+            {children}
+          </View>
         </SheetHostScope>
       </NewTabLauncherProvider>
     </WorkspaceComposerEditingSessionsProvider>
@@ -1084,6 +1129,16 @@ function WorkspaceScreenContent({
   const supportsProvidersSnapshot = useSessionStore(
     (state) => state.sessions[normalizedServerId]?.serverInfo?.features?.providersSnapshot === true,
   );
+  const supportsAgentConversationViewSwitch = useSessionStore(
+    (state) =>
+      state.sessions[normalizedServerId]?.serverInfo?.features?.agentConversationViewSwitch ===
+      true,
+  );
+  const supportsLegacyCodexConversationViewSwitch = useSessionStore(
+    (state) =>
+      state.sessions[normalizedServerId]?.serverInfo?.features?.codexConversationViewSwitch ===
+      true,
+  );
   const workspaceDirectory = workspaceDescriptor?.workspaceDirectory || null;
   const isMissingWorkspaceDirectory = Boolean(workspaceDescriptor) && !workspaceDirectory;
   const [isImportSheetVisible, setIsImportSheetVisible] = useState(false);
@@ -1216,6 +1271,7 @@ function WorkspaceScreenContent({
     queryKey: terminalsQueryKey,
     removeTerminalFromCache,
     standaloneTerminalIds,
+    terminals,
   } = useWorkspaceTerminals({
     client,
     isConnected,
@@ -2094,15 +2150,31 @@ function WorkspaceScreenContent({
         await handleCloseAgentTab({ tabId, agentId: tab.target.agentId });
         return;
       }
+      if (tab.target.kind === "side_chat") {
+        await closeSideChatPanel({
+          key: sideChatKey(normalizedServerId, tab.target.parentAgentId),
+          serverId: normalizedServerId,
+          parentAgentId: tab.target.parentAgentId,
+          client,
+        }).catch((error) => {
+          toast.error(error instanceof Error ? error.message : t("common.errors.error"));
+        });
+        handleClosePassiveTab({ tabId, target: tab.target });
+        return;
+      }
       handleClosePassiveTab({ tabId, target: tab.target });
     },
     [
       allTabDescriptorsById,
+      client,
       closeWorkspaceTab,
       confirmDiscardModifiedTab,
       handleCloseAgentTab,
       handleClosePassiveTab,
       handleCloseTerminalTab,
+      normalizedServerId,
+      t,
+      toast,
       persistenceKey,
       sheets,
     ],
@@ -2902,6 +2974,64 @@ function WorkspaceScreenContent({
   });
 
   const activeTabDescriptor = useMemo(() => activeTab?.descriptor ?? null, [activeTab]);
+  const handleReleasedConversationTerminal = useCallback(
+    (input: { tabId: string | null; terminalId: string; closeTab: boolean }) => {
+      removeTerminalFromCache(input.terminalId);
+      if (input.closeTab && input.tabId) {
+        closeWorkspaceTabWithCleanup({
+          tabId: input.tabId,
+          target: { kind: "terminal", terminalId: input.terminalId },
+        });
+      }
+    },
+    [closeWorkspaceTabWithCleanup, removeTerminalFromCache],
+  );
+  const handleRetargetConversationToAgent = useCallback(
+    (agentId: string) => {
+      if (!persistenceKey || !activeTabDescriptor) {
+        return;
+      }
+      replaceWorkspaceTabTarget(persistenceKey, activeTabDescriptor.tabId, {
+        kind: "agent",
+        agentId,
+      });
+    },
+    [activeTabDescriptor, persistenceKey, replaceWorkspaceTabTarget],
+  );
+  const handleOpenConversationTerminal = useCallback(
+    (input: { agentId: string; terminalId: string | null; replaceTabId: string }) => {
+      openConversationTerminalTab({
+        persistenceKey,
+        agentId: input.agentId,
+        terminalId: input.terminalId,
+        replaceTabId: input.replaceTabId,
+        replaceWorkspaceTabTarget,
+        createTerminal,
+      });
+    },
+    [createTerminal, persistenceKey, replaceWorkspaceTabTarget],
+  );
+  const createTerminalDisabled = useMemo(
+    () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,
+    [createTerminalMutation.isPending, pendingTerminalCreateInput],
+  );
+  const conversationView = useWorkspaceConversationSurface({
+    activeTab: activeTabDescriptor,
+    tabs: uiTabs,
+    serverId: normalizedServerId,
+    terminals,
+    client,
+    isConnected,
+    workspaceDirectory,
+    supportsAgentConversationViewSwitch,
+    supportsLegacyCodexConversationViewSwitch,
+    isCreatePending: createTerminalDisabled,
+    onOpenConversationTerminal: handleOpenConversationTerminal,
+    onReleasedTerminal: handleReleasedConversationTerminal,
+    onRetargetToAgent: handleRetargetConversationToAgent,
+    toast,
+    t,
+  });
   const activeFileFields = getWorkspaceFileLocationFields(activeTabDescriptor);
   const activeFilePath = activeFileFields.path;
   const activeFileLineStart = activeFileFields.lineStart;
@@ -3214,9 +3344,63 @@ function WorkspaceScreenContent({
     expanded: isExplorerSidebarShowing,
     onToggle: handleToggleExplorerSidebar,
   });
+  const conversationViewSwitch = conversationView.chrome;
+
+  const sideChatHeader = useSideChatHeader({
+    serverId: normalizedServerId,
+    workspaceKey: persistenceKey,
+    activeTab: activeTabDescriptor,
+    isConnected,
+  });
+
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
+        {conversationViewSwitch.show ? (
+          <HeaderToggleButton
+            testID="workspace-toggle-agent-conversation-view"
+            onPress={conversationView.onToggle}
+            tooltipLabel={t(conversationViewSwitch.labelKey)}
+            tooltipKeys={[]}
+            tooltipSide="bottom"
+            style={isMobile ? styles.headerActionButton : styles.compactHeaderActionButton}
+            disabled={conversationViewSwitch.disabled}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={t(conversationViewSwitch.labelKey)}
+          >
+            {({ hovered, pressed }) => {
+              const active = hovered || pressed;
+              const colorMapping = active ? foregroundColorMapping : extraMutedColorMapping;
+              return <ThemedArrowLeftRight size={isMobile ? 20 : 16} uniProps={colorMapping} />;
+            }}
+          </HeaderToggleButton>
+        ) : null}
+        {sideChatHeader.show ? (
+          <HeaderToggleButton
+            testID="workspace-toggle-side-chat"
+            onPress={sideChatHeader.toggle}
+            tooltipLabel={t("agentPanel.sideChat.history")}
+            tooltipKeys={[]}
+            tooltipSide="bottom"
+            style={isMobile ? styles.headerActionButton : styles.compactHeaderActionButton}
+            disabled={sideChatHeader.disabled}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={t("agentPanel.sideChat.history")}
+          >
+            {({ hovered, pressed }) => {
+              const active = hovered || pressed || sideChatHeader.isOpen;
+              const colorMapping = active ? foregroundColorMapping : extraMutedColorMapping;
+              return (
+                <ThemedMessageCircleQuestionMark
+                  size={isMobile ? 20 : 16}
+                  uniProps={colorMapping}
+                />
+              );
+            }}
+          </HeaderToggleButton>
+        ) : null}
         <PluginHeaderButtons serverId={normalizedServerId} workspaceId={normalizedWorkspaceId} />
         {workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
           <WorkspaceScriptsButton
@@ -3246,6 +3430,14 @@ function WorkspaceScreenContent({
       </View>
     ),
     [
+      isMobile,
+      conversationViewSwitch,
+      t,
+      conversationView.onToggle,
+      sideChatHeader.show,
+      sideChatHeader.disabled,
+      sideChatHeader.isOpen,
+      sideChatHeader.toggle,
       workspaceDescriptor,
       normalizedServerId,
       normalizedWorkspaceId,
@@ -3263,10 +3455,6 @@ function WorkspaceScreenContent({
   const showScreenHeader = useMemo(
     () => shouldShowWorkspaceScreenHeader({ isFocusModeEnabled, isMobile }),
     [isFocusModeEnabled, isMobile],
-  );
-  const createTerminalDisabled = useMemo(
-    () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,
-    [createTerminalMutation.isPending, pendingTerminalCreateInput],
   );
   const showCreateBrowserTab = getIsElectron();
   const newTabLauncher = useMemo<NewTabLauncher>(
@@ -3423,6 +3611,28 @@ function WorkspaceScreenContent({
             normalizedServerId={normalizedServerId}
             normalizedWorkspaceId={normalizedWorkspaceId}
             scripts={compactHeaderScripts}
+            agentActions={
+              <>
+                {conversationViewSwitch.show ? (
+                  <DropdownMenuItem
+                    testID="workspace-toggle-agent-conversation-view"
+                    disabled={conversationViewSwitch.disabled}
+                    onSelect={conversationView.onToggle}
+                  >
+                    {t(conversationViewSwitch.labelKey)}
+                  </DropdownMenuItem>
+                ) : null}
+                {sideChatHeader.show ? (
+                  <DropdownMenuItem
+                    testID="workspace-toggle-side-chat"
+                    disabled={sideChatHeader.disabled}
+                    onSelect={sideChatHeader.toggle}
+                  >
+                    {t("agentPanel.sideChat.history")}
+                  </DropdownMenuItem>
+                ) : null}
+              </>
+            }
             currentBranchName={currentBranchName}
             showWorkspaceSetup={showWorkspaceSetup}
             showCreateBrowserTab={showCreateBrowserTab}
@@ -3447,6 +3657,12 @@ function WorkspaceScreenContent({
       toggleFocusMode,
       canOpenImportSheet,
       compactHeaderScripts,
+      conversationViewSwitch,
+      conversationView.onToggle,
+      sideChatHeader.show,
+      sideChatHeader.disabled,
+      sideChatHeader.toggle,
+      t,
       createTerminalDisabled,
       currentBranchName,
       handleCopyBranchName,
@@ -3611,7 +3827,10 @@ function WorkspaceScreenContent({
       focusModeEnabled={desktopFocusModeEnabled}
     >
       {rendersDesktopSplitContent ? null : (
-        <AdaptiveWorkspaceChrome compactHeader={centerColumnCompactHeader}>
+        <AdaptiveWorkspaceChrome
+          compactHeader={centerColumnCompactHeader}
+          materialTab={activeTabDescriptor}
+        >
           {fullWorkspaceActions}
           {renderWorkspaceScreenHeader()}
 
@@ -3932,6 +4151,17 @@ const styles = StyleSheet.create((theme) => ({
     gap: {
       xs: theme.spacing[1],
       md: theme.spacing[2],
+    },
+  },
+  headerActionButton: {
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[2],
+    borderRadius: theme.borderRadius.lg,
+  },
+  compactHeaderActionButton: {
+    marginRight: {
+      xs: 0,
+      md: -theme.spacing[2],
     },
   },
   compactHeaderMenuCluster: {

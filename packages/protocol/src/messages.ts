@@ -1,3 +1,4 @@
+import { SessionContextSchema, SessionContextMutationSchema } from "./session-context.js";
 import { AgentMessageSchema } from "./agent-message.js";
 import {
   HostsListRequestSchema,
@@ -1143,11 +1144,29 @@ const WorkspaceLabelSyncCursorSchema = z.object({
   afterSeq: z.number().int().nonnegative(),
 });
 
+export const AgentContextGetRequestSchema = z.object({
+  type: z.literal("agent.context.get.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+  subscribe: z.object({ subscriptionId: z.string().optional() }).optional(),
+});
+export const AgentContextMutateRequestSchema = z.object({
+  type: z.literal("agent.context.mutate.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+  mutation: SessionContextMutationSchema,
+});
+
 export const WorkspaceLabelListRequestSchema = z.object({
   type: z.literal("workspace.label.list.request"),
   requestId: z.string(),
   subscribe: z.object({ subscriptionId: z.string().optional() }).optional(),
   sync: WorkspaceLabelSyncCursorSchema.optional(),
+});
+export const WorkspaceLabelCreateRequestSchema = z.object({
+  type: z.literal("workspace.label.create.request"),
+  requestId: z.string(),
+  label: WorkspaceLabelDefinitionSchema,
 });
 export const WorkspaceLabelAssignmentSetRequestSchema = z.object({
   type: z.literal("workspace.label.assignment.set.request"),
@@ -1541,6 +1560,34 @@ export const SendAgentMessageRequestSchema = z.object({
   activeTurnBehavior: AgentActiveTurnBehaviorSchema.optional(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
+});
+
+// A distinct RPC so an old daemon can never interpret an idle-only delivery as
+// an ordinary send and steer or interrupt an active turn.
+export const SendAgentMessageIfIdleRequestSchema = z.object({
+  type: z.literal("agent.message.send_if_idle.request"),
+  requestId: z.string(),
+  /** Accepts full ID, unique prefix, or exact full title (server resolves). */
+  agentId: z.string(),
+  text: z.string(),
+  /** Stable caller-supplied delivery identity; required for receipt-based retries. */
+  messageId: z.string().min(1),
+  /** Opaque sender identity for agent-originated prompts. */
+  sourceAgentId: z.string().min(1).optional(),
+  sourceAgentServerId: z.string().min(1).optional(),
+  images: z.array(ImageAttachmentSchema).optional(),
+  attachments: AgentAttachmentsSchema,
+});
+
+// A read-only companion to idle-only delivery. It reads the durable receipt by
+// the same agent + message identity and never starts, resumes, or cancels a turn.
+export const GetAgentMessageReceiptRequestSchema = z.object({
+  type: z.literal("agent.message.get_receipt.request"),
+  requestId: z.string(),
+  /** Accepts full ID, unique prefix, or exact full title (server resolves). */
+  agentId: z.string().min(1),
+  /** Stable caller-supplied delivery identity used for the original send. */
+  messageId: z.string().min(1),
 });
 
 export const WaitForFinishRequestSchema = z.object({
@@ -2131,6 +2178,26 @@ export const ProviderSubagentListRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
+const AgentChangeRequestsListRequestSchema = z.object({
+  type: z.literal("agent.change_requests.list.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+});
+const AgentChangeRequestsUpdateRequestSchema = z.object({
+  type: z.literal("agent.change_requests.update.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  addUrl: z.string().optional(),
+  removeKey: z.string().optional(),
+  autoLink: z.boolean().optional(),
+});
+const AgentChangeRequestsSubscribeRequestSchema = z.object({
+  type: z.literal("agent.change_requests.subscribe.request"),
+  requestId: z.string(),
+  agentIds: z.array(z.string()),
+});
+
 export const AgentBackgroundWorkListRequestMessageSchema = z.object({
   type: z.literal("agent.background_work.list.request"),
   agentId: z.string(),
@@ -2295,6 +2362,46 @@ export const AgentRewindResponseMessageSchema = z.object({
     agentId: z.string(),
     ok: z.boolean(),
     error: z.string().nullable(),
+  }),
+});
+
+export const AgentSideQuestionAskRequestMessageSchema = z.object({
+  type: z.literal("agent.side_question.ask.request"),
+  agentId: z.string(),
+  operation: z.enum(["open", "ask", "close", "list"]).optional(),
+  sideAgentId: z.string().optional(),
+  question: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentSideQuestionAskResponseMessageSchema = z.object({
+  type: z.literal("agent.side_question.ask.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    sideAgentId: z.string().optional(),
+    sideChats: z
+      .array(
+        z.object({
+          sideAgentId: z.string(),
+          title: z.string(),
+          createdAt: z.string(),
+          updatedAt: z.string(),
+          status: AgentStatusSchema,
+        }),
+      )
+      .optional(),
+    response: z.string().nullable(),
+    synthetic: z.boolean().optional(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentSideChatAgentStateMessageSchema = z.object({
+  type: z.literal("agent.side_chat.agent_state"),
+  payload: z.object({
+    parentAgentId: z.string(),
+    agent: AgentSnapshotPayloadSchema,
   }),
 });
 
@@ -3009,6 +3116,7 @@ export const WorkspaceCreateRequestSchema = z.object({
   internal: z.boolean().optional(),
   background: z.boolean().optional(),
   callerAgentId: z.string().optional(),
+  automatic: z.boolean().optional(),
   source: z.discriminatedUnion("kind", [
     z.object({
       kind: z.literal("directory"),
@@ -3429,6 +3537,18 @@ export const KillTerminalRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const SwitchCodexTerminalToAgentRequestSchema = z.object({
+  type: z.literal("codex_terminal.switch_to_agent.request"),
+  terminalId: z.string(),
+  requestId: z.string(),
+});
+
+export const SwitchAgentTerminalToAgentRequestSchema = z.object({
+  type: z.literal("agent_terminal.switch_to_agent.request"),
+  terminalId: z.string(),
+  requestId: z.string(),
+});
+
 export const CaptureTerminalRequestSchema = z.object({
   type: z.literal("capture_terminal_request"),
   terminalId: z.string(),
@@ -3570,6 +3690,9 @@ export const SubscriptionReleaseResponseSchema = z.object({
 });
 
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
+  AgentChangeRequestsListRequestSchema,
+  AgentChangeRequestsUpdateRequestSchema,
+  AgentChangeRequestsSubscribeRequestSchema,
   HostsListRequestSchema,
   HostsAddRequestSchema,
   HostsUpdateRequestSchema,
@@ -3608,8 +3731,11 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentMetadataUpdateRequestSchema,
   WorkspaceMetadataUpdateRequestSchema,
   WorkspacePinSetRequestSchema,
+  AgentContextGetRequestSchema,
+  AgentContextMutateRequestSchema,
   WorkspaceBaseBranchSetRequestSchema,
   WorkspaceLabelListRequestSchema,
+  WorkspaceLabelCreateRequestSchema,
   WorkspaceLabelAssignmentSetRequestSchema,
   WorkspaceLabelUpdateRequestSchema,
   WorkspaceLabelDeleteRequestSchema,
@@ -3619,6 +3745,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceArchiveUndoRequestSchema,
   SetVoiceModeMessageSchema,
   SendAgentMessageRequestSchema,
+  SendAgentMessageIfIdleRequestSchema,
+  GetAgentMessageReceiptRequestSchema,
   WaitForFinishRequestSchema,
   DaemonGetStatusRequestSchema,
   DaemonGetPairingOfferRequestSchema,
@@ -3698,6 +3826,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentConfigApplyRequestMessageSchema,
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
+  AgentSideQuestionAskRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
   DiffSubscribeRequestSchema,
   DiffUnsubscribeRequestSchema,
@@ -3783,6 +3912,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   UnsubscribeTerminalRequestSchema,
   TerminalInputSchema,
   KillTerminalRequestSchema,
+  SwitchCodexTerminalToAgentRequestSchema,
+  SwitchAgentTerminalToAgentRequestSchema,
   CaptureTerminalRequestSchema,
   ChatCreateRequestSchema,
   ChatListRequestSchema,
@@ -3992,6 +4123,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(internalWorkspaces): added in v0.9.0; remove gate after 2027-03-17.
         internalWorkspaces: z.boolean().optional(),
         backgroundWorkspaces: z.boolean().optional(),
+        automaticTaskProjects: z.boolean().optional(),
         // COMPAT(backgroundAgents): added in v0.15.0; remove gate after 2027-05-03.
         backgroundAgents: z.boolean().optional(),
         providersSnapshot: z.boolean().optional(),
@@ -4008,6 +4140,11 @@ export const ServerInfoStatusPayloadSchema = z
         directorySync: z.boolean().optional(),
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         workspaceLabels: z.boolean().optional(),
+        // COMPAT(workspaceLabelCreate): added in v0.15.3, remove after 2027-11-14.
+        workspaceLabelCreate: z.boolean().optional(),
+        sessionContext: z.boolean().optional(),
+        // COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
+        agentChangeRequests: z.boolean().optional(),
         terminalCollection: z.boolean().optional(),
         // COMPAT(workspaceBaseBranch): added after v0.11.2, remove gate after 2027-10-14.
         workspaceBaseBranch: z.boolean().optional(),
@@ -4126,12 +4263,26 @@ export const ServerInfoStatusPayloadSchema = z
         agentForkContext: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: z.boolean().optional(),
+        // COMPAT(codexForkTerminal): added in the custom fork on 2026-08-13.
+        codexForkTerminal: z.boolean().optional(),
+        // COMPAT(codexConversationViewSwitch): added in the custom fork on 2026-08-13.
+        codexConversationViewSwitch: z.boolean().optional(),
+        // COMPAT(agentConversationViewSwitch): added in the custom fork on 2026-08-13.
+        agentConversationViewSwitch: z.boolean().optional(),
+        // COMPAT(codexTerminalImagePaste): added in the custom fork on 2026-08-13.
+        codexTerminalImagePaste: z.boolean().optional(),
+        // COMPAT(agentSideQuestion): added in the custom fork on 2026-08-21.
+        agentSideQuestion: z.boolean().optional(),
+        // COMPAT(agentSideChatFork): added in the custom fork on 2026-08-23.
+        agentSideChatFork: z.boolean().optional(),
+        agentSideChatHistory: z.boolean().optional(),
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: z.boolean().optional(),
         // COMPAT(agentBackgroundWork): added after v0.11.0-beta.5, remove gate after 2027-04-06.
         agentBackgroundWork: z.boolean().optional(),
         // COMPAT(agentBackgroundWorkStop): added after v0.15.0, remove after 2027-05-03.
         agentBackgroundWorkStop: z.boolean().optional(),
+        externalBackgroundWork: z.boolean().optional(),
         // COMPAT(projectedSubagentTimeline): added after v0.8.0, remove gates after 2027-03-14; retain wire field.
         projectedSubagentTimeline: z.boolean().optional(),
         wholeTurnTimeline: z.boolean().optional(),
@@ -4197,6 +4348,10 @@ export const ServerInfoStatusPayloadSchema = z
         agentMessageBatching: z.boolean().optional(),
         // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove gate after 2027-05-22.
         agentActiveTurnBehaviors: z.boolean().optional(),
+        // COMPAT(agentMessageIfIdle): added in v0.13.0, remove gate after 2027-10-23.
+        agentMessageIfIdle: z.boolean().optional(),
+        // COMPAT(agentMessageReceiptLookup): added in v0.13.1, remove gate after 2027-10-25.
+        agentMessageReceiptLookup: z.boolean().optional(),
         // COMPAT(agentTurnIdentity): accept peers that observed pre-release v0.2.6 through 2027-01-31.
         agentTurnIdentity: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
@@ -4786,6 +4941,23 @@ const WorkspaceLabelSyncMetadataSchema = z.object({
   headSeq: z.number().int().nonnegative(),
   removals: z.array(z.object({ name: z.string(), seq: z.number().int().positive() })),
 });
+export const AgentContextGetResponseSchema = z.object({
+  type: z.literal("agent.context.get.response"),
+  payload: z.object({
+    requestId: z.string(),
+    context: SessionContextSchema,
+    subscriptionId: z.string().optional(),
+  }),
+});
+export const AgentContextMutateResponseSchema = z.object({
+  type: z.literal("agent.context.mutate.response"),
+  payload: z.object({ requestId: z.string(), context: SessionContextSchema }),
+});
+export const AgentContextUpdateSchema = z.object({
+  type: z.literal("agent.context.update"),
+  payload: z.object({ context: SessionContextSchema, subscriptionId: z.string().optional() }),
+});
+
 export const WorkspaceLabelListResponseSchema = z.object({
   type: z.literal("workspace.label.list.response"),
   payload: z.object({
@@ -4822,6 +4994,10 @@ export const WorkspaceLabelAssignmentSetResponseSchema = z.object({
     label: WorkspaceLabelDefinitionSchema,
     workspaceLabels: z.array(z.string()),
   }),
+});
+export const WorkspaceLabelCreateResponseSchema = z.object({
+  type: z.literal("workspace.label.create.response"),
+  payload: z.object({ requestId: z.string(), label: WorkspaceLabelDefinitionSchema }),
 });
 export const WorkspaceLabelUpdateResponseSchema = z.object({
   type: z.literal("workspace.label.update.response"),
@@ -5256,7 +5432,21 @@ export const ProviderSubagentListResponseMessageSchema = z.object({
   }),
 });
 
+export const AgentExternalBackgroundWorkSchema = z.object({
+  source: z.string(),
+  label: z.string(),
+  freshness: z.enum(["loading", "ready", "stale", "unavailable"]),
+  observedAt: z.string().nullable(),
+  status: z.string(),
+  running: z.boolean(),
+  deadline: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+  issue: z.object({ label: z.string(), url: z.string() }).nullable(),
+});
+export type AgentExternalBackgroundWorkPayload = z.infer<typeof AgentExternalBackgroundWorkSchema>;
+
 export const AgentBackgroundWorkItemSchema = z.object({
+  external: AgentExternalBackgroundWorkSchema.optional(),
   id: z.string(),
   // Open string: known kinds include "shell" and "monitor".
   // Clients treat unknown values as "other".
@@ -5548,6 +5738,38 @@ export const SendAgentMessageResponseMessageSchema = z.object({
     activeTurnBehavior: AgentActiveTurnBehaviorSchema.optional(),
     /** What happens to a queued agent message, and how the sender can change it. */
     guidance: z.string().optional(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const SendAgentMessageIfIdleResponseMessageSchema = z.object({
+  type: z.literal("agent.message.send_if_idle.response"),
+  payload: z.object({
+    requestId: z.string(),
+    /** Canonical agent ID after prefix or title resolution. */
+    agentId: z.string(),
+    accepted: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const AgentMessageReceiptStatusSchema = z.enum(["accepted", "pending", "absent"]);
+export type AgentMessageReceiptStatus = z.infer<typeof AgentMessageReceiptStatusSchema>;
+
+export const GetAgentMessageReceiptResponseMessageSchema = z.object({
+  type: z.literal("agent.message.get_receipt.response"),
+  payload: z.object({
+    requestId: z.string(),
+    /** Canonical agent ID after prefix or title resolution. */
+    agentId: z.string(),
+    messageId: z.string(),
+    /**
+     * `accepted`: the provider accepted the turn start for this identity.
+     * `pending`: a receipt exists but completion was not recorded; outcome unknown.
+     * `absent`: no local receipt was found. It does not prove the request never ran.
+     * `null` only when `error` is non-null.
+     */
+    status: AgentMessageReceiptStatusSchema.nullable(),
     error: z.string().nullable(),
   }),
 });
@@ -7175,12 +7397,19 @@ const TerminalInfoSchema = z.object({
   name: z.string(),
   cwd: z.string(),
   workspaceId: z.string().optional(),
+  linkedAgentId: z.string().optional(),
   title: z.string().optional(),
   activity: TerminalActivitySchema.nullable().optional(),
+  capabilities: z
+    .object({
+      imagePaste: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const TerminalCellSchema = z.object({
   char: z.string(),
+  width: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
   fg: z.number().optional(),
   bg: z.number().optional(),
   fgMode: z.number().optional(),
@@ -7280,6 +7509,28 @@ export const KillTerminalResponseSchema = z.object({
   payload: z.object({
     terminalId: z.string(),
     success: z.boolean(),
+    requestId: z.string(),
+  }),
+});
+
+export const SwitchCodexTerminalToAgentResponseSchema = z.object({
+  type: z.literal("codex_terminal.switch_to_agent.response"),
+  payload: z.object({
+    terminalId: z.string(),
+    agentId: z.string().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const SwitchAgentTerminalToAgentResponseSchema = z.object({
+  type: z.literal("agent_terminal.switch_to_agent.response"),
+  payload: z.object({
+    terminalId: z.string(),
+    agentId: z.string().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
     requestId: z.string(),
   }),
 });
@@ -7677,7 +7928,60 @@ export const AgentSkillsImportLegacySelectionResponseSchema = z.object({
   }),
 });
 
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
+const AgentChangeRequestsSnapshotSchema = z.object({
+  agentId: z.string(),
+  autoLink: z.boolean(),
+  items: z.array(
+    z.object({
+      reference: z.object({
+        key: z.string(),
+        forge: z.string(),
+        host: z.string(),
+        projectPath: z.string(),
+        number: z.number().int().positive(),
+        url: z.string(),
+        source: z.enum(["manual", "attachment", "tool"]),
+        addedAt: z.string(),
+        callId: z.string().optional(),
+      }),
+      status: CheckoutPrStatusSchema.nullable(),
+      availability: z.string(),
+      refreshedAt: z.string().nullable(),
+      stale: z.boolean(),
+    }),
+  ),
+});
+const AgentChangeRequestsListResponseSchema = z.object({
+  type: z.literal("agent.change_requests.list.response"),
+  payload: z.object({
+    requestId: z.string(),
+    snapshot: AgentChangeRequestsSnapshotSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+const AgentChangeRequestsUpdateResponseSchema = z.object({
+  type: z.literal("agent.change_requests.update.response"),
+  payload: z.object({
+    requestId: z.string(),
+    snapshot: AgentChangeRequestsSnapshotSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+const AgentChangeRequestsSubscribeResponseSchema = z.object({
+  type: z.literal("agent.change_requests.subscribe.response"),
+  payload: z.object({ requestId: z.string(), subscriptionId: z.string() }),
+});
+const AgentChangeRequestsChangedSchema = z.object({
+  type: z.literal("agent.change_requests.update"),
+  payload: z.object({ subscriptionId: z.string(), snapshot: AgentChangeRequestsSnapshotSchema }),
+});
+
 export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
+  AgentChangeRequestsListResponseSchema,
+  AgentChangeRequestsUpdateResponseSchema,
+  AgentChangeRequestsSubscribeResponseSchema,
+  AgentChangeRequestsChangedSchema,
   HostsListResponseSchema,
   HostsChangedSchema,
   HostsAddResponseSchema,
@@ -7740,10 +8044,14 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ArtifactMessageSchema,
   AgentUpdateMessageSchema,
   WorkspaceUpdateMessageSchema,
+  AgentContextGetResponseSchema,
+  AgentContextMutateResponseSchema,
+  AgentContextUpdateSchema,
   WorkspaceLabelListResponseSchema,
   WorkspaceLabelUpdateSchema,
   WorkspaceLabelAssignmentSetResponseSchema,
   WorkspaceLabelUpdateResponseSchema,
+  WorkspaceLabelCreateResponseSchema,
   WorkspaceLabelDeleteResponseSchema,
   WorkspaceLabelDeleteInspectResponseSchema,
   ProjectUpdateMessageSchema,
@@ -7796,6 +8104,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceClearAttentionResponseSchema,
   WorkspaceMarkUnreadResponseSchema,
   SendAgentMessageResponseMessageSchema,
+  SendAgentMessageIfIdleResponseMessageSchema,
+  GetAgentMessageReceiptResponseMessageSchema,
   SetVoiceModeResponseMessageSchema,
   DaemonGetStatusResponseSchema,
   DaemonGetPairingOfferResponseSchema,
@@ -7816,6 +8126,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentConfigApplyResponseMessageSchema,
   AgentDetachResponseMessageSchema,
   AgentRewindResponseMessageSchema,
+  AgentSideQuestionAskResponseMessageSchema,
+  AgentSideChatAgentStateMessageSchema,
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
   ProjectIconSetResponseSchema,
@@ -7909,6 +8221,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   RenameTerminalResponseSchema,
   SubscribeTerminalResponseSchema,
   KillTerminalResponseSchema,
+  SwitchCodexTerminalToAgentResponseSchema,
+  SwitchAgentTerminalToAgentResponseSchema,
   CaptureTerminalResponseSchema,
   TerminalStreamExitSchema,
   TerminalAttentionRequiredSchema,
@@ -8033,6 +8347,13 @@ export type SetAgentFeatureResponseMessage = z.infer<typeof SetAgentFeatureRespo
 export type AgentConfigApplyResponseMessage = z.infer<typeof AgentConfigApplyResponseMessageSchema>;
 export type AgentDetachResponseMessage = z.infer<typeof AgentDetachResponseMessageSchema>;
 export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessageSchema>;
+export type AgentSideQuestionAskRequestMessage = z.infer<
+  typeof AgentSideQuestionAskRequestMessageSchema
+>;
+export type AgentSideQuestionAskResponseMessage = z.infer<
+  typeof AgentSideQuestionAskResponseMessageSchema
+>;
+export type AgentSideChatAgentStateMessage = z.infer<typeof AgentSideChatAgentStateMessageSchema>;
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
 export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
 export type ProjectIconSetResponse = z.infer<typeof ProjectIconSetResponseSchema>;
@@ -8429,6 +8750,18 @@ export type CloseItemsRequest = z.infer<typeof CloseItemsRequestMessageSchema>;
 export type CloseItemsResponse = z.infer<typeof CloseItemsResponseSchema>;
 export type KillTerminalRequest = z.infer<typeof KillTerminalRequestSchema>;
 export type KillTerminalResponse = z.infer<typeof KillTerminalResponseSchema>;
+export type SwitchCodexTerminalToAgentRequest = z.infer<
+  typeof SwitchCodexTerminalToAgentRequestSchema
+>;
+export type SwitchCodexTerminalToAgentResponse = z.infer<
+  typeof SwitchCodexTerminalToAgentResponseSchema
+>;
+export type SwitchAgentTerminalToAgentRequest = z.infer<
+  typeof SwitchAgentTerminalToAgentRequestSchema
+>;
+export type SwitchAgentTerminalToAgentResponse = z.infer<
+  typeof SwitchAgentTerminalToAgentResponseSchema
+>;
 export type CaptureTerminalRequest = z.infer<typeof CaptureTerminalRequestSchema>;
 export type CaptureTerminalResponse = z.infer<typeof CaptureTerminalResponseSchema>;
 export type TerminalStreamExit = z.infer<typeof TerminalStreamExitSchema>;

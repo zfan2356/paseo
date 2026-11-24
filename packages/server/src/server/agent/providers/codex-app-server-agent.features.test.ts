@@ -140,7 +140,12 @@ function createConfig(overrides: Partial<AgentSessionConfig> = {}): AgentSession
 
 function createSessionHarness(
   configOverrides: Partial<AgentSessionConfig> = {},
-  options: { logger?: pino.Logger; models?: unknown[]; userAgent?: string } = {},
+  options: {
+    logger?: pino.Logger;
+    models?: unknown[];
+    userAgent?: string;
+    environment?: Record<string, string>;
+  } = {},
 ): {
   session: CodexFeaturesTestSession;
   appServer: FakeCodexAppServer;
@@ -156,13 +161,19 @@ function createSessionHarness(
     null,
     options.logger ?? createTestLogger(),
     async () => appServer.child,
+    { environment: options.environment },
   ) as CodexFeaturesTestSession;
   return { session, appServer };
 }
 
 async function createConnectedSession(
   configOverrides: Partial<AgentSessionConfig> = {},
-  options: { logger?: pino.Logger; models?: unknown[]; userAgent?: string } = {},
+  options: {
+    logger?: pino.Logger;
+    models?: unknown[];
+    userAgent?: string;
+    environment?: Record<string, string>;
+  } = {},
 ): Promise<{
   session: CodexFeaturesTestSession;
   appServer: FakeCodexAppServer;
@@ -248,6 +259,72 @@ describe("Codex MCP startup logging", () => {
 });
 
 describe("Codex app-server provider controls", () => {
+  test("keeps saved iChat Fast on known models whose catalog has no tiers", async () => {
+    const { session, appServer } = await createConnectedSession(
+      {
+        model: "gpt-6.1-sol",
+        providerOptions: convertLegacyOptions({
+          provider: CODEX_PROVIDER,
+          options: { fast_mode: true },
+        }),
+      },
+      {
+        models: [{ id: "gpt-6.1-sol", serviceTiers: [] }],
+        environment: { ICHAT_PROXY_PY: "/opt/ichat/proxy.py" },
+      },
+    );
+    try {
+      expect(session.controls).toContainEqual(
+        speedControlWith([
+          { value: "default", label: "Normal" },
+          { value: "flex", label: "Flex" },
+          { value: "fast", label: "Fast" },
+        ]),
+      );
+      await session.startTurn("hello");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: "fast" });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test.each([
+    { id: "gpt-6.1-sol", environment: {} },
+    { id: "unknown-model", environment: { ICHAT_PROXY_PY: "/opt/ichat/proxy.py" } },
+  ])("does not invent speed tiers for $id outside the iChat contract", async (input) => {
+    const { session } = await createConnectedSession(
+      { model: input.id },
+      { models: [{ id: input.id, serviceTiers: [] }], environment: input.environment },
+    );
+    try {
+      expect(session.controls).toContainEqual(flexSpeedControl());
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("prefers advertised iChat speed tiers over the legacy Fast contract", async () => {
+    const { session, appServer } = await createConnectedSession(
+      {
+        model: "gpt-6.1-sol",
+        providerOptions: convertLegacyOptions({
+          provider: CODEX_PROVIDER,
+          options: { fast_mode: true },
+        }),
+      },
+      { environment: { ICHAT_PROXY_PY: "/opt/ichat/proxy.py" } },
+    );
+    try {
+      expect(session.controls).toContainEqual(speedControl());
+      await session.startTurn("hello");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
+        serviceTier: "priority",
+      });
+    } finally {
+      await session.close();
+    }
+  });
+
   test("GPT-6.1 Sol offers catalog speed tiers and sends Ultrafast", async () => {
     const { session, appServer } = await createConnectedSession(
       { model: "gpt-6.1-sol" },

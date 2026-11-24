@@ -1,7 +1,9 @@
+import { PluginComposerExtensions } from "@/plugins/composer-extensions";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { SIDE_CHAT_PARENT_LABEL } from "@getpaseo/protocol/agent-labels";
 import type { TFunction } from "i18next";
 import { SquarePen } from "lucide-react-native";
 import React, {
@@ -17,6 +19,10 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { StyleSheet as RNStyleSheet, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { SideChatOverlay } from "@/side-chat/panel";
+import { useSideChatOverlayEnabled } from "@/side-chat/panel";
+import { sideChatKey } from "@/side-chat/model";
+import { selectSideChatPanel, useSideChatStore } from "@/side-chat/store";
 import invariant from "tiny-invariant";
 import { shallow, useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
@@ -27,6 +33,7 @@ import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { ComposerDock } from "@/composer/dock";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { selectLeaseBlocked, useConversationSurfaceStore } from "@/conversation-surface/store";
 import { RetainedChatContent } from "./retained-chat-content";
 import { Composer } from "@/composer";
 import { AgentCommandsProvider } from "@/agent-commands";
@@ -69,6 +76,10 @@ import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useContainerWidthBelow } from "@/hooks/use-container-width";
 import { reconcileMissingAgentStateWithPresentAgent } from "@/panels/agent-panel-load-state";
+import {
+  reconcileReconnectToastState,
+  type ReconnectToastState,
+} from "@/panels/reconnect-toast-state";
 import { TimelineSyncStatus } from "@/timeline/sync-status";
 import { usePaneContext, usePaneFocus } from "@/panels/pane-context";
 import { useAgentFactsLine } from "@/panels/agent-facts-line";
@@ -78,6 +89,7 @@ import { RenderProfile } from "@/utils/render-profiler";
 import { buildDraftPanelDescriptor } from "@/panels/draft-panel-descriptor";
 import {
   type HostRuntimeConnectionStatus,
+  getHostRuntimeConnectionStatusSince,
   useHostRuntimeClient,
   useHostRuntimeConnectionStatus,
   useHostRuntimeIsConnected,
@@ -130,6 +142,80 @@ interface ChatAgentStateShape {
   options?: Agent["options"];
   controls?: Agent["controls"];
   lastError?: Agent["lastError"] | null;
+}
+
+const RECONNECT_TOAST_DELAY_MS = 1_000;
+
+const reconnectToastStateByServerId = new Map<string, ReconnectToastState>();
+
+function useReconnectToast({
+  serverId,
+  connectionStatus,
+  isPaneVisible,
+  toastApi,
+  dismissToast,
+  t,
+}: {
+  serverId: string;
+  connectionStatus: HostRuntimeConnectionStatus;
+  isPaneVisible: boolean;
+  toastApi: ToastApi;
+  dismissToast: () => void;
+  t: TFunction;
+}) {
+  const presentedRef = useRef(false);
+  const shouldPresent =
+    isPaneVisible && connectionStatus !== "online" && connectionStatus !== "idle";
+
+  useEffect(() => {
+    if (connectionStatus === "online" || connectionStatus === "idle") {
+      reconnectToastStateByServerId.delete(serverId);
+    }
+
+    if (!shouldPresent) {
+      if (presentedRef.current) {
+        presentedRef.current = false;
+        dismissToast();
+      }
+      return;
+    }
+
+    const startedAt = getHostRuntimeConnectionStatusSince(serverId) ?? Date.now();
+    const previousState = reconnectToastStateByServerId.get(serverId);
+    const state = reconcileReconnectToastState(previousState, startedAt);
+    if (state !== previousState) {
+      reconnectToastStateByServerId.set(serverId, state);
+    }
+
+    const show = () => {
+      presentedRef.current = true;
+      toastApi.show(t("agentPanel.states.reconnecting"), {
+        durationMs: null,
+        icon: (
+          <View
+            accessible={false}
+            testID="agent-reconnecting-status-dot"
+            style={styles.reconnectingStatusDot}
+          />
+        ),
+        testID: "agent-reconnecting-toast",
+      });
+    };
+
+    if (state.presented) {
+      if (!presentedRef.current) show();
+      return;
+    }
+
+    const delayMs = Math.max(0, startedAt + RECONNECT_TOAST_DELAY_MS - Date.now());
+    const timer = setTimeout(() => {
+      if (reconnectToastStateByServerId.get(serverId) !== state) return;
+      state.presented = true;
+      show();
+    }, delayMs);
+
+    return () => clearTimeout(timer);
+  }, [connectionStatus, dismissToast, serverId, shouldPresent, toastApi, t]);
 }
 
 interface ChatAgentSelectedState extends ChatAgentStateShape {
@@ -294,7 +380,9 @@ function renderChatAgentNonReadyView(args: {
 }
 
 function shouldStoreFetchedAgentInActiveDirectory(agent: Agent): boolean {
-  return !agent.archivedAt && Boolean(agent.projectPlacement);
+  return (
+    !agent.archivedAt && !agent.labels[SIDE_CHAT_PARENT_LABEL] && Boolean(agent.projectPlacement)
+  );
 }
 
 type FetchAgentResult = Awaited<ReturnType<DaemonClient["fetchAgent"]>>;
@@ -361,13 +449,15 @@ export function AgentConversationPanel() {
 
   return (
     <RetainedChatContent>
-      <AgentPanelContent
-        serverId={serverId}
-        workspaceId={workspaceId}
-        target={target}
-        isPaneFocused={isInteractive}
-        onOpenWorkspaceFile={openFileInWorkspace}
-      />
+      <View testID="conversation-surface-agent" style={styles.container}>
+        <AgentPanelContent
+          serverId={serverId}
+          workspaceId={workspaceId}
+          target={target}
+          isPaneFocused={isInteractive}
+          onOpenWorkspaceFile={openFileInWorkspace}
+        />
+      </View>
     </RetainedChatContent>
   );
 }
@@ -443,18 +533,20 @@ type AgentLookupState =
   | { tag: "not_found"; message: string }
   | { tag: "error"; message: string };
 
-function AgentPanelContent({
+export function AgentPanelContent({
   serverId,
   workspaceId,
   target,
   isPaneFocused,
   onOpenWorkspaceFile,
+  showSideChat = true,
 }: {
   serverId: string;
   workspaceId: string;
   target: ConversationTarget;
   isPaneFocused: boolean;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
+  showSideChat?: boolean;
 }) {
   const { t } = useTranslation();
   const resolvedAgentId = resolveConversationAgentId(target);
@@ -506,7 +598,9 @@ function AgentPanelContent({
       isPaneFocused={isPaneFocused}
       client={runtimeClient}
       isConnected={runtimeIsConnected}
+      connectionStatus={connectionStatus}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
+      showSideChat={showSideChat}
     />
   );
 }
@@ -518,7 +612,9 @@ function AgentPanelBody({
   isPaneFocused,
   client,
   isConnected,
+  connectionStatus,
   onOpenWorkspaceFile,
+  showSideChat,
 }: {
   serverId: string;
   workspaceId: string;
@@ -526,7 +622,9 @@ function AgentPanelBody({
   isPaneFocused: boolean;
   client: ReturnType<typeof useHostRuntimeClient>;
   isConnected: boolean;
+  connectionStatus: HostRuntimeConnectionStatus;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
+  showSideChat: boolean;
 }) {
   const { t } = useTranslation();
   const agentId = resolveConversationAgentId(target);
@@ -663,9 +761,23 @@ function AgentPanelBody({
       isPaneFocused={isPaneFocused}
       client={client}
       isConnected={isConnected}
+      connectionStatus={connectionStatus}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
+      showSideChat={showSideChat}
     />
   );
+}
+
+interface SideChatAgentContentProps extends Omit<
+  React.ComponentProps<typeof AgentPanelContent>,
+  "target" | "showSideChat"
+> {
+  agentId: string;
+}
+
+export function SideChatAgentContent({ agentId, ...props }: SideChatAgentContentProps) {
+  const target = useMemo<ConversationTarget>(() => ({ kind: "agent", agentId }), [agentId]);
+  return <AgentPanelContent {...props} target={target} showSideChat={false} />;
 }
 
 function ChatAgentContent({
@@ -675,7 +787,9 @@ function ChatAgentContent({
   isPaneFocused,
   client,
   isConnected,
+  connectionStatus,
   onOpenWorkspaceFile,
+  showSideChat,
 }: {
   serverId: string;
   workspaceId: string;
@@ -683,12 +797,21 @@ function ChatAgentContent({
   isPaneFocused: boolean;
   client: ReturnType<typeof useHostRuntimeClient>;
   isConnected: boolean;
+  connectionStatus: HostRuntimeConnectionStatus;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
+  showSideChat: boolean;
 }) {
   const { t } = useTranslation();
   const { tabId } = usePaneContext();
   const agentId = resolveConversationAgentId(target);
   const isPaneVisible = useRetainedPanelActive();
+  const sideChatOverlayEnabled = useSideChatOverlayEnabled(showSideChat);
+  const isSideChatOpen = useSideChatStore((state) =>
+    sideChatOverlayEnabled && agentId
+      ? selectSideChatPanel(state, sideChatKey(serverId, agentId)) !== null
+      : false,
+  );
+  const isConversationFocused = isPaneFocused && !isSideChatOpen;
   const { api: toastApi, toast: toastState, dismiss: dismissToast } = useToastHost();
   const { isArchivingAgent } = useArchiveAgent();
   const streamViewRef = useRef<AgentStreamViewHandle>(null);
@@ -783,13 +906,14 @@ function ChatAgentContent({
     isAgentDataReady: agentHistorySyncGeneration === historySyncGeneration,
     requiresAttention: agentState.requiresAttention,
     attentionReason: agentState.attentionReason,
-    isScreenFocused: isPaneFocused,
+    isScreenFocused: isConversationFocused,
     focusRequest,
     onError: reportAttentionError,
   });
   const isArchivingCurrentAgent = Boolean(agentId && isArchivingAgent({ serverId, agentId }));
 
-  const isInitializing = agentId ? isInitializingFromMap : false;
+  useReconnectToast({ serverId, connectionStatus, isPaneVisible, toastApi, dismissToast, t });
+  const isInitializing = isInitializingFromMap;
   const isHistorySyncing = useMemo(() => {
     if (!agentId || !isInitializing) {
       return false;
@@ -1015,7 +1139,7 @@ function ChatAgentContent({
       workspaceId={workspaceId}
       agentId={agentId ?? tabId}
       draft={draft}
-      isPaneFocused={isPaneFocused}
+      isPaneFocused={isConversationFocused}
       isArchivingCurrentAgent={isArchivingCurrentAgent}
       agentState={agentState}
       effectiveAgent={effectiveAgent}
@@ -1037,8 +1161,14 @@ function ChatAgentContent({
       onAttentionInputFocus={attentionController.clearOnInputFocus}
       onAttentionPromptSend={attentionController.clearOnPromptSend}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
+      showSideChat={showSideChat}
     />
   );
+}
+
+function usePaneComposerVisibility(isDraft: boolean): boolean {
+  const { host } = usePaneContext();
+  return isDraft || host !== "sheet";
 }
 
 const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
@@ -1068,6 +1198,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   onAttentionInputFocus,
   onAttentionPromptSend,
   onOpenWorkspaceFile,
+  showSideChat,
 }: {
   serverId: string;
   workspaceId: string;
@@ -1096,11 +1227,12 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   onAttentionInputFocus: () => void;
   onAttentionPromptSend: () => void;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
+  showSideChat: boolean;
 }) {
   const { t } = useTranslation();
+  const sideChatOverlayEnabled = useSideChatOverlayEnabled(showSideChat);
   // The workspace sheet is for looking; Open as tab brings the agent back with its composer.
-  const paneHost = usePaneContext().host;
-  const showsComposer = draft !== null || paneHost !== "sheet";
+  const showsComposer = usePaneComposerVisibility(draft !== null);
   // The dock lays out fullscreen for the same session the composer edits in.
   const composerEditingSession = useComposerEditingSession("chat");
   const isComposerFullscreen = useComposerFullscreen(composerEditingSession);
@@ -1170,11 +1302,24 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
       composerState,
     ],
   );
+  const renderSideChatAgent = useCallback(
+    (sideAgentId: string) => (
+      <SideChatAgentContent
+        serverId={serverId}
+        workspaceId={workspaceId}
+        agentId={sideAgentId}
+        isPaneFocused={isPaneFocused}
+        onOpenWorkspaceFile={onOpenWorkspaceFile}
+      />
+    ),
+    [isPaneFocused, onOpenWorkspaceFile, serverId, workspaceId],
+  );
   const parentCallout = parentAgentId ? (
     <ParentAgentCallout serverId={serverId} parentAgentId={parentAgentId} />
   ) : null;
   const agentComposerSection = showsComposer ? (
     <RenderProfile id={`AgentComposerSection:${agentId}`}>
+      <PluginComposerExtensions serverId={serverId} workspaceId={workspaceId} agentId={agentId} />
       <AgentComposerSection
         agentId={agentId}
         serverId={serverId}
@@ -1294,8 +1439,16 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
           enabled={isPaneFocused}
         />
       ) : null}
-      <View style={styles.root}>
+      <View style={styles.root} collapsable={false}>
         {dock}
+
+        {sideChatOverlayEnabled ? (
+          <SideChatOverlay
+            serverId={serverId}
+            agentId={agentId}
+            renderAgent={renderSideChatAgent}
+          />
+        ) : null}
 
         {isArchivingCurrentAgent ? (
           <View style={styles.archivingOverlay} testID="agent-archiving-overlay">
@@ -1659,6 +1812,9 @@ function ActiveAgentComposer({
   const closeWorkspaceTab = useWorkspaceLayoutStore((state) => state.closeTab);
   const hideWorkspaceAgent = useWorkspaceLayoutStore((state) => state.hideAgent);
   const unpinWorkspaceAgent = useWorkspaceLayoutStore((state) => state.unpinAgent);
+  const leaseBlocked = useConversationSurfaceStore((state) =>
+    selectLeaseBlocked(state, serverId, agentId),
+  );
   const workspaceAttachmentScopeKey = useWorkspaceAttachmentScopeKey({
     serverId,
     cwd,
@@ -1740,7 +1896,7 @@ function ActiveAgentComposer({
         editingSession={editingSession}
         autoFocus
         autoFocusKey={String(agentInputDraft.attachmentFocusRequestId)}
-        isSubmitLoading={isSubmitLoading}
+        isSubmitLoading={isSubmitLoading || leaseBlocked}
         onAttentionInputFocus={onAttentionInputFocus}
         onAttentionPromptSend={onAttentionPromptSend}
         onComposerHeightChange={onComposerHeightChange}
@@ -1913,6 +2069,12 @@ const styles = StyleSheet.create((theme) => ({
   loadingText: {
     fontSize: theme.fontSize.base,
     color: theme.colors.foregroundMuted,
+  },
+  reconnectingStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.palette.amber[500],
   },
   centerState: {
     flex: 1,

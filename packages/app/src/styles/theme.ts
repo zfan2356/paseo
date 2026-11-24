@@ -1,5 +1,6 @@
 import { Platform, type ViewStyle } from "react-native";
 import { isWeb } from "@/constants/platform";
+import { codexPalette } from "../../../../plugins/codex-theme/shared/palette";
 import { darkHighlightColors, lightHighlightColors } from "@getpaseo/highlight";
 import { deriveSurfaceStates } from "./derive-colors";
 
@@ -512,6 +513,9 @@ const midnightDarkColors = buildDarkSemanticColors({
   terminalBrightBlack: "#3c3e4c",
 });
 
+// COMPAT(codexTheme): saved built-in choices and offline clients use the same plugin palette.
+const codexDarkColors = buildDarkSemanticColors(codexPalette);
+
 // Claude — warm neutral with subtle orange undertone
 const claudeDarkColors = buildDarkSemanticColors({
   surface0: "#1f1f1e",
@@ -721,6 +725,7 @@ export const darkTheme = buildDarkTheme(paseoDarkColors);
 export const darkZincTheme = buildDarkTheme(zincDarkColors);
 export const darkMidnightTheme = buildDarkTheme(midnightDarkColors);
 export const darkClaudeTheme = buildDarkTheme(claudeDarkColors);
+export const darkCodexTheme = buildDarkTheme(codexDarkColors);
 export const darkGhosttyTheme = buildDarkTheme(ghosttyDarkColors);
 
 // Pure black — zero-luminance background with high-contrast surfaces. A control over the
@@ -821,6 +826,13 @@ export const THEME_OPTIONS = [
     unistylesName: "darkClaude",
     theme: darkClaudeTheme,
     swatch: "#D97757",
+  },
+  {
+    name: "codex",
+    group: "variant",
+    unistylesName: "darkCodex",
+    theme: darkCodexTheme,
+    swatch: "#52a06f",
   },
   {
     name: "ghostty",

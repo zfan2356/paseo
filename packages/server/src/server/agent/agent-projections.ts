@@ -152,7 +152,7 @@ export function toAgentPayload(
           startedAt: agent.activeTurnStartedAt?.toISOString() ?? null,
         }
       : null,
-    capabilities: cloneCapabilities(agent.capabilities),
+    capabilities: projectCapabilities(agent),
     currentModeId: agent.currentModeId,
     availableModes: cloneAvailableModes(agent.availableModes),
     // COMPAT(featureValues): added in v0.15.0, remove after 2027-05-01.
@@ -517,8 +517,9 @@ function projectPersistenceHandleForWire(
   return projected;
 }
 
-function cloneCapabilities(capabilities: AgentCapabilityFlags): AgentCapabilityFlags {
-  return { ...capabilities };
+function projectCapabilities(agent: ManagedAgent): AgentCapabilityFlags {
+  // Side chat needs a provider-native fork, which is per-session, not per-provider.
+  return { ...agent.capabilities, sideChatFork: agent.session?.forkForSideChat != null };
 }
 
 function cloneAvailableModes(modes: AgentMode[]): AgentMode[] {

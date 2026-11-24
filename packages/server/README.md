@@ -24,7 +24,8 @@ npm run dev
 - **Vite Dev Server** (port 5173) - Hot-reload React UI in development
 - **WebSocket** (`/ws`) - Real-time bidirectional communication
 - **Agent** - STT → LLM → TTS pipeline with terminal control
-- **Daemon** - tmux-based terminal management (in-process)
+- **Daemon** - Agent lifecycle, WebSocket API, and attachment to the terminal worker
+- **Terminal worker** - Owns PTYs across daemon restarts; see [terminal performance](../../docs/terminal-performance.md) and the [restart regression test](src/server/daemon-e2e/terminal-restart.e2e.test.ts)
 
 ## Development
 

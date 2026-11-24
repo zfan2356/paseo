@@ -38,7 +38,7 @@ describe("terminal restore policy", () => {
   test("bounds pressure recovery for every restore mode", () => {
     expect(resolveRestoreAfterOutputOverflow({ mode: "live" })).toEqual({
       mode: "visible-snapshot",
-      scrollbackLines: 500,
+      scrollbackLines: 0,
     });
     expect(resolveRestoreAfterOutputOverflow({ mode: "full-snapshot" })).toEqual({
       mode: "visible-snapshot",

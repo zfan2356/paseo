@@ -87,6 +87,14 @@ describe("preload sandbox safety", () => {
     expect(disallowed).toEqual([]);
   });
 
+  it("keeps the task board preload isolated from Node and local runtime modules", () => {
+    const source = readFileSync(
+      join(dirname(preloadPath), "features/menu-bar/dashboard-preload.ts"),
+      "utf8",
+    );
+    expect(runtimeModuleSpecifiers(source)).toEqual(["electron"]);
+  });
+
   it("inlines the browser profile partition instead of importing it", () => {
     const source = readFileSync(preloadPath, "utf8");
     const match = source.match(/const\s+PASEO_BROWSER_PROFILE_PARTITION\s*=\s*"([^"]+)"/);

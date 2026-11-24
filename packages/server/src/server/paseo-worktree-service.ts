@@ -33,6 +33,7 @@ import type { FirstAgentContext } from "@getpaseo/protocol/messages";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
 
 export interface CreatePaseoWorktreeInput extends CreateWorktreeCoreInput {
+  automatic?: boolean;
   workspaceId?: string;
   projectId?: string;
   title?: string;
@@ -126,6 +127,7 @@ async function createPaseoWorktreeWithPriority(
       background: input.background,
       callerWorkspaceId: input.callerWorkspaceId,
       untrustedSource: createdWorktree.untrustedSource,
+      automatic: input.automatic,
     });
 
     deps.github.invalidate({ cwd: createdWorktree.worktree.worktreePath });

@@ -29,6 +29,7 @@ export interface ComposerControlPresence {
   features: readonly ComposerFeatureControlPresence[];
   /** The plugin items' measured width in the toolbar row; 0 when none of them renders anything. */
   pluginItemsWidth: number;
+  auxiliaryLabels?: readonly string[];
   fontScale: number;
 }
 
@@ -87,7 +88,12 @@ function sumControlWidths(widths: number[], geometry: ComposerToolbarGeometry): 
 }
 
 function estimateLabelWidth(label: string, fontScale: number): number {
-  return Array.from(label).length * 7 * fontScale;
+  return (
+    Array.from(label).reduce(
+      (width, character) => width + (character.charCodeAt(0) > 255 ? 14 : 7),
+      0,
+    ) * fontScale
+  );
 }
 
 /** A labelled control's fixed chrome: its padding, its glyph, and the gap to its label. */
@@ -122,6 +128,9 @@ function resolveCondensedFloor(
   if (controls.features.length > 0 || controls.pluginItemsWidth > 0) {
     widths.push(geometry.controlSize);
   }
+  for (const _label of controls.auxiliaryLabels ?? []) {
+    widths.push(geometry.controlSize);
+  }
   return sumControlWidths(widths, geometry);
 }
 
@@ -140,6 +149,10 @@ function resolveFullFloor(
     widths.push(resolveFeatureControlWidth(feature, fontScale, geometry));
   }
   if (controls.pluginItemsWidth > 0) widths.push(controls.pluginItemsWidth);
+  for (const label of controls.auxiliaryLabels ?? []) {
+    // Icon, label, caret and padding must fit before restoring expanded controls.
+    widths.push(64 + estimateLabelWidth(label, fontScale));
+  }
   return sumControlWidths(widths, geometry);
 }
 

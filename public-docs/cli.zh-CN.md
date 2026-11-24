@@ -115,9 +115,13 @@ paseo run --output-schema '{"type":"object","properties":{"summary":{"type":"str
 
 在人工操作的 shell 中，不带参数的 `paseo run` 会为当前目录创建一个新的本地工作区。使用 `--workspace <id>` 把 Agent 加入一个已有的工作区，或者使用 `--new-workspace local|worktree` 为这次运行显式创建一个单独的工作区。
 
+要在已有项目下使用独立执行目录，运行 `paseo run --new-workspace local --cwd /path/to/review --project <project-id> "review the diff"`。项目 ID 从目标主机的 `paseo project ls` 获取。`--project` 必须与 `--new-workspace` 一起使用；它选择项目归属，工作区和执行目录仍然独立。
+
+在 Multica 托管任务中，显式项目优先；worktree 来源已有项目时保留其归属，否则 `run` 和 `workspace create` 依次选择已验证调用方的项目、目标主机的“自动任务”项目。执行目录保持独立。如果 CLI 提示主机不支持自动任务项目，请更新目标主机。
+
 创建 worktree 时接受 `--worktree-mode branch-off|checkout-branch|checkout-pr`，以及相应的 `--new-branch`/`--base`、`--branch` 或 `--pr-number`/`--forge` 选项。使用 `--worktree-slug` 选择托管目录的 slug。
 
-当一个已有的 Paseo Agent 运行同样的命令时，Paseo 会通过 `PASEO_AGENT_ID` 识别它。如果没有显式指定位置，新的 Agent 会成为它在同一工作区中的子 Agent。`--workspace` 可以把这个子 Agent 放到其他地方，而不改变它的父 Agent。
+在托管任务之外，当一个已有的 Paseo Agent 运行同样的命令时，Paseo 会通过 `PASEO_AGENT_ID` 识别它。如果没有显式指定位置，新的 Agent 会成为它在同一工作区中的子 Agent。`--workspace` 可以把这个子 Agent 放到其他地方，而不改变它的父 Agent。
 
 使用 `--output-schema` 只返回符合 schema 的 JSON 输出。你可以传入 schema 文件路径，或内联的 JSON schema 对象。此模式不能与 `--no-wait` 一起使用。
 
@@ -299,6 +303,7 @@ paseo send <id> "now run the tests"
 paseo send <id> --image screenshot.png "what's wrong here?"
 paseo send <id> --no-wait "run this task"
 paseo send <id> --behavior interrupt "stop and do this instead"
+paseo send <id> --if-idle --message-id deploy-2026-10-23 --prompt-file task.md --no-wait --json
 ```
 
 除非消息不能等待，否则不要设置 `--behavior`。默认行为取决于发送方：
@@ -307,6 +312,16 @@ paseo send <id> --behavior interrupt "stop and do this instead"
 - 由人发送时，默认是 `interrupt`。`--behavior steer` 则把消息加入正在进行的轮次。
 
 如果接收方的 Provider 无法引导，`steer` 会改为中断正在进行的轮次。使用 `--no-wait` 时，输出会说明 Agent 发送的消息发生了什么，以及如何立即送达排队中的消息。
+
+当消息只允许在空闲会话中开始新一轮时，使用 `--if-idle`。如果已有轮次正在运行或正在接单，宿主不会接受任何内容，命令以 `agent_busy` 失败；它不会引导、中断或排队该消息。`--if-idle` 需要非空的 `--message-id`，且不能与 `--behavior` 同时使用。重试时复用同一个 `--message-id`：宿主会对已完成的消息去重，并对内容冲突报错。
+
+`--message-id` 也可用于普通发送。使用 `--json` 时，idle-only 拒绝会以非零状态退出，并把原生原因写到 stderr：
+
+```json
+{ "error": { "code": "agent_busy", "message": "agent_busy" } }
+```
+
+不支持 idle-only 的 host 会以 `DAEMON_UPDATE_REQUIRED` 失败并提示更新 host，绝不会退回普通发送。接受后的 `--no-wait` 结果包含规范化 Agent ID 和 `"status": "sent"`。
 
 ## 查看日志 {#viewing-logs}
 

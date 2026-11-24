@@ -47,6 +47,9 @@ still own an exclusive writer. A close failure retains that runtime for cleanup 
 replacement. Once closure succeeds, a failed resume leaves the durable agent closed and retryable.
 
 Idle resumable runtimes are collected after one hour without activity, checked once a minute.
+Labeled durable Side Chats use the same collection policy. Their hidden directory
+status does not make them disposable helpers. They continue to resume on demand
+after a daemon restart; enabling restart recovery does not automatically reopen them.
 Collection releases the process and preserves the agent record, conversation, relationships, and
 provider session. The next prompt resumes that session. Set `agents.idleRuntimeCleanup: false` in
 host config to disable automatic collection. The host setting applies immediately; config-file edits
@@ -136,6 +139,21 @@ the marker. Closing a tab sets that client's label to `false`. Any `true` client
 open. Detach clears the parent and every open-tab label. The surviving child therefore becomes a
 normal root agent immediately, and closing its still-open tab archives it.
 
+Agent-scoped directory workspace creation defaults to the caller workspace's project. An explicit
+project takes precedence; the child keeps its own workspace ID and execution directory. Worktree
+creation keeps a registered source project's ownership before considering caller/default ownership;
+clients use project kind to enable Git actions. Project identity is local to the target daemon;
+an external task system's project ID is not a Paseo project ID.
+
+The CLI marks workspace creation inside a managed Multica task using its existing `MULTICA_TASK_ID`
+environment marker. The value is never used as a Paseo ID. Automatic creation with no explicit or
+registered source project and no verified caller uses the target daemon's “自动任务” project. Its dedicated root under
+`PASEO_HOME/automatic-tasks` identifies it across concurrent calls, renames and restarts; a same-named
+project elsewhere is unrelated. A later automatic task restores that project if it was archived.
+Each task retains its own workspace and execution directory. Manual creation without caller or
+explicit project context keeps path-based allocation. Older hosts require an update for automatic
+project selection; clients must check `server_info.features.automaticTaskProjects` before requesting it.
+
 Agent-scoped workspace creation records the caller's workspace as `parentWorkspaceId`.
 This is informational ancestry for future workspace grouping. It does not change placement,
 visibility, status, or archive behavior. Archiving a parent workspace preserves its children's
@@ -196,6 +214,20 @@ outstanding intent. A crash after successful dispatch but before removal commits
 notification. Clean shutdown can also flush an already queued callback while retaining its intent,
 so that callback can repeat after restart. This is an at-least-once wakeup, without turn attribution or exactly-once delivery.
 
+### Idle-only delivery
+
+`agent.message.send_if_idle.request` starts a turn only when the agent has no active or pending foreground run. It is a separate RPC, not a flag on `send_agent_message_request`: an older daemon would strip an unknown flag and interrupt the turn. Clients check `server_info.features.agentMessageIfIdle` once and fail clearly when the host lacks it; there is no fallback to send or steer.
+
+Admission uses the manager's existing run boundary and lifecycle lane. A notification cannot take a slot reserved by a normal replacement, or start after an archive has committed. Busy rejection returns `agent_busy` without a turn, prompt row, permission clear, mode change, or archive change. It never steers, replaces, runs an out-of-band command, or reloads the provider session.
+
+The operation never unarchives. An archived agent rejects with guidance; unarchive it explicitly first. Busy and archived admission rejections reserve no run, so their pending receipts can be removed for an explicit retry. Other uncertain dispatch failures retain their receipts. Receipts share the agent + message ID identity with ordinary sends: a completed ID is acknowledged without another turn, a different request under the same ID conflicts, and a receipt left pending by a crash reports `agent_request_outcome_unknown`. Acceptance means the provider accepted the turn start, not transactional exactly-once execution.
+
+### Delivery receipt lookup
+
+`agent.message.get_receipt.request` reads the durable receipt for the same agent + message ID without delivering anything. It reports `accepted` when the provider accepted the turn start, `pending` when a receipt exists but completion was never recorded (outcome unknown), and `absent` when no local receipt exists. `absent` is not evidence that the request never ran, so a caller must not replay on it alone. An unreadable or mismatched receipt is an error, not `absent`.
+
+The lookup never loads an agent, starts, resumes, or cancels a turn, clears a pending receipt, creates a session, or unarchives an agent. It uses the same agent resolution as a send and the read permission of other observation RPCs. Clients check `server_info.features.agentMessageReceiptLookup` once and report a host update requirement when it is absent; there is no fallback to resending the message.
+
 Permission requests are notification checkpoints, not the end of that subscription. The caller is notified again after a permission response when the child finishes, errors, or requests another permission.
 The permission notification includes the normalized request plus the child and request IDs, so the caller can inspect it and respond without fetching agent status.
 A watched child that closes before its finish event also notifies the caller so delegated work cannot disappear silently during archive or workspace teardown.
@@ -254,6 +286,8 @@ lifecycle is separate from public workspace visibility and is not a public creat
 ## Archive
 
 Archive is a **soft delete**: the agent record stays on disk with `archivedAt` set, the runtime is closed, and the agent disappears from active lists. Archive is **global** — it lives on the server and propagates to every connected client.
+
+The app waits for server confirmation before publishing a local archive. A pending request does not remove session cards or prune their tabs: pruning cannot reliably recover the previous focus after a refusal. Server agent updates remain authoritative even when the request response is lost.
 
 Archive sets `archivedAt`, invokes the provider's native archive hook, and cascades to managed
 children.

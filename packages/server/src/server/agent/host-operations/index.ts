@@ -188,7 +188,7 @@ const remoteCreate = z
       .object({
         modeId: z.string().optional(),
         thinkingOptionId: z.string().optional(),
-        features: z.record(z.string(), z.unknown()).optional(),
+        features: z.record(z.string(), z.unknown()).nullish(),
       })
       .optional(),
   })
@@ -243,7 +243,7 @@ export function createHostResolver(input: {
                 title: parsed.title,
                 modeId,
                 thinkingOptionId: parsed.settings?.thinkingOptionId,
-                featureValues: parsed.settings?.features,
+                featureValues: parsed.settings?.features ?? undefined,
               },
               workspaceId: parsed.workspaceId,
               // Older hosts reject any background with a workspaceId, so a visible create omits it.

@@ -60,6 +60,12 @@ describe("workspace file tab targets", () => {
         { path: "src/app.ts", lineStart: 13 },
       ),
     ).toBe(false);
+    expect(
+      workspaceFileLocationsEqual(
+        { path: "src/app.ts", anchor: "install" },
+        { path: "src/app.ts", anchor: "usage" },
+      ),
+    ).toBe(false);
   });
 });
 

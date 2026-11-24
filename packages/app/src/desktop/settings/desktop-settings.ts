@@ -9,9 +9,16 @@ import {
 import type { ReleaseChannel } from "@/hooks/use-settings";
 import { i18n } from "@/i18n/i18next";
 
+import {
+  DEFAULT_MENU_BAR_QUOTA,
+  MenuBarQuotaPreferenceSchema,
+  type MenuBarQuotaPreference,
+} from "../../../../desktop/src/features/menu-bar/quota-preference";
+
 const DESKTOP_SETTINGS_QUERY_KEY = ["desktop-settings"] as const;
 
 export interface DesktopSettings {
+  menuBarQuota?: MenuBarQuotaPreference;
   releaseChannel: ReleaseChannel;
   notifications: {
     playSound: boolean;
@@ -23,12 +30,14 @@ export interface DesktopSettings {
 }
 
 export interface DesktopSettingsPatch {
+  menuBarQuota?: Partial<MenuBarQuotaPreference>;
   releaseChannel?: ReleaseChannel;
   notifications?: Partial<DesktopSettings["notifications"]>;
   daemon?: Partial<DesktopSettings["daemon"]>;
 }
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
+  menuBarQuota: { ...DEFAULT_MENU_BAR_QUOTA },
   releaseChannel: "stable",
   notifications: {
     playSound: true,
@@ -155,6 +164,9 @@ function parseDesktopSettings(raw: unknown): DesktopSettings {
   const daemon = isRecord(record.daemon) ? record.daemon : {};
 
   return {
+    menuBarQuota: MenuBarQuotaPreferenceSchema.catch(() => ({ ...DEFAULT_MENU_BAR_QUOTA })).parse(
+      record.menuBarQuota,
+    ),
     releaseChannel: record.releaseChannel === "beta" ? "beta" : "stable",
     notifications: {
       playSound:
@@ -180,6 +192,7 @@ function mergeDesktopSettings(
   updates: DesktopSettingsPatch,
 ): DesktopSettings {
   return {
+    menuBarQuota: { ...DEFAULT_MENU_BAR_QUOTA, ...current.menuBarQuota, ...updates.menuBarQuota },
     releaseChannel: updates.releaseChannel ?? current.releaseChannel,
     notifications: {
       ...current.notifications,
@@ -197,6 +210,7 @@ function normalizePatch(updates: DesktopSettingsPatch): Record<string, unknown> 
     ...(updates.releaseChannel ? { releaseChannel: updates.releaseChannel } : {}),
     ...(updates.notifications ? { notifications: updates.notifications } : {}),
     ...(updates.daemon ? { daemon: updates.daemon } : {}),
+    ...(updates.menuBarQuota ? { menuBarQuota: updates.menuBarQuota } : {}),
   };
 }
 

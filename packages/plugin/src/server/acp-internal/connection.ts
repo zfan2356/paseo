@@ -26,6 +26,8 @@ import type {
   AcpConfigAccess,
   AcpConfigChange,
   AcpConfigureContext,
+  AcpContextWindowReader,
+  AcpContextWindowReason,
   AcpRequest,
   AcpToolCallSnapshot,
   AcpTransformer,
@@ -425,6 +427,7 @@ class AcpRuntime {
   readonly connection: ClientSideConnection;
   agentCapabilities: AgentCapabilities = {};
   nativeSessionId = "";
+  private agentVersion?: string;
   private readonly child: ChildProcessWithoutNullStreams | null;
   private emit: (event: ProviderEvent) => void;
   private readonly messages = new Map<string, string>();
@@ -478,6 +481,8 @@ class AcpRuntime {
   private autoAccept = false;
   private activePrompt: ActivePrompt | null = null;
   private lastUsage: ProviderUsage = {};
+  private readonly contextWindows: AcpContextWindowReader[] = [];
+  private lastPublishedWindow?: number;
 
   static async start(options: StartRuntimeOptions): Promise<AcpRuntime> {
     let child: ChildProcessWithoutNullStreams | null = null;
@@ -534,6 +539,7 @@ class AcpRuntime {
         ? await Promise.race([initialize, spawnFailure])
         : await initialize;
       runtime.agentCapabilities = initialized.agentCapabilities ?? {};
+      runtime.agentVersion = initialized.agentInfo?.version;
       return runtime;
     } catch (error) {
       await runtime.close();
@@ -649,6 +655,7 @@ class AcpRuntime {
     }
     this.modes = response.modes ?? null;
     this.configOptions = response.configOptions ?? [];
+    this.initializeContextWindows();
     await this.applyInitialConfig(input.config);
     const sessionCapabilities = connectionCapabilities.filter(
       (capability) =>
@@ -669,8 +676,18 @@ class AcpRuntime {
       cwd: input.config.cwd,
     });
     this.emitConfig();
+    this.publishAutoAcceptNotice(input.sessionId);
     await this.finishSessionOpen(isConnectionClosed);
     return sessionCapabilities;
+  }
+
+  private publishAutoAcceptNotice(sessionId: string): void {
+    if (!this.autoAccept) return;
+    const notice = this.options.options.acpOptions?.autoAcceptMode?.openingNotice?.(
+      sessionId,
+      this.options.launch?.env ?? {},
+    );
+    if (notice) this.emit({ type: "session.notice", sessionId, notice });
   }
 
   private async finishSessionOpen(isConnectionClosed: () => boolean): Promise<void> {
@@ -819,12 +836,7 @@ class AcpRuntime {
             outputTokens: response.usage.outputTokens,
             cachedInputTokens: response.usage.cachedReadTokens ?? undefined,
           };
-          this.emit({
-            type: "session.usage",
-            sessionId: this.options.boundarySessionId,
-            turnId,
-            usage: this.lastUsage,
-          });
+          this.publishUsage(turnId);
         }
         const state = response.stopReason === "cancelled" ? "canceled" : "completed";
         if (response.stopReason === "end_turn" && this.shouldDeferTurn(activePrompt)) {
@@ -1263,6 +1275,56 @@ class AcpRuntime {
       sessionId: this.options.boundarySessionId,
       config,
     });
+    if (this.contextWindows.length) this.publishUsage(undefined, "config");
+  }
+
+  private initializeContextWindows(): void {
+    for (const transformer of this.transformers) {
+      const read = transformer.contextWindow?.({
+        nativeSessionId: this.nativeSessionId,
+        agentVersion: this.agentVersion,
+        args: this.options.launch?.args ?? this.options.options.command?.slice(1) ?? [],
+        env: { ...(this.options.launch?.env ?? process.env), ...this.options.env },
+        signal: this.connection.signal,
+        refresh: () => {
+          if (!this.closing && !this.processFailed) this.publishUsage(undefined, "refresh");
+        },
+      });
+      if (read) this.contextWindows.push(read);
+    }
+    // Record the loaded model's context before applying a requested model override.
+    if (this.contextWindows.length) this.readContextWindow("config");
+  }
+
+  private readContextWindow(reason: AcpContextWindowReason): number | undefined {
+    let window = this.lastUsage.contextWindowMaxTokens;
+    if (this.contextWindows.length) {
+      const model = selectedValue(modelOption(this.configOptions));
+      for (const read of this.contextWindows) window = read(model, reason) ?? window;
+    }
+    return window;
+  }
+
+  private publishUsage(turnId?: string, reason: AcpContextWindowReason = "usage"): void {
+    const window = this.readContextWindow(reason);
+    if (
+      reason !== "usage" &&
+      (this.lastUsage.contextWindowUsedTokens === undefined || window === this.lastPublishedWindow)
+    )
+      return;
+    this.emit({
+      type: "session.usage",
+      sessionId: this.options.boundarySessionId,
+      ...(turnId === undefined ? {} : { turnId }),
+      usage: this.usageAtWindow(window),
+    });
+  }
+
+  private usageAtWindow(window: number | undefined): ProviderUsage {
+    this.lastPublishedWindow = window;
+    return window === this.lastUsage.contextWindowMaxTokens
+      ? this.lastUsage
+      : { ...this.lastUsage, contextWindowMaxTokens: window };
   }
 
   private async restoreConfig(
@@ -1535,7 +1597,7 @@ class AcpRuntime {
       this.emit({
         type: "session.usage",
         sessionId: this.options.boundarySessionId,
-        usage: this.lastUsage,
+        usage: this.usageAtWindow(this.readContextWindow("usage")),
       });
       this.noteDeferredUsageUpdate(wireSeq);
       return;
@@ -1746,6 +1808,7 @@ class AcpRuntime {
     this.fallbackChunkIds.clear();
     this.terminalizeTransientItems(state, options);
     this.finishTurnPermissions(turnId);
+    if (this.contextWindows.length) this.publishUsage(undefined, "settled");
     if (state === "failed") {
       this.emit({
         type: "session.turn",
@@ -1833,12 +1896,7 @@ class AcpRuntime {
             outputTokens: response.usage.outputTokens,
             cachedInputTokens: response.usage.cachedReadTokens ?? undefined,
           };
-          this.emit({
-            type: "session.usage",
-            sessionId: this.options.boundarySessionId,
-            turnId: active.turnId,
-            usage: this.lastUsage,
-          });
+          this.publishUsage(active.turnId);
         }
         if (response.stopReason === "cancelled") {
           this.finishDeferredTurn(active, { type: "cancel" });

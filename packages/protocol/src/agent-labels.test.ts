@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
   getParentAgentIdFromLabels,
+  getSideChatParentIdFromLabels,
   getOpenAgentTabLabel,
   hasOpenAgentTab,
   isDelegatedAgent,
   isOpenAgentTabLabel,
   PARENT_AGENT_ID_LABEL,
+  SIDE_CHAT_PARENT_LABEL,
 } from "./agent-labels.js";
 
 describe("agent label policy", () => {
@@ -20,6 +22,14 @@ describe("agent label policy", () => {
     expect(isDelegatedAgent({ labels: {} })).toBe(false);
     expect(isDelegatedAgent({ labels: { [PARENT_AGENT_ID_LABEL]: "   " } })).toBe(false);
     expect(isDelegatedAgent({ labels: { [PARENT_AGENT_ID_LABEL]: 42 } })).toBe(false);
+  });
+
+  test("identifies a side chat from its parent label without an internal flag", () => {
+    expect(getSideChatParentIdFromLabels({ [SIDE_CHAT_PARENT_LABEL]: " parent-agent \n" })).toBe(
+      "parent-agent",
+    );
+    expect(getSideChatParentIdFromLabels({ [SIDE_CHAT_PARENT_LABEL]: "   " })).toBeNull();
+    expect(getSideChatParentIdFromLabels({})).toBeNull();
   });
 
   test("treats any true client-scoped open-tab label as open", () => {

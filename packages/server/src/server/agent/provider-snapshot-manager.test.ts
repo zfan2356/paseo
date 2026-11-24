@@ -9,6 +9,7 @@ import type {
 } from "@getpaseo/plugin/server/provider";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
+import { buildAgentConversationTerminalLaunch } from "../../terminal/codex-fork-terminal.js";
 import type {
   AgentClient,
   AgentMode,
@@ -144,6 +145,74 @@ async function runTestCatalogActivities(
 }
 
 describe("ProviderSnapshotManager public surface", () => {
+  test("launches conversation terminals with the configured provider command and environment", () => {
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      providerOverrides: {
+        codex: {
+          command: ["/opt/codex-wrapper", "--proxy"],
+          env: { CODEX_HOME: "/work/codex-home", CODEX_OFFICIAL_BIN: "/opt/codex" },
+        },
+      },
+    });
+
+    try {
+      expect(
+        buildAgentConversationTerminalLaunch({
+          provider: "codex",
+          cwd: "/work/paseo",
+          persistence: { provider: "codex", sessionId: "thread-1" },
+          config: { model: "proxy-model" },
+          runtimeSettings: manager.getProviderRuntimeSettings("codex"),
+        }),
+      ).toEqual({
+        provider: "codex",
+        name: "Codex Conversation",
+        command: "/opt/codex-wrapper",
+        args: [
+          "--proxy",
+          "--model",
+          "proxy-model",
+          "resume",
+          "--include-non-interactive",
+          "--cd",
+          "/work/paseo",
+          "thread-1",
+        ],
+        env: { CODEX_HOME: "/work/codex-home", CODEX_OFFICIAL_BIN: "/opt/codex" },
+      });
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("merges provider overrides with startup runtime settings for terminal launches", () => {
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      runtimeSettings: {
+        codex: {
+          command: { mode: "append", args: ["--startup-option"] },
+          env: { CODEX_HOME: "/work/startup-home", CODEX_OFFICIAL_BIN: "/opt/codex" },
+        },
+      },
+      providerOverrides: {
+        codex: {
+          command: ["/opt/codex-wrapper", "--proxy"],
+          env: { CODEX_HOME: "/work/configured-home" },
+        },
+      },
+    });
+
+    try {
+      expect(manager.getProviderRuntimeSettings("codex")).toEqual({
+        command: { mode: "replace", argv: ["/opt/codex-wrapper", "--proxy"] },
+        env: { CODEX_HOME: "/work/configured-home", CODEX_OFFICIAL_BIN: "/opt/codex" },
+      });
+    } finally {
+      manager.destroy();
+    }
+  });
+
   test("publishes one model per provider identity and retains the first definition", async () => {
     const first = { provider: "codex", id: "shared", label: "First", isDefault: true };
     const manager = new ProviderSnapshotManager({
@@ -167,6 +236,77 @@ describe("ProviderSnapshotManager public surface", () => {
       const claude = await manager.getProvider({ provider: "claude", wait: true });
       expect(codex.models).toEqual([first]);
       expect(claude.models).toEqual([{ ...first, provider: "claude" }]);
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("inherits resolved runtime settings for derived providers", () => {
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      providerOverrides: {
+        codex: {
+          command: ["/opt/codex-wrapper"],
+          env: { CODEX_HOME: "/work/base-home", CODEX_OFFICIAL_BIN: "/opt/codex" },
+        },
+        "codex-proxy": {
+          extends: "codex",
+          label: "Codex Proxy",
+          env: { CODEX_HOME: "/work/proxy-home" },
+        },
+      },
+    });
+
+    try {
+      expect(manager.getProviderRuntimeSettings("codex-proxy")).toEqual({
+        command: { mode: "replace", argv: ["/opt/codex-wrapper"] },
+        env: { CODEX_HOME: "/work/proxy-home", CODEX_OFFICIAL_BIN: "/opt/codex" },
+      });
+      expect(manager.getProviderRuntimeSettings("missing-provider")).toBeUndefined();
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("keeps terminal runtime settings current across prepared config replacement and removal", () => {
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      runtimeSettings: {
+        codex: {
+          command: { mode: "append", args: ["--startup-option"] },
+          env: { CODEX_HOME: "/work/startup-home" },
+        },
+      },
+    });
+
+    try {
+      const startupSettings = manager.getProviderRuntimeSettings("codex");
+      const prepared = manager.prepareMutableProviderConfig(
+        {
+          codex: {
+            command: ["/opt/codex-wrapper", "--proxy"],
+            env: { CODEX_HOME: "/work/live-home" },
+          },
+        },
+        { replace: true },
+      );
+      expect(manager.getProviderRuntimeSettings("codex")).toEqual(startupSettings);
+      prepared.commit();
+      expect(manager.getProviderRuntimeSettings("codex")).toEqual({
+        command: { mode: "replace", argv: ["/opt/codex-wrapper", "--proxy"] },
+        env: { CODEX_HOME: "/work/live-home" },
+      });
+
+      manager.applyMutableProviderConfig(
+        { codex: { command: ["/opt/replacement-codex"] } },
+        { replace: true },
+      );
+      expect(manager.getProviderRuntimeSettings("codex")).toEqual({
+        command: { mode: "replace", argv: ["/opt/replacement-codex"] },
+      });
+
+      manager.applyMutableProviderConfig({}, { replace: true });
+      expect(manager.getProviderRuntimeSettings("codex")).toBeUndefined();
     } finally {
       manager.destroy();
     }

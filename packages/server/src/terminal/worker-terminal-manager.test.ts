@@ -1,3 +1,4 @@
+import { readTerminalState } from "./test-utils/terminal-state.js";
 import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode";
 import { encodeTerminalKeyInput } from "@getpaseo/protocol/terminal-key-input";
 import type { SubscribeTerminalRequest } from "@getpaseo/protocol/messages";
@@ -14,6 +15,9 @@ import { attachFramedSocket } from "./terminal-worker-frames.js";
 import xterm from "@xterm/headless";
 import { afterEach, expect, it } from "vitest";
 import { isPlatform } from "../test-utils/platform.js";
+import { spawn, type ChildProcess } from "node:child_process";
+import { terminateWithTreeKill } from "../utils/tree-kill.js";
+import { AGENT_CONVERSATION_TERMINAL_ENV } from "./agent-hooks/agent-hook-installer.js";
 import { EventEmitter } from "node:events";
 import {
   closeSync,
@@ -75,9 +79,14 @@ import {
   TerminalWorkerIncompatibleError,
 } from "./terminal-worker-pool.js";
 import { connectTerminalWorker } from "./terminal-worker-client.js";
+import { createTerminalManager } from "./terminal-manager.js";
+import {
+  listenPersistentTerminalWorkerServer,
+  PersistentTerminalWorkerAuthenticationError,
+  resolvePersistentTerminalWorkerRuntime,
+} from "./persistent-terminal-worker-transport.js";
 import { launchTerminalWorker, TerminalWorkerLaunchError } from "./terminal-worker-launch.js";
 import { currentBootId } from "../server/pid-lock.js";
-import { spawn } from "node:child_process";
 
 type TerminalRow = TerminalState["grid"][number];
 
@@ -206,8 +215,8 @@ const temporaryDirs: string[] = [];
 async function startRealWorkerManager(
   options: {
     getTerminalActivityUrl?: () => string | null;
-    requestTimeoutMs?: number;
     paseoHome?: string;
+    requestTimeoutMs?: number;
   } = {},
 ): Promise<DaemonTerminalManager> {
   const { paseoHome = createTemporaryHome(), ...rest } = options;
@@ -252,6 +261,17 @@ async function removeTemporaryDir(dir: string): Promise<void> {
     }
   }
   throw lastError;
+}
+
+async function cleanupPersistentTerminalWorker(options: {
+  root: string;
+  paseoHome: string;
+  terminalId: string | null;
+  manager: DaemonTerminalManager | null;
+}): Promise<void> {
+  const owner = options.manager ?? (await startRealWorkerManager({ paseoHome: options.paseoHome }));
+  await owner.closeTerminals();
+  await removeTemporaryDir(options.root);
 }
 
 afterEach(async () => {
@@ -357,7 +377,19 @@ it("retires a killed worker's sessions and shares one replacement across concurr
 
 it("reconnects a live worker without replacing terminal sessions or processes", async () => {
   const paseoHome = createTemporaryHome();
-  manager = await startRealWorkerManager({ paseoHome });
+  const { record: launchedRecord } = await launchTerminalWorker({
+    paseoHome,
+    paseoVersion: "0.0.0-test",
+  });
+  const connection = await connectTerminalWorker(launchedRecord);
+  manager = createWorkerTerminalManager({
+    worker: connection,
+    reconnect: () => connectTerminalWorker(launchedRecord),
+    closeTerminals: async () => {
+      await reapTerminalWorkers({ paseoHome });
+    },
+  });
+  await manager.adoptTerminals();
   const terminal = await manager.createTerminal({
     workspaceId: "ws-reconnect",
     cwd: paseoHome,
@@ -371,12 +403,7 @@ it("reconnects a live worker without replacing terminal sessions or processes", 
   terminal.subscribe((message) => {
     if (message.type === "snapshotReady") replayRequests += 1;
   });
-  // A second authenticated controller replaces the daemon's socket. The process stays alive.
-  const competitor = await connectTerminalWorker({
-    socketPath: before!.socketPath,
-    secret: before!.secret,
-  });
-  await waitForCondition(() => !competitor.connected, 10000);
+  connection.disconnect();
   await waitForCondition(async () => {
     try {
       return (await readReplay(manager!, terminal.id)) !== null;
@@ -1939,6 +1966,540 @@ it("replays bounded ANSI chunks independently of live output and reconstructs th
   }
 });
 
+it("reattaches to a live terminal after the daemon-side manager disconnects", async () => {
+  const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-"));
+  const cwd = join(root, "workspace");
+  const paseoHome = join(root, ".paseo");
+  const gatePath = join(root, "emit-while-detached");
+  const ackPath = join(root, "detached-output-ack");
+  const tokenPath = join(root, "activity-token");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(paseoHome, { recursive: true });
+
+  let cleanupManager: DaemonTerminalManager | null = null;
+  let terminalId: string | null = null;
+  try {
+    const firstManager = await startRealWorkerManager({ paseoHome });
+    cleanupManager = firstManager;
+    const firstSession = await firstManager.createTerminal({
+      workspaceId: "ws-persistent",
+      linkedAgentId: "agent-persistent",
+      cwd,
+      env: {
+        PASEO_RESTART_GATE: gatePath,
+        PASEO_RESTART_ACK: ackPath,
+        PASEO_RESTART_TOKEN_FILE: tokenPath,
+      },
+      ...nodeTerminalCommand(`
+        const fs = require("node:fs");
+        const pid = process.pid;
+        fs.writeFileSync(process.env.PASEO_RESTART_TOKEN_FILE, process.env.PASEO_ACTIVITY_TOKEN);
+        process.stdout.write("READY:" + pid + "\\n");
+        const gate = setInterval(() => {
+          if (!fs.existsSync(process.env.PASEO_RESTART_GATE)) return;
+          clearInterval(gate);
+          process.stdout.write("DURING:" + pid + "\\n");
+          fs.writeFileSync(process.env.PASEO_RESTART_ACK, String(pid));
+        }, 10);
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", (data) => {
+          if (data.includes("a")) process.stdout.write("AFTER:" + pid + "\\n");
+        });
+        setInterval(() => {}, 1000);
+      `),
+    });
+    terminalId = firstSession.id;
+
+    let beforeRestart = "";
+    await waitForCondition(async () => {
+      const snapshot = await readReplay(firstManager, firstSession.id);
+      beforeRestart = snapshot ? getRenderedTextFromState(snapshot.state) : "";
+      return beforeRestart.includes("READY:") && existsSync(tokenPath);
+    }, 10000);
+    const pid = beforeRestart.match(/READY:(\d+)/)?.[1];
+    expect(pid).toEqual(expect.stringMatching(/^\d+$/));
+    expect(firstManager.setTerminalTitle(firstSession.id, "Persistent shell")).toBe(true);
+    await readReplay(firstManager, firstSession.id);
+
+    await firstManager.detach();
+    cleanupManager = null;
+    writeFileSync(gatePath, "go");
+    await waitForCondition(() => existsSync(ackPath), 10000);
+    expect(readFileSync(ackPath, "utf8")).toBe(pid);
+
+    const secondManager = await startRealWorkerManager({ paseoHome });
+    cleanupManager = secondManager;
+    const restored = secondManager.getTerminal(firstSession.id);
+    expect(restored).toBeDefined();
+    expect(restored?.linkedAgentId).toBe("agent-persistent");
+    expect(restored?.getTitle()).toBe("Persistent shell");
+    expect((await secondManager.getTerminals(cwd)).map((terminal) => terminal.id)).toEqual([
+      firstSession.id,
+    ]);
+    expect(
+      secondManager.validateTerminalActivityToken(firstSession.id, readFileSync(tokenPath, "utf8")),
+    ).toBe("valid");
+
+    const restoredSnapshot = await readReplay(secondManager, firstSession.id);
+    const restoredText = restoredSnapshot ? getRenderedTextFromState(restoredSnapshot.state) : "";
+    expect(restoredText).toContain(`READY:${pid}`);
+    expect(restoredText).toContain(`DURING:${pid}`);
+
+    restored?.send({ type: "input", data: "a\r" });
+    await waitForCondition(async () => {
+      const snapshot = await readReplay(secondManager, firstSession.id);
+      return snapshot ? getRenderedTextFromState(snapshot.state).includes(`AFTER:${pid}`) : false;
+    }, 10000);
+  } finally {
+    await cleanupPersistentTerminalWorker({ root, paseoHome, terminalId, manager: cleanupManager });
+  }
+});
+
+it("keeps the existing manager attached while a replacement manager starts", async () => {
+  const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-overlap-"));
+  const cwd = join(root, "workspace");
+  const paseoHome = join(root, ".paseo");
+  const afterPath = join(root, "first-manager-after-overlap");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(paseoHome, { recursive: true });
+
+  let firstManager: DaemonTerminalManager | null = null;
+  let cleanupManager: DaemonTerminalManager | null = null;
+  let terminalId: string | null = null;
+  try {
+    firstManager = await startRealWorkerManager({ paseoHome });
+    cleanupManager = firstManager;
+    const firstSession = await firstManager.createTerminal({
+      workspaceId: "ws-overlap",
+      cwd,
+      ...nodeTerminalCommand(`
+        const fs = require("node:fs");
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", (data) => {
+          if (data.includes("a")) fs.writeFileSync(${JSON.stringify(afterPath)}, "ok");
+        });
+        setInterval(() => {}, 1000);
+      `),
+    });
+    terminalId = firstSession.id;
+
+    const secondManager = await startRealWorkerManager({ paseoHome });
+    cleanupManager = secondManager;
+    expect(secondManager.getTerminal(firstSession.id)).toBeDefined();
+    await expect(readReplay(firstManager, firstSession.id)).resolves.not.toBeNull();
+
+    const tokenPath = join(root, "second-controller-token");
+    const [firstCreated, secondCreated] = await Promise.all([
+      firstManager.createTerminal({
+        workspaceId: "ws-overlap",
+        cwd,
+        name: "First controller",
+        ...nodeTerminalCommand("setInterval(() => {}, 1000)"),
+      }),
+      secondManager.createTerminal({
+        workspaceId: "ws-overlap",
+        cwd,
+        name: "Second controller",
+        ...nodeTerminalCommand(
+          `require("node:fs").writeFileSync(${JSON.stringify(tokenPath)}, process.env.PASEO_ACTIVITY_TOKEN); setInterval(() => {}, 1000)`,
+        ),
+      }),
+    ]);
+    expect(firstCreated.name).toBe("First controller");
+    expect(secondCreated.name).toBe("Second controller");
+    await waitForCondition(() => existsSync(tokenPath), 5000);
+    expect(
+      firstManager.validateTerminalActivityToken(secondCreated.id, readFileSync(tokenPath, "utf8")),
+    ).toBe("valid");
+    expect((await firstManager.getTerminals(cwd)).map((terminal) => terminal.id).sort()).toEqual(
+      [firstSession.id, firstCreated.id, secondCreated.id].sort(),
+    );
+
+    await secondManager.detach();
+    cleanupManager = firstManager;
+    await expect(readReplay(firstManager, firstSession.id)).resolves.not.toBeNull();
+
+    firstSession.send({ type: "input", data: "a\r" });
+    await waitForCondition(() => existsSync(afterPath), 10000);
+  } finally {
+    if (firstManager && firstManager !== cleanupManager) {
+      await firstManager.detach().catch(() => undefined);
+    }
+    await cleanupPersistentTerminalWorker({ root, paseoHome, terminalId, manager: cleanupManager });
+  }
+});
+
+it("reattaches to a live terminal after the daemon process tree is force-stopped", async () => {
+  const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-tree-kill-"));
+  const cwd = join(root, "workspace");
+  const paseoHome = join(root, ".paseo");
+  const readyPath = join(root, "owner-ready.json");
+  const terminalPidPath = join(root, "terminal.pid");
+  const afterPath = join(root, "terminal-after-tree-kill");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(paseoHome, { recursive: true });
+
+  const workerManagerUrl = new URL("./worker-terminal-manager.ts", import.meta.url).href;
+  const loaderUrl = new URL("./terminal-ts-loader.mjs", import.meta.url).href;
+  const loaderImport = [
+    'import { register } from "node:module";',
+    'import { pathToFileURL } from "node:url";',
+    `register(${JSON.stringify(loaderUrl)}, pathToFileURL("./"));`,
+  ].join(" ");
+  const terminalScript = `
+    const fs = require("node:fs");
+    const pid = process.pid;
+    fs.writeFileSync(${JSON.stringify(terminalPidPath)}, String(pid));
+    process.stdout.write("READY:" + pid + "\\n");
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (data) => {
+      if (!data.includes("a")) return;
+      fs.writeFileSync(${JSON.stringify(afterPath)}, String(pid));
+      process.stdout.write("AFTER:" + pid + "\\n");
+    });
+    setInterval(() => {}, 1000);
+  `;
+  const ownerScript = `
+    import { existsSync, readFileSync, writeFileSync } from "node:fs";
+    import { startWorkerTerminalManager } from ${JSON.stringify(workerManagerUrl)};
+    import pino from ${JSON.stringify(new URL("../../../../node_modules/pino/pino.js", import.meta.url).href)};
+
+    const manager = await startWorkerTerminalManager({ paseoHome: ${JSON.stringify(paseoHome)}, paseoVersion: "0.0.0-test", logger: pino({ level: "silent" }) });
+    const terminal = await manager.createTerminal({
+      workspaceId: "ws-tree-kill",
+      cwd: ${JSON.stringify(cwd)},
+      command: ${JSON.stringify(process.execPath)},
+      args: ["-e", ${JSON.stringify(terminalScript)}],
+    });
+    const deadline = Date.now() + 10000;
+    while (!existsSync(${JSON.stringify(terminalPidPath)})) {
+      if (Date.now() >= deadline) throw new Error("terminal pid was not written");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    writeFileSync(
+      ${JSON.stringify(readyPath)},
+      JSON.stringify({
+        terminalId: terminal.id,
+        pid: readFileSync(${JSON.stringify(terminalPidPath)}, "utf8"),
+      }),
+    );
+    setInterval(() => {}, 1000);
+  `;
+
+  let owner: ChildProcess | null = null;
+  let ownerStderr = "";
+  let cleanupManager: DaemonTerminalManager | null = null;
+  let terminalId: string | null = null;
+  try {
+    owner = spawn(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--import",
+        `data:text/javascript,${encodeURIComponent(loaderImport)}`,
+        "--input-type=module",
+        "-e",
+        ownerScript,
+      ],
+      { cwd: root, stdio: ["ignore", "ignore", "pipe"] },
+    );
+    owner.stderr?.setEncoding("utf8");
+    owner.stderr?.on("data", (chunk: string) => {
+      ownerStderr += chunk;
+    });
+
+    await waitForCondition(() => {
+      if (owner?.exitCode !== null) {
+        throw new Error(`terminal owner exited before ready: ${ownerStderr}`);
+      }
+      return existsSync(readyPath);
+    }, 15000);
+    const ready = JSON.parse(readFileSync(readyPath, "utf8")) as {
+      terminalId: string;
+      pid: string;
+    };
+    terminalId = ready.terminalId;
+    expect(ready.pid).toEqual(expect.stringMatching(/^\d+$/));
+
+    const termination = await terminateWithTreeKill(owner, {
+      gracefulTimeoutMs: 1000,
+      forceTimeoutMs: 2000,
+    });
+    expect(["terminated", "killed"]).toContain(termination);
+    expect(owner.exitCode !== null || owner.signalCode !== null).toBe(true);
+    owner = null;
+
+    const secondManager = await startRealWorkerManager({ paseoHome });
+    cleanupManager = secondManager;
+    const restored = secondManager.getTerminal(terminalId);
+    expect(restored).toBeDefined();
+    expect((await secondManager.getTerminals(cwd)).map((terminal) => terminal.id)).toEqual([
+      terminalId,
+    ]);
+
+    restored?.send({ type: "input", data: "a\r" });
+    await waitForCondition(() => existsSync(afterPath), 10000);
+    expect(readFileSync(afterPath, "utf8")).toBe(ready.pid);
+  } finally {
+    if (owner && owner.exitCode === null && owner.signalCode === null) {
+      await terminateWithTreeKill(owner, {
+        gracefulTimeoutMs: 500,
+        forceTimeoutMs: 1000,
+      }).catch(() => undefined);
+    }
+    await cleanupPersistentTerminalWorker({ root, paseoHome, terminalId, manager: cleanupManager });
+  }
+}, 30000);
+
+it("reattaches a large terminal without transferring its full cell grid", async () => {
+  const root = mkdtempSync(join(tmpdir(), "persistent-terminal-worker-large-state-"));
+  const cwd = join(root, "workspace");
+  const paseoHome = join(root, ".paseo");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(paseoHome, { recursive: true });
+
+  const rows = 384;
+  const cols = 512;
+  let cleanupManager: DaemonTerminalManager | null = null;
+  let terminalId: string | null = null;
+  try {
+    const firstManager = await startRealWorkerManager({
+      paseoHome,
+      requestTimeoutMs: 30000,
+    });
+    cleanupManager = firstManager;
+    const firstSession = await firstManager.createTerminal({
+      workspaceId: "ws-persistent-large-state",
+      cwd,
+      rows: 24,
+      cols: 80,
+      ...nodeTerminalCommand("setInterval(() => {}, 1000);"),
+    });
+    terminalId = firstSession.id;
+
+    firstSession.send({ type: "resize", rows, cols });
+    const beforeDetach = await readReplay(firstManager, firstSession.id);
+    if (!beforeDetach) {
+      throw new Error("Persistent terminal state was unavailable before detach");
+    }
+    expect(beforeDetach.state.rows).toBe(rows);
+    expect(beforeDetach.state.cols).toBe(cols);
+
+    await firstManager.detach();
+    cleanupManager = null;
+
+    const secondManager = await startRealWorkerManager({
+      paseoHome,
+      requestTimeoutMs: 30000,
+    });
+    cleanupManager = secondManager;
+    const restored = secondManager.getTerminal(firstSession.id);
+    if (!restored) {
+      throw new Error("Persistent terminal was not restored after reattach");
+    }
+    const restoredState = (await readReplay(secondManager, restored.id))!.state;
+    expect(restoredState.rows).toBe(rows);
+    expect(restoredState.cols).toBe(cols);
+    expect(restoredState).toEqual(beforeDetach.state);
+  } finally {
+    await cleanupPersistentTerminalWorker({
+      root,
+      paseoHome,
+      terminalId,
+      manager: cleanupManager,
+    });
+  }
+}, 60000);
+
+it("sends the conversation hook gate through the version-one worker env", async () => {
+  const worker = new FakeTerminalWorker();
+  manager = await createWorkerTerminalManager({
+    requestTimeoutMs: 1000,
+    worker,
+  });
+
+  const creating = manager.createTerminal({
+    cwd: "/workspace",
+    workspaceId: "ws-test",
+    linkedAgentId: "agent-1",
+    env: { EXISTING_ENV: "kept" },
+  });
+  const request = worker.sentMessages.find((message) => message.type === "createTerminal");
+  expect(request).toMatchObject({
+    type: "createTerminal",
+    options: {
+      linkedAgentId: "agent-1",
+      env: {
+        EXISTING_ENV: "kept",
+        [AGENT_CONVERSATION_TERMINAL_ENV]: "1",
+      },
+    },
+  });
+  if (!request || request.type !== "createTerminal") {
+    throw new Error("createTerminal request not sent");
+  }
+  worker.emitWorkerMessage({
+    type: "terminalCreated",
+    terminal: {
+      id: request.options.id!,
+      name: "Conversation",
+      cwd: "/workspace",
+      workspaceId: "ws-test",
+      linkedAgentId: "agent-1",
+      activity: null,
+    },
+    state: createTerminalState(),
+  });
+  worker.emitWorkerMessage({
+    type: "response",
+    requestId: request.requestId,
+    ok: true,
+    result: {
+      terminal: {
+        id: request.options.id!,
+        name: "Conversation",
+        cwd: "/workspace",
+        workspaceId: "ws-test",
+        linkedAgentId: "agent-1",
+        activity: null,
+      },
+      state: createTerminalState(),
+    },
+  });
+
+  await expect(creating).resolves.toMatchObject({ linkedAgentId: "agent-1" });
+});
+
+it("adopts a legacy fork worker without replacing its conversation PTY", async () => {
+  const paseoHome = createTemporaryHome();
+  const local = createTerminalManager();
+  const terminal = await local.createTerminal({
+    cwd: paseoHome,
+    workspaceId: "ws-legacy",
+    linkedAgentId: "legacy-agent",
+    title: "Legacy conversation",
+    ...nodeTerminalCommand('process.stdout.write("LEGACY 界\\r\\n"); setInterval(() => {}, 1000)'),
+  });
+  await waitForCondition(
+    async () => (await local.captureTerminal(terminal.id)).lines.join("").includes("LEGACY 界"),
+    5000,
+  );
+  const runtime = resolvePersistentTerminalWorkerRuntime(paseoHome);
+  const server = await listenPersistentTerminalWorkerServer<
+    import("./legacy-worker-connection.js").LegacyRequest,
+    import("./legacy-worker-connection.js").LegacyMessage
+  >({
+    runtime,
+    singleClient: false,
+    onConnection(connection) {
+      connection.transport.onMessage((request) => {
+        void (async () => {
+          switch (request.type) {
+            case "attach":
+              if (terminal.getExitInfo()) break;
+              connection.transport.send({
+                type: "terminalCreated",
+                terminal: {
+                  id: terminal.id,
+                  name: terminal.name,
+                  cwd: terminal.cwd,
+                  workspaceId: terminal.workspaceId,
+                  linkedAgentId: terminal.linkedAgentId,
+                  title: terminal.getTitle(),
+                  activity: terminal.getActivity(),
+                  activityToken: local.getTerminalActivityToken(terminal.id) ?? undefined,
+                },
+                state: await readTerminalState(terminal),
+              });
+              connection.transport.send({
+                type: "terminalMessage",
+                terminalId: terminal.id,
+                message: { type: "snapshot", state: await readTerminalState(terminal) },
+              });
+              break;
+            case "getTerminalState":
+              connection.transport.send({
+                type: "response",
+                requestId: request.requestId,
+                ok: true,
+                result: {
+                  state: await readTerminalState(terminal),
+                  revision: terminal.serializeReplay().metadata.revision,
+                },
+              });
+              return;
+            case "killTerminalAndWait":
+              await terminal.killAndWait();
+              connection.transport.send({
+                type: "terminalExit",
+                terminalId: terminal.id,
+                info: terminal.getExitInfo()!,
+              });
+              break;
+            case "shutdown":
+              local.killAll();
+              break;
+            default:
+              throw new Error(`Unexpected legacy request: ${request.type}`);
+          }
+          connection.transport.send({ type: "response", requestId: request.requestId, ok: true });
+        })().catch((error: unknown) => {
+          connection.transport.send({
+            type: "response",
+            requestId: request.requestId,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      });
+    },
+  });
+  let replacement: DaemonTerminalManager | null = null;
+  try {
+    manager = await startRealWorkerManager({ paseoHome });
+    replacement = await startRealWorkerManager({ paseoHome });
+    expect(manager.getTerminal(terminal.id)?.linkedAgentId).toBe("legacy-agent");
+    expect(replacement.getTerminal(terminal.id)?.getTitle()).toBe("Legacy conversation");
+    expect(
+      manager.validateTerminalActivityToken(
+        terminal.id,
+        local.getTerminalActivityToken(terminal.id)!,
+      ),
+    ).toBe("valid");
+    expect(await listTerminalWorkerRecords(paseoHome)).toHaveLength(1);
+    const fresh = await manager.createTerminal({
+      cwd: paseoHome,
+      workspaceId: "ws-new",
+      ...nodeTerminalCommand("setInterval(() => {}, 1000)"),
+    });
+    expect(fresh.id).not.toBe(terminal.id);
+    expect(local.getTerminal(fresh.id)).toBeUndefined();
+    writeFileSync(runtime.tokenFile, "A".repeat(43));
+    await expect(startRealWorkerManager({ paseoHome })).rejects.toBeInstanceOf(
+      PersistentTerminalWorkerAuthenticationError,
+    );
+    expect(await listTerminalWorkerRecords(paseoHome)).toHaveLength(1);
+    expect(terminal.getExitInfo()).toBeNull();
+    writeFileSync(runtime.tokenFile, runtime.authToken);
+    await replacement.detach();
+    replacement = null;
+    const legacyReplay = await readReplay(manager, terminal.id);
+    expect(getRenderedTextFromState(legacyReplay!.state)).toContain("LEGACY 界");
+    await manager.killTerminalAndWait(terminal.id);
+    await waitForCondition(() => server.connectionCount === 0, 5000);
+    expect(manager.getTerminal(terminal.id)).toBeUndefined();
+    await expect(readReplay(manager, fresh.id)).resolves.not.toBeNull();
+    await manager.closeTerminals();
+    manager = null;
+    expect(terminal.getExitInfo()).not.toBeNull();
+  } finally {
+    await replacement?.detach();
+    await manager?.closeTerminals();
+    manager = null;
+    await terminal.killAndWait();
+    await server.close();
+  }
+}, 30000);
 it("completes a replay larger than the socket budget while a sibling stays usable", async () => {
   const paseoHome = createTemporaryHome();
   const overflowProgress = join(paseoHome, "overflow-progress");
@@ -2015,6 +2576,7 @@ it("completes a replay larger than the socket budget while a sibling stays usabl
   let completed = false;
   let resumedBytes = 0;
   let cancelledReplayBegan = false;
+  let overlappingReplayEnded = false;
   let existingLiveOutput = "";
   const replayOrder: string[] = [];
   const framed = attachFramedSocket(socket, (value) => {
@@ -2031,6 +2593,7 @@ it("completes a replay larger than the socket budget while a sibling stays usabl
       framed.send({ type: "replayTerminal", terminalId: terminal.id, requestId: "stalled-replay" });
     } else if (message.type === "terminalReplay") {
       if (message.requestId === "cancelled-replay") {
+        if (message.event.type === "end") overlappingReplayEnded = true;
         if (message.event.type === "begin") {
           cancelledReplayBegan = true;
           socket.pause();
@@ -2080,11 +2643,11 @@ it("completes a replay larger than the socket budget while a sibling stays usabl
     expect(replayOrder.indexOf("live")).toBeLessThan(replayOrder.indexOf("end"));
     framed.send({ type: "replayTerminal", terminalId: terminal.id, requestId: "cancelled-replay" });
     await waitForCondition(() => cancelledReplayBegan, 10000);
-    // Replace a controller while its large replay is socket-paced. The original
-    // request must never leak frames or completion onto the replacement connection.
+    // A new daemon must not cancel an already-attached daemon's replay.
     manager = await startRealWorkerManager({ paseoHome });
     socket.resume();
-    await waitForCondition(() => socket.destroyed, 10000);
+    await waitForCondition(() => overlappingReplayEnded, 10000);
+    expect(socket.destroyed).toBe(false);
     expect((await readReplay(manager, terminal.id))?.state.cols).toBe(1024);
   } finally {
     socket.destroy();
@@ -2368,7 +2931,10 @@ it.each(["replacement", "socket-overflow"] as const)(
           socketPath: record!.socketPath,
           secret: record!.secret,
         });
-        await waitForCondition(() => !competitor.connected, 10000);
+        expect(competitor.connected).toBe(true);
+        await viewers.delivery.detach(desktop);
+        await viewers.attach(desktop, "desktop");
+        competitor.disconnect();
       } else {
         session.send({ type: "input", data: "BURST\r" });
         // Stall only the daemon event loop. The detached worker and PTY keep running,

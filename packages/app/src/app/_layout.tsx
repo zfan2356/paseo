@@ -1,3 +1,5 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
+import { WorkspacePanel } from "@/fork/materials/workspace-panel";
 import { useHardwareKeyboardPresent } from "@/keyboard";
 import {
   WindowLayoutProvider,
@@ -526,7 +528,9 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <WindowChromeRegion
           corners={isCompactLayout && chromeEnabled ? "both" : appChromeLayout.contentCorners}
         >
-          <View style={flexStyle}>{children}</View>
+          <WorkspacePanel floating={!isCompactLayout && !isWorkspaceFocusModeEnabled}>
+            {children}
+          </WorkspacePanel>
         </WindowChromeRegion>
       </WorkspaceExplorerOpenGesture>
     </WindowLayoutSurface>
@@ -535,7 +539,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   // Native panel gesture hosts outlive appearance keys, like native navigators.
   // Their tracked styles update in place; web numeric styles still need remounting.
   const surface = (
-    <View style={layoutStyles.surfaceFill}>
+    <View style={layoutStyles.surfaceFill} dataSet={MATERIAL_SLOTS.window}>
       {workspaceChrome}
       <AddHostFlowHost />
       <WorkspaceArchiveShortcutHandler />
@@ -689,6 +693,7 @@ function MobileGestureWrapper({
       <View
         collapsable={false}
         style={layoutStyles.surfaceFill}
+        dataSet={MATERIAL_SLOTS.window}
         testID={isCompactLayout ? "compact-shell" : "wide-shell"}
       >
         {children}
@@ -1025,7 +1030,7 @@ function RootProviders({ children }: { children: ReactNode }) {
 function RootAppTree() {
   return (
     <GestureHandlerRootView style={flexStyle}>
-      <View style={layoutStyles.surfaceFill}>
+      <View style={layoutStyles.surfaceFill} dataSet={MATERIAL_SLOTS.window}>
         <LucideProvider strokeWidth={ICON_STROKE_WIDTH}>
           <AddHostProvider>
             <RootProviders>

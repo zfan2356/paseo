@@ -63,6 +63,21 @@ function createFakeMacBundle(options: { includeHelper: boolean }): {
 }
 
 describe("desktop packaging", () => {
+  it("ships standard and Retina template icons for the macOS menu bar", () => {
+    const config = readFileSync(join(packageRoot, "electron-builder.yml"), "utf8");
+    expect(config).toContain("assets/menu-barTemplate*.png");
+    for (const [name, size] of [
+      ["menu-barTemplate.png", 18],
+      ["menu-barTemplate@2x.png", 36],
+    ] as const) {
+      const png = readFileSync(join(packageRoot, "assets", name));
+      expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+      expect(png.readUInt32BE(16)).toBe(size);
+      expect(png.readUInt32BE(20)).toBe(size);
+      expect(png[25]).toBe(6); // RGBA: template images require a transparent background.
+    }
+  });
+
   it("uses an Electron runtime whose Squirrel handoff explicitly wakes ShipIt", () => {
     const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
       devDependencies?: Record<string, string>;

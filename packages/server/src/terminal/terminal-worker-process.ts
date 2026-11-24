@@ -183,13 +183,14 @@ function runWorker(argv: string[]): void {
   const secret = randomBytes(32).toString("base64url");
   let record: TerminalWorkerRecord | null = null;
   let server: Server | null = null;
-  let controller: FramedSocket | null = null;
+  const controllers = new Map<FramedSocket, ReturnType<typeof createTerminalReplayController>>();
   let everControlled = false;
   let exiting = false;
 
   interface InFlightTerminalCreateRequest {
     requestId: string;
     errorReported: boolean;
+    requester: FramedSocket;
   }
 
   let inFlightTerminalCreateRequest: InFlightTerminalCreateRequest | null = null;
@@ -207,12 +208,8 @@ function runWorker(argv: string[]): void {
     reportInFlightTerminalCreateFailure(error);
   });
 
-  const replayController = createTerminalReplayController({
-    getSession: (id) => sessionsById.get(id),
-    flushOutput: (id) => outputCoalescerByTerminalId.get(id)?.flush(),
-  });
   function sendToController(message: TerminalWorkerToParentMessage): void {
-    replayController.send(message);
+    for (const replay of controllers.values()) replay.send(message);
   }
 
   const recordPublisher = createTerminalWorkerRecordPublisher((state) => {
@@ -257,7 +254,7 @@ function runWorker(argv: string[]): void {
   }
 
   function exitIfIdle(): void {
-    if (!controller && everControlled && sessionsById.size === 0) {
+    if (controllers.size === 0 && everControlled && sessionsById.size === 0) {
       exitWorker(0);
     }
   }
@@ -277,8 +274,10 @@ function runWorker(argv: string[]): void {
       name: session.name,
       cwd: session.cwd,
       workspaceId: session.workspaceId,
+      ...(session.linkedAgentId ? { linkedAgentId: session.linkedAgentId } : {}),
       ...(session.getTitle() ? { title: session.getTitle() } : {}),
       activity: session.getActivity(),
+      activityToken: manager.getTerminalActivityToken(session.id) ?? undefined,
     };
   }
 
@@ -291,7 +290,7 @@ function runWorker(argv: string[]): void {
       return;
     }
     inFlightTerminalCreateRequest.errorReported = true;
-    sendToController({
+    inFlightTerminalCreateRequest.requester.send({
       type: "response",
       requestId: inFlightTerminalCreateRequest.requestId,
       ok: false,
@@ -444,16 +443,25 @@ function runWorker(argv: string[]): void {
     await persistRecord();
   }
 
-  function enqueueCreateTerminalRequest(message: TerminalCreateRequest): Promise<void> {
-    const nextRequest = createTerminalQueue.then(() => handleCreateTerminalRequest(message));
+  function enqueueCreateTerminalRequest(
+    message: TerminalCreateRequest,
+    requester: FramedSocket,
+  ): Promise<void> {
+    const nextRequest = createTerminalQueue.then(() =>
+      handleCreateTerminalRequest(message, requester),
+    );
     createTerminalQueue = nextRequest.catch(() => {});
     return nextRequest;
   }
 
-  async function handleCreateTerminalRequest(message: TerminalCreateRequest): Promise<void> {
+  async function handleCreateTerminalRequest(
+    message: TerminalCreateRequest,
+    requester: FramedSocket,
+  ): Promise<void> {
     const request: InFlightTerminalCreateRequest = {
       requestId: message.requestId,
       errorReported: false,
+      requester,
     };
     inFlightTerminalCreateRequest = request;
     try {
@@ -492,7 +500,7 @@ function runWorker(argv: string[]): void {
         message: { type: "snapshotReady" },
         replayPreamble: session.getReplayPreamble(),
       });
-      sendToController({
+      requester.send({
         type: "response",
         requestId: message.requestId,
         ok: true,
@@ -530,28 +538,37 @@ function runWorker(argv: string[]): void {
     });
   }
 
-  async function handleRequest(message: TerminalWorkerRequest): Promise<void> {
+  async function handleRequest(
+    message: TerminalWorkerRequest,
+    requester: FramedSocket,
+  ): Promise<void> {
     switch (message.type) {
       case "createTerminal": {
-        await enqueueCreateTerminalRequest(message);
+        await enqueueCreateTerminalRequest(message, requester);
         return;
       }
 
       case "registerCwdEnv": {
         manager.registerCwdEnv({ cwd: message.cwd, env: message.env });
-        sendToController({ type: "response", requestId: message.requestId, ok: true });
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
         return;
       }
 
       case "setActivity": {
         await manager.setTerminalActivity(message.terminalId, message.state);
-        sendToController({ type: "response", requestId: message.requestId, ok: true });
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
         return;
       }
 
       case "clearAttention": {
         await manager.clearTerminalAttention(message.terminalId);
-        sendToController({ type: "response", requestId: message.requestId, ok: true });
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
+        return;
+      }
+
+      case "setTitle": {
+        manager.setTerminalTitle(message.terminalId, message.title);
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
         return;
       }
 
@@ -559,18 +576,18 @@ function runWorker(argv: string[]): void {
         manager.killTerminal(message.terminalId);
         // Removal is owned by session.onExit -> terminalExit; the parent mirror
         // clears contribution and emits terminalsChanged from that single path.
-        sendToController({ type: "response", requestId: message.requestId, ok: true });
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
         return;
       }
 
       case "killTerminalAndWait": {
         await manager.killTerminalAndWait(message.terminalId, message.options);
-        sendToController({ type: "response", requestId: message.requestId, ok: true });
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
         return;
       }
 
       case "replayTerminal": {
-        await replayController.replay(message);
+        await controllers.get(requester)!.replay(message);
         return;
       }
 
@@ -583,7 +600,7 @@ function runWorker(argv: string[]): void {
               stripAnsi: message.stripAnsi,
             })
           : { lines: [], totalLines: 0 };
-        sendToController({
+        requester.send({
           type: "response",
           requestId: message.requestId,
           ok: true,
@@ -593,7 +610,7 @@ function runWorker(argv: string[]): void {
       }
 
       case "listTerminals": {
-        sendToController({
+        requester.send({
           type: "response",
           requestId: message.requestId,
           ok: true,
@@ -606,11 +623,6 @@ function runWorker(argv: string[]): void {
         const sessions = Array.from(sessionsById.values());
         await Promise.all(sessions.map((session) => session.killAndWait().catch(() => undefined)));
         // Exit once the response frame is flushed, so the requester sees the confirmation.
-        const requester = controller;
-        if (!requester) {
-          exitWorker(0);
-          return;
-        }
         requester.send({ type: "response", requestId: message.requestId, ok: true }, () =>
           exitWorker(0),
         );
@@ -620,7 +632,7 @@ function runWorker(argv: string[]): void {
       case "send": {
         const session = manager.getTerminal(message.terminalId);
         session?.send(message.message);
-        sendToController({ type: "response", requestId: message.requestId, ok: true });
+        requester.send({ type: "response", requestId: message.requestId, ok: true });
         return;
       }
     }
@@ -655,9 +667,12 @@ function runWorker(argv: string[]): void {
           return;
         }
         authenticated = true;
-        // One controller at a time: a new authenticated connection replaces the old one.
-        controller = framed;
-        replayController.setConnection(framed);
+        const replay = createTerminalReplayController({
+          getSession: (id) => sessionsById.get(id),
+          flushOutput: (id) => outputCoalescerByTerminalId.get(id)?.flush(),
+        });
+        replay.setConnection(framed);
+        controllers.set(framed, replay);
         everControlled = true;
         const ack: TerminalWorkerHelloAck = {
           type: "helloAck",
@@ -667,12 +682,9 @@ function runWorker(argv: string[]): void {
         framed.send(ack);
         return;
       }
-      if (framed !== controller) {
-        return;
-      }
       const request = message as TerminalWorkerRequest;
-      void handleRequest(request).catch((error: unknown) => {
-        sendToController({
+      void handleRequest(request, framed).catch((error: unknown) => {
+        framed.send({
           type: "response",
           requestId: request.requestId,
           ok: false,
@@ -682,9 +694,8 @@ function runWorker(argv: string[]): void {
     });
     socket.once("close", () => {
       clearTimeout(helloTimer);
-      if (controller === framed) {
-        controller = null;
-        replayController.setConnection(null);
+      controllers.get(framed)?.setConnection(null);
+      if (controllers.delete(framed)) {
         exitIfIdle();
       }
     });
@@ -742,7 +753,10 @@ function runWorker(argv: string[]): void {
       if (!everControlled && sessionsById.size === 0) exitWorker(0);
     }, FIRST_CONTROLLER_TIMEOUT_MS).unref();
     setInterval(() => {
-      if (!controller && !existsSync(terminalWorkerRecordPath(args.paseoHome, process.pid))) {
+      if (
+        controllers.size === 0 &&
+        !existsSync(terminalWorkerRecordPath(args.paseoHome, process.pid))
+      ) {
         void killEveryTerminalAndExit();
       }
     }, ORPHAN_CHECK_INTERVAL_MS);

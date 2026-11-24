@@ -26,6 +26,31 @@ close-gesture lifetime. Platform adapters own resizing and inset geometry.
 The host keeps three recently used tabs plus modified tabs; unmodified tabs beyond that budget
 can remount. Native retained content stays live, while web chat uses its existing deferred Freeze.
 
+## Session directory targets
+
+Keep explicit directory targets fixed when the session or workspace changes. Propagate the session
+and directory through file opens, side opens, working diffs and commit diffs. Explorer navigation,
+expanded paths, comparison choices and review drafts use that same scope; content and Git facts
+keep their shared directory keys. Directory attachments and drag payloads carry absolute paths.
+Files use the bound path. Git file paths are relative to the parsed checkout root, including when
+the binding points into a subdirectory. Keep the source binding in navigation and draft identity,
+and use the checkout root for Git file opens, attachments and writes. Legacy targets without a
+directory retain the workspace default.
+
+Files and Changes expose the session directory selector and binding actions. A default panel follows
+the focused session's saved browsing selection; explicitly opened directory tabs keep their target.
+Selecting or binding a directory never changes execution cwd. Keep the selector mounted when the
+selected path fails to load, so another directory and Remove binding stay reachable. The immutable
+launch directory cannot be removed. Local Changes resolves nested paths to their actual checkout
+root before Git operations.
+
+Workspaces and terminals in the dock toolbar opens the existing global workspace list as a sheet.
+Open project exposes the same sheet when no workspace is selected. Its rows navigate to real
+workspaces and restore their terminal, service and layout state; they never create placeholder agents.
+A binding grants no container-management authority: workspace archive and base-branch changes stay
+in that resource entry. A directory Changes link opens its actual PR URL; it must not select a PR
+through the owning session's checkout.
+
 ## Sheets
 
 On compact layouts, files and subagents open in a sheet over the workspace, so the tab switcher

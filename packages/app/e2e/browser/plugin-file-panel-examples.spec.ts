@@ -128,7 +128,8 @@ async function pdfViewer(page: Page): Promise<Frame> {
 async function expectPdfViewerReady(page: Page) {
   // A narrow viewer collapses its toolbar to Print and More actions.
   const viewer = await pdfViewer(page);
-  await expect(viewer.getByRole("button", { name: "Print", exact: true })).toBeEnabled();
+  // Chromium's built-in viewer follows the OS language, independently of the app locale.
+  await expect(viewer.locator("#print[role=button]")).toBeEnabled();
 }
 
 async function expectMarkdownEditor(page: Page, text: string) {
@@ -191,9 +192,7 @@ test("directory examples mount the PDF frame and write Markdown through the file
       ),
     ).toBe("application/pdf");
     await expectPdfViewerReady(page);
-    await expect(
-      (await pdfViewer(page)).getByRole("textbox", { name: "Page number", exact: true }),
-    ).toHaveValue("1");
+    await expect((await pdfViewer(page)).locator("input#pageSelector")).toHaveValue("1");
     await captureWideAndCompact(page, testInfo, "pdf-example", async () => {
       await expect(page.getByTitle("Document preview", { exact: true })).toBeInViewport();
       await expectPdfViewerReady(page);

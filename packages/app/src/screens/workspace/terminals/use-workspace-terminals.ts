@@ -26,6 +26,7 @@ export type TerminalTabDestination =
 interface PendingTerminalCreateInput {
   destination: TerminalTabDestination;
   profile?: TerminalProfile;
+  agentId?: string;
 }
 
 interface UseWorkspaceTerminalsInput {
@@ -133,16 +134,26 @@ export function useWorkspaceTerminals(input: UseWorkspaceTerminalsInput) {
       if (!client || !workspaceDirectory) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
       }
-      const profile = _input.profile ? resolveTerminalProfileLaunch(_input.profile, "") : undefined;
-      const payload = profile
-        ? await client.createTerminal(workspaceDirectory, profile.name, undefined, {
-            command: profile.command,
-            args: profile.args,
-            workspaceId: normalizedWorkspaceId || undefined,
-          })
-        : await client.createTerminal(workspaceDirectory, undefined, undefined, {
-            workspaceId: normalizedWorkspaceId || undefined,
-          });
+      let payload;
+      if (_input.agentId) {
+        payload = await client.createTerminal(workspaceDirectory, undefined, undefined, {
+          agentId: _input.agentId,
+          workspaceId: normalizedWorkspaceId || undefined,
+        });
+      } else {
+        const profile = _input.profile
+          ? resolveTerminalProfileLaunch(_input.profile, "")
+          : undefined;
+        payload = profile
+          ? await client.createTerminal(workspaceDirectory, profile.name, undefined, {
+              command: profile.command,
+              args: profile.args,
+              workspaceId: normalizedWorkspaceId || undefined,
+            })
+          : await client.createTerminal(workspaceDirectory, undefined, undefined, {
+              workspaceId: normalizedWorkspaceId || undefined,
+            });
+      }
       // The daemon reports a failed spawn (e.g. a profile command that isn't
       // installed) via payload.error with a null terminal. Surface it instead
       // of silently treating the create as a no-op success.

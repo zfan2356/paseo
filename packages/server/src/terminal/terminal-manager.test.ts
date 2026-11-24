@@ -5,6 +5,7 @@ import type { TerminalWorkspaceContributionChangedEvent } from "./terminal-manag
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { AGENT_CONVERSATION_TERMINAL_ENV } from "./agent-hooks/agent-hook-installer.js";
 
 if (isPlatform("win32") && !process.env.ComSpec && !process.env.COMSPEC) {
   process.env.ComSpec = "C:\\Windows\\System32\\cmd.exe";
@@ -236,6 +237,34 @@ it("inherits registered env for subdirectories within the worktree", async () =>
     10000,
   );
   expect(readFileSync(markerPath, "utf8")).toBe("45679");
+});
+
+it("activates conversation hooks only for linked Agent terminals", async () => {
+  manager = createTerminalManager();
+  const cwd = mkdtempSync(join(tmpdir(), "terminal-manager-conversation-hooks-"));
+  temporaryDirs.push(cwd);
+  const linkedMarker = join(cwd, "linked.txt");
+  const plainMarker = join(cwd, "plain.txt");
+  const printActivation = (path: string) =>
+    `require('fs').writeFileSync(${JSON.stringify(path)}, process.env.${AGENT_CONVERSATION_TERMINAL_ENV} ?? '')`;
+
+  await manager.createTerminal({
+    workspaceId: "ws-test",
+    linkedAgentId: "agent-1",
+    cwd,
+    command: process.execPath,
+    args: ["-e", printActivation(linkedMarker)],
+  });
+  await manager.createTerminal({
+    workspaceId: "ws-test",
+    cwd,
+    command: process.execPath,
+    args: ["-e", printActivation(plainMarker)],
+  });
+
+  await waitForCondition(() => existsSync(linkedMarker) && existsSync(plainMarker), 10000);
+  expect(readFileSync(linkedMarker, "utf8")).toBe("1");
+  expect(readFileSync(plainMarker, "utf8")).toBe("");
 });
 
 it("returns terminal by id", async () => {

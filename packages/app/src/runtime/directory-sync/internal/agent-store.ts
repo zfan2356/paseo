@@ -175,6 +175,7 @@ export class AgentStoreProjection {
     const store = useSessionStore.getState();
     const removeKey = withoutAgent(agentId);
     clearArchiveAgentPending({ queryClient, serverId: this.serverId, agentId });
+    store.clearAgentLastActivity(agentId);
     store.setAgents(this.serverId, removeKey);
     store.setAgentDetails(this.serverId, removeKey);
     store.setQueuedMessages(this.serverId, removeKey);
@@ -185,10 +186,21 @@ export class AgentStoreProjection {
       return next.size === current.size ? current : next;
     });
     useSessionStore.setState((state) => {
-      if (!state.agentLastActivity.has(agentId)) return state;
-      const agentLastActivity = new Map(state.agentLastActivity);
-      agentLastActivity.delete(agentId);
-      return { ...state, agentLastActivity };
+      const session = state.sessions[this.serverId];
+      if (!session) return state;
+      return {
+        ...state,
+        sessions: {
+          ...state.sessions,
+          [this.serverId]: {
+            ...session,
+            focusedAgentId: session.focusedAgentId === agentId ? null : session.focusedAgentId,
+            agentTasks: removeKey(session.agentTasks),
+            messageSubmissions: removeKey(session.messageSubmissions),
+            fileExplorer: removeKey(session.fileExplorer),
+          },
+        },
+      };
     });
     const initKey = getInitKey(this.serverId, agentId);
     if (getInitDeferred(initKey)) {
@@ -210,6 +222,23 @@ export class AgentStoreProjection {
     store.setAgentAuthoritativeHistoryApplied(this.serverId, agentId, false);
     store.setAgentStreamTail(this.serverId, removeKey);
     store.clearAgentStreamHead(this.serverId, agentId);
+    useSessionStore.setState((state) => {
+      const session = state.sessions[this.serverId];
+      if (!session) return state;
+      return {
+        ...state,
+        sessions: {
+          ...state.sessions,
+          [this.serverId]: {
+            ...session,
+            agentTimelineHasOlder: removeKey(session.agentTimelineHasOlder),
+            agentTimelineHasNewer: removeKey(session.agentTimelineHasNewer),
+            agentTimelineOlderFetchInFlight: removeKey(session.agentTimelineOlderFetchInFlight),
+            agentHistorySyncGeneration: removeKey(session.agentHistorySyncGeneration),
+          },
+        },
+      };
+    });
   }
 
   archive(agentId: string, archivedAt: string): Agent | null {

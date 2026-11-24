@@ -4,9 +4,16 @@ import path from "node:path";
 
 import { z } from "zod";
 
+import {
+  DEFAULT_MENU_BAR_QUOTA,
+  MenuBarQuotaPreferenceSchema,
+  type MenuBarQuotaPreference,
+} from "../features/menu-bar/quota-preference.js";
+
 import type { AppReleaseChannel } from "../features/auto-updater.js";
 
 export interface DesktopSettings {
+  menuBarQuota?: MenuBarQuotaPreference;
   releaseChannel: AppReleaseChannel;
   notifications: {
     playSound: boolean;
@@ -18,6 +25,7 @@ export interface DesktopSettings {
 }
 
 interface DesktopSettingsPatch {
+  menuBarQuota?: Partial<MenuBarQuotaPreference>;
   releaseChannel?: AppReleaseChannel;
   notifications?: Partial<DesktopSettings["notifications"]>;
   daemon?: Partial<DesktopSettings["daemon"]>;
@@ -30,6 +38,7 @@ export interface DesktopSettingsStore {
 }
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
+  menuBarQuota: { ...DEFAULT_MENU_BAR_QUOTA },
   releaseChannel: "stable",
   notifications: {
     playSound: true,
@@ -61,6 +70,7 @@ const DesktopSettingsSchema = z
   .looseObject({
     releaseChannel: ReleaseChannelSchema.catch(DEFAULT_DESKTOP_SETTINGS.releaseChannel),
     notifications: NotificationsSchema,
+    menuBarQuota: MenuBarQuotaPreferenceSchema.catch(() => ({ ...DEFAULT_MENU_BAR_QUOTA })),
     daemon: DaemonSchema,
   })
   .catch(() => buildDefaultSettings());
@@ -105,6 +115,7 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 
 function buildDefaultSettings(): StoredDesktopSettings {
   return {
+    menuBarQuota: { ...DEFAULT_MENU_BAR_QUOTA },
     releaseChannel: DEFAULT_DESKTOP_SETTINGS.releaseChannel,
     notifications: { ...DEFAULT_DESKTOP_SETTINGS.notifications },
     daemon: { ...DEFAULT_DESKTOP_SETTINGS.daemon },
@@ -124,6 +135,7 @@ function buildDefaultDocument(): PersistedDesktopSettingsDocument {
 
 function toDesktopSettings(stored: StoredDesktopSettings): DesktopSettings {
   return {
+    menuBarQuota: { ...stored.menuBarQuota },
     releaseChannel: stored.releaseChannel,
     notifications: { playSound: stored.notifications.playSound },
     daemon: {
@@ -139,6 +151,15 @@ function coerceDesktopSettingsPatch(input: unknown): DesktopSettingsPatch {
   }
 
   const patch: DesktopSettingsPatch = {};
+  if (isRecord(input.menuBarQuota)) {
+    const menuBarQuota: Partial<MenuBarQuotaPreference> = {};
+    const { accountId, display } = input.menuBarQuota;
+    if (accountId === null || (typeof accountId === "string" && accountId.length <= 2048))
+      menuBarQuota.accountId = accountId;
+    if (display === "remaining" || display === "used" || display === "hidden")
+      menuBarQuota.display = display;
+    patch.menuBarQuota = menuBarQuota;
+  }
   const releaseChannel = coerceReleaseChannel(input.releaseChannel);
   if (releaseChannel) {
     patch.releaseChannel = releaseChannel;
@@ -198,6 +219,7 @@ function mergeDesktopSettings(
     ...current,
     releaseChannel: patch.releaseChannel ?? current.releaseChannel,
     notifications: { ...current.notifications, ...patch.notifications },
+    menuBarQuota: { ...current.menuBarQuota, ...patch.menuBarQuota },
     daemon: { ...current.daemon, ...patch.daemon },
   };
 }

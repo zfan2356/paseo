@@ -79,6 +79,7 @@ interface PluginRuntimePort {
 }
 
 interface PluginServiceDependencies {
+  backgroundWork?: import("../agent/background-work/external.js").BackgroundWorkSourceHost;
   usageAgents?: AgentUsageLookup;
   settingsDirectory?: string;
   runtime?: PluginRuntimePort;
@@ -134,6 +135,7 @@ export class PluginService {
       dependencies.runtime ??
       new PluginRuntime(logger, daemonVersion, {
         settingsDirectory: dependencies.settingsDirectory,
+        backgroundWork: dependencies.backgroundWork,
         onSettingsChanged: (pluginId, settingsId) => {
           for (const listener of this.settingsListeners) listener(pluginId, settingsId);
         },

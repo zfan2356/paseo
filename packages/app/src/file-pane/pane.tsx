@@ -1,6 +1,6 @@
 import { usePaneContext } from "@/panels/pane-context";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PluginFile, PluginTab } from "@getpaseo/plugin/client";
+import type { PluginFile, PluginFilePanelParams, PluginTab } from "@getpaseo/plugin/client";
 import { Text, View } from "react-native";
 import { Download } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -82,11 +82,12 @@ export function FilePane({
   usePublishPanelInstanceAttributes({ modified, suspendPendingSave: handle?.holdWrites });
   const panelLocation = useMemo(
     () => ({
+      anchor: location.anchor,
       lineStart: location.lineStart,
       lineEnd: location.lineEnd,
       path,
     }),
-    [location.lineEnd, location.lineStart, path],
+    [location.anchor, location.lineEnd, location.lineStart, path],
   );
 
   let body;
@@ -151,7 +152,7 @@ function MountedFilePanel({
 }: {
   panel: FilePanel;
   file: PluginFile;
-  params: { path: string; lineStart?: number; lineEnd?: number };
+  params: PluginFilePanelParams;
   revision: number;
   onModifiedChange: (modified: boolean) => void;
 }) {

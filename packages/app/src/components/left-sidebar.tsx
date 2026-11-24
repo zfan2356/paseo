@@ -1,3 +1,5 @@
+import { sidebarMaterialColor } from "@/fork/materials/sidebar-color";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { SidebarViewSlot } from "@/plugins/sidebar-view";
 import { useAddHost } from "@/hosts/add-host";
 import {
@@ -71,7 +73,11 @@ import {
 } from "@/components/ui/control-geometry";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { DensityIcon } from "@/components/ui/density-icon";
-import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
+import { SegmentedControl, type SegmentedControlOption } from "@/components/ui/segmented-control";
+import {
+  useSessionNavigationPreferences,
+  type SessionGrouping,
+} from "@/session-navigation/preferences";
 import { Shortcut } from "@/components/ui/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
@@ -617,7 +623,7 @@ function MobileSidebar({
     () => ({
       paddingTop: insetsTop,
       paddingBottom: insetsBottom,
-      backgroundColor: theme.colors.surfaceSidebar,
+      backgroundColor: sidebarMaterialColor(theme.colors.surfaceSidebar),
     }),
     [insetsTop, insetsBottom, theme.colors.surfaceSidebar],
   );
@@ -641,6 +647,7 @@ function MobileSidebar({
         <SidebarNavScroll closeGestureRef={closeGestureRef}>{navRows}</SidebarNavScroll>
 
         <SidebarViewSlot dismiss={handleWorkspacePress}>
+          <SidebarGroupingControls />
           <SidebarToastRegion active={active}>
             {isInitialLoad && !hasActiveHostFilter ? (
               <SidebarAgentListSkeleton />
@@ -664,7 +671,6 @@ function MobileSidebar({
                 onImportSession={handleImportSession}
                 parentGestureRef={closeGestureRef}
                 dragGestureHostActive={active}
-                listHeaderComponent={workspacesSectionHeaderElement}
               />
             )}
           </SidebarToastRegion>
@@ -860,7 +866,10 @@ function DesktopSidebar({
       closeGesture={closeGesture}
     >
       <Animated.View style={desktopSidebarStyle}>
-        <View style={desktopSidebarBorderStyle}>
+        <View
+          style={desktopSidebarBorderStyle}
+          dataSet={overlay ? undefined : MATERIAL_SLOTS.sidebar}
+        >
           <View style={styles.sidebarDragArea}>
             {showsChromeRow ? (
               <View style={styles.desktopChromeRow}>
@@ -896,6 +905,7 @@ function DesktopSidebar({
           ) : null}
 
           <SidebarViewSlot dismiss={closeSidebar}>
+            <SidebarGroupingControls />
             <SidebarToastRegion active={active}>
               {isInitialLoad && !hasActiveHostFilter ? (
                 <SidebarAgentListSkeleton />
@@ -919,7 +929,6 @@ function DesktopSidebar({
                   onWorkspacePress={closeSidebar}
                   parentGestureRef={closeGestureRef}
                   dragGestureHostActive={active}
-                  listHeaderComponent={workspacesSectionHeaderElement}
                 />
               )}
             </SidebarToastRegion>
@@ -950,9 +959,28 @@ function DesktopSidebar({
   );
 }
 
-function WorkspacesSectionHeader() {
+function SidebarGroupingControls() {
+  const { t } = useTranslation();
+  const grouping = useSessionNavigationPreferences((state) => state.grouping ?? "project");
+  const setGrouping = useSessionNavigationPreferences((state) => state.setGrouping);
+  const options = useMemo<SegmentedControlOption<SessionGrouping>[]>(
+    () => [
+      {
+        value: "project",
+        label: t("sessionNavigation.byProject"),
+        testID: "session-group-by-project",
+      },
+      {
+        value: "directory",
+        label: t("sessionNavigation.byDirectory"),
+        testID: "session-group-by-directory",
+      },
+    ],
+    [t],
+  );
   return (
-    <SidebarSectionHeader title="Workspaces">
+    <View style={styles.groupingControls}>
+      <SegmentedControl options={options} value={grouping} onValueChange={setGrouping} size="sm" />
       <Tooltip delayDuration={300}>
         <TooltipTrigger asChild>
           <View>
@@ -963,13 +991,9 @@ function WorkspacesSectionHeader() {
           <IconTooltipContent label="Display preferences" />
         </TooltipContent>
       </Tooltip>
-    </SidebarSectionHeader>
+    </View>
   );
 }
-
-// Stable element so the sidebar list's listHeaderComponent prop keeps identity across
-// renders (WorkspacesSectionHeader takes no props).
-const workspacesSectionHeaderElement = <WorkspacesSectionHeader />;
 
 // Static styles for Animated.Views — must NOT use Unistyles dynamic theme to
 // avoid the "Unable to find node on an unmounted component" crash when Unistyles
@@ -983,6 +1007,13 @@ const staticStyles = RNStyleSheet.create({
 
 const styles = StyleSheet.create((theme) => ({
   // The rows start flush: the chrome row, drag strip, or top band above them gives the inset.
+  groupingControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+  },
   sidebarHeaderGroup: {
     gap: 2,
     paddingBottom: theme.spacing[1.5],
@@ -1013,7 +1044,7 @@ const styles = StyleSheet.create((theme) => ({
   desktopSidebarBorder: (hasDivision: boolean) => ({
     borderRightWidth: hasDivision ? 0 : 1,
     borderRightColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: sidebarMaterialColor(theme.colors.surfaceSidebar),
   }),
   sidebarDragArea: {
     position: "relative",

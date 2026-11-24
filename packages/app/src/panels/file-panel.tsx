@@ -33,7 +33,8 @@ function FilePanel() {
   const { serverId, workspaceId, target, panelRevision } = usePaneContext();
   const workspaceDirectory = useWorkspaceDirectory(serverId, workspaceId);
   invariant(target.kind === "file", "FilePanel requires file target");
-  if (!workspaceDirectory) {
+  const root = target.directory ?? workspaceDirectory;
+  if (!root) {
     return (
       <View style={CENTERED_PADDED_STYLE}>
         <Text>{t("panels.file.directoryMissing")}</Text>
@@ -44,7 +45,7 @@ function FilePanel() {
     <FilePane
       serverId={serverId}
       workspaceId={workspaceId}
-      workspaceRoot={workspaceDirectory}
+      workspaceRoot={root}
       location={target}
       navigationRevision={panelRevision ?? 0}
     />

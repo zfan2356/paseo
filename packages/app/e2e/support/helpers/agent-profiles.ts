@@ -12,7 +12,12 @@ import { openSettingsHost } from "./settings";
 interface AgentProfilesDaemonClient {
   connect(): Promise<void>;
   close(): Promise<void>;
-  getDaemonConfig(): Promise<{ config: { agentProfiles?: AgentProfile[] } }>;
+  getDaemonConfig(): Promise<{
+    config: {
+      agentProfiles?: AgentProfile[];
+      providers?: Record<string, Record<string, unknown>>;
+    };
+  }>;
   patchDaemonConfig(config: {
     agentProfiles?: AgentProfile[];
     providers?: Record<string, Record<string, unknown>>;
@@ -41,6 +46,24 @@ export async function seedAgentProfiles(profiles: AgentProfile[]): Promise<HostS
   return {
     async restore() {
       await client.patchDaemonConfig({ agentProfiles: previous }).catch(() => undefined);
+      await client.close().catch(() => undefined);
+    },
+  };
+}
+
+export async function seedProviderConfiguration(
+  providerId: string,
+  config: Record<string, unknown>,
+): Promise<HostSeed> {
+  const client = await connectAgentProfilesClient();
+  const previous = (await client.getDaemonConfig()).config.providers?.[providerId];
+  await client.patchDaemonConfig({ providers: { [providerId]: config } });
+  return {
+    async restore() {
+      const patch = previous
+        ? { providers: { [providerId]: previous } }
+        : { removeProviders: [providerId] };
+      await client.patchDaemonConfig(patch).catch(() => undefined);
       await client.close().catch(() => undefined);
     },
   };

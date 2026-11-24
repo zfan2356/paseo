@@ -1,3 +1,5 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
+import { publishComposerClearance } from "@/fork/materials/floating-layout";
 export { ComposerDockBackground } from "./internal/background";
 export { ComposerFullscreenBody, ComposerFullscreenFooter } from "./internal/fullscreen";
 import { ScrollView } from "@/components/ui/scroll-view";
@@ -55,9 +57,16 @@ export function ComposerDock({
     );
   }
   return (
-    <View ref={surfaceRef} style={styles.surface} onLayout={measureViewport}>
+    <View
+      dataSet={MATERIAL_SLOTS.dock}
+      ref={surfaceRef}
+      style={styles.surface}
+      onLayout={measureViewport}
+    >
       <View style={styles.content}>{content}</View>
       <View
+        dataSet={fullscreen ? MATERIAL_SLOTS.solid : MATERIAL_SLOTS.dockComposer}
+        onLayout={publishComposerClearance}
         style={
           fullscreen ? [styles.fullscreenComposer, fullscreenFrame] : [styles.composer, constraint]
         }

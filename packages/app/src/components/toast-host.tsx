@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import {
   FloatingHeaderOverlay,
   useFloatingHeaderOverlayClearance,
@@ -308,6 +309,7 @@ function ToastCard({
     <View
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
+      dataSet={MATERIAL_SLOTS.toast}
       style={[
         styles.toast,
         toast.variant === "info" ? styles.toastInfo : null,

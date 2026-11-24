@@ -34,6 +34,11 @@ function hasUnreadError(input: AgentStateBucketInput): boolean {
   return input.requiresAttention === true && input.attentionReason === "error";
 }
 
+export function runningBackgroundWorkCount(work: AgentStateBucketInput["backgroundWork"]): number {
+  // COMPAT(externalBackgroundWork): added after v0.15.3, remove after 2027-05-14.
+  return work?.runningCount ?? work?.count ?? 0;
+}
+
 export function deriveAgentStateBucket(input: AgentStateBucketInput): WorkspaceStateBucket {
   if ((input.pendingPermissionCount ?? 0) > 0 || input.attentionReason === "permission") {
     return "needs_input";

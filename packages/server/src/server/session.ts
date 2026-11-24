@@ -1,3 +1,6 @@
+import { featuresFromControls } from "@getpaseo/protocol/option-controls";
+import { projectBackgroundWork } from "./agent/background-work/projection.js";
+import type { SessionContextStore } from "./session-context-store.js";
 import { DiffSession } from "./diff/index.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageBehavior, AgentMessageDelivery } from "./agent/agent-messages/index.js";
@@ -41,6 +44,7 @@ import { homedir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import { formatPluginSourceReference } from "@getpaseo/protocol/plugin-source-reference";
 import {
+  serializeAgentSnapshot,
   serializeAgentStreamEvent,
   type AgentSnapshotPayload,
   type AgentAttachment,
@@ -63,6 +67,14 @@ import type {
   TerminalWorkspaceContributionChangedEvent,
 } from "../terminal/terminal-manager.js";
 import { TerminalSessionController } from "../terminal/terminal-session-controller.js";
+import {
+  buildAgentConversationTerminalLaunch,
+  resolveAgentConversationSessionId,
+  type AgentConversationTerminalSource,
+} from "../terminal/codex-fork-terminal.js";
+import { prepareCursorConversationTerminalStore } from "../terminal/cursor-conversation-store.js";
+import { installAgentConversationHooks } from "../terminal/agent-hooks/provider-registry.js";
+import { resolvePaseoCliExecutablePath } from "../terminal/terminal.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type { BinaryFrame } from "@getpaseo/protocol/binary-frames/index";
 import {
@@ -83,6 +95,10 @@ import {
 } from "./persistence-hooks.js";
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent/agent-loading.js";
 import {
+  AgentBusyError,
+  AgentArchivedError,
+  prepareIdlePromptDelivery,
+  sendIdleAgentMessage,
   sendPromptToAgent,
   waitForAgentRunStartWithTimeout,
   unarchiveAgentState,
@@ -520,7 +536,7 @@ export interface SessionOptions {
   worktreesRoot?: string;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
-  messageReceipts: Pick<MessageReceipts, "send">;
+  messageReceipts: Pick<MessageReceipts, "send" | "lookup">;
   agentMessages: AgentMessageDelivery;
   creationService: Pick<CreationService, "create" | "subscribe">;
   projectRegistry: ProjectRegistry;
@@ -528,6 +544,7 @@ export interface SessionOptions {
   workspaceBaseBranch?: WorkspaceBaseBranchService;
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
+  sessionContexts?: SessionContextStore;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -781,7 +798,7 @@ export class Session {
         return this.onBinaryMessageToSource(source, frame);
       } else this.emitBinary(frame);
     },
-    (source, message) => this.workspaceSetupMessageForClient(message, source),
+    (source, message) => this.messageForClient(message, source),
     (request, message) =>
       this.sessionLogger.warn(
         {
@@ -839,6 +856,10 @@ export class Session {
   private readonly pluginRuntime: SessionOptions["pluginRuntime"];
   private readonly orchestrationSkills: SessionOptions["orchestrationSkills"];
   private unsubscribeAgentEvents: (() => void) | null = null;
+  private readonly sideChatSubscriptions = new Map<
+    string,
+    { parentAgentId: string; unsubscribe: () => void }
+  >();
   private unsubscribeProjectMutations: (() => void) | null = null;
   private unsubscribePluginChanges: (() => void) | null = null;
   private unsubscribeWorkspaceMutations: (() => void) | null = null;
@@ -865,6 +886,7 @@ export class Session {
     WorkspaceUpdatesSubscriptionState
   >();
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly sessionContexts?: SessionContextStore;
   private readonly eventSubscriptions = new Map<
     string,
     { owner: OwnedSubscription; events: Set<SessionEventSubscription>; notifications: boolean }
@@ -900,7 +922,7 @@ export class Session {
   private readonly daemonSession: DaemonSession;
   private readonly hubExecutionController: HubExecutionController | null;
   private readonly workspaceScripts: WorkspaceScriptsService;
-  private readonly messageReceipts: Pick<MessageReceipts, "send">;
+  private readonly messageReceipts: Pick<MessageReceipts, "send" | "lookup">;
   private readonly agentMessages: AgentMessageDelivery;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
@@ -1012,6 +1034,7 @@ export class Session {
     });
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
+    this.sessionContexts = options.sessionContexts;
     this.projectRegistry = projectRegistry;
     this.workspaceRegistry = workspaceRegistry;
     this.directorySync = resolveDirectorySync(directorySync);
@@ -1043,6 +1066,7 @@ export class Session {
           unarchiveAgent: (id) => unarchiveAgentState(this.agentStorage, this.agentManager, id),
           sessionLogger: this.sessionLogger,
         }),
+      automaticProjectRoot: resolve(this.paseoHome, "automatic-tasks"),
       withCheckoutLock: this.workspaceBaseBranch.withCheckoutLock,
       lifecycle: this.pluginRuntime,
       serverId,
@@ -1252,6 +1276,13 @@ export class Session {
       isPathWithinRoot: (rootPath, candidatePath) => this.isPathWithinRoot(rootPath, candidatePath),
       sessionLogger: this.sessionLogger,
       listTerminalWorkspaceRefs: () => this.listActiveWorkspaceRefs(),
+      resolveAgentTerminalLaunch: (input) => this.resolveAgentTerminalLaunch(input),
+      prepareAgentTerminalHooks: (provider) => {
+        const hookCliPath = resolvePaseoCliExecutablePath();
+        installAgentConversationHooks(provider, hookCliPath ? { hookCliPath } : {});
+      },
+      releaseAgentTerminalOwnership: (input) => this.releaseAgentTerminalOwnership(input),
+      resumeAgentFromTerminal: (input) => this.resumeAgentFromTerminal(input),
       isScriptTerminal: (terminal) =>
         this.scriptRuntimeStore
           ?.listForWorkspace(terminal.workspaceId)
@@ -1800,6 +1831,119 @@ export class Session {
     };
   }
 
+  private async resolveAgentTerminalLaunch(input: {
+    agentId: string;
+    terminalId: string;
+    cwd: string;
+    workspaceId: string;
+  }) {
+    const liveAgent = this.agentManager.getAgent(input.agentId);
+    const storedAgent = liveAgent ? null : await this.agentStorage.get(input.agentId);
+    const sourceAgent = liveAgent ?? storedAgent;
+    if (!sourceAgent) {
+      throw new Error(`Agent not found: ${input.agentId}`);
+    }
+
+    if (sourceAgent.workspaceId) {
+      if (sourceAgent.workspaceId !== input.workspaceId) {
+        throw new Error("The Agent conversation belongs to a different workspace");
+      }
+    } else if (
+      !this.isPathWithinRoot(sourceAgent.cwd, input.cwd) ||
+      !this.isPathWithinRoot(input.cwd, sourceAgent.cwd)
+    ) {
+      throw new Error("The Agent conversation belongs to a different workspace path");
+    }
+
+    const source: AgentConversationTerminalSource = liveAgent
+      ? {
+          provider: liveAgent.provider,
+          cwd: liveAgent.cwd,
+          workspaceId: liveAgent.workspaceId,
+          persistence: liveAgent.persistence,
+          runtimeInfo: liveAgent.runtimeInfo,
+          currentModeId: liveAgent.currentModeId,
+          config: liveAgent.config,
+          features: featuresFromControls({
+            controls: liveAgent.controls,
+            options: liveAgent.effectiveOptions,
+          }),
+          runtimeSettings: this.providerSnapshotManager.getProviderRuntimeSettings(
+            liveAgent.provider,
+          ),
+        }
+      : {
+          provider: storedAgent!.provider,
+          cwd: storedAgent!.cwd,
+          workspaceId: storedAgent!.workspaceId,
+          persistence: toAgentPersistenceHandle([storedAgent!.provider], storedAgent!.persistence),
+          runtimeInfo: storedAgent!.runtimeInfo,
+          currentModeId: storedAgent!.lastModeId,
+          config: storedAgent!.config,
+          features: featuresFromControls({
+            controls: storedAgent!.controls,
+            options: this.agentManager.effectiveOptionsFor(
+              storedAgent!.provider,
+              storedAgent!.config?.providerOptions ?? undefined,
+            ),
+          }),
+          runtimeSettings: this.providerSnapshotManager.getProviderRuntimeSettings(
+            storedAgent!.provider,
+          ),
+        };
+    const launch = buildAgentConversationTerminalLaunch(source);
+    await this.agentManager.claimAgentExternalRuntime(input.agentId, input.terminalId);
+    if (launch.provider === "cursor") {
+      try {
+        await prepareCursorConversationTerminalStore({
+          cwd: source.cwd,
+          sessionId: resolveAgentConversationSessionId(source)!,
+          configDir: launch.env?.CURSOR_CONFIG_DIR,
+        });
+      } catch (error) {
+        try {
+          await this.resumeAgentFromTerminal({
+            agentId: input.agentId,
+            terminalId: input.terminalId,
+          });
+        } catch (restoreError) {
+          this.sessionLogger.warn(
+            { err: restoreError, agentId: input.agentId, terminalId: input.terminalId },
+            "Failed to restore Cursor Agent after conversation store handoff failure",
+          );
+        }
+        throw error;
+      }
+    }
+    return launch;
+  }
+
+  private async releaseAgentTerminalOwnership(input: {
+    agentId: string;
+    terminalId: string;
+  }): Promise<void> {
+    await this.agentManager.releaseAgentExternalRuntime(input.agentId, input.terminalId);
+  }
+
+  private async resumeAgentFromTerminal(input: {
+    agentId: string;
+    terminalId: string;
+  }): Promise<void> {
+    await this.agentManager.releaseAgentExternalRuntime(input.agentId, input.terminalId);
+    const snapshot = await ensureAgentLoaded(input.agentId, {
+      agentManager: this.agentManager,
+      agentStorage: this.agentStorage,
+      broadcastTimeline: true,
+      logger: this.sessionLogger,
+    });
+    await this.agentManager.hydrateTimelineFromProvider(input.agentId, {
+      force: true,
+      broadcast: true,
+      retainExistingOnEmptyHistory: true,
+    });
+    await this.agentUpdates.forwardLiveAgent(snapshot);
+  }
+
   private readStructuredGenerationDaemonConfig(): StructuredGenerationDaemonConfig {
     return {
       metadataGeneration: this.daemonConfigStore.get().metadataGeneration,
@@ -2316,6 +2460,95 @@ export class Session {
     );
   }
 
+  private forwardSideChatAgentEvent(parentAgentId: string, event: AgentManagerEvent): void {
+    if (event.type === "agent_state") {
+      const message: SessionOutboundMessage = {
+        type: "agent.side_chat.agent_state",
+        payload: {
+          parentAgentId,
+          agent: serializeAgentSnapshot(event.agent),
+        },
+      };
+      for (const subscription of this.timelineSubscriptions.values()) {
+        if (
+          subscription.agentIds.has(event.agent.id) &&
+          this.delivery.isModern(subscription.owner.source)
+        ) {
+          subscription.owner.emit(message);
+        }
+      }
+      this.emit(message);
+      return;
+    }
+
+    if (event.type === "provider_subagent") {
+      if (!this.supports(CLIENT_CAPS.providerSubagents)) {
+        return;
+      }
+      const update = event.event;
+      if (update.type === "upsert") {
+        this.emit({
+          type: "agent.provider_subagents.update",
+          payload: { kind: "upsert", subagent: update.subagent },
+        });
+      } else if (update.type === "timeline") {
+        this.emit({
+          type: "agent.provider_subagents.update",
+          payload: {
+            kind: "timeline",
+            parentAgentId: update.parentAgentId,
+            subagentId: update.subagentId,
+            provider: update.provider,
+            item: update.row.item,
+            timestamp: update.row.timestamp,
+            seq: update.row.seq,
+            epoch: update.epoch,
+          },
+        });
+      } else {
+        this.emit({
+          type: "agent.provider_subagents.update",
+          payload: {
+            kind: "remove",
+            parentAgentId: update.parentAgentId,
+            subagentId: update.subagentId,
+          },
+        });
+      }
+      return;
+    }
+
+    if (event.type === "timeline_replacement") {
+      this.deliverTimelineReplacement(event.agentId);
+      return;
+    }
+
+    if (event.type !== "agent_stream") {
+      return;
+    }
+
+    const serializedEvent = serializeAgentStreamEvent(event.event);
+    if (!serializedEvent) {
+      return;
+    }
+    this.forwardAgentStream(event, serializedEvent);
+    if (event.event.type === "permission_requested") {
+      this.emit({
+        type: "agent_permission_request",
+        payload: { agentId: event.agentId, request: event.event.request },
+      });
+    } else if (event.event.type === "permission_resolved") {
+      this.emit({
+        type: "agent_permission_resolved",
+        payload: {
+          agentId: event.agentId,
+          requestId: event.event.requestId,
+          resolution: event.event.resolution,
+        },
+      });
+    }
+  }
+
   private forwardProviderSubagent(event: ProviderSubagentManagerEvent): void {
     const parentAgentId =
       event.type === "upsert" ? event.subagent.parentAgentId : event.parentAgentId;
@@ -2704,10 +2937,46 @@ export class Session {
     });
   }
 
+  // COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy clients are unsupported.
+  private dispatchRetiredChangeRequestsMessage(
+    msg: SessionInboundMessage,
+  ): Promise<void> | undefined {
+    switch (msg.type) {
+      case "agent.change_requests.list.request":
+      case "agent.change_requests.update.request":
+        this.emit({
+          type:
+            msg.type === "agent.change_requests.list.request"
+              ? "agent.change_requests.list.response"
+              : "agent.change_requests.update.response",
+          payload: {
+            requestId: msg.requestId,
+            snapshot: null,
+            error: "Session PR/MR links are now provided by the Multica plugin.",
+          },
+        });
+        return Promise.resolve();
+      case "agent.change_requests.subscribe.request": {
+        // The legacy subscription response has no error field. A releasable empty
+        // subscription lets old clients finish setup; their list request reports removal.
+        const owner = this.delivery.begin("retired-session-change-requests", undefined, () => {});
+        this.emit({
+          type: "agent.change_requests.subscribe.response",
+          payload: { requestId: msg.requestId, subscriptionId: owner.responseId },
+        });
+        return Promise.resolve();
+      }
+      default:
+        return undefined;
+    }
+  }
+
   private dispatchSubscriptionMessage(
     msg: SessionInboundMessage,
     source?: object,
   ): Promise<void> | undefined {
+    if (msg.type.startsWith("agent.change_requests."))
+      return this.dispatchRetiredChangeRequestsMessage(msg);
     if (msg.type === "workspace.setup.subscribe.request") return this.subscribeWorkspaceSetup(msg);
     if (msg.type === "browser.host.register.request") return this.registerBrowserHost(msg);
     if (msg.type === "provider.installation.update.subscribe.request")
@@ -2760,10 +3029,83 @@ export class Session {
     source?: object,
   ): Promise<void> | undefined {
     return (
+      this.dispatchSessionContextMessage(msg) ??
       this.dispatchAgentRewindMessage(msg, source) ??
       this.dispatchAgentRelationshipMessage(msg) ??
       this.dispatchAgentTimelineMessage(msg, source)
     );
+  }
+
+  private dispatchSessionContextMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    if (msg.type !== "agent.context.get.request" && msg.type !== "agent.context.mutate.request")
+      return undefined;
+    return this.handleSessionContext(msg);
+  }
+
+  private async handleSessionContext(
+    request: Extract<
+      SessionInboundMessage,
+      { type: "agent.context.get.request" | "agent.context.mutate.request" }
+    >,
+  ): Promise<void> {
+    const store = this.sessionContexts;
+    if (!store) throw new Error("Session contexts unavailable");
+    if (request.type === "agent.context.mutate.request") {
+      const context =
+        request.mutation.kind === "label"
+          ? await this.requireWorkspaceLabels().setSessionAssignment({
+              agentId: request.agentId,
+              ...request.mutation,
+            })
+          : await store.mutate(request.agentId, request.mutation);
+      this.emit({
+        type: "agent.context.mutate.response",
+        payload: { requestId: request.requestId, context },
+      });
+      return;
+    }
+    if (!request.subscribe) {
+      this.emit({
+        type: "agent.context.get.response",
+        payload: { requestId: request.requestId, context: await store.get(request.agentId) },
+      });
+      return;
+    }
+    let bootstrap: ReturnType<typeof store.subscribe> | undefined;
+    const owner = this.delivery.begin(
+      "session-context",
+      request.subscribe.subscriptionId,
+      async () => {
+        await bootstrap?.then(
+          (value) => value.unsubscribe(),
+          () => undefined,
+        );
+      },
+    );
+    let ready = false;
+    let pending: import("@getpaseo/protocol/session-context").SessionContext | undefined;
+    try {
+      bootstrap = store.subscribe(request.agentId, (context) => {
+        if (owner.signal.aborted) return;
+        if (!ready) pending = context;
+        else owner.emit({ type: "agent.context.update", payload: { context } });
+      });
+      const subscription = await bootstrap;
+      if (owner.signal.aborted) return;
+      this.emit({
+        type: "agent.context.get.response",
+        payload: {
+          requestId: request.requestId,
+          context: subscription.context,
+          subscriptionId: owner.responseId,
+        },
+      });
+      ready = true;
+      if (pending) owner.emit({ type: "agent.context.update", payload: { context: pending } });
+    } catch (error) {
+      await owner.release();
+      throw error;
+    }
   }
 
   private dispatchHostServiceMessage(msg: SessionInboundMessage): Promise<void> | undefined {
@@ -3194,6 +3536,8 @@ export class Session {
     switch (msg.type) {
       case "agent.rewind.request":
         return this.handleAgentRewindRequest(msg, source);
+      case "agent.side_question.ask.request":
+        return this.handleAgentSideQuestionAskRequest(msg);
       default:
         return undefined;
     }
@@ -3528,6 +3872,8 @@ export class Session {
         return this.handleWorkspaceLabelList(msg);
       case "workspace.label.assignment.set.request":
         return this.handleWorkspaceLabelAssignment(msg);
+      case "workspace.label.create.request":
+        return this.handleWorkspaceLabelCreate(msg);
       case "workspace.label.update.request":
         return this.handleWorkspaceLabelUpdate(msg);
       case "workspace.label.delete.request":
@@ -3666,6 +4012,12 @@ export class Session {
 
   private async dispatchMiscMessage(msg: SessionInboundMessage): Promise<void> {
     switch (msg.type) {
+      case "agent.message.send_if_idle.request":
+        await this.handleSendAgentMessageIfIdleRequest(msg);
+        return;
+      case "agent.message.get_receipt.request":
+        await this.handleGetAgentMessageReceiptRequest(msg);
+        return;
       case "list_commands_request":
         await this.handleListCommandsRequest(msg);
         return;
@@ -3822,6 +4174,7 @@ export class Session {
     try {
       await this.agentStorage.remove(agentId);
       await this.agentManager.deleteAgentState(agentId);
+      await this.sessionContexts?.remove(agentId);
       // Directory removal is daemon-wide; agent_deleted below stays a source-scoped RPC reply.
       if (knownAgent) this.agentManager.notifyAgentRemoved(knownAgent);
     } catch (error) {
@@ -5523,6 +5876,117 @@ export class Session {
         },
         source,
       );
+    }
+  }
+
+  private async handleAgentSideQuestionAskRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.side_question.ask.request" }>,
+  ): Promise<void> {
+    try {
+      if (msg.operation === "list") {
+        const sideChats = await this.agentManager.listSideChats(msg.agentId);
+        this.emit({
+          type: "agent.side_question.ask.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            sideChats,
+            response: null,
+            error: null,
+          },
+        });
+        return;
+      }
+      if (msg.operation === "open") {
+        const sideAgent = await this.agentManager.openSideChat(msg.agentId, msg.sideAgentId);
+        if (this.isCleanedUp) {
+          return;
+        }
+        if (!this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
+          throw new Error(`Agent '${msg.agentId}' is closing`);
+        }
+        const pendingEvents: AgentManagerEvent[] = [];
+        let publishEvents = false;
+        const unsubscribe = this.agentManager.subscribe(
+          (event) => {
+            if (publishEvents) {
+              this.forwardSideChatAgentEvent(msg.agentId, event);
+            } else {
+              pendingEvents.push(event);
+            }
+          },
+          { agentId: sideAgent.id, replayState: true },
+        );
+        if (this.isCleanedUp) {
+          unsubscribe();
+          return;
+        }
+        if (!this.agentManager.isSideChatOpen(msg.agentId, sideAgent.id)) {
+          unsubscribe();
+          throw new Error(`Agent '${msg.agentId}' is closing`);
+        }
+        this.sideChatSubscriptions.get(sideAgent.id)?.unsubscribe();
+        this.sideChatSubscriptions.set(sideAgent.id, {
+          parentAgentId: msg.agentId,
+          unsubscribe,
+        });
+        publishEvents = true;
+        for (const event of pendingEvents) {
+          this.forwardSideChatAgentEvent(msg.agentId, event);
+        }
+        this.emit({
+          type: "agent.side_question.ask.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            sideAgentId: sideAgent.id,
+            response: null,
+            error: null,
+          },
+        });
+        return;
+      }
+      if (msg.operation === "close") {
+        const sideAgentId = msg.sideAgentId;
+        const subscription = sideAgentId ? this.sideChatSubscriptions.get(sideAgentId) : undefined;
+        if (!sideAgentId || !subscription || subscription.parentAgentId !== msg.agentId) {
+          throw new Error("Unknown side chat");
+        }
+        subscription.unsubscribe();
+        this.sideChatSubscriptions.delete(sideAgentId);
+        this.emit({
+          type: "agent.side_question.ask.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            sideAgentId,
+            response: null,
+            error: null,
+          },
+        });
+        return;
+      }
+      const result = await this.agentManager.askSideQuestion(msg.agentId, msg.question);
+      this.emit({
+        type: "agent.side_question.ask.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          response: result?.response ?? null,
+          ...(result ? { synthetic: result.synthetic } : {}),
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.side_question.ask.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          response: null,
+          error: error instanceof Error ? error.message : "Failed to ask side question",
+        },
+      });
     }
   }
 
@@ -7315,6 +7779,20 @@ export class Session {
     }
   }
 
+  private async handleWorkspaceLabelCreate(
+    request: Extract<SessionInboundMessage, { type: "workspace.label.create.request" }>,
+  ): Promise<void> {
+    try {
+      const result = await this.requireWorkspaceLabels().create(request.label);
+      this.emit({
+        type: "workspace.label.create.response",
+        payload: { requestId: request.requestId, ...result },
+      });
+    } catch (error) {
+      this.emitWorkspaceLabelError(request, error);
+    }
+  }
+
   private async handleWorkspaceLabelUpdate(
     request: Extract<SessionInboundMessage, { type: "workspace.label.update.request" }>,
   ): Promise<void> {
@@ -7561,6 +8039,7 @@ export class Session {
         request.source.projectId,
         {
           expectsInitialAgent: Boolean(request.firstAgentContext),
+          automatic: request.automatic,
           workspaceId,
           metadata: request.metadata,
           ...backgroundIntent,
@@ -7619,6 +8098,7 @@ export class Session {
         cwd: sourceCwd,
         workspaceId,
         projectId: source.projectId,
+        automatic: request.automatic,
         worktreeSlug: source.worktreeSlug,
         action: source.action,
         refName: source.refName,
@@ -9277,6 +9757,158 @@ export class Session {
     }
   }
 
+  private async handleSendAgentMessageIfIdleRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.message.send_if_idle.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveAgentIdentifier(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.message.send_if_idle.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          accepted: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+
+    const agentId = resolved.agentId;
+    try {
+      const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments);
+      const source = msg.sourceAgentId
+        ? {
+            kind: "agent-message" as const,
+            agentId: msg.sourceAgentId,
+            serverId: msg.sourceAgentServerId,
+            title: !msg.sourceAgentServerId
+              ? (this.agentManager.getAgent(msg.sourceAgentId)?.config.title ?? undefined)
+              : undefined,
+          }
+        : undefined;
+      this.sessionLogger.trace(
+        { agentId, messageId: msg.messageId, textPrefix: msg.text.slice(0, 80) },
+        "agent.session.send_agent_message_if_idle",
+      );
+      await this.messageReceipts.send({
+        agentId,
+        messageId: msg.messageId,
+        request: {
+          operation: "send_if_idle",
+          prompt,
+          sourceAgentId: msg.sourceAgentId,
+          sourceAgentServerId: msg.sourceAgentServerId,
+        },
+        // Both rejections occur before the manager reserves a provider run.
+        isProvenNoEffect: (error) =>
+          error instanceof AgentBusyError || error instanceof AgentArchivedError,
+        send: async (beforeDispatch) => {
+          await prepareIdlePromptDelivery({
+            agentManager: this.agentManager,
+            agentStorage: this.agentStorage,
+            agentId,
+            logger: this.sessionLogger,
+          });
+          await beforeDispatch();
+          const { started } = await sendIdleAgentMessage({
+            agentManager: this.agentManager,
+            agentStorage: this.agentStorage,
+            agentId,
+            prompt,
+            messageId: msg.messageId,
+            source,
+            logger: this.sessionLogger,
+          });
+          // Acceptance means the provider acknowledged the turn start. A start
+          // that fails leaves the pending receipt ambiguous.
+          await waitForAgentRunStartWithTimeout(
+            this.agentManager,
+            agentId,
+            started,
+            this.delivery.requestSignal,
+          );
+        },
+      });
+
+      this.emit({
+        type: "agent.message.send_if_idle.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId,
+          accepted: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      if (this.delivery.requestSignal.aborted) return;
+      const details = { err: error, agentId, messageId: msg.messageId };
+      if (error instanceof AgentBusyError) {
+        this.sessionLogger.trace(details, "Idle-only agent message rejected while busy");
+      } else {
+        this.sessionLogger.warn(details, "Idle-only agent message was not accepted");
+      }
+      this.emit({
+        type: "agent.message.send_if_idle.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId,
+          accepted: false,
+          error: error instanceof AgentBusyError ? "agent_busy" : errorToFriendlyMessage(error),
+        },
+      });
+    }
+  }
+
+  private async handleGetAgentMessageReceiptRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.message.get_receipt.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveAgentIdentifier(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.message.get_receipt.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          messageId: msg.messageId,
+          status: null,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+
+    try {
+      const status = await this.messageReceipts.lookup(resolved.agentId, msg.messageId);
+      this.emit({
+        type: "agent.message.get_receipt.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          messageId: msg.messageId,
+          status,
+          error: null,
+        },
+      });
+    } catch (error) {
+      if (this.delivery.requestSignal.aborted) return;
+      this.sessionLogger.warn(
+        { err: error, agentId: resolved.agentId, messageId: msg.messageId },
+        "Failed to look up agent message receipt",
+      );
+      this.emit({
+        type: "agent.message.get_receipt.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          messageId: msg.messageId,
+          status: null,
+          error: errorToFriendlyMessage(error),
+        },
+      });
+    }
+  }
+
   private async handleWaitForFinish(
     agentIdOrIdentifier: string,
     requestId: string,
@@ -9496,10 +10128,27 @@ export class Session {
           !this.delivery.isModern(source) &&
           this.wantsEvent(event, source)
         )
-          this.onMessageToSource(source, this.workspaceSetupMessageForClient(message, source));
+          this.onMessageToSource(source, this.messageForClient(message, source));
       }
-    } else if (delivered.size === 0 && this.wantsEvent(event)) this.onMessage(message);
+    } else if (delivered.size === 0 && this.wantsEvent(event))
+      this.onMessage(this.projectBackgroundWorkMessage(message));
     return true;
+  }
+
+  private projectBackgroundWorkMessage(
+    message: SessionOutboundMessage,
+    source?: object,
+  ): SessionOutboundMessage {
+    return projectBackgroundWork(message, {
+      external: source
+        ? this.supportsForSource(CLIENT_CAPS.externalBackgroundWork, source)
+        : this.supports(CLIENT_CAPS.externalBackgroundWork),
+      canStop:
+        this.authorization.allowsPermission("workspace.write") ||
+        this.authorization.allowsPermission("hub.execute"),
+      nativeSummary: (id) =>
+        this.agentManager.getAgentBackgroundWorkSummary(id, { includeExternal: false }),
+    });
   }
 
   private emit(msg: SessionOutboundMessage): void {
@@ -9526,20 +10175,21 @@ export class Session {
     if (msg.type === "workspace_setup_status_response") {
       if (this.clientSources.size > 0 && this.onMessageToSource) {
         for (const [source] of this.clientSources) {
-          this.onMessageToSource(source, this.workspaceSetupMessageForClient(msg, source));
+          this.onMessageToSource(source, this.messageForClient(msg, source));
         }
         return;
       }
-      msg = this.workspaceSetupMessageForClient(msg);
+      msg = this.messageForClient(msg);
     }
-    this.onMessage(msg);
+    this.onMessage(this.projectBackgroundWorkMessage(msg));
   }
 
   // COMPAT(workspaceSetupBlocked): added in v0.8.0, remove after 2027-03-07 once client floor >= v0.8.0.
-  private workspaceSetupMessageForClient(
+  private messageForClient(
     message: SessionOutboundMessage,
     source?: object,
   ): SessionOutboundMessage {
+    message = this.projectBackgroundWorkMessage(message, source);
     if (
       message.type !== "workspace_setup_progress" &&
       message.type !== "workspace_setup_status_response"
@@ -9618,6 +10268,8 @@ export class Session {
       this.unsubscribeAgentEvents();
       this.unsubscribeAgentEvents = null;
     }
+    for (const subscription of this.sideChatSubscriptions.values()) subscription.unsubscribe();
+    this.sideChatSubscriptions.clear();
     this.unsubscribeProjectMutations?.();
     this.unsubscribeProjectMutations = null;
     this.unsubscribePluginChanges?.();

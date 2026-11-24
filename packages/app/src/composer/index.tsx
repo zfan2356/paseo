@@ -1,3 +1,6 @@
+import { ExecutionDirectory } from "./execution-directory";
+import { ComposerControlLayoutProvider } from "./agent-controls/layout-context";
+import { resolveComposerControlPresentation } from "./agent-controls/layout";
 import {
   useComposerEditingSession,
   useComposerFullscreen,
@@ -162,7 +165,11 @@ import type { ComposerFocusOptions } from "@/composer/model";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { insertAtSelection } from "@/composer/insert-text";
 import { composerWorkspaceAttachment } from "@/composer/attachments/workspace";
-import { useWorkspaceAttachmentsForScopes } from "@/attachments/workspace-attachments-store";
+import { useSessionNavigationPreferences } from "@/session-navigation/preferences";
+import {
+  buildWorkspaceAttachmentScopeKey,
+  useWorkspaceAttachmentsForScopes,
+} from "@/attachments/workspace-attachments-store";
 import { droppedItemsToSelectedFiles } from "@/composer/attachments/drop";
 import { getFileTypeLabel } from "@/attachments/file-types";
 import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
@@ -300,7 +307,8 @@ const EMPTY_METRICS: AgentMetric[] = [];
 
 function buildAgentStateSelector(serverId: string, agentId: string) {
   return (state: ReturnType<typeof useSessionStore.getState>) => {
-    const agent = state.sessions[serverId]?.agents?.get(agentId) ?? null;
+    const session = state.sessions[serverId];
+    const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId) ?? null;
     return {
       status: agent?.status ?? null,
       contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
@@ -1369,7 +1377,21 @@ function ComposerContentImpl({
   const isDesktopLayout = resolveIsDesktopWebBreakpoint(isCompactLayout);
   const messagePlaceholder = resolveMessagePlaceholder(inputMode, isDesktopLayout, t, placeholder);
   const setUserInput = onChangeText;
-  const workspaceAttachments = useWorkspaceAttachmentsForScopes(attachmentScopeKeys);
+  const selectedDirectory = useSessionNavigationPreferences(
+    (state) => state.selectedDirectoryBySession?.[`${serverId}:${agentId}`],
+  );
+  const effectiveAttachmentScopeKeys = useMemo(() => {
+    if (!selectedDirectory) return attachmentScopeKeys;
+    return [
+      ...attachmentScopeKeys,
+      buildWorkspaceAttachmentScopeKey({
+        serverId,
+        sessionAgentId: agentId,
+        cwd: selectedDirectory,
+      }),
+    ];
+  }, [attachmentScopeKeys, serverId, agentId, selectedDirectory]);
+  const workspaceAttachments = useWorkspaceAttachmentsForScopes(effectiveAttachmentScopeKeys);
   const {
     selectedAttachments,
     buildOutgoingAttachments,
@@ -2362,29 +2384,43 @@ function ComposerContentImpl({
     [attachments, setSelectedAttachments, setGithubSearchQuery, setIsGithubPickerOpen],
   );
 
-  const leftContent = useMemo(() => {
-    const controls = renderLeftContent({
+  const toolbarControlLayout = useMemo(
+    () => ({
+      glyphs: toolbarGlyphsFor(controlSizing),
+      presentation: resolveComposerControlPresentation(isCompactLayout ? "compact" : "full"),
+    }),
+    [controlSizing, isCompactLayout],
+  );
+  const leftContent = useMemo(
+    () => (
+      <ComposerInputProvider value={composerInput}>
+        <ComposerControlLayoutProvider value={toolbarControlLayout}>
+          <ExecutionDirectory serverId={serverId} cwd={cwd} compact={isCompactLayout} />
+          {renderLeftContent({
+            agentControls,
+            agentId,
+            serverId,
+            focusInput,
+            isCompactLayout,
+            showAgentControls: mode.showAgentControls,
+            showToolbar: !isFullscreen,
+          })}
+        </ComposerControlLayoutProvider>
+      </ComposerInputProvider>
+    ),
+    [
       agentControls,
       agentId,
-      serverId,
+      cwd,
       focusInput,
       isCompactLayout,
-      showAgentControls: mode.showAgentControls,
-      showToolbar: !isFullscreen,
-    });
-    return controls ? (
-      <ComposerInputProvider value={composerInput}>{controls}</ComposerInputProvider>
-    ) : null;
-  }, [
-    agentControls,
-    agentId,
-    composerInput,
-    focusInput,
-    isCompactLayout,
-    isFullscreen,
-    mode.showAgentControls,
-    serverId,
-  ]);
+      mode.showAgentControls,
+      serverId,
+      toolbarControlLayout,
+      composerInput,
+      isFullscreen,
+    ],
+  );
 
   const handleAttachButtonRef = useCallback((node: View | null) => {
     attachButtonRef.current = node;

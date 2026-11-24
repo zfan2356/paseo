@@ -6,6 +6,7 @@ import {
   readGitHubChangeRequests,
   resolveGitHubChangeRequest,
 } from "./github-change-requests.js";
+import type { ForgeRepositoryTarget } from "./forge-service.js";
 import { z } from "zod";
 import {
   isGitHubHost,
@@ -687,7 +688,8 @@ const BatchPollRepositorySchema = GitHubDefaultBranchSchema.extend({
   squashMergeAllowed: z.boolean().optional().catch(false),
   rebaseMergeAllowed: z.boolean().optional().catch(false),
   viewerDefaultMergeMethod: z.string().nullable().optional().catch(null),
-  pullRequests: z.object({ nodes: z.array(BatchPollPrNodeSchema) }),
+  pullRequests: z.object({ nodes: z.array(BatchPollPrNodeSchema) }).optional(),
+  pullRequest: BatchPollPrNodeSchema.nullable().optional(),
 });
 
 const GitHubGraphqlRateLimitSchema = z.object({
@@ -819,13 +821,7 @@ function buildBatchPullRequestStatusSelections(entries: GitHubBatchPollEntry[]):
     squashMergeAllowed
     rebaseMergeAllowed
     viewerDefaultMergeMethod
-    pullRequests(headRefName: ${graphqlString(
-      entry.target.headRef,
-    )}, first: ${BATCH_PR_CANDIDATE_LIMIT}, orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes {
-        ...PaseoPollPullRequest
-      }
-    }
+    ${entry.target.repository?.number !== undefined ? `pullRequest(number: ${entry.target.repository?.number}) { ...PaseoPollPullRequest }` : `pullRequests(headRefName: ${graphqlString(entry.target.headRef)}, first: ${BATCH_PR_CANDIDATE_LIMIT}, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { ...PaseoPollPullRequest } }`}
   }`,
   );
   const originAliases = entries.flatMap((entry, index) =>
@@ -1103,6 +1099,7 @@ interface InFlightCacheEntry {
 }
 
 interface GitHubPollTarget extends CurrentPullRequestLookup {
+  repository?: ForgeRepositoryTarget;
   retainCount: number;
   /** Absolute due time on the shared poll grid; null while a poll is in flight. */
   nextDueAt: number | null;
@@ -1412,7 +1409,10 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     });
   }
 
-  function getPollTargetKey(target: CurrentPullRequestLookup): string {
+  function getPollTargetKey(
+    target: CurrentPullRequestLookup & { repository?: ForgeRepositoryTarget },
+  ): string {
+    if (target.repository) return JSON.stringify(["explicit", target.repository]);
     return buildCacheKey({
       cwd: target.cwd,
       method: "getCurrentPullRequestStatus",
@@ -1447,10 +1447,13 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
   }
 
   function scheduleGitHubPoll(target: GitHubPollTarget): void {
-    scheduleGitHubPollAfter(
-      target,
-      computeGithubNextInterval(target.latestStatus, target.consecutiveErrors),
-    );
+    let interval = computeGithubNextInterval(target.latestStatus, target.consecutiveErrors);
+    if (target.repository && target.consecutiveErrors === 0) {
+      interval = 45_000;
+      const status = target.latestStatus;
+      if (status && (status.isMerged || status.state === "closed")) interval = 300_000;
+    }
+    scheduleGitHubPollAfter(target, interval);
   }
 
   function scheduleImmediateGitHubPoll(target: GitHubPollTarget): void {
@@ -1464,7 +1467,9 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     const now = deps.now();
     const baseline = target.pollCycleStartedAt ?? now;
     target.pollCycleStartedAt = null;
-    const pauseUntil = getPollPauseUntil(target.cwd);
+    const pauseUntil = target.repository
+      ? (pollPausedUntilByHost.get(target.repository.host) ?? 0)
+      : getPollPauseUntil(target.cwd);
     if (delayMs <= 0) {
       target.nextDueAt = Math.max(now, pauseUntil);
       armGitHubPollTimer();
@@ -1530,6 +1535,15 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     );
   }
 
+  function peekPollRepository(target: GitHubPollTarget) {
+    if (!target.repository)
+      return { host: peekRepoHost(target.cwd), slug: peekRepoSlug(target.cwd) };
+    return {
+      host: { settled: true, value: target.repository.host },
+      slug: { settled: true, value: target.repository.projectPath },
+    };
+  }
+
   async function flushDueGitHubPolls(): Promise<void> {
     const now = deps.now();
     const due: GitHubPollTarget[] = [];
@@ -1556,8 +1570,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
       if (target.retainCount <= 0) {
         continue;
       }
-      const host = peekRepoHost(target.cwd);
-      const slug = peekRepoSlug(target.cwd);
+      const { host, slug } = peekPollRepository(target);
       if (!host.settled || !slug.settled) {
         target.pollCycleStartedAt = null;
         void Promise.all([
@@ -1807,7 +1820,9 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     const currentPause = pollPausedUntilByHost.get(host) ?? 0;
     pollPausedUntilByHost.set(host, Math.max(currentPause, pauseUntil));
     for (const target of pollTargets.values()) {
-      const targetHost = peekRepoHost(target.cwd);
+      const targetHost = target.repository
+        ? { settled: true, value: target.repository.host }
+        : peekRepoHost(target.cwd);
       if (!targetHost.settled || (targetHost.value ?? "github.com") !== host) {
         continue;
       }
@@ -1970,7 +1985,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     };
     for (const [index, entry] of input.entries.entries()) {
       const aliasValue = input.aliases[batchAlias(index)];
-      const repository = aliasValue ? BatchPollRepositorySchema.safeParse(aliasValue) : null;
+      const repository = parseBatchRepository(entry, aliasValue);
       if (!repository?.success) {
         updatePollTargetAfterError(
           entry.target,
@@ -1983,7 +1998,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         );
         continue;
       }
-      if (repository.data.isFork && repository.data.parent) {
+      if (!entry.target.repository && repository.data.isFork && repository.data.parent) {
         const forkOwner = repository.data.owner?.login ?? entry.owner;
         pollRepositoryRedirects.set(batchRepositoryRedirectKey(entry), {
           owner: repository.data.parent.owner.login,
@@ -1999,10 +2014,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         // whose PR lives in the parent repository, and a full candidate page —
         // ten newer same-named fork PRs can crowd the checkout's own PR out of
         // the first:N window, so absence is only conclusive on a partial page.
-        if (
-          repository.data.isFork ||
-          repository.data.pullRequests.nodes.length >= BATCH_PR_CANDIDATE_LIMIT
-        ) {
+        if (requiresLegacyLookup(entry, repository.data)) {
           distribution.legacyFallback.push(entry.target);
         } else {
           finalizeBatchPollTarget({
@@ -2029,7 +2041,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
       }
       const frozenKey =
         node.state !== "OPEN" && node.headRefOid.length > 0
-          ? `${entry.owner}/${entry.name}#${node.number}@${node.headRefOid}`
+          ? `${entry.host}/${entry.owner}/${entry.name}#${node.number}@${node.headRefOid}`
           : null;
       const cachedRollup = frozenKey ? frozenPullRequestChecksCache.get(frozenKey) : undefined;
       if (frozenKey && cachedRollup) {
@@ -2069,7 +2081,26 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     return isOnDefaultBranch(entry.target, origin?.defaultBranchRef?.name);
   }
 
+  function parseBatchRepository(entry: GitHubBatchPollEntry, value: unknown) {
+    const parsed = BatchPollRepositorySchema.safeParse(value);
+    if (!parsed.success) return null;
+    if (entry.target.repository && parsed.data.pullRequest === undefined) return null;
+    if (!entry.target.repository && !parsed.data.pullRequests) return null;
+    return parsed;
+  }
+
+  function requiresLegacyLookup(
+    entry: GitHubBatchPollEntry,
+    repository: BatchPollRepository,
+  ): boolean {
+    if (entry.target.repository) return false;
+    return (
+      repository.isFork || (repository.pullRequests?.nodes.length ?? 0) >= BATCH_PR_CANDIDATE_LIMIT
+    );
+  }
+
   function addressGitHubBatchEntry(entry: GitHubBatchPollEntry): GitHubBatchPollEntry {
+    if (entry.target.repository) return entry;
     const redirect = pollRepositoryRedirects.get(batchRepositoryRedirectKey(entry));
     return redirect
       ? {
@@ -2089,13 +2120,14 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     entry: GitHubBatchPollEntry,
     repository: BatchPollRepository,
   ): BatchPollPrNode | null {
+    if (entry.target.repository) return repository.pullRequest ?? null;
     // Prefer the canonical owner from the response: the origin slug can carry
     // stale casing or a pre-transfer owner that repository() redirects from.
     const selfOwner = (repository.owner?.login ?? entry.owner).toLowerCase();
     const headRepositoryOwner = entry.target.headRepositoryOwner ?? entry.headRepositoryOwner;
     const nodeByCandidate = new Map<ResolvedPullRequestCandidate, BatchPollPrNode>();
     const candidates: ResolvedPullRequestCandidate[] = [];
-    for (const node of repository.pullRequests.nodes) {
+    for (const node of repository.pullRequests?.nodes ?? []) {
       const candidate = toCurrentPullRequestCandidate(
         toBatchCurrentPullRequestItem(node, undefined),
         entry.target.headRef,
@@ -2238,6 +2270,13 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         entry.target.headRef,
       );
       status = built ? { ...built, forgeSpecific: { forge: "github", ...facts } } : null;
+    }
+    if (entry.target.repository) {
+      entry.target.latestStatus = status;
+      entry.target.consecutiveErrors = 0;
+      for (const callback of entry.target.callbacks) callback(status);
+      scheduleGitHubPoll(entry.target);
+      return;
     }
     const cacheKey = getPollTargetKey(entry.target);
     // A direct or forced read can finish between this batch becoming due and
@@ -2882,12 +2921,35 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
       });
     },
 
+    getPullRequestStatus(input) {
+      return new Promise((resolve, reject) => {
+        const retained = api.retainPullRequestStatusPoll!({
+          ...input,
+          onStatus: (status) => {
+            retained.unsubscribe();
+            resolve(status);
+          },
+          onError: (error) => {
+            retained.unsubscribe();
+            reject(error);
+          },
+        });
+      });
+    },
+    retainPullRequestStatusPoll(input) {
+      return api.retainCurrentPullRequestStatusPoll!({
+        ...input,
+        repository: { host: input.host, projectPath: input.projectPath, number: input.number },
+        headRef: "",
+      });
+    },
     retainCurrentPullRequestStatusPoll(input) {
       const key = getPollTargetKey(input);
       let target = pollTargets.get(key);
       if (!target) {
         target = {
           cwd: input.cwd,
+          repository: input.repository,
           headRef: input.headRef,
           headSha: input.headSha,
           headRepositoryOwner: input.headRepositoryOwner,
@@ -2903,8 +2965,10 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         pollTargets.set(key, target);
         // Warm the host and slug caches so the first poll flush can already
         // batch this target instead of taking the legacy per-target path.
-        void resolveRepoHostCached(input.cwd).catch(() => {});
-        void resolveRepoSlugCached(input.cwd);
+        if (!input.repository) {
+          void resolveRepoHostCached(input.cwd).catch(() => {});
+          void resolveRepoSlugCached(input.cwd);
+        }
       }
 
       const isNewlyRetained = target.retainCount === 0;

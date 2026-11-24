@@ -240,6 +240,54 @@ describe("terminal-stream-controller", () => {
     expect(harness.outputs).toEqual([]);
   });
 
+  it("keeps attaching until every replay chunk arrives", async () => {
+    const client = new FakeTerminalStreamClient();
+    const statuses: TerminalStreamControllerStatus[] = [];
+    client.nextSubscribeResults.push({ terminalId: "term-1", error: null });
+    const controller = new TerminalStreamController({
+      client,
+      getPreferredSize: () => ({ rows: 24, cols: 80 }),
+      getRestoreOptions: () => ({
+        mode: "visible-snapshot",
+        scrollbackLines: 0,
+      }),
+      onOutput: () => {},
+      onReplay: () => {},
+      onStatusChange: (status) => {
+        statuses.push(status);
+      },
+    });
+
+    controller.setTerminal({ terminalId: "term-1" });
+    await flushAsyncWork();
+
+    expect(statuses.at(-1)).toEqual({
+      terminalId: "term-1",
+      isAttaching: true,
+      error: null,
+    });
+
+    client.emit({
+      terminalId: "term-1",
+      type: "replay",
+      replay: { type: "begin", rows: 24, cols: 80, retainedHistoryLines: 0 },
+    });
+    client.emit({
+      terminalId: "term-1",
+      type: "replay",
+      replay: { type: "data", data: terminalOutput("current-screen") },
+    });
+
+    expect(statuses.at(-1)?.isAttaching).toBe(true);
+    client.emit({ terminalId: "term-1", type: "replay", replay: { type: "end" } });
+    expect(statuses.at(-1)).toEqual({
+      terminalId: "term-1",
+      isAttaching: false,
+      error: null,
+    });
+    controller.dispose();
+  });
+
   it("unsubscribes when switching terminals and on dispose", async () => {
     const harness = createHarness();
     harness.client.nextSubscribeResults.push({ terminalId: "term-1", error: null });

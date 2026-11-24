@@ -1,4 +1,5 @@
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import type { CodexAppServerEndpoint } from "./app-server-transport.js";
+import { CodexAppServerSocket } from "./shared-app-server.js";
 import type { Logger } from "pino";
 
 import { terminateWithTreeKill } from "../../../../utils/tree-kill.js";
@@ -16,8 +17,8 @@ interface InitializableAppServerClient {
 
 interface StartupOptions<TClient extends InitializableAppServerClient> {
   stateDirKey: string;
-  spawn: () => ChildProcessWithoutNullStreams | Promise<ChildProcessWithoutNullStreams>;
-  createClient: (child: ChildProcessWithoutNullStreams) => TClient;
+  spawn: () => CodexAppServerEndpoint | Promise<CodexAppServerEndpoint>;
+  createClient: (child: CodexAppServerEndpoint) => TClient;
   initializeParams: unknown;
   logger: Pick<Logger, "warn" | "debug">;
   signal?: AbortSignal;
@@ -48,7 +49,11 @@ async function waitForSignal<T>(operation: Promise<T>, signal: AbortSignal): Pro
   }
 }
 
-async function disposeUnownedChild(child: ChildProcessWithoutNullStreams): Promise<void> {
+async function disposeUnownedChild(child: CodexAppServerEndpoint): Promise<void> {
+  if (child instanceof CodexAppServerSocket) {
+    await child.close();
+    return;
+  }
   const result = await terminateWithTreeKill(child, {
     gracefulTimeoutMs: 2_000,
     forceTimeoutMs: 1_000,
@@ -135,7 +140,7 @@ export class CodexAppServerStartupCoordinator {
       () => attemptAbort.abort(new Error("Timed out initializing Codex app-server")),
       this.attemptTimeoutMs,
     );
-    let child: ChildProcessWithoutNullStreams | undefined;
+    let child: CodexAppServerEndpoint | undefined;
     let client: TClient | undefined;
     try {
       attemptAbort.signal.throwIfAborted();

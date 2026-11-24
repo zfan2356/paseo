@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
@@ -409,14 +410,14 @@ export function Autocomplete({
 
   if (shownStatus) {
     return (
-      <View style={containerStyle}>
+      <View style={containerStyle} dataSet={MATERIAL_SLOTS.autocomplete}>
         <AutocompleteStatusRow status={shownStatus} />
       </View>
     );
   }
 
   return (
-    <View style={containerStyle}>
+    <View style={containerStyle} dataSet={MATERIAL_SLOTS.autocomplete}>
       <AutocompleteRows
         key={scroller.key}
         rows={rows}

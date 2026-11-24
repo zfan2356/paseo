@@ -1,3 +1,5 @@
+import { updateMaterialBackground } from "../fork/materials/window-material.js";
+import { applyMaterialThemePreference } from "../fork/materials/window-material.js";
 import {
   app,
   BrowserWindow,
@@ -7,9 +9,9 @@ import {
   clipboard,
   ipcMain,
   nativeTheme,
-  shell,
 } from "electron";
 
+import { openAllowedExternalUrl } from "../features/opener.js";
 import type { WindowState, WindowStateStore } from "../settings/window-state.js";
 import type { DesktopWindowChromeMode } from "./chrome.js";
 
@@ -194,6 +196,7 @@ export function registerWindowManager(input: { mode: DesktopWindowChromeMode }):
   });
 
   ipcMain.handle("paseo:window:updateChrome", (event, update?: unknown) => {
+    applyMaterialThemePreference(update);
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) {
       return;
@@ -205,7 +208,7 @@ export function registerWindowManager(input: { mode: DesktopWindowChromeMode }):
     }
 
     if (nextUpdate.backgroundColor) {
-      win.setBackgroundColor(nextUpdate.backgroundColor);
+      updateMaterialBackground(win, nextUpdate.backgroundColor);
     }
 
     if (input.mode === "native-mac") {
@@ -349,7 +352,7 @@ export function buildStandardContextMenuItems(
     items.push({
       label: "Open Link in Browser",
       click: () => {
-        void shell.openExternal(params.linkURL);
+        void openAllowedExternalUrl(params.linkURL);
       },
     });
     items.push({

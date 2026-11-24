@@ -179,6 +179,8 @@ interface WorkspaceLayoutStore {
   hideExplorerSidebar: (workspaceKey: string) => void;
   /** Returns the ordinary right-side workspace pane, creating it when absent. */
   ensureSidePane: (workspaceKey: string, options?: { focus: boolean }) => string | null;
+  /** Hides the ordinary right-side pane without discarding its tabs. */
+  hideSidePane: (workspaceKey: string) => void;
   closeTab: (workspaceKey: string, tabId: string) => void;
   getTabDestination: (workspaceKey: string, tabId: string) => WorkspaceTabDestination | null;
   focusTab: (workspaceKey: string, tabId: string) => void;
@@ -1375,6 +1377,26 @@ export function createWorkspaceLayoutStore(
           );
           const rememberedPane = findPaneById(layout.root, rememberedPaneId);
           if (rememberedPane && rememberedPane.id !== explorerPaneId) {
+            if (rememberedPane.hidden === true) {
+              set((state) => {
+                const currentLayout = getWorkspaceLayout(
+                  state.layoutByWorkspace,
+                  normalizedWorkspaceKey,
+                );
+                const revealed =
+                  setPaneHiddenInLayout({
+                    layout: currentLayout,
+                    paneId: rememberedPane.id,
+                    hidden: false,
+                  }) ?? currentLayout;
+                return {
+                  layoutByWorkspace: {
+                    ...state.layoutByWorkspace,
+                    [normalizedWorkspaceKey]: revealed,
+                  },
+                };
+              });
+            }
             return rememberedPane.id;
           }
 
@@ -1401,6 +1423,30 @@ export function createWorkspaceLayoutStore(
             },
           }));
           return result.paneId;
+        },
+        hideSidePane: (workspaceKey) => {
+          const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);
+          if (!normalizedWorkspaceKey) {
+            return;
+          }
+
+          set((state) => {
+            const layout = getWorkspaceLayout(state.layoutByWorkspace, normalizedWorkspaceKey);
+            const paneId = trimNonEmpty(state.sidePaneIdByWorkspace[normalizedWorkspaceKey]);
+            const nextLayout = paneId
+              ? setPaneHiddenInLayout({ layout, paneId, hidden: true })
+              : null;
+            if (!nextLayout) {
+              return state;
+            }
+
+            return {
+              layoutByWorkspace: {
+                ...state.layoutByWorkspace,
+                [normalizedWorkspaceKey]: nextLayout,
+              },
+            };
+          });
         },
         closeTab: (workspaceKey, tabId) => {
           const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);

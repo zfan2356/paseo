@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import type { ReactElement } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
@@ -39,7 +40,7 @@ export function ParentAgentCallout({
 
   return (
     <View style={styles.rail} dataSet={CHAT_COLUMN_RAIL_DATASET}>
-      <View style={styles.callout} testID="parent-agent-callout">
+      <View dataSet={MATERIAL_SLOTS.callout} style={styles.callout} testID="parent-agent-callout">
         <StatusIcon statusBucket={parent.statusBucket} size={ICON_SIZE} backdrop="surface1">
           <ThemedParentIcon icon={parent.icon} size={ICON_SIZE} uniProps={foregroundColorMapping} />
         </StatusIcon>

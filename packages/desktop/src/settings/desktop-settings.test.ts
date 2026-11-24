@@ -29,6 +29,18 @@ describe("desktop-settings", () => {
     directories.clear();
   });
 
+  it("persists the selected quota account and patches its display independently", async () => {
+    const userDataPath = await createTempUserDataDir();
+    directories.add(userDataPath);
+    const store = createDesktopSettingsStore({ userDataPath });
+    await store.patch({ menuBarQuota: { accountId: "chosen-account" } });
+    await store.patch({ menuBarQuota: { display: "used" } });
+    const restored = await createDesktopSettingsStore({ userDataPath }).get();
+    expect(restored.menuBarQuota).toEqual({ accountId: "chosen-account", display: "used" });
+    await store.patch({ menuBarQuota: { display: "invalid", accountId: 42 } });
+    expect((await store.get()).menuBarQuota).toEqual(restored.menuBarQuota);
+  });
+
   it("persists default settings for new users", async () => {
     const userDataPath = await createTempUserDataDir();
     directories.add(userDataPath);
@@ -80,6 +92,7 @@ describe("desktop-settings", () => {
     const settings = await store.get();
 
     expect(settings).toEqual({
+      menuBarQuota: DEFAULT_DESKTOP_SETTINGS.menuBarQuota,
       releaseChannel: "stable",
       notifications: { playSound: true },
       daemon: {
@@ -102,6 +115,7 @@ describe("desktop-settings", () => {
     const files = await readdir(userDataPath);
 
     expect(next).toEqual({
+      menuBarQuota: DEFAULT_DESKTOP_SETTINGS.menuBarQuota,
       releaseChannel: "beta",
       notifications: { playSound: true },
       daemon: {
@@ -269,6 +283,7 @@ describe("desktop-settings", () => {
     });
 
     expect(migrated).toEqual({
+      menuBarQuota: DEFAULT_DESKTOP_SETTINGS.menuBarQuota,
       releaseChannel: "beta",
       notifications: { playSound: true },
       daemon: {
@@ -314,6 +329,7 @@ describe("desktop-settings", () => {
     expect(persisted.futureDocumentKey).toBe("kept");
     expect(persisted.settings.releaseChannel).toBe("beta");
     expect(next).toEqual({
+      menuBarQuota: DEFAULT_DESKTOP_SETTINGS.menuBarQuota,
       releaseChannel: "beta",
       notifications: { playSound: false },
       daemon: { manageBuiltInDaemon: true, keepRunningAfterQuit: false },

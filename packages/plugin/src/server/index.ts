@@ -46,3 +46,9 @@ export type {
   PluginWorktreeRestoreResult,
   WorktreeManagerRegistration,
 } from "./worktree.js";
+
+export type {
+  BackgroundWorkEntry,
+  BackgroundWorkSnapshot,
+  BackgroundWorkSourceRegistration,
+} from "./background-work.js";

@@ -1,3 +1,4 @@
+import type { SessionContextMutation } from "@getpaseo/protocol/session-context";
 import {
   DiffStreamRouter,
   DiffSubscriptionError,
@@ -127,17 +128,21 @@ import type {
   DaemonConfigReloadResponse,
   DiagnosticsResponse,
   AgentRewindResponseMessage,
+  AgentSideQuestionAskResponseMessage,
   ListTerminalsResponse,
   CreateTerminalResponse,
   SubscribeTerminalResponse,
   SubscribeTerminalRequest,
   CloseItemsResponse,
   KillTerminalResponse,
+  SwitchAgentTerminalToAgentResponse,
+  SwitchCodexTerminalToAgentResponse,
   CaptureTerminalResponse,
   TerminalInput,
   SessionInboundMessage,
   SessionOutboundMessage,
   SendAgentMessageRequest,
+  AgentMessageReceiptStatus,
   PaseoConfigRaw,
   PaseoConfigRevision,
   WorkspaceCreateRequest,
@@ -399,6 +404,11 @@ export type DaemonEvent =
       seq?: number;
       epoch?: string;
     }
+  | {
+      type: "agent.side_chat.agent_state";
+      parentAgentId: string;
+      agent: AgentSnapshotPayload;
+    }
   | { type: "status"; payload: { status: string } & Record<string, unknown> }
   | { type: "agent_deleted"; agentId: string }
   | {
@@ -502,6 +512,16 @@ export interface SendMessageOptions {
   attachments?: SendAgentMessageRequest["attachments"];
 }
 
+/** Options for idle-only delivery. There is deliberately no active-turn behavior. */
+export interface SendMessageIfIdleOptions {
+  /** Stable caller-supplied delivery identity; required for receipt-based retries. */
+  messageId: string;
+  images?: Array<{ data: string; mimeType: string }>;
+  attachments?: SendAgentMessageRequest["attachments"];
+  sourceAgentId?: string;
+  sourceAgentServerId?: string;
+}
+
 export interface AgentAttentionRequiredNotification {
   agentId: string;
   reason: "finished" | "error" | "permission";
@@ -543,6 +563,7 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
 
 export interface CreateWorkspaceRequestOptions {
   source: WorkspaceCreateRequest["source"];
+  automatic?: WorkspaceCreateRequest["automatic"];
   title?: string;
   /** Plugin-owned data stored on the workspace. Needs a host with `entityMetadata`. */
   metadata?: WorkspaceCreateRequest["metadata"];
@@ -698,6 +719,9 @@ export type RenameTerminalResult = z.infer<typeof RenameTerminalResponseSchema>[
 type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
 type KillTerminalPayload = KillTerminalResponse["payload"];
+type SwitchAgentTerminalToAgentPayload = SwitchAgentTerminalToAgentResponse["payload"];
+type AgentSideQuestionAskPayload = AgentSideQuestionAskResponseMessage["payload"];
+type SwitchCodexTerminalToAgentPayload = SwitchCodexTerminalToAgentResponse["payload"];
 type CaptureTerminalPayload = CaptureTerminalResponse["payload"];
 type ScheduleCreatePayload = Extract<
   SessionOutboundMessage,
@@ -1172,6 +1196,8 @@ function toTimeoutError(error: unknown, label: string, timeoutMs: number): Error
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 1500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30000;
 const DEFAULT_SESSION_RPC_TIMEOUT_MS = 60_000;
+/** Side questions run a full model turn (with API retries) on the daemon. */
+const SIDE_QUESTION_TIMEOUT_MS = 180_000;
 const PUSH_TOKEN_REVOCATION_TIMEOUT_MS = 2_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_LIVENESS_TIMEOUT_MS = 5000;
@@ -2822,6 +2848,7 @@ export class DaemonClient {
       message,
       async (query, accept) => {
         resetSource = false;
+        if (query.type === "agent.context.get.request") this.requireSessionContext();
         if (query.type === "workspace.setup.subscribe.request")
           this.requireWorkspaceSetupObservation();
         if (query.type === "plugin.rpc.subscribe.request") this.requirePluginSubscriptions();
@@ -3050,6 +3077,34 @@ export class DaemonClient {
     });
   }
 
+  private requireSessionContext(): void {
+    if (this.getLastServerInfoMessage()?.features?.sessionContext !== true)
+      throw new Error("Update the host to use session context");
+  }
+
+  getSessionContext(agentId: string) {
+    this.requireSessionContext();
+    return this.sendNamespacedCorrelatedSessionRequest<"agent.context.get.response">({
+      message: { type: "agent.context.get.request", agentId },
+    });
+  }
+
+  observeSessionContext(agentId: string, options?: { signal?: AbortSignal }) {
+    this.requireSessionContext();
+    return this.observe(
+      "agent.context.get.response",
+      { type: "agent.context.get.request", agentId, subscribe: {} },
+      options,
+    );
+  }
+
+  mutateSessionContext(agentId: string, mutation: SessionContextMutation) {
+    this.requireSessionContext();
+    return this.sendNamespacedCorrelatedSessionRequest<"agent.context.mutate.response">({
+      message: { type: "agent.context.mutate.request", agentId, mutation },
+    });
+  }
+
   /** Finds one workspace by id across pages, background ones included when the host has them. */
   async findWorkspace(
     workspaceId: string,
@@ -3114,6 +3169,14 @@ export class DaemonClient {
         label: options.label,
         assigned: options.assigned,
       },
+    });
+  }
+
+  createWorkspaceLabel(
+    label: Extract<SessionInboundMessage, { type: "workspace.label.create.request" }>["label"],
+  ) {
+    return this.sendNamespacedCorrelatedSessionRequest<"workspace.label.create.response">({
+      message: { type: "workspace.label.create.request", label },
     });
   }
 
@@ -4354,6 +4417,106 @@ export class DaemonClient {
     return this.sendAgentMessage(agentId, text, options);
   }
 
+  /**
+   * Deliver one message only when the agent has no active or pending turn.
+   * There is no fallback to send/steer on an older host.
+   */
+  async sendAgentMessageIfIdle(
+    agentId: string,
+    text: string,
+    options: SendMessageIfIdleOptions,
+  ): Promise<{ agentId: string }> {
+    if (this.lastServerInfoMessage?.features?.agentMessageIfIdle !== true) {
+      throw Object.assign(
+        new Error("Update the Paseo host to send messages only when an agent is idle."),
+        { code: "unsupported_operation" },
+      );
+    }
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.message.send_if_idle.request",
+      requestId,
+      agentId,
+      text,
+      messageId: options.messageId,
+      sourceAgentId: options.sourceAgentId,
+      sourceAgentServerId: options.sourceAgentServerId,
+      images: options.images,
+      attachments: options.attachments,
+    });
+    const payload = await this.sendRequest({
+      requestId,
+      message,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.message.send_if_idle.response") {
+          return null;
+        }
+        if (msg.payload.requestId !== requestId) {
+          return null;
+        }
+        return msg.payload;
+      },
+    });
+    if (!payload.accepted) {
+      const code = payload.error ?? "agent_message_rejected";
+      throw Object.assign(new Error(code), { code });
+    }
+    return { agentId: payload.agentId };
+  }
+
+  /**
+   * Read the delivery receipt for a stable message ID without delivering it
+   * again. `pending` means the outcome is unknown; `absent` only means no local
+   * receipt was found and must not be treated as proof that delivery failed.
+   */
+  async getAgentMessageReceipt(
+    agentId: string,
+    messageId: string,
+  ): Promise<{
+    agentId: string;
+    messageId: string;
+    status: AgentMessageReceiptStatus;
+  }> {
+    if (this.lastServerInfoMessage?.features?.agentMessageReceiptLookup !== true) {
+      throw Object.assign(
+        new Error("Update the Paseo host to look up message delivery receipts."),
+        { code: "unsupported_operation" },
+      );
+    }
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.message.get_receipt.request",
+      requestId,
+      agentId,
+      messageId,
+    });
+    const payload = await this.sendRequest({
+      requestId,
+      message,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.message.get_receipt.response") {
+          return null;
+        }
+        if (msg.payload.requestId !== requestId) {
+          return null;
+        }
+        return msg.payload;
+      },
+    });
+    if (payload.error !== null) {
+      const code = payload.error || "agent_message_receipt_lookup_failed";
+      throw Object.assign(new Error(code), { code });
+    }
+    if (payload.status === null) {
+      throw Object.assign(new Error("agent_message_receipt_lookup_failed"), {
+        code: "agent_message_receipt_lookup_failed",
+      });
+    }
+    return { agentId: payload.agentId, messageId: payload.messageId, status: payload.status };
+  }
+
   async rewindAgent(
     agentId: string,
     messageId: string,
@@ -5517,16 +5680,26 @@ export class DaemonClient {
     });
   }
 
-  async createWorkspace(
-    input: CreateWorkspaceRequestOptions,
-    requestId?: string,
-  ): Promise<WorkspaceCreatePayload> {
-    const resolvedRequestId = this.createRequestId(requestId ?? input.requestId);
+  private validateWorkspaceCreation(input: CreateWorkspaceRequestOptions): void {
+    const needsAutomaticProjectSelection = input.automatic && !input.source.projectId;
+    const automaticProjectsSupported =
+      this.lastServerInfoMessage?.features?.automaticTaskProjects === true;
+    // COMPAT(automaticTaskProjects): added in v0.15.3; remove after 2027-05-15.
+    if (needsAutomaticProjectSelection && !automaticProjectsSupported)
+      throw new Error("Update the host to use automatic task projects.");
     if (input.background !== undefined || input.callerAgentId) this.requireBackgroundWorkspaces();
     if (input.agent?.background !== undefined)
       throw new Error("Configure background on the workspace, not its initial agent.");
     if (input.metadata !== undefined || input.agent?.metadata !== undefined)
       this.requireEntityMetadata();
+  }
+
+  async createWorkspace(
+    input: CreateWorkspaceRequestOptions,
+    requestId?: string,
+  ): Promise<WorkspaceCreatePayload> {
+    const resolvedRequestId = this.createRequestId(requestId ?? input.requestId);
+    this.validateWorkspaceCreation(input);
     let agentConfig = input.agent ? resolveAgentConfig(input.agent) : undefined;
     if (agentConfig && this.carriesLegacyOptions(agentConfig)) {
       agentConfig = await this.routeLegacyCreateConfig(agentConfig);
@@ -5560,6 +5733,7 @@ export class DaemonClient {
           ? { idempotencyKey: input.idempotencyKey }
           : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.automatic !== undefined ? { automatic: input.automatic } : {}),
         ...(input.background !== undefined ? { background: input.background } : {}),
         ...(input.callerAgentId ? { callerAgentId: input.callerAgentId } : {}),
         ...(input.firstAgentContext !== undefined
@@ -7254,6 +7428,131 @@ export class DaemonClient {
     });
   }
 
+  async switchCodexTerminalToAgent(
+    terminalId: string,
+    requestId?: string,
+  ): Promise<SwitchCodexTerminalToAgentPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "codex_terminal.switch_to_agent.request",
+      terminalId,
+      requestId: resolvedRequestId,
+    });
+    return this.sendCorrelatedRequest({
+      requestId: resolvedRequestId,
+      message,
+      responseType: "codex_terminal.switch_to_agent.response",
+      options: { skipQueue: true },
+    });
+  }
+
+  async switchAgentTerminalToAgent(
+    terminalId: string,
+    requestId?: string,
+  ): Promise<SwitchAgentTerminalToAgentPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent_terminal.switch_to_agent.request",
+      terminalId,
+      requestId: resolvedRequestId,
+    });
+    return this.sendCorrelatedRequest({
+      requestId: resolvedRequestId,
+      message,
+      responseType: "agent_terminal.switch_to_agent.response",
+      options: { skipQueue: true },
+    });
+  }
+
+  /**
+   * Ask a quick side question grounded in the agent's live conversation
+   * context. The daemon answers without interrupting the agent's current
+   * work; nothing is written to the agent timeline.
+   */
+  async askAgentSideQuestion(
+    agentId: string,
+    question: string,
+    requestId?: string,
+  ): Promise<AgentSideQuestionAskPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.side_question.ask.request",
+      agentId,
+      question,
+      requestId: resolvedRequestId,
+    });
+    return this.sendCorrelatedRequest({
+      requestId: resolvedRequestId,
+      message,
+      responseType: "agent.side_question.ask.response",
+      timeout: SIDE_QUESTION_TIMEOUT_MS,
+      options: { skipQueue: true },
+    });
+  }
+
+  async openAgentSideChat(
+    agentId: string,
+    requestId?: string,
+    options?: { sideAgentId?: string },
+  ): Promise<AgentSideQuestionAskPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.side_question.ask.request",
+      operation: "open",
+      agentId,
+      sideAgentId: options?.sideAgentId,
+      question: "",
+      requestId: resolvedRequestId,
+    });
+    return this.sendCorrelatedRequest({
+      requestId: resolvedRequestId,
+      message,
+      responseType: "agent.side_question.ask.response",
+      timeout: SIDE_QUESTION_TIMEOUT_MS,
+      options: { skipQueue: true },
+    });
+  }
+
+  async listAgentSideChats(agentId: string): Promise<AgentSideQuestionAskPayload> {
+    const requestId = this.createRequestId();
+    return this.sendCorrelatedRequest({
+      requestId,
+      message: SessionInboundMessageSchema.parse({
+        type: "agent.side_question.ask.request",
+        operation: "list",
+        agentId,
+        question: "",
+        requestId,
+      }),
+      responseType: "agent.side_question.ask.response",
+      timeout: SIDE_QUESTION_TIMEOUT_MS,
+      options: { skipQueue: true },
+    });
+  }
+
+  async closeAgentSideChat(
+    agentId: string,
+    sideAgentId: string,
+    requestId?: string,
+  ): Promise<AgentSideQuestionAskPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.side_question.ask.request",
+      operation: "close",
+      agentId,
+      sideAgentId,
+      question: "",
+      requestId: resolvedRequestId,
+    });
+    return this.sendCorrelatedRequest({
+      requestId: resolvedRequestId,
+      message,
+      responseType: "agent.side_question.ask.response",
+      timeout: SIDE_QUESTION_TIMEOUT_MS,
+      options: { skipQueue: true },
+    });
+  }
+
   async closeItems(
     input: { agentIds?: string[]; terminalIds?: string[] },
     requestId?: string,
@@ -8216,6 +8515,12 @@ export class DaemonClient {
           timestamp: msg.payload.timestamp,
           ...(typeof msg.payload.seq === "number" ? { seq: msg.payload.seq } : {}),
           ...(typeof msg.payload.epoch === "string" ? { epoch: msg.payload.epoch } : {}),
+        };
+      case "agent.side_chat.agent_state":
+        return {
+          type: "agent.side_chat.agent_state",
+          parentAgentId: msg.payload.parentAgentId,
+          agent: msg.payload.agent,
         };
       case "status":
         return { type: "status", payload: msg.payload };

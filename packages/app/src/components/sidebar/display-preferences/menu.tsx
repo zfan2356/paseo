@@ -164,9 +164,15 @@ const TRAILING_LABEL_KEYS: Record<SidebarTrailingChoice, string> = {
  * shape is deliberate — every option of every decision on one surface is what this menu used to
  * be, and it grew a row for each host on top of that.
  */
-export function SidebarDisplayPreferencesMenu(): ReactElement {
+export function SidebarDisplayPreferencesMenu({
+  sessions = false,
+}: { sessions?: boolean } = {}): ReactElement {
   const { t } = useTranslation();
-  const preferences = useSidebarDisplayPreferences();
+  const storedPreferences = useSidebarDisplayPreferences();
+  const preferences = useMemo(() => {
+    if (!sessions || storedPreferences.workspaceSort !== "manual") return storedPreferences;
+    return { ...storedPreferences, workspaceSort: "created" as const };
+  }, [storedPreferences, sessions]);
   const hosts = useHosts();
   // `allProjects`, never `projects`: the model's `projects` is already filtered, so a picker fed
   // from it would lose the row that undoes the filter as soon as the filter narrowed to one.
@@ -225,7 +231,7 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
       {
         id: "show",
         title: t("sidebar.display.show.label"),
-        content: <ShowPage preferences={preferences} />,
+        content: <ShowPage preferences={preferences} sessions={sessions} />,
       },
       {
         id: "checks",
@@ -243,12 +249,16 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
       },
     ];
 
-    if (preferences.grouping === "project") {
+    if (sessions || preferences.grouping === "project") {
       definitions.push({
         id: "sort",
         title: t("sidebar.display.sort.label"),
         content: (
-          <SortPage preferences={preferences} automaticSortSupported={workspaceSortSupported} />
+          <SortPage
+            preferences={preferences}
+            automaticSortSupported={workspaceSortSupported}
+            sessions={sessions}
+          />
         ),
       });
     }
@@ -287,6 +297,7 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
     t,
     preferences,
     workspaceSortSupported,
+    sessions,
     hosts,
     showHostFilter,
     showProjectFilter,
@@ -303,8 +314,12 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
         <MenuTrigger
           style={triggerStyle}
           accessibilityRole={isWeb ? undefined : "button"}
-          accessibilityLabel={t("sidebar.display.trigger")}
-          testID="sidebar-display-preferences-menu"
+          accessibilityLabel={
+            sessions ? t("sessionNavigation.displayPreferences") : t("sidebar.display.trigger")
+          }
+          testID={
+            sessions ? "session-display-preferences-menu" : "sidebar-display-preferences-menu"
+          }
         >
           <ThemedSettings2 size={14} uniProps={mutedIconMapping} />
         </MenuTrigger>
@@ -315,14 +330,16 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
           sheetTitle={t("sidebar.display.heading")}
           testID="sidebar-display-preferences-content"
         >
-          <MenuSubTrigger
-            id="grouping"
-            value={t(GROUPING_LABEL_KEYS[preferences.grouping])}
-            testID="sidebar-display-grouping"
-          >
-            {t("sidebar.display.grouping.label")}
-          </MenuSubTrigger>
-          {preferences.grouping === "project" ? (
+          {sessions ? null : (
+            <MenuSubTrigger
+              id="grouping"
+              value={t(GROUPING_LABEL_KEYS[preferences.grouping])}
+              testID="sidebar-display-grouping"
+            >
+              {t("sidebar.display.grouping.label")}
+            </MenuSubTrigger>
+          )}
+          {sessions || preferences.grouping === "project" ? (
             <MenuSubTrigger
               id="sort"
               value={
@@ -334,13 +351,15 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
               {t("sidebar.display.sort.label")}
             </MenuSubTrigger>
           ) : null}
-          <MenuSubTrigger
-            id="titleSource"
-            value={t(TITLE_SOURCE_LABEL_KEYS[preferences.titleSource])}
-            testID="sidebar-display-title-source"
-          >
-            {t("sidebar.display.titleSource.label")}
-          </MenuSubTrigger>
+          {sessions ? null : (
+            <MenuSubTrigger
+              id="titleSource"
+              value={t(TITLE_SOURCE_LABEL_KEYS[preferences.titleSource])}
+              testID="sidebar-display-title-source"
+            >
+              {t("sidebar.display.titleSource.label")}
+            </MenuSubTrigger>
+          )}
           <MenuSubTrigger id="show" testID="sidebar-display-show">
             {t("sidebar.display.show.label")}
           </MenuSubTrigger>
@@ -403,9 +422,11 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
 function SortPage({
   preferences,
   automaticSortSupported,
+  sessions,
 }: {
   preferences: Preferences;
   automaticSortSupported: boolean;
+  sessions: boolean;
 }): ReactElement {
   const { t } = useTranslation();
   const { setWorkspaceSort } = preferences;
@@ -414,9 +435,11 @@ function SortPage({
   const selectLastPrompt = useCallback(() => setWorkspaceSort("lastPrompt"), [setWorkspaceSort]);
   return (
     <>
-      <MenuItem selected={preferences.workspaceSort === "manual"} onSelect={selectManual}>
-        {t("sidebar.display.sort.manual")}
-      </MenuItem>
+      {sessions ? null : (
+        <MenuItem selected={preferences.workspaceSort === "manual"} onSelect={selectManual}>
+          {t("sidebar.display.sort.manual")}
+        </MenuItem>
+      )}
       {automaticSortSupported ? (
         <>
           <MenuItem selected={preferences.workspaceSort === "created"} onSelect={selectCreated}>
@@ -618,23 +641,31 @@ function OptionList<Value extends string>({
  * instead of ticking, and it goes last: a row that navigates does not belong in the middle of a
  * column you are running down with your eyes ticking things on and off.
  */
-function ShowPage({ preferences }: { preferences: Preferences }): ReactElement {
+function ShowPage({
+  preferences,
+  sessions,
+}: {
+  preferences: Preferences;
+  sessions: boolean;
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <>
-      {SIDEBAR_ROW_ITEMS.map((item) => (
-        <OptionItem
-          key={item}
-          value={item}
-          icon={ROW_ITEM_ICONS[item]}
-          label={t(ROW_ITEM_LABEL_KEYS[item])}
-          selected={preferences.rowItems[item]}
-          closeOnSelect={false}
-          onSelect={preferences.toggleRowItem}
-          testID={`sidebar-row-item-${item}`}
-        />
-      ))}
-      <ChecksSubTrigger />
+      {SIDEBAR_ROW_ITEMS.filter((item) => !sessions || ["host", "labels"].includes(item)).map(
+        (item) => (
+          <OptionItem
+            key={item}
+            value={item}
+            icon={ROW_ITEM_ICONS[item]}
+            label={t(ROW_ITEM_LABEL_KEYS[item])}
+            selected={preferences.rowItems[item]}
+            closeOnSelect={false}
+            onSelect={preferences.toggleRowItem}
+            testID={`sidebar-row-item-${item}`}
+          />
+        ),
+      )}
+      {sessions ? null : <ChecksSubTrigger />}
       {preferences.pluginRowBadgeItems.length > 0 ? (
         <MenuSeparator testID="sidebar-plugin-row-badge-items-separator" />
       ) : null}
@@ -642,7 +673,7 @@ function ShowPage({ preferences }: { preferences: Preferences }): ReactElement {
         <PluginRowBadgeItemOption key={item.key} item={item} preferences={preferences} />
       ))}
       <MenuSeparator />
-      {TRAILING_CHOICES.map((choice) => (
+      {TRAILING_CHOICES.filter((choice) => !sessions || choice === "timestamp").map((choice) => (
         <OptionItem
           key={choice}
           value={choice}

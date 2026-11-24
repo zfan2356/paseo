@@ -163,8 +163,8 @@ async function main() {
     },
   ) => {
     const reason = options?.reason ?? `worker_received_${signal}`;
-    // Signals mean "stop and close terminals"; only an explicit keep request keeps them.
-    const keepTerminals = options?.keepTerminals === true;
+    // Preserve the fork's graceful-shutdown default; explicit close requests still win.
+    const keepTerminals = options?.keepTerminals !== false;
     if (!shutdownPromise) {
       logger.info(
         { signal, reason, keepTerminals, ...getProcessDiagnostics() },

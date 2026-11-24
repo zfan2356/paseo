@@ -13,6 +13,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
 import type { Theme } from "@/styles/theme";
 import { MermaidFence } from "./fence/mermaid";
+import { MathExpression } from "./math-expression";
+import { parseMathLink } from "./math-source";
 import { isRecognizedLink, markdownLinkSource } from "./source";
 
 const ThemedCodeBlock = withUnistyles(HighlightedCodeBlock);
@@ -32,7 +34,16 @@ function WebCodeBlock({ code, language }: CodeBlockRendererProps) {
 // The library styles links inline, so a stylesheet :hover rule cannot underline them.
 const LINK_HOVER_STYLE = { textDecoration: "underline" } as const;
 
-function WebLink({ link, anchorProps, children }: LinkRendererProps) {
+const ThemedMathExpression = withUnistyles(MathExpression);
+const mathStyle = (theme: Theme) => ({ color: theme.colors.foreground });
+
+function WebLink(props: LinkRendererProps) {
+  const math = parseMathLink(props.link.url);
+  if (math) return <ThemedMathExpression {...math} uniProps={mathStyle} />;
+  return <WebFileLink {...props} />;
+}
+
+function WebFileLink({ link, anchorProps, children }: LinkRendererProps) {
   const forgeShorthand = useForgeShorthand();
   // A forge reference like `#12` carries its web URL so hover, copy and new-tab opens work.
   const forgeUrl = link.sourceType === "text" ? forgeShorthand?.resolve(link.url) : null;

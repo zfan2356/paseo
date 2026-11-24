@@ -1,3 +1,4 @@
+import { materialSheetBackground } from "@/fork/materials/sheet-background";
 import {
   BottomSheetModal as GorhomBottomSheetModal,
   type BottomSheetModalProps,
@@ -143,6 +144,11 @@ export const IsolatedBottomSheetModal = forwardRef<
   const modal = (
     <GorhomBottomSheetModal
       {...bottomSheetProps}
+      backgroundComponent={
+        bottomSheetProps.backgroundComponent === undefined
+          ? materialSheetBackground
+          : bottomSheetProps.backgroundComponent
+      }
       ref={modalRef}
       enableDismissOnClose={enableDismissOnClose}
       stackBehavior={presentation}

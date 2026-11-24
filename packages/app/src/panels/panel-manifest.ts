@@ -74,6 +74,14 @@ const manifests = {
     compactSheet: { openAsTab: false },
     resourceKey: (target) => `${target.parentAgentId}:${target.subagentId}`,
   },
+  side_chat: {
+    kind: "side_chat",
+    supportedHosts: ["main", "explorer"],
+    showCloseButton: true,
+    singleton: false,
+    compactSheet: null,
+    resourceKey: (target) => target.parentAgentId,
+  },
   terminal: {
     kind: "terminal",
     supportedHosts: ["main", "explorer"],
@@ -96,7 +104,7 @@ const manifests = {
     showCloseButton: false,
     singleton: true,
     compactSheet: null,
-    resourceKey: () => "changes_tree",
+    resourceKey: (target) => JSON.stringify([target.sessionAgentId, target.directory]),
   },
   files: {
     kind: "files",
@@ -104,7 +112,7 @@ const manifests = {
     showCloseButton: false,
     singleton: true,
     compactSheet: null,
-    resourceKey: () => "files",
+    resourceKey: (target) => JSON.stringify([target.sessionAgentId, target.directory]),
   },
   pull_request: {
     kind: "pull_request",
@@ -120,7 +128,10 @@ const manifests = {
     showCloseButton: true,
     singleton: false,
     compactSheet: { openAsTab: false },
-    resourceKey: (target) => target.path,
+    resourceKey: (target) =>
+      target.directory
+        ? JSON.stringify([target.sessionAgentId, target.directory, target.path])
+        : target.path,
   },
   working_diff: {
     kind: "working_diff",
@@ -128,7 +139,7 @@ const manifests = {
     showCloseButton: true,
     singleton: false,
     compactSheet: null,
-    resourceKey: () => "working_diff",
+    resourceKey: (target) => JSON.stringify([target.sessionAgentId, target.directory]),
   },
   plugin: {
     kind: "plugin",
@@ -156,7 +167,10 @@ const manifests = {
     showCloseButton: true,
     singleton: false,
     compactSheet: null,
-    resourceKey: (target) => target.sha,
+    resourceKey: (target) =>
+      target.directory
+        ? JSON.stringify([target.sessionAgentId, target.directory, target.sha])
+        : target.sha,
   },
 } satisfies PanelManifestByKind;
 

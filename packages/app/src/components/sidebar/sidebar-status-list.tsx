@@ -544,6 +544,7 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
   showShortcutBadge,
   canPin,
   onToggleWorkspacePin,
+  onWorkspacePress,
   reserveIdleStatusIndicatorSpace = true,
   inStatusGroup = true,
   drag,
@@ -576,8 +577,9 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
 
   const handlePress = useCallback(() => {
     if (!workspace.serverId) return;
+    onWorkspacePress?.();
     navigateToWorkspace({ serverId: workspace.serverId, workspaceId: workspace.workspaceId });
-  }, [workspace.serverId, workspace.workspaceId]);
+  }, [workspace.serverId, workspace.workspaceId, onWorkspacePress]);
 
   return (
     <StatusWorkspaceRowWithMenu

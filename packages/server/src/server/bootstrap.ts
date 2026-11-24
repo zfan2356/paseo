@@ -1,4 +1,7 @@
 import { unarchiveWorkspaceAgents } from "./workspace-archive-service.js";
+import { getPrimaryWorktreeRoot } from "../utils/checkout-git.js";
+import { SessionContextStore } from "./session-context-store.js";
+import { getParentAgentIdFromLabels } from "@getpaseo/protocol/agent-labels";
 import { createRestartRecovery } from "./agent/restart-recovery/index.js";
 import { sendPromptToAgent, unarchiveAgentState } from "./agent/agent-prompt.js";
 import { createChangeRequestWatches } from "./agent/change-request-watches/index.js";
@@ -511,7 +514,7 @@ export interface PaseoDaemon {
   scriptRuntimeStore: WorkspaceScriptRuntimeStore;
   browserToolsBroker: BrowserToolsBroker;
   start(): Promise<void>;
-  /** Stops the daemon. Terminals keep running for the next daemon only with keepTerminals. */
+  /** Stops the daemon, keeping terminals unless an explicit close was requested. */
   stop(options?: { keepTerminals?: boolean }): Promise<void>;
   getListenTarget(): ListenTarget | null;
   getServerId(): string;
@@ -684,6 +687,7 @@ export async function createPaseoDaemon(
   const browserToolsPolicy = new DaemonConfigBrowserToolsPolicy(daemonConfigStore);
   const browserToolsBroker = new BrowserToolsBroker({});
   const pluginRuntime: PluginService = new PluginService(logger, daemonConfigStore, daemonVersion, {
+    backgroundWork: { open: (...args) => agentManager.externalBackgroundWork.open(...args) },
     usageAgents: {
       hasAgent: (id) => agentManager.getAgent(id) !== null,
       usageSession: (id) => agentManager.usageSession(id),
@@ -963,9 +967,47 @@ export async function createPaseoDaemon(
     path.join(config.paseoHome, "projects", "workspaces.json"),
     logger,
   );
+  const sessionContexts = new SessionContextStore({
+    directory: path.join(config.paseoHome, "agent-contexts"),
+    getAgent: (id) => agentStorage.get(id),
+    getWorkspace: (id) => workspaceRegistry!.get(id),
+    resolveAutomaticProject: async (directory) => {
+      let root: string | null;
+      try {
+        root = await getPrimaryWorktreeRoot(directory, {
+          logger,
+          paseoHome: config.paseoHome,
+          worktreesRoot: config.worktreesRoot,
+        });
+      } catch (error) {
+        logger.warn(
+          { err: error, directory },
+          "Cannot determine session repository; keeping project assignment",
+        );
+        return null;
+      }
+      if (!root) return null;
+      const project = await workspaceProvisioning.findOrCreateProjectForDirectory(root);
+      return project.projectId;
+    },
+    projectExists: async (id) => {
+      const project = await projectRegistry.get(id);
+      return !!project && !project.archivedAt;
+    },
+    isVisibleRoot: async (agent) => {
+      if (agent.internal || agent.archivedAt) return false;
+      const parentId = getParentAgentIdFromLabels(agent.labels);
+      if (!parentId) return true;
+      const parent = await agentStorage.get(parentId);
+      return (
+        !!agent.workspaceId && !!parent?.workspaceId && agent.workspaceId !== parent.workspaceId
+      );
+    },
+  });
   const workspaceLabelService = createWorkspaceLabelService({
     paseoHome: config.paseoHome,
     workspaceRegistry,
+    sessionContexts,
   });
   const github = createGitHubService();
   const forgeResolver = createForgeResolver({
@@ -1004,6 +1046,7 @@ export async function createPaseoDaemon(
         unarchiveAgent: (id) => unarchiveAgentState(agentStorage, agentManager, id),
         sessionLogger: logger,
       }),
+    automaticProjectRoot: path.join(config.paseoHome, "automatic-tasks"),
     lifecycle: pluginRuntime,
     serverId,
     projectRegistry,
@@ -1106,6 +1149,7 @@ export async function createPaseoDaemon(
     logger,
   });
   await workspaceLabelService.initialize();
+  await sessionContexts.initializeLegacy((await agentStorage.listAll()).map((agent) => agent.id));
   logger.info({ elapsed: elapsed() }, "Workspace registries bootstrapped");
   const teardownArchivedWorkspaceRuntime = (workspaceId: string): void => {
     scriptRuntimeStore.removeForWorkspace(workspaceId);
@@ -1953,6 +1997,7 @@ export async function createPaseoDaemon(
               orchestrationSkills,
               workspaceLabelService,
               workspaceArchiveOperations,
+              sessionContexts,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
@@ -2033,7 +2078,7 @@ export async function createPaseoDaemon(
   };
 
   const stop = async (options?: { keepTerminals?: boolean }) => {
-    const keepTerminals = options?.keepTerminals === true;
+    const keepTerminals = options?.keepTerminals !== false;
     let terminalShutdownError: unknown = null;
     localCredential = null;
     await deleteLocalCredential(config.paseoHome);

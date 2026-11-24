@@ -914,4 +914,21 @@ describe("resyncing after the update feed resubscribes", () => {
 
     expect(daemon.requested).toEqual([PARENT_ID]);
   });
+
+  test("does not resync a cleared parent while retaining other parents and servers", async () => {
+    const daemon = fakeDaemon({ [PARENT_ID]: [child(SUBAGENT_ID, PARENT_ID, "running")] });
+    await refreshProviderSubagents(daemon.client, SERVER_ID, PARENT_ID);
+    await refreshProviderSubagents(daemon.client, SERVER_ID, "other-parent");
+    await refreshProviderSubagents(daemon.client, "server-2", PARENT_ID);
+
+    useProviderSubagentStore.getState().clearParent(SERVER_ID, PARENT_ID);
+    daemon.requested.length = 0;
+    await resyncProviderSubagents(daemon.client, SERVER_ID);
+    expect(daemon.requested).toEqual(["other-parent"]);
+    expect(status(PARENT_ID, SUBAGENT_ID)).toBeUndefined();
+
+    daemon.requested.length = 0;
+    await resyncProviderSubagents(daemon.client, "server-2");
+    expect(daemon.requested).toEqual([PARENT_ID]);
+  });
 });

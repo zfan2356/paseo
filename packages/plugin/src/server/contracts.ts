@@ -66,6 +66,9 @@ export interface PluginServerContext extends PluginLifecycleRegistration {
   registerProvider(provider: ProviderRegistration): void;
   registerUsageSource(source: UsageSourceRegistration): void;
   registerWorktreeManager(manager: WorktreeManagerRegistration): () => void;
+  registerBackgroundWorkSource(
+    source: import("./background-work.js").BackgroundWorkSourceRegistration,
+  ): void;
 }
 
 export type PluginServerContribution = (server: PluginServerContext) => PluginCleanup;

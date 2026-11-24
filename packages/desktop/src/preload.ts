@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { BrowserKeyboardPolicy } from "./features/browser-keyboard/index.js";
 import type { DesktopWindowChromeMode } from "./window/chrome.js";
+import type { MenuBarSnapshot } from "./features/menu-bar/state.js";
+import type { MagpieAction } from "./features/menu-bar/quotas.js";
 
 // This preload runs in Electron's sandbox and is tsc-compiled (not bundled), so it MUST
 // NOT emit any runtime module load other than "electron" — a require() of a local or
@@ -35,6 +37,20 @@ interface AttachedBrowserRegistration {
 
 contextBridge.exposeInMainWorld("paseoDesktop", {
   platform: process.platform,
+  menuBar: {
+    onAction: (handler: (request: { requestId: string; action: MagpieAction }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        request: { requestId: string; action: MagpieAction },
+      ) => handler(request);
+      ipcRenderer.on("paseo:menu-bar:action", listener);
+      return () => ipcRenderer.removeListener("paseo:menu-bar:action", listener);
+    },
+    actionResult: (result: { requestId: string; ok: boolean; error?: string }) =>
+      ipcRenderer.send("paseo:menu-bar:action-result", result),
+    update: (snapshot: MenuBarSnapshot | null) =>
+      ipcRenderer.invoke("paseo:menu-bar:update", snapshot),
+  },
   windowChromeMode: readWindowChromeMode(),
   browserHostLabel: readArgValue("--paseo-browser-host-label="),
   browserHostInstanceId: readArgValue("--paseo-browser-host-instance-id="),

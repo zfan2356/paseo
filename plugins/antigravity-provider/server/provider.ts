@@ -7,6 +7,7 @@ import {
 } from "@getpaseo/plugin/server/provider";
 import { z } from "zod";
 import { mapToolCall } from "./tool-calls.js";
+import { createContextWindow } from "./context-window.js";
 
 const legacySession = z.object({
   version: z.literal(1),
@@ -66,6 +67,7 @@ const antigravity: AcpTransformer = {
     }
     return "pass";
   },
+  contextWindow: createContextWindow,
 };
 
 /** The release `agy --version` reports, or its first line when it names no release. */
@@ -138,6 +140,16 @@ export function createAntigravityProvider(): ProviderRegistration {
         },
         nativeMode: "default",
         default: true,
+        openingNotice(sessionId, env) {
+          if (env.PASEO_ANTIGRAVITY_ACK_FULL_ACCESS === "1") return undefined;
+          return {
+            id: `${sessionId}:full-access`,
+            severity: "warning",
+            title: "Antigravity is running with full access",
+            description:
+              "Paseo approves ordinary tool requests automatically. Select Default to review permission requests.",
+          };
+        },
       },
     },
     transformers: [antigravity],

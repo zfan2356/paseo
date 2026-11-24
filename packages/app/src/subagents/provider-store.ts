@@ -28,6 +28,7 @@ interface ProviderSubagentState {
   descriptors: Map<string, ProviderSubagentDescriptorPayload>;
   timelines: Map<string, ProviderSubagentTimelineState>;
   hiddenFromTrack: Set<string>;
+  clearParent(serverId: string, parentAgentId: string): void;
   /** Parents whose list this client asked for, so a resubscribed update feed can catch them up. */
   trackedParents: Set<string>;
   trackParent(serverId: string, parentAgentId: string): void;
@@ -172,6 +173,19 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
   descriptors: new Map(),
   timelines: new Map(),
   hiddenFromTrack: new Set(),
+  clearParent(serverId, parentAgentId) {
+    set((state) => {
+      const prefix = parentPrefix(serverId, parentAgentId);
+      return {
+        descriptors: new Map([...state.descriptors].filter(([key]) => !key.startsWith(prefix))),
+        timelines: new Map([...state.timelines].filter(([key]) => !key.startsWith(prefix))),
+        hiddenFromTrack: new Set(
+          [...state.hiddenFromTrack].filter((key) => !key.startsWith(prefix)),
+        ),
+        trackedParents: new Set([...state.trackedParents].filter((key) => key !== prefix)),
+      };
+    });
+  },
   trackedParents: new Set(),
   trackParent(serverId, parentAgentId) {
     set((state) => {

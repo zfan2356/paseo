@@ -425,4 +425,56 @@ describe("folded model control labels", () => {
   it("needs no measurement without a thinking label", () => {
     expect(resolveModelTriggerLabels({ hasThinking: false, measurements: {} })).toBe("model");
   });
+
+  it("reserves room for account and speed controls before displaying full labels", () => {
+    const controls = {
+      hasModel: true,
+      hasThinking: true,
+      hasMode: true,
+      features: [{ type: "toggle" as const }],
+      auxiliaryLabels: ["个人优先", "Ultra fast"],
+      pluginItemsWidth: 0,
+      fontScale: 1,
+    };
+    expect(
+      resolveComposerControlDensity({
+        availableWidth: 580,
+        geometry: POINTER,
+        currentDensity: "full",
+        controls,
+      }),
+    ).toBe("condensed");
+    expect(
+      resolveComposerControlDensity({
+        availableWidth: 740,
+        geometry: POINTER,
+        currentDensity: "condensed",
+        controls,
+      }),
+    ).toBe("full");
+    expect(
+      resolveComposerControlDensity({
+        availableWidth: 340,
+        geometry: POINTER,
+        currentDensity: "condensed",
+        controls,
+      }),
+    ).toBe("tight");
+    expect(
+      resolveComposerControlDensity({
+        availableWidth: 380,
+        geometry: POINTER,
+        currentDensity: "tight",
+        controls,
+      }),
+    ).toBe("condensed");
+    expect(
+      resolveComposerControlDensity({
+        availableWidth: 740,
+        geometry: POINTER,
+        currentDensity: "condensed",
+        controls: { ...controls, fontScale: 1.25 },
+      }),
+    ).toBe("condensed");
+  });
 });

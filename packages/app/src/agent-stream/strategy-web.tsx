@@ -1365,11 +1365,16 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         // Let clicks focus the feed for browser keyboard scrolling without adding a Tab stop.
         tabIndex={-1}
         data-testid="agent-chat-scroll"
+        data-material="transcript"
         data-overlay-scrollbar={scrollEnabled && !isMobileBreakpoint ? "true" : undefined}
         id={`agent-chat-scroll-${shouldUseVirtualizer ? "web-dom-virtualized" : "web-dom-scroll"}`}
         style={scrollContainerStyle}
       >
-        <div ref={handleContentRef} style={contentContainerStyle}>
+        <div
+          ref={handleContentRef}
+          style={contentContainerStyle}
+          data-material="transcript-content"
+        >
           {historyStartSlot}
           <div ref={rowsHostRef} style={streamRowsHostStyle}>
             <div style={virtualRowsContainerStyle} />

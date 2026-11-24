@@ -31,6 +31,7 @@ import type { OpenCodeBridge } from "./providers/opencode/bridge.js";
 import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
+  ProviderRuntimeSettings,
 } from "./provider-launch-config.js";
 import {
   buildProviderRegistry,
@@ -411,6 +412,10 @@ export class ProviderSnapshotManager {
 
   hasProvider(provider: AgentProvider): boolean {
     return Object.prototype.hasOwnProperty.call(this.generation.definitions, provider);
+  }
+
+  getProviderRuntimeSettings(provider: AgentProvider): ProviderRuntimeSettings | undefined {
+    return this.generation.definitions[provider]?.runtimeSettings;
   }
 
   supportsConfigRequiredProvider(provider: AgentProvider): boolean {

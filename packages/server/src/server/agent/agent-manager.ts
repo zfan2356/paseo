@@ -1,3 +1,4 @@
+import { ExternalBackgroundWork } from "./background-work/external.js";
 import type { AttachedAgentTool, PluginAgentToolsRuntime } from "../plugins/agent-tools.js";
 import { ProviderOptionsValidationError } from "./provider-options.js";
 import type { AgentToolResult } from "@getpaseo/plugin/server";
@@ -21,17 +22,29 @@ import {
   type AgentLifecycleStatus,
 } from "@getpaseo/protocol/agent-lifecycle";
 import {
+  AGENT_TERMINAL_OWNER_LABEL,
+  getAgentTerminalOwnerId,
   getParentAgentIdFromLabels,
   hasOpenAgentTab,
   isDelegatedAgent,
   isOpenAgentTabLabel,
   PARENT_AGENT_ID_LABEL,
+  SIDE_CHAT_PARENT_LABEL,
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
+import {
+  isAgentConversationTerminalProvider,
+  resolveAgentConversationSessionId,
+} from "../../terminal/codex-fork-terminal.js";
+import {
+  readCursorConversationSettings,
+  syncCursorConversationTerminalStore,
+  type CursorConversationSettings,
+} from "../../terminal/cursor-conversation-store.js";
 
 import {
   AgentTurnStartCanceledError,
@@ -58,6 +71,7 @@ import {
   type AgentRunResult,
   type AgentSession,
   type AgentSessionConfig,
+  type AgentSideQuestionResult,
   type SteerResult,
   type AgentStreamEvent,
   type AgentTimelineItem,
@@ -83,6 +97,13 @@ import {
   type ProviderOptionsPatch,
 } from "./option-controls.js";
 import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
+import {
+  getSideChatParentId,
+  isEphemeralAgent,
+  SideChatIndependentArchiveError,
+  SideChatIndependentUnarchiveError,
+} from "./side-chat-history.js";
+import { buildConfigOverrides, extractTimestamps } from "../persistence-hooks.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
   InMemoryAgentTimelineStore,
@@ -314,6 +335,7 @@ export interface SubscribeOptions {
 interface HydrateTimelineOptions {
   force?: boolean;
   broadcast?: boolean | (() => boolean);
+  retainExistingOnEmptyHistory?: boolean;
   broadcastTimeline?: boolean;
 }
 
@@ -910,6 +932,13 @@ export class AgentManager {
   private readonly timelineStore: InMemoryAgentTimelineStore;
   private readonly providerSubagents = new ProviderSubagentStore();
   private readonly backgroundWork = new AgentBackgroundWorkStore();
+  readonly externalBackgroundWork = new ExternalBackgroundWork((affected, allAgents) => {
+    if (allAgents) for (const agent of this.listAgents()) affected.add(agent.id);
+    for (const agentId of affected) {
+      if (this.agents.get(agentId)?.internal) continue;
+      this.publishBackgroundWork(agentId, this.backgroundWork.list(agentId));
+    }
+  });
   private readonly agentsAwaitingInitialSnapshotPersist = new Set<string>();
   private readonly sessionEventTails = new Map<string, Promise<void>>();
   private readonly steerEventBarriers = new Map<string, SteerEventBarrier>();
@@ -934,6 +963,8 @@ export class AgentManager {
   private readonly collectingRuntimes = new Set<string>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
   private readonly pendingCancellations = new Map<string, Promise<unknown>>();
+  private readonly inFlightSideChatOpensByParent = new Map<string, Set<Promise<ManagedAgent>>>();
+  private readonly externalRuntimeOwners = new Map<string, string>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -955,6 +986,9 @@ export class AgentManager {
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
   private readonly beforeSteerUnavailableFallback?: AgentManagerOptions["beforeSteerUnavailableFallback"];
   private acceptingAgentRegistrations = true;
+  private externalRuntimeOwnerResolver:
+    | ((agentId: string, ownerId: string) => boolean | Promise<boolean>)
+    | null = null;
 
   constructor(options: AgentManagerOptions) {
     this.pluginLifecycle = options.pluginLifecycle;
@@ -1045,6 +1079,166 @@ export class AgentManager {
 
   setAgentArchivedCallback(callback: AgentArchivedCallback): void {
     this.onAgentArchived = callback;
+  }
+
+  setExternalRuntimeOwnerResolver(
+    resolver: ((agentId: string, ownerId: string) => boolean | Promise<boolean>) | null,
+  ): void {
+    this.externalRuntimeOwnerResolver = resolver;
+  }
+
+  async assertAgentRuntimeAvailable(agentId: string): Promise<void> {
+    const claimedOwnerId = this.externalRuntimeOwners.get(agentId);
+    if (claimedOwnerId) {
+      throw new Error(`Agent '${agentId}' is open in conversation terminal '${claimedOwnerId}'`);
+    }
+
+    const liveOwnerId = getAgentTerminalOwnerId(this.agents.get(agentId)?.labels);
+    const storedRecord = liveOwnerId || !this.registry ? null : await this.registry.get(agentId);
+    const ownerId = liveOwnerId ?? getAgentTerminalOwnerId(storedRecord?.labels);
+    if (!ownerId) {
+      return;
+    }
+
+    const ownerIsActive = this.externalRuntimeOwnerResolver
+      ? await this.externalRuntimeOwnerResolver(agentId, ownerId)
+      : true;
+    if (ownerIsActive) {
+      throw new Error(`Agent '${agentId}' is open in conversation terminal '${ownerId}'`);
+    }
+
+    await this.releaseAgentExternalRuntime(agentId, ownerId);
+  }
+
+  claimAgentExternalRuntime(agentId: string, ownerId: string): Promise<void> {
+    if (this.externalRuntimeOwners.has(agentId)) {
+      return Promise.reject(new Error(`Agent '${agentId}' already has an external runtime owner`));
+    }
+    this.externalRuntimeOwners.set(agentId, ownerId);
+
+    const claim = this.runLifecycleMutation(agentId, async () => {
+      const liveAgent = this.getAgent(agentId);
+      if (liveAgent) {
+        if (!isAgentConversationTerminalProvider(liveAgent.provider)) {
+          throw new Error(
+            `Provider '${liveAgent.provider}' does not support a conversation terminal`,
+          );
+        }
+        if (
+          (liveAgent.lifecycle !== "idle" && liveAgent.lifecycle !== "error") ||
+          liveAgent.activeForegroundTurnId ||
+          this.runs.hasRun(agentId)
+        ) {
+          throw new Error(
+            "Wait for the current Agent turn to finish before opening the conversation terminal",
+          );
+        }
+        if (liveAgent.pendingPermissions.size > 0) {
+          throw new Error(
+            "Resolve the pending Agent permission before opening the conversation terminal",
+          );
+        }
+        await this.writeLabels(agentId, { [AGENT_TERMINAL_OWNER_LABEL]: ownerId });
+        await this.closeAgentRuntime(agentId);
+        return;
+      }
+
+      const record = this.registry ? await this.registry.get(agentId) : null;
+      if (!record) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+      if (!isAgentConversationTerminalProvider(record.provider)) {
+        throw new Error(`Provider '${record.provider}' does not support a conversation terminal`);
+      }
+      if (record.archivedAt) {
+        throw new Error(`Agent is archived: ${agentId}`);
+      }
+      await this.writeLabels(agentId, { [AGENT_TERMINAL_OWNER_LABEL]: ownerId });
+    });
+
+    return claim.catch(async (error) => {
+      this.externalRuntimeOwners.delete(agentId);
+      try {
+        await this.writeLabels(agentId, { [AGENT_TERMINAL_OWNER_LABEL]: null });
+      } catch {
+        // The original claim error is more useful than best-effort lease cleanup.
+      }
+      throw error;
+    });
+  }
+
+  async releaseAgentExternalRuntime(agentId: string, ownerId: string): Promise<void> {
+    await this.runLifecycleMutation(agentId, async () => {
+      const liveAgent = this.agents.get(agentId);
+      const liveOwnerId = getAgentTerminalOwnerId(liveAgent?.labels);
+      const record = liveOwnerId || !this.registry ? null : await this.registry.get(agentId);
+      const persistedOwnerId = liveOwnerId ?? getAgentTerminalOwnerId(record?.labels);
+      const claimedOwnerId = this.externalRuntimeOwners.get(agentId);
+      const currentOwnerId = claimedOwnerId ?? persistedOwnerId;
+      if (!currentOwnerId) {
+        return;
+      }
+      if (currentOwnerId !== ownerId) {
+        throw new Error(`Agent '${agentId}' is owned by a different conversation terminal`);
+      }
+      const sourceAgent = liveAgent ?? record;
+      if (sourceAgent?.provider === "cursor") {
+        const sessionId = resolveAgentConversationSessionId({
+          provider: sourceAgent.provider,
+          cwd: sourceAgent.cwd,
+          persistence: sourceAgent.persistence ?? null,
+          runtimeInfo: sourceAgent.runtimeInfo,
+        });
+        if (sessionId) {
+          let settings: CursorConversationSettings | null = null;
+          try {
+            settings = await readCursorConversationSettings({ cwd: sourceAgent.cwd, sessionId });
+          } catch (error) {
+            this.logger.warn(
+              { err: error, agentId },
+              "Failed to read Cursor TUI conversation settings",
+            );
+          }
+          await syncCursorConversationTerminalStore({ cwd: sourceAgent.cwd, sessionId });
+          if (
+            settings &&
+            (settings.model || settings.thinkingOptionId || settings.fast !== undefined)
+          ) {
+            await this.writeCursorConversationSettings(agentId, settings);
+          }
+        }
+      }
+      await this.writeLabels(agentId, { [AGENT_TERMINAL_OWNER_LABEL]: null });
+      this.externalRuntimeOwners.delete(agentId);
+    });
+  }
+
+  private async writeCursorConversationSettings(
+    agentId: string,
+    settings: CursorConversationSettings,
+  ): Promise<void> {
+    const registry = this.requireRegistry();
+    const record = await registry.get(agentId);
+    if (!record) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    const config = record.config ?? {};
+    const providerOptions =
+      settings.fast === undefined
+        ? config.providerOptions
+        : { ...config.providerOptions, fast: settings.fast };
+
+    await registry.upsert({
+      ...record,
+      config: {
+        ...config,
+        ...(settings.model ? { model: settings.model } : {}),
+        ...(settings.thinkingOptionId ? { thinkingOptionId: settings.thinkingOptionId } : {}),
+        ...(providerOptions ? { providerOptions } : {}),
+      },
+      updatedAt: this.nextStoredUpdatedAt(record),
+    });
   }
 
   setMcpBaseUrl(url: string | null): void {
@@ -1513,10 +1707,10 @@ export class AgentManager {
 
   listAgentBackgroundWork(agentId: string): AgentBackgroundWorkItem[] {
     const agent = this.agents.get(agentId);
-    if (agent?.internal || (!agent && !this.backgroundWork.summary(agentId))) {
+    if (agent?.internal || (!agent && !this.getAgentBackgroundWorkSummary(agentId))) {
       throw new Error(`Unknown agent '${agentId}'`);
     }
-    return this.backgroundWork.list(agentId);
+    return [...this.backgroundWork.list(agentId), ...this.externalBackgroundWork.list(agentId)];
   }
 
   setDaemonBackgroundWork(input: DaemonBackgroundWorkInput): void {
@@ -1540,6 +1734,7 @@ export class AgentManager {
       await this.backgroundWork.stopDaemon(agentId, itemId, stopToken);
       return;
     }
+    if (await this.externalBackgroundWork.stop(agentId, itemId, stopToken)) return;
     this.requirePublicAgent(agentId);
     // Inventory events share the session queue; drain events already received before
     // authorizing the token, including a reconnect's ownership revocation.
@@ -1550,12 +1745,29 @@ export class AgentManager {
     await session.stopBackgroundWork(providerItemId);
   }
 
-  getAgentBackgroundWorkSummary(agentId: string) {
-    return this.backgroundWork.summary(agentId);
+  getAgentBackgroundWorkSummary(
+    agentId: string,
+    options: { includeExternal?: boolean } = {},
+  ): { count: number; runningCount?: number } | undefined {
+    const native = this.backgroundWork.summary(agentId);
+    if (options.includeExternal === false || !this.externalBackgroundWork.hasSources())
+      return native;
+    const external = this.externalBackgroundWork.list(agentId);
+    return {
+      count: (native?.count ?? 0) + external.filter((entry) => entry.kind !== "source").length,
+      runningCount:
+        (native?.runningCount ?? native?.count ?? 0) +
+        external.filter((entry) => entry.external?.running).length,
+    };
   }
 
   private publishBackgroundWork(agentId: string, items: AgentBackgroundWorkItem[] | null): void {
-    if (items) this.dispatch({ type: "background_work", agentId, items });
+    if (items)
+      this.dispatch({
+        type: "background_work",
+        agentId,
+        items: [...items, ...this.externalBackgroundWork.list(agentId)],
+      });
   }
 
   private clearProviderBackgroundWork(agentId: string): void {
@@ -1733,6 +1945,7 @@ export class AgentManager {
       metadata?: AgentMetadata;
       workspaceId?: string;
       owner?: AgentOwner;
+      historyPrimed?: boolean;
       background?: boolean;
       attention?: AttentionState;
     },
@@ -1767,6 +1980,7 @@ export class AgentManager {
       metadata?: AgentMetadata;
       workspaceId?: string;
       owner?: AgentOwner;
+      historyPrimed?: boolean;
       background?: boolean;
       attention?: AttentionState;
     },
@@ -1789,7 +2003,7 @@ export class AgentManager {
     // agent whose working directory may be gone.
     const record = this.registry ? await this.registry.get(resolvedAgentId) : null;
     const purpose = await resolveResumePurpose(record, resumeOptions?.purpose, mergedConfig.cwd);
-    const currentResumeOptions = { purpose } satisfies AgentResumeSessionOptions;
+    const currentResumeOptions = { ...resumeOptions, purpose } satisfies AgentResumeSessionOptions;
 
     const launchEnv = record?.launchEnv;
     const workspaceId = resolveResumeWorkspaceId({ options, record });
@@ -2233,8 +2447,9 @@ export class AgentManager {
   private runtimeHasNoPendingWork(agent: LiveManagedAgent): boolean {
     return (
       agent.lifecycle === "idle" &&
-      !agent.internal &&
+      !isEphemeralAgent(agent) &&
       agent.activeForegroundTurnId === null &&
+      !this.inFlightSideChatOpensByParent.has(agent.id) &&
       !this.runs.hasRun(agent.id) &&
       !agent.pendingReplacement &&
       agent.pendingPermissions.size === 0 &&
@@ -2269,6 +2484,10 @@ export class AgentManager {
 
   private async closeAgentRuntime(agentId: string, canClose?: () => boolean): Promise<boolean> {
     const agent = this.requireAgent(agentId);
+    const sideChatOpens = Array.from(this.inFlightSideChatOpensByParent.get(agentId) ?? []);
+    if (sideChatOpens.length > 0) {
+      await Promise.allSettled(sideChatOpens);
+    }
     this.logger.trace(
       {
         agentId,
@@ -2333,12 +2552,35 @@ export class AgentManager {
     return this.runLifecycleMutation(agentId, () => this.archiveAgentUnlocked(agentId, archivedAt));
   }
 
+  private async assertSideChatArchiveAllowed(
+    agent: { labels?: Record<string, string> | null },
+    cascadeFromParentId?: string,
+  ): Promise<void> {
+    const parentId = getSideChatParentId(agent);
+    if (!parentId) return;
+    if (cascadeFromParentId === parentId) return;
+    const parent = await this.registry?.get(parentId);
+    if (parent?.archivedAt) return;
+    throw new SideChatIndependentArchiveError(parentId);
+  }
+
+  private async assertSideChatUnarchiveAllowed(
+    agent: { labels?: Record<string, string> | null },
+    cascadeFromParentId?: string,
+  ): Promise<void> {
+    const parentId = getSideChatParentId(agent);
+    if (!parentId) return;
+    if (cascadeFromParentId === parentId) return;
+    throw new SideChatIndependentUnarchiveError(parentId);
+  }
+
   private async archiveAgentUnlocked(
     agentId: string,
     requestedArchivedAt?: string,
+    cascadeFromParentId?: string,
   ): Promise<{ archivedAt: string }> {
     const agent = this.requireAgent(agentId);
-    if (agent.internal) {
+    if (isEphemeralAgent(agent)) {
       // Nothing about an internal agent is on disk, and archiving must not put
       // it there. Its final snapshot is kept in memory for a while (see
       // getRetiredInternalAgent); the runtime is closed and the committed
@@ -2358,6 +2600,7 @@ export class AgentManager {
     if (!this.registry) {
       throw new Error("Agent storage is not configured");
     }
+    await this.assertSideChatArchiveAllowed(agent, cascadeFromParentId);
 
     await this.registry.applySnapshot(agent, {
       internal: agent.internal,
@@ -2396,39 +2639,33 @@ export class AgentManager {
       if (record.archivedAt) {
         continue;
       }
-      if (record.labels?.[PARENT_AGENT_ID_LABEL] !== parentAgentId) {
+      const isSideChat = getSideChatParentId(record) === parentAgentId;
+      const isMcpChild = record.labels?.[PARENT_AGENT_ID_LABEL] === parentAgentId;
+      if (!isSideChat && !isMcpChild) {
         continue;
       }
       const child = await registry.get(record.id);
-      if (!child || child.archivedAt || child.labels?.[PARENT_AGENT_ID_LABEL] !== parentAgentId) {
+      if (!child || child.archivedAt) {
         continue;
       }
-      await this.runLifecycleMutation(child.id, async () => {
-        const currentChild = await registry.get(child.id);
-        if (
-          !currentChild ||
-          currentChild.archivedAt ||
-          currentChild.labels?.[PARENT_AGENT_ID_LABEL] !== parentAgentId
-        ) {
-          return;
-        }
-        if (shouldDetachFromArchivedParent(parent, currentChild)) {
-          const detached = await this.detachAgentUnlocked(currentChild.id);
-          if (!detached.live) {
-            this.dispatchStoredAgentState(detached.record);
-          }
-        } else if (this.agents.has(currentChild.id)) {
-          await this.archiveAgentUnlocked(currentChild.id, parent.archivedAt);
-        } else {
-          await this.archiveSnapshotUnlocked(currentChild.id, parent.archivedAt);
-        }
-      });
+      const stillSideChat = getSideChatParentId(child) === parentAgentId;
+      const stillMcpChild = child.labels?.[PARENT_AGENT_ID_LABEL] === parentAgentId;
+      if (!stillSideChat && !stillMcpChild) {
+        continue;
+      }
+      await this.runLifecycleMutation(child.id, () =>
+        this.archiveCascadedChild(parent, child.id, parentAgentId),
+      );
     }
     // Internal children never reach storage, so the scan above cannot see them.
     // They have no tab to keep open and no listing to detach into, so they
     // always archive with the parent.
     for (const child of Array.from(this.agents.values())) {
-      if (!child.internal || getParentAgentIdFromLabels(child.labels) !== parentAgentId) {
+      if (
+        !child.internal ||
+        getSideChatParentId(child) ||
+        getParentAgentIdFromLabels(child.labels) !== parentAgentId
+      ) {
         continue;
       }
       await this.runLifecycleMutation(child.id, async () => {
@@ -2438,6 +2675,38 @@ export class AgentManager {
         }
         await this.archiveAgentUnlocked(current.id, parent.archivedAt);
       });
+    }
+  }
+
+  private async archiveCascadedChild(
+    parent: Pick<ArchivedStoredAgentRecord, "id" | "workspaceId" | "archivedAt">,
+    childId: string,
+    parentAgentId: string,
+  ): Promise<void> {
+    const currentChild = await this.requireRegistry().get(childId);
+    if (!currentChild || currentChild.archivedAt) {
+      return;
+    }
+    const currentIsSideChat = getSideChatParentId(currentChild) === parentAgentId;
+    const currentIsMcpChild = currentChild.labels?.[PARENT_AGENT_ID_LABEL] === parentAgentId;
+    if (!currentIsSideChat && !currentIsMcpChild) {
+      return;
+    }
+    if (currentIsSideChat) {
+      if (this.agents.has(currentChild.id)) {
+        await this.archiveAgentUnlocked(currentChild.id, parent.archivedAt, parentAgentId);
+      } else {
+        await this.archiveSnapshotUnlocked(currentChild.id, parent.archivedAt, parentAgentId);
+      }
+      return;
+    }
+    if (shouldDetachFromArchivedParent(parent, currentChild)) {
+      const detached = await this.detachAgentUnlocked(currentChild.id);
+      if (!detached.live) this.dispatchStoredAgentState(detached.record);
+    } else if (this.agents.has(currentChild.id)) {
+      await this.archiveAgentUnlocked(currentChild.id, parent.archivedAt);
+    } else {
+      await this.archiveSnapshotUnlocked(currentChild.id, parent.archivedAt);
     }
   }
 
@@ -2974,12 +3243,13 @@ export class AgentManager {
   private async archiveSnapshotUnlocked(
     agentId: string,
     archivedAt: string,
+    cascadeFromParentId?: string,
   ): Promise<StoredAgentRecord> {
     const registry = this.requireRegistry();
     // A stored-only archive can have waited behind a persisted resume. Reuse the
     // live archive transition so its newly acquired runtime is closed as well.
     if (this.agents.has(agentId)) {
-      await this.archiveAgentUnlocked(agentId, archivedAt);
+      await this.archiveAgentUnlocked(agentId, archivedAt, cascadeFromParentId);
       const archivedRecord = await registry.get(agentId);
       if (!archivedRecord) throw new Error(`Agent not found: ${agentId}`);
       return archivedRecord;
@@ -2989,6 +3259,7 @@ export class AgentManager {
     if (!record) {
       throw new Error(`Agent not found: ${agentId}`);
     }
+    await this.assertSideChatArchiveAllowed(record, cascadeFromParentId);
 
     // Archiving is the agent's latest change, as markRecordArchived records it for a loaded agent.
     const nextRecord = await this.persistArchivedRecord(record, {
@@ -3019,12 +3290,14 @@ export class AgentManager {
   private async unarchiveSnapshotUnlocked(
     agentId: string,
     updates?: { workspaceId?: string; labels?: AgentLabelPatch },
+    cascadeFromParentId?: string,
   ): Promise<boolean> {
     const registry = this.requireRegistry();
     const record = await registry.get(agentId);
     if (!record || !record.archivedAt) {
       return false;
     }
+    await this.assertSideChatUnarchiveAllowed(record, cascadeFromParentId);
 
     // Close and native restore share the lifecycle lane with persisted resume.
     // No new history or interactive runtime can acquire the writer between them.
@@ -3037,6 +3310,7 @@ export class AgentManager {
       ...(updates?.labels ? { labels: applyRecordPatch(record.labels, updates.labels) } : {}),
       archivedAt: null,
       updatedAt: new Date().toISOString(),
+      ...(getSideChatParentId(record) ? { internal: true } : {}),
     };
     await registry.upsert(nextRecord);
 
@@ -3046,7 +3320,23 @@ export class AgentManager {
       // Same publication archiveSnapshot makes, so a stored-only agent reappears for every client.
       this.dispatchStoredAgentState(nextRecord);
     }
+    await this.cascadeUnarchiveSideChats(agentId);
     return true;
+  }
+
+  private async cascadeUnarchiveSideChats(parentAgentId: string): Promise<void> {
+    const registry = this.registry;
+    if (!registry) {
+      return;
+    }
+    const records = await registry.listAll();
+    for (const record of records) {
+      if (!record.archivedAt) continue;
+      if (getSideChatParentId(record) !== parentAgentId) continue;
+      await this.runLifecycleMutation(record.id, () =>
+        this.unarchiveSnapshotUnlocked(record.id, undefined, parentAgentId),
+      );
+    }
   }
 
   async unarchiveSnapshotByHandle(handle: AgentPersistenceHandle): Promise<void> {
@@ -3350,6 +3640,33 @@ export class AgentManager {
     }
   }
 
+  private hasForegroundAdmission(agent: ManagedAgent, agentId: string): boolean {
+    return Boolean(agent.activeForegroundTurnId) || this.runs.hasRun(agentId);
+  }
+
+  // Serialize the archive check with lifecycle mutations. The final busy check
+  // and run reservation are synchronous, including a replacement's reserved gap.
+  tryStreamAgentIfIdle(
+    agentId: string,
+    prompt: AgentPromptInput,
+    options?: AgentRunOptions,
+    promptStart?: ForegroundPromptStart,
+  ): Promise<
+    | { status: "busy" }
+    | { status: "archived" }
+    | { status: "started"; iterator: AsyncGenerator<AgentStreamEvent> }
+  > {
+    return this.runLifecycleMutation(agentId, async () => {
+      const record = await this.requireRegistry().get(agentId);
+      if (record?.archivedAt) return { status: "archived" };
+      if (this.hasInFlightRun(agentId)) return { status: "busy" };
+      return {
+        status: "started",
+        iterator: this.streamAgent(agentId, prompt, options, promptStart),
+      };
+    });
+  }
+
   private async ensureInteractiveSession(agentId: string): Promise<ActiveManagedAgent> {
     const agent = this.requireSessionAgent(agentId);
     if (this.historySessions.has(agent.session)) {
@@ -3458,7 +3775,7 @@ export class AgentManager {
       },
       "agent.manager.stream.request",
     );
-    if (existingAgent.activeForegroundTurnId || this.runs.hasRun(agentId)) {
+    if (this.hasForegroundAdmission(existingAgent, agentId)) {
       this.logger.trace(
         {
           agentId,
@@ -4281,6 +4598,183 @@ export class AgentManager {
     }
   }
 
+  /**
+   * Ask the provider a quick side question grounded in the agent's live
+   * conversation context. Runs alongside any foreground turn: no run lock,
+   * no timeline writes, no persistence.
+   */
+  async askSideQuestion(
+    agentId: string,
+    question: string,
+  ): Promise<AgentSideQuestionResult | null> {
+    const agent = this.requireSessionAgent(agentId);
+    const session = agent.session;
+    if (!session.capabilities.supportsSideQuestion || !session.askSideQuestion) {
+      throw new Error("Provider does not support side questions");
+    }
+    return await session.askSideQuestion({ question });
+  }
+
+  openSideChat(parentAgentId: string, sideAgentId?: string): Promise<ManagedAgent> {
+    if (sideAgentId) {
+      return this.runLifecycleMutation(sideAgentId, () =>
+        this.resumeStoredSideChat(parentAgentId, sideAgentId),
+      );
+    }
+    if (this.inFlightAgentCloses.has(parentAgentId)) {
+      throw new Error(`Agent '${parentAgentId}' is closing`);
+    }
+
+    const open = this.openSideChatRuntime(parentAgentId);
+    const opens =
+      this.inFlightSideChatOpensByParent.get(parentAgentId) ?? new Set<Promise<ManagedAgent>>();
+    opens.add(open);
+    this.inFlightSideChatOpensByParent.set(parentAgentId, opens);
+    const clearOpen = () => {
+      const currentOpens = this.inFlightSideChatOpensByParent.get(parentAgentId);
+      currentOpens?.delete(open);
+      if (currentOpens?.size === 0) {
+        this.inFlightSideChatOpensByParent.delete(parentAgentId);
+      }
+    };
+    void open.then(clearOpen, clearOpen);
+    return open;
+  }
+
+  private async openSideChatRuntime(parentAgentId: string): Promise<ManagedAgent> {
+    const parent = this.requirePublicAgent(parentAgentId);
+    const session = parent.session;
+    if (!session.forkForSideChat || !session.disposeSideChatFork) {
+      throw new Error("Provider does not support forked side chats");
+    }
+
+    const sideAgentId = validateAgentId(this.idFactory(), "openSideChat");
+    let handle = await session.forkForSideChat();
+    const dispose = session.disposeSideChatFork.bind(session);
+    try {
+      await this.resumeAgentFromPersistence(
+        handle,
+        { ...parent.config, title: "Side chat", internal: true },
+        sideAgentId,
+        {
+          workspaceId: parent.workspaceId,
+          // The fork carries the parent conversation as model context, but
+          // the side chat transcript intentionally starts blank: marking
+          // history as primed keeps the inherited turns out of the timeline.
+          historyPrimed: true,
+        },
+        // A pending handle points at the fork SOURCE; the provider forks it
+        // inside the side agent's own process during connect.
+        handle.sideChatForkPending ? { sideChatForkFromThreadId: handle.sessionId } : undefined,
+      );
+      const sideAgent = this.requireSessionAgent(sideAgentId);
+      if (handle.sideChatForkPending) {
+        const realized = sideAgent.session?.describePersistence() ?? null;
+        if (!realized || realized.sideChatForkPending || realized.sessionId === handle.sessionId) {
+          throw new Error("Side chat fork did not produce a resumable conversation");
+        }
+        handle = realized;
+        sideAgent.persistence = normalizePersistenceForConfig(realized, sideAgent.config);
+      }
+      if (this.inFlightAgentCloses.has(parentAgentId)) {
+        throw new Error(`Agent '${parentAgentId}' is closing`);
+      }
+      sideAgent.labels[SIDE_CHAT_PARENT_LABEL] = parentAgentId;
+      await this.persistSnapshot(sideAgent, { title: "Side chat" });
+      return sideAgent;
+    } catch (error) {
+      for (const cleanup of [
+        () => this.closeAgent(sideAgentId),
+        () => this.deleteAgentState(sideAgentId),
+        () => this.registry?.remove(sideAgentId),
+        () => dispose(handle),
+      ]) {
+        try {
+          await cleanup();
+        } catch (cleanupError) {
+          this.logger.warn(
+            { err: cleanupError, parentAgentId, sideAgentId },
+            "Failed to discard incomplete side chat",
+          );
+        }
+      }
+      throw error;
+    }
+  }
+
+  isSideChatOpen(parentAgentId: string, sideAgentId: string): boolean {
+    const agent = this.agents.get(sideAgentId);
+    return (
+      !!agent &&
+      !this.inFlightAgentCloses.has(sideAgentId) &&
+      getSideChatParentId(agent) === parentAgentId
+    );
+  }
+
+  async closeSideChat(parentAgentId: string, sideAgentId: string): Promise<void> {
+    await this.getStoredSideChat(parentAgentId, sideAgentId);
+    await this.closeAgent(sideAgentId);
+  }
+
+  private async getStoredSideChat(
+    parentAgentId: string,
+    sideAgentId: string,
+  ): Promise<StoredAgentRecord> {
+    const record = await this.requireRegistry().get(sideAgentId);
+    if (!record || getSideChatParentId(record) !== parentAgentId) {
+      throw new Error(`Unknown side chat '${sideAgentId}' for agent '${parentAgentId}'`);
+    }
+    return record;
+  }
+
+  private async resumeStoredSideChat(
+    parentAgentId: string,
+    sideAgentId: string,
+  ): Promise<ManagedAgent> {
+    let record = await this.getStoredSideChat(parentAgentId, sideAgentId);
+    if (record.archivedAt) {
+      const parent = await this.requireRegistry().get(parentAgentId);
+      if (parent?.archivedAt) {
+        throw new SideChatIndependentUnarchiveError(parentAgentId);
+      }
+      await this.unarchiveSnapshotUnlocked(sideAgentId, undefined, parentAgentId);
+      record = await this.getStoredSideChat(parentAgentId, sideAgentId);
+    }
+    const live = this.agents.get(sideAgentId);
+    if (live) return live;
+    if (!record.persistence) throw new Error("Side chat has no resumable provider session");
+    // openSideChat already holds this agent's lifecycle lane; the queued public
+    // resume would wait on the lane it is called from.
+    return this.trackAgentRegistrationOperation(
+      this.resumeAgentFromPersistenceInternal(
+        record.persistence,
+        { ...buildConfigOverrides(record), title: record.title ?? "Side chat", internal: true },
+        sideAgentId,
+        { ...extractTimestamps(record), historyPrimed: true },
+      ),
+    );
+  }
+
+  async listSideChats(parentAgentId: string) {
+    const registry = this.requireRegistry();
+    const parent = this.agents.get(parentAgentId) ?? (await registry.get(parentAgentId));
+    if (!parent || parent.internal) throw new Error(`Unknown agent '${parentAgentId}'`);
+    const records = await registry.listAll();
+    return records
+      .filter((record) => getSideChatParentId(record) === parentAgentId)
+      .sort(
+        (left, right) =>
+          right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id),
+      )
+      .map((record) => ({
+        sideAgentId: record.id,
+        title: record.title ?? "Side chat",
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        status: this.agents.get(record.id)?.lifecycle ?? ("closed" as const),
+      }));
+  }
+
   async deleteAgentState(agentId: string): Promise<void> {
     this.discardRetainedAgentState(agentId);
     await this.deleteCommittedTimeline(agentId);
@@ -4773,15 +5267,16 @@ export class AgentManager {
       effectiveOptions,
       now,
       durableTimelineHasRows,
-      options,
+      options = {},
     } = params;
+    const labels = options.labels ?? {};
     return {
       id: resolvedAgentId,
       provider: config.provider,
       cwd: config.cwd,
-      workspaceId: options?.workspaceId,
-      owner: options?.owner,
-      launchEnv: options?.launchEnv,
+      workspaceId: options.workspaceId,
+      owner: options.owner,
+      launchEnv: options.launchEnv,
       session,
       capabilities: session.capabilities,
       config,
@@ -4813,7 +5308,7 @@ export class AgentManager {
       sessionMetrics: options?.sessionMetrics,
       lastError: options?.lastError,
       attention: resolveInitialAttention(options?.attention),
-      internal: config.internal ?? false,
+      internal: config.internal === true || getSideChatParentId({ labels }) != null,
       background: params.background,
       ...agentEntityData(options),
     } as ActiveManagedAgent;
@@ -5056,11 +5551,13 @@ export class AgentManager {
     if (!this.registry) {
       return;
     }
-    // Don't persist internal agents - they're ephemeral system tasks
-    if (agent.internal) {
+    if (isEphemeralAgent(agent)) {
       return;
     }
-    await this.registry.applySnapshot(agent, options);
+    await this.registry.applySnapshot(agent, {
+      ...options,
+      ...(getSideChatParentId(agent) ? { internal: true } : {}),
+    });
   }
 
   private requireRegistry(): AgentStorage {
@@ -5153,6 +5650,7 @@ export class AgentManager {
       await this.forceHydrateTimelineFromLegacyProviderHistory(
         agent,
         typeof broadcast === "function" ? broadcast() : broadcast,
+        options.retainExistingOnEmptyHistory === true,
         typeof broadcastTimeline === "function" ? broadcastTimeline() : broadcastTimeline,
       );
       return;
@@ -5164,6 +5662,7 @@ export class AgentManager {
   private async forceHydrateTimelineFromLegacyProviderHistory(
     agent: ActiveManagedAgent,
     broadcast: boolean,
+    retainExistingOnEmptyHistory: boolean,
     broadcastTimeline: boolean,
   ): Promise<void> {
     const historyEntries: ProviderHistoryEntry[] = [];
@@ -5177,6 +5676,15 @@ export class AgentManager {
       }
     }
 
+    const existingTimelineHasRows = this.timelineStore.getRows(agent.id).length > 0;
+    if (retainExistingOnEmptyHistory && historyEntries.length === 0 && existingTimelineHasRows) {
+      // streamHistory is one-shot and TUI resume can replay nothing. Wiping here
+      // would mint an empty epoch and zero the Agent chat the user just left.
+      agent.historyPrimed = true;
+      this.touchUpdatedAt(agent);
+      this.emitState(agent);
+      return;
+    }
     this.agentStreamCoalescer.flushAndDiscard(agent.id);
     await this.deleteCommittedTimeline(agent.id);
     this.timelineStore.delete(agent.id);
@@ -5944,7 +6452,14 @@ export class AgentManager {
     )
       return;
     this.touchUpdatedAt(agent);
-    if (item.type === "user_message") agent.lastUserMessageAt = new Date();
+    if (item.type === "user_message") {
+      if (!agent.lastUserMessageAt && getSideChatParentId(agent)) {
+        this.enqueueBackgroundPersist(agent, {
+          title: item.text.trim().replace(/\s+/g, " ").slice(0, 120) || "Side chat",
+        });
+      }
+      agent.lastUserMessageAt = new Date();
+    }
     this.recordAndDispatchTimelineItem(agent.id, item, agent.provider, options?.turnId, options);
   }
 
@@ -6136,8 +6651,8 @@ export class AgentManager {
     this.broadcastAgentAttention(agent, "error");
   }
 
-  private enqueueBackgroundPersist(agent: ManagedAgent): void {
-    const task = this.persistSnapshot(agent).catch((err) => {
+  private enqueueBackgroundPersist(agent: ManagedAgent, options?: { title: string }): void {
+    const task = this.persistSnapshot(agent, options).catch((err) => {
       this.logger.error({ err, agentId: agent.id }, "Failed to persist agent snapshot");
     });
     this.trackBackgroundTask(task);

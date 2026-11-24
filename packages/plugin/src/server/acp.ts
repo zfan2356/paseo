@@ -78,6 +78,10 @@ export interface AcpOptions {
     mode: Omit<ProviderMode, "isUnattended">;
     nativeMode: string;
     default?: boolean;
+    openingNotice?(
+      sessionId: string,
+      env: Readonly<Record<string, string>>,
+    ): ProviderNotice | undefined;
   };
 }
 
@@ -104,6 +108,21 @@ export interface AcpConfigureContext extends AcpContext {
   catalog(): ProviderCatalog;
   apply(change: AcpConfigChange): Promise<void>;
 }
+
+export interface AcpContextWindowSource {
+  nativeSessionId: string;
+  agentVersion?: string;
+  args: readonly string[];
+  env: Readonly<Record<string, string | undefined>>;
+  signal: AbortSignal;
+  refresh(): void;
+}
+
+export type AcpContextWindowReason = "config" | "usage" | "settled" | "refresh";
+export type AcpContextWindowReader = (
+  model: string | undefined,
+  reason: AcpContextWindowReason,
+) => number | undefined;
 
 export type AcpConfigChange =
   | { target: "model"; value: string | null }
@@ -151,6 +170,10 @@ export interface AcpTransformer {
   config?(state: ProviderConfigState, context: AcpContext): ProviderConfigState;
   /** Rewrites each advertised ACP slash command before Paseo sees it. */
   command?(command: ProviderCommand, context: AcpContext): ProviderCommand;
+
+  /** Read a session's local effective context limit without changing ACP's tokens used. */
+  contextWindow?(context: AcpContextWindowSource): AcpContextWindowReader | undefined;
+
   notification?(
     notification: { method: string; params: JsonValue },
     context: AcpContext,

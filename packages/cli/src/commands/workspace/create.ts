@@ -3,7 +3,7 @@ import { isAbsolute as isWindowsAbsolute } from "node:path/win32";
 import { resolve } from "node:path";
 import type { Command } from "commander";
 import { connectToDaemon, getDaemonHost } from "../../utils/client.js";
-import { resolveCallerAgentId } from "../../utils/caller-agent.js";
+import { isAutomaticTaskInvocation, resolveCallerAgentId } from "../../utils/caller-agent.js";
 import type { DaemonTarget } from "../../utils/daemon-target.js";
 import type { CommandError, CommandOptions, SingleResult } from "../../output/index.js";
 import { toWorkspaceRow, workspaceSchema, type WorkspaceRow } from "./shared.js";
@@ -167,6 +167,7 @@ export async function runCreateCommand(
     const callerAgentId = await resolveCallerAgentId(client);
     const payload = await client.createWorkspace({
       source: buildWorkspaceSource(options),
+      ...(isAutomaticTaskInvocation() ? { automatic: true } : {}),
       ...(options.title ? { title: options.title } : {}),
       ...(options.background !== undefined ? { background: options.background } : {}),
       ...(callerAgentId ? { callerAgentId } : {}),

@@ -189,6 +189,14 @@ export interface AgentCapabilityFlags {
   supportsRewindConversation?: boolean;
   supportsRewindFiles?: boolean;
   supportsRewindBoth?: boolean;
+  supportsSideQuestion?: boolean;
+}
+
+/** Result of a provider side question (Claude Code `/btw`-style quick answer). */
+export interface AgentSideQuestionResult {
+  response: string;
+  /** True when the provider substituted a synthetic response (e.g. refusal fallback). */
+  synthetic: boolean;
 }
 
 export interface AgentPersistenceHandle {
@@ -197,6 +205,13 @@ export interface AgentPersistenceHandle {
   /** Provider specific handle (Codex thread id, Claude resume token, etc). */
   nativeHandle?: string;
   metadata?: AgentMetadata;
+  /**
+   * Side chat only: the provider fork has not been created yet and sessionId
+   * is the fork SOURCE conversation. The realized handle must be re-read from
+   * the resumed session once it connects; disposing a pending handle is a
+   * no-op.
+   */
+  sideChatForkPending?: boolean;
 }
 
 export type AgentPromptContentBlock =
@@ -702,6 +717,13 @@ export type AgentResumePurpose = "interactive" | "history";
 export interface AgentResumeSessionOptions {
   /** Defaults to interactive. History loading may be read-only for archived native sessions. */
   purpose?: AgentResumePurpose;
+  /**
+   * Side chat: fork this provider conversation inside the resumed session's
+   * own process instead of resuming handle.sessionId. Codex holds a
+   * cross-process writer lock per loaded thread, so the fork must be created
+   * by the process that will drive it.
+   */
+  sideChatForkFromThreadId?: string;
   /** See AgentCreateSessionOptions.configuredModelIds. */
   configuredModelIds?: readonly string[];
 }
@@ -721,6 +743,8 @@ export interface AgentUsageSession {
   env: Record<string, string>;
   sessionKey: string;
 }
+
+export type AgentSubagentDefaults = Pick<AgentSessionConfig, "model" | "thinkingOptionId">;
 
 export interface AgentSession {
   /** Persist the session's current handle immediately after an interactive resume. */
@@ -747,6 +771,8 @@ export interface AgentSession {
   subscribe(callback: (event: AgentStreamEvent) => void): () => void;
   streamHistory(): AsyncGenerator<AgentStreamEvent>;
   getRuntimeInfo(): Promise<AgentRuntimeInfo>;
+  /** Read provider configuration when creating a child; explicit selections override these defaults. */
+  getSubagentDefaults?(): Promise<AgentSubagentDefaults>;
   getAvailableModes(): Promise<AgentMode[]>;
   getCurrentMode(): Promise<string | null>;
   setMode(modeId: string): Promise<void | AgentProviderNotice>;
@@ -793,6 +819,16 @@ export interface AgentSession {
   revertConversation?(input: { messageId: string }): Promise<void>;
   revertFiles?(input: { messageId: string }): Promise<void>;
   revertBoth?(input: { messageId: string }): Promise<void>;
+  /** Fork the provider's current conversation for a full, independent side chat. */
+  forkForSideChat?(): Promise<AgentPersistenceHandle>;
+  /** Permanently dispose a provider conversation created by forkForSideChat. */
+  disposeSideChatFork?(handle: AgentPersistenceHandle): Promise<void>;
+  /**
+   * Ask a quick side question answered from the live conversation context
+   * without allocating a turn, touching the timeline, or running tools.
+   * Resolves null when the provider produced no response.
+   */
+  askSideQuestion?(input: { question: string }): Promise<AgentSideQuestionResult | null>;
   /**
    * Out-of-band prompt handler. When non-null, the manager runs the returned
    * handler instead of allocating a turn. The handler emits stream events

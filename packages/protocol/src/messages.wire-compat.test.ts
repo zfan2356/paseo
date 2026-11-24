@@ -8,6 +8,7 @@ import {
   AgentStreamEventPayloadSchema,
   AgentTimelineItemPayloadSchema,
   ServerInfoStatusPayloadSchema,
+  SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
   WSHelloMessageSchema,
   WorkspaceSetupSnapshotSchema,
@@ -163,6 +164,30 @@ const LegacyAgentSnapshotPayloadSchema = AgentSnapshotPayloadSchema.extend({
 });
 
 describe("wire schema compatibility", () => {
+  test("accepts generic and legacy conversation terminal switch messages", () => {
+    for (const prefix of ["agent_terminal", "codex_terminal"] as const) {
+      expect(
+        SessionInboundMessageSchema.parse({
+          type: `${prefix}.switch_to_agent.request`,
+          terminalId: "terminal-1",
+          requestId: "request-1",
+        }),
+      ).toMatchObject({ terminalId: "terminal-1", requestId: "request-1" });
+      expect(
+        SessionOutboundMessageSchema.parse({
+          type: `${prefix}.switch_to_agent.response`,
+          payload: {
+            terminalId: "terminal-1",
+            agentId: "agent-1",
+            success: true,
+            error: null,
+            requestId: "request-1",
+          },
+        }),
+      ).toMatchObject({ payload: { agentId: "agent-1", success: true } });
+    }
+  });
+
   test("hello parses with and without the project update capability", () => {
     const legacy = WSHelloMessageSchema.parse({
       type: "hello",

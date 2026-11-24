@@ -25,6 +25,7 @@ import {
 import {
   ACPAgentClient,
   ACPAgentSession,
+  type ACPConfigFeatureOption,
   type SpawnedACPProcess,
   type SessionStateResponse,
   buildACPClientCapabilities,
@@ -220,9 +221,11 @@ function createSessionWithConfig(
     provider?: string;
     modeId?: string | null;
     model?: string | null;
+    thinkingOptionId?: string;
     providerOptions?: Record<string, unknown>;
   } = {},
   logger: ReturnType<typeof createTestLogger> = createTestLogger(),
+  options: { configFeatureOptions?: ACPConfigFeatureOption[] } = {},
 ): ACPAgentSession {
   return new ACPAgentSession(
     {
@@ -230,6 +233,7 @@ function createSessionWithConfig(
       cwd: "/tmp/paseo-acp-test",
       modeId: config.modeId ?? undefined,
       model: config.model ?? undefined,
+      thinkingOptionId: config.thinkingOptionId,
       providerOptions: config.providerOptions,
     },
     {
@@ -237,6 +241,7 @@ function createSessionWithConfig(
       logger,
       defaultCommand: ["claude", "--acp"],
       defaultModes: [],
+      configFeatureOptions: options.configFeatureOptions,
       capabilities: {
         supportsStreaming: true,
         supportsSessionPersistence: true,
@@ -442,9 +447,11 @@ function prepareConfiguredOverrideSession(
 } {
   const setSessionMode = vi.fn(async () => undefined);
   const unstableSetSessionModel = vi.fn(async () => undefined);
-  const setSessionConfigOption = vi.fn(async () => ({
-    configOptions: options.configOptions ?? [],
-  }));
+  const setSessionConfigOption = vi.fn(
+    async (_input: { sessionId: string; configId: string; value: string }) => ({
+      configOptions: options.configOptions ?? [],
+    }),
+  );
   const internals = asInternals<ACPConfiguredOverrideInternals>(session);
   const availableModes = options.availableModes ?? [];
   const modes =
@@ -1193,6 +1200,82 @@ describe("ACPAgentSession Zed parity", () => {
       { value: "deepseek/v4" },
       "deepseek-tui does not expose ACP model selection; using provider default model",
     );
+  });
+
+  test("uses the provider default when a configured feature is no longer exposed", async () => {
+    const logger = createTestLogger();
+    const childLogger = { trace: vi.fn(), warn: vi.fn() };
+    vi.spyOn(logger, "child").mockReturnValue(asInternals<typeof logger>(childLogger));
+    const session = createSessionWithConfig(
+      { provider: "cursor", featureValues: { fast: "true" } },
+      logger,
+      {
+        configFeatureOptions: [
+          {
+            id: "fast",
+            configId: "fast",
+            label: "Fast",
+          },
+        ],
+      },
+    );
+    const { internals, setSessionConfigOption } = prepareConfiguredOverrideSession(session, {
+      configOptions: [],
+    });
+
+    await expect(internals.applyConfiguredOverrides()).resolves.toBeUndefined();
+    expect(setSessionConfigOption).not.toHaveBeenCalled();
+    expect(childLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ featureId: "fast", err: expect.any(Error) }),
+      "cursor cannot apply ACP feature 'fast' to the current model; using the provider default",
+    );
+  });
+
+  test("refreshes model config options before applying thinking on a model switch", async () => {
+    const session = createSessionWithConfig({ model: "opus", thinkingOptionId: "high" });
+    const modelOption = selectConfigOption("model", ["kimi", "opus"], "kimi");
+    const previousThinking = {
+      ...selectConfigOption("thought_level", ["low", "high"], "low"),
+      id: "reasoning",
+    };
+    const nextThinking = { ...previousThinking, id: "effort" };
+    const { internals, setSessionConfigOption, unstableSetSessionModel } =
+      prepareConfiguredOverrideSession(session, {
+        currentModel: "kimi",
+        availableModels: [
+          { modelId: "kimi", name: "Kimi" },
+          { modelId: "opus", name: "Opus" },
+        ],
+        configOptions: [modelOption, previousThinking],
+      });
+    setSessionConfigOption.mockImplementation(
+      async (request: { configId: string; value: string }) => {
+        if (request.configId === "reasoning")
+          throw new Error("Unknown model config option: reasoning");
+        return {
+          configOptions: [
+            { ...modelOption, currentValue: "opus" },
+            {
+              ...nextThinking,
+              currentValue: request.configId === "effort" ? request.value : "low",
+            },
+          ],
+        };
+      },
+    );
+
+    await session.setThinkingOption(null);
+    await internals.applyConfiguredOverrides();
+
+    expect(unstableSetSessionModel).not.toHaveBeenCalled();
+    expect(setSessionConfigOption.mock.calls).toEqual([
+      [{ sessionId: "session-1", configId: modelOption.id, value: "opus" }],
+      [{ sessionId: "session-1", configId: "effort", value: "high" }],
+    ]);
+    await expect(session.getRuntimeInfo()).resolves.toMatchObject({
+      model: "opus",
+      thinkingOptionId: "high",
+    });
   });
 
   test("routes config_option_update and refreshes derived mode, model, and thinking state", async () => {
@@ -4344,6 +4427,83 @@ describe("ACPAgentSession initialization cleanup", () => {
   });
 });
 
+describe("ACPAgentSession side chat fork", () => {
+  function sideChatOptions(provider: string, terminator: FakeTerminator) {
+    return {
+      provider,
+      logger: createTestLogger(),
+      defaultCommand: ["dsh", "--acp"] as [string, ...string[]],
+      defaultModes: [],
+      capabilities: {
+        supportsStreaming: true,
+        supportsSessionPersistence: true,
+      },
+      terminateProcess: terminator.terminate,
+    };
+  }
+
+  test("forks through ACP session/fork when the agent advertises the capability", async () => {
+    const terminator = new FakeTerminator();
+    const child = createProbeChildStub();
+    const forkSession = vi.fn().mockResolvedValue({ sessionId: "fork-1" });
+
+    class ForkableSession extends ACPAgentSession {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        return {
+          child,
+          connection: {
+            newSession: vi.fn().mockResolvedValue({ sessionId: "parent-1" }),
+            unstable_forkSession: forkSession,
+          } as unknown as ClientSideConnection,
+          initialize: { agentCapabilities: { sessionCapabilities: { fork: {} } } },
+        };
+      }
+    }
+
+    const session = new ForkableSession(
+      { provider: "dsh", cwd: "/tmp/paseo-acp-test" },
+      sideChatOptions("dsh", terminator),
+    );
+    await session.initializeNewSession();
+
+    expect(session.forkForSideChat).toBeTypeOf("function");
+    const handle = await session.forkForSideChat?.();
+
+    expect(forkSession).toHaveBeenCalledWith({
+      sessionId: "parent-1",
+      cwd: "/tmp/paseo-acp-test",
+      mcpServers: [],
+    });
+    expect(handle).toMatchObject({ provider: "dsh", sessionId: "fork-1", nativeHandle: "fork-1" });
+  });
+
+  test("leaves the hooks unset when the agent has no session/fork capability", async () => {
+    const terminator = new FakeTerminator();
+    const child = createProbeChildStub();
+
+    class PlainSession extends ACPAgentSession {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        return {
+          child,
+          connection: {
+            newSession: vi.fn().mockResolvedValue({ sessionId: "parent-1" }),
+          } as unknown as ClientSideConnection,
+          initialize: { agentCapabilities: {} },
+        };
+      }
+    }
+
+    const session = new PlainSession(
+      { provider: "copilot", cwd: "/tmp/paseo-acp-test" },
+      sideChatOptions("copilot", terminator),
+    );
+    await session.initializeNewSession();
+
+    expect(session.forkForSideChat).toBeUndefined();
+    expect(session.disposeSideChatFork).toBeUndefined();
+  });
+});
+
 describe("ACPAgentClient probe cleanup", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -5416,5 +5576,191 @@ describe("custom ACP provider with configured models", () => {
     const created = await createSessionOnModel(registry, "stale/removed-model");
 
     expect((await created.getRuntimeInfo()).model).toBe("advertised-default");
+  });
+});
+
+// Cursor CLI answers a failed turn with end_turn and the serialized error as
+// ordinary assistant text. Rendering that as the answer made a failed turn look
+// successful, so a manual retry replayed the error instead of the work.
+describe("ACPAgentSession serialized provider errors", () => {
+  test("does not emit a serialized error as assistant prose", () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+
+    const events = internals.translateSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+    });
+
+    expect(events).toEqual([]);
+  });
+
+  test("emits ordinary assistant prose unchanged", () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+
+    const events = internals.translateSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Here is the review." },
+    });
+
+    expect(events).toMatchObject([
+      { type: "timeline", item: { type: "assistant_message", text: "Here is the review." } },
+    ]);
+  });
+
+  test("releases held text once the message proves to be prose", () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+
+    expect(
+      internals.translateSessionUpdate({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error" },
+        messageId: "message-1",
+      }),
+    ).toEqual([]);
+
+    const events = internals.translateSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Error handling is covered below." },
+      messageId: "message-1",
+    });
+
+    expect(events).toMatchObject([
+      {
+        type: "timeline",
+        item: { type: "assistant_message", text: "Error handling is covered below." },
+      },
+    ]);
+  });
+});
+
+describe("ACPAgentSession serialized provider error recovery", () => {
+  interface RetryInternals extends ACPSessionInternals {
+    activeTurnPrompt: unknown;
+    serializedErrorRetries: number;
+    handlePromptResponse(response: PromptResponse, turnId: string): void;
+  }
+
+  const isTurnFailed = (event: AgentStreamEvent) => event.type === "turn_failed";
+  const isTurnStarted = (event: AgentStreamEvent) => event.type === "turn_started";
+
+  function createPromptCaptureSession() {
+    const prompts: Array<{ messageId: string; prompt: unknown }> = [];
+    const pending: Array<(response: PromptResponse) => void> = [];
+    const session = createSession();
+    const internals = asInternals<RetryInternals>(session);
+    internals.sessionId = "session-1";
+    internals.connection = {
+      signal: new AbortController().signal,
+      // Hold the response so the test can stream the assistant chunk first, the
+      // way the agent does before it answers session/prompt.
+      prompt: (input: unknown) =>
+        new Promise<PromptResponse>((resolve) => {
+          prompts.push(input as { messageId: string; prompt: unknown });
+          pending.push(resolve);
+        }),
+    };
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    const respond = (stopReason = "end_turn") => {
+      const resolve = pending.shift();
+      resolve?.({ stopReason } as PromptResponse);
+    };
+    return { session, internals, prompts, events, respond };
+  }
+
+  test("turns a serialized retriable error into a failed turn instead of a completed one", async () => {
+    const { session, internals, events, respond } = createPromptCaptureSession();
+
+    await session.startTurn("Summarize the review");
+    internals.translateSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+      messageId: "message-1",
+    });
+    respond();
+    await vi.waitFor(() => expect(events.some(isTurnFailed)).toBe(true));
+
+    expect(events.some((event) => event.type === "turn_completed")).toBe(false);
+    const failed = events.find((event) => event.type === "turn_failed");
+    expect(failed).toMatchObject({ error: expect.stringContaining("resource_exhausted") });
+    // The error must never reach the conversation as assistant prose.
+    expect(
+      events.some(
+        (event) =>
+          event.type === "timeline" &&
+          event.item.type === "assistant_message" &&
+          event.item.text.includes("resource_exhausted"),
+      ),
+    ).toBe(false);
+  });
+
+  test("keeps a non-retriable serialized error as a failure with no replay", async () => {
+    vi.useFakeTimers();
+    try {
+      const { session, internals, prompts, events, respond } = createPromptCaptureSession();
+
+      await session.startTurn("Summarize the review");
+      internals.translateSessionUpdate({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error: NonRetriableError: provider is unavailable" },
+        messageId: "message-1",
+      });
+      respond();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(prompts).toHaveLength(1);
+      expect(events.filter(isTurnStarted)).toHaveLength(1);
+      expect(events.some(isTurnFailed)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("replays the same prompt after a retriable serialized error", async () => {
+    vi.useFakeTimers();
+    try {
+      const { session, internals, prompts, events, respond } = createPromptCaptureSession();
+
+      await session.startTurn("Summarize the review");
+      internals.translateSessionUpdate({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+        messageId: "message-1",
+      });
+      respond();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(prompts).toHaveLength(2);
+      expect(prompts[1]?.prompt).toEqual(prompts[0]?.prompt);
+      expect(events.filter(isTurnStarted)).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("stops replaying after the retry budget is spent", async () => {
+    vi.useFakeTimers();
+    try {
+      const { session, internals, prompts, respond } = createPromptCaptureSession();
+
+      await session.startTurn("Summarize the review");
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        internals.translateSessionUpdate({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+          messageId: `message-${attempt}`,
+        });
+        respond();
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+
+      // The original turn plus the bounded retries, then it must stop.
+      expect(prompts.length).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

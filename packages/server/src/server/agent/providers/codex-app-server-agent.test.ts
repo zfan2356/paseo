@@ -87,6 +87,7 @@ describe("Codex executable discovery", () => {
 });
 
 import { CodexAppServerClient } from "./codex/app-server-transport.js";
+import { CODEX_GOAL_CONTROL_INSTRUCTIONS } from "./codex/goal-control.js";
 import {
   createCodexAppServerChildProcess,
   createFakeCodexAppServer,
@@ -128,6 +129,7 @@ interface CodexSessionTestAccess {
 }
 
 interface CodexClientLike {
+  isShared?: boolean;
   request: (method: string, ...rest: unknown[]) => Promise<unknown>;
 }
 
@@ -1200,7 +1202,7 @@ describe("Codex app-server provider", () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.setMode("auto");
     await session.startTurn("needs approval");
@@ -1307,7 +1309,7 @@ describe("Codex app-server provider", () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("needs approval");
 
@@ -1328,7 +1330,7 @@ describe("Codex app-server provider", () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("inherit config");
 
@@ -1357,7 +1359,7 @@ describe("Codex app-server provider", () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("use writable roots");
 
@@ -1413,6 +1415,54 @@ describe("Codex app-server provider", () => {
         },
       });
       appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("reads current cwd-resolved subagent configuration without caching or hiding errors", async () => {
+    let agents: Record<string, string> = {
+      default_subagent_model: "configured-child",
+      default_subagent_reasoning_effort: "high",
+    };
+    let failRead = false;
+    const appServer = createFakeCodexAppServer({
+      "config/read": () => {
+        if (failRead) throw new Error("configuration unavailable");
+        return { config: { agents } };
+      },
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ thinkingOptionId: "medium" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+    try {
+      await session.connect();
+      await expect(session.getSubagentDefaults()).resolves.toEqual({
+        model: "configured-child",
+        thinkingOptionId: "high",
+      });
+      expect(appServer.requests().at(-1)).toMatchObject({
+        method: "config/read",
+        params: { cwd: "/tmp/codex-question-test" },
+      });
+      agents = {
+        default_subagent_model: "updated-child",
+        default_subagent_reasoning_effort: "low",
+      };
+      await expect(session.getSubagentDefaults()).resolves.toEqual({
+        model: "updated-child",
+        thinkingOptionId: "low",
+      });
+      agents = {};
+      await expect(session.getSubagentDefaults()).resolves.toEqual({
+        model: "gpt-5.4",
+        thinkingOptionId: "medium",
+      });
+      failRead = true;
+      await expect(session.getSubagentDefaults()).rejects.toThrow("configuration unavailable");
     } finally {
       await session.close();
     }
@@ -1784,7 +1834,7 @@ describe("Codex app-server provider", () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("finish");
 
@@ -2729,6 +2779,84 @@ describe("Codex app-server provider", () => {
     appServer.assertNoErrors();
   });
 
+  test("side chat resume forks the thread inside the side agent's own process", async () => {
+    const threadRequests: string[] = [];
+    const appServer = createFakeCodexAppServer({
+      "thread/fork": () => {
+        threadRequests.push("thread/fork");
+        return {
+          thread: { id: "side-thread-1", forkedFromId: "parent-thread-id", turns: [] },
+          model: "gpt-5.4",
+          modelProvider: "openai",
+          serviceTier: null,
+          cwd: "/workspace/project",
+          approvalPolicy: "on-request",
+          approvalsReviewer: null,
+          sandbox: { type: "workspaceWrite", networkAccess: false },
+        };
+      },
+      // The fork loads the new thread into this process, so the resume guard
+      // must see it as already loaded and never issue thread/resume.
+      "thread/loaded/list": () => {
+        threadRequests.push("thread/loaded/list");
+        return { data: ["side-thread-1"] };
+      },
+      "thread/resume": () => {
+        threadRequests.push("thread/resume");
+        return {};
+      },
+    });
+    const provider = createProviderWithFakeAppServer(appServer);
+
+    const session = await provider.resumeSession(
+      {
+        sessionId: "parent-thread-id",
+        metadata: { cwd: "/workspace/project", model: "gpt-5.4" },
+      },
+      undefined,
+      undefined,
+      { sideChatForkFromThreadId: "parent-thread-id" },
+    );
+
+    expect(threadRequests).toEqual(["thread/fork", "thread/loaded/list"]);
+    expect(session.describePersistence()?.sessionId).toBe("side-thread-1");
+    await session.close();
+    appServer.assertNoErrors();
+  });
+
+  test("forkForSideChat returns a pending handle and disposing it never archives", async () => {
+    const threadRequests: string[] = [];
+    const appServer = createFakeCodexAppServer({
+      "thread/fork": () => {
+        threadRequests.push("thread/fork");
+        return { thread: { id: "unexpected-fork" } };
+      },
+      "thread/archive": () => {
+        threadRequests.push("thread/archive");
+        return {};
+      },
+    });
+    const provider = createProviderWithFakeAppServer(appServer);
+
+    const session = await provider.resumeSession({
+      sessionId: "parent-thread-id",
+      metadata: { cwd: "/workspace/project", model: "gpt-5.4" },
+    });
+    const handle = await session.forkForSideChat?.();
+    if (!handle) {
+      throw new Error("forkForSideChat did not return a handle");
+    }
+
+    expect(handle.sideChatForkPending).toBe(true);
+    expect(handle.sessionId).toBe("parent-thread-id");
+    expect(threadRequests).not.toContain("thread/fork");
+
+    await session.disposeSideChatFork?.(handle);
+    expect(threadRequests).not.toContain("thread/archive");
+    await session.close();
+    appServer.assertNoErrors();
+  });
+
   test("unarchives a persisted Codex thread through app-server", async () => {
     const threadRequests: Array<{ method: string; params: unknown }> = [];
     const appServer = createFakeCodexAppServer({
@@ -3607,7 +3735,7 @@ describe("Codex app-server provider", () => {
     });
 
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("Return JSON", {
       outputSchema: {
@@ -3663,7 +3791,7 @@ describe("Codex app-server provider", () => {
     });
 
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     await session.startTurn("/paseo-implement in a worktree, remember to use Claude for the UI");
 
@@ -6863,6 +6991,85 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
+  test.each([
+    { goalsEnabled: true, resume: false },
+    { goalsEnabled: false, resume: false },
+    { goalsEnabled: true, resume: true },
+    { goalsEnabled: false, resume: true },
+  ])(
+    "sends goal control guidance only when enabled (goals=$goalsEnabled, resume=$resume)",
+    async ({ goalsEnabled, resume }) => {
+      const appServer = createFakeCodexAppServer();
+      const session = new CodexAppServerAgentSession(
+        createConfig({
+          systemPrompt: "User instructions.",
+          daemonAppendSystemPrompt: "Daemon instructions.",
+        }),
+        resume ? archivedThreadHandle() : null,
+        createTestLogger(),
+        async () => appServer.child,
+        {},
+        false,
+        goalsEnabled,
+      );
+      const expectedInstructions = [
+        "User instructions.",
+        "Daemon instructions.",
+        ...(goalsEnabled ? [CODEX_GOAL_CONTROL_INSTRUCTIONS] : []),
+      ].join("\n\n");
+      try {
+        await session.startTurn("continue");
+        expect(await appServer.waitForTurnStart()).not.toHaveProperty("developerInstructions");
+        expect(appServer.requests()).toContainEqual(
+          expect.objectContaining({
+            method: resume ? "thread/resume" : "thread/start",
+            params: expect.objectContaining({ developerInstructions: expectedInstructions }),
+          }),
+        );
+        appServer.assertNoErrors();
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
+  test.each([
+    { rpcError: null, expected: "Goal paused.\n\n" },
+    {
+      rpcError: "goal storage unavailable",
+      expected: "Failed to update goal: goal storage unavailable\n\n",
+    },
+  ])(
+    "reports the actual pause RPC outcome without interrupting ($rpcError)",
+    async ({ rpcError, expected }) => {
+      const requests: Array<{ method: string; params: unknown }> = [];
+      const session = createSession({}, { goalsEnabled: true });
+      session.client = {
+        request: async (method, params) => {
+          requests.push({ method, params });
+          if (method === "thread/loaded/list") return { data: ["test-thread"] };
+          if (method === "thread/goal/set" && rpcError) throw new Error(rpcError);
+          return {};
+        },
+      };
+      const handler = session.tryHandleOutOfBand?.("/goal pause");
+      if (!handler) throw new Error("Expected a goal command handler");
+      const events: AgentStreamEvent[] = [];
+      await handler.run({ emit: (event) => events.push(event) });
+      expect(requests).toEqual([
+        { method: "thread/loaded/list", params: {} },
+        { method: "thread/goal/set", params: { threadId: "test-thread", status: "paused" } },
+      ]);
+      expect(events).toEqual([
+        {
+          type: "timeline",
+          provider: "codex",
+          item: { type: "assistant_message", text: expected },
+        },
+      ]);
+    },
+  );
+
   test("appends blank-line spacing to /goal status messages", async () => {
     const requests: Array<{ method: string; params: unknown }> = [];
     const session = createSession({}, { goalsEnabled: true });
@@ -7223,6 +7430,7 @@ describe("Codex app-server provider", () => {
 
     session.activeForegroundTurnId = null;
     session.client = createStub<CodexClientLike>({
+      isShared: false,
       request: async (method) => {
         if (method === "thread/loaded/list") return { data: ["test-thread"] };
         if (method === "turn/start") return {};
@@ -7268,6 +7476,7 @@ describe("Codex app-server provider", () => {
     });
     session.activeForegroundTurnId = null;
     session.client = createStub<CodexClientLike>({
+      isShared: false,
       request: async (method) => {
         if (method === "thread/loaded/list") {
           markPromptSetupStarted?.();
@@ -7320,6 +7529,7 @@ describe("Codex app-server provider", () => {
     });
     session.activeForegroundTurnId = null;
     session.client = createStub<CodexClientLike>({
+      isShared: false,
       request: async (method) => {
         if (method === "thread/loaded/list") return { data: ["test-thread"] };
         if (method === "turn/start") {
@@ -7367,6 +7577,7 @@ describe("Codex app-server provider", () => {
 
     session.activeForegroundTurnId = null;
     session.client = createStub<CodexClientLike>({
+      isShared: false,
       request: async (method) => {
         if (method === "thread/loaded/list") return { data: ["test-thread"] };
         if (method === "turn/start") throw new Error("Prompt rejected");
@@ -8098,7 +8309,7 @@ describe("Codex app-server provider", () => {
     });
 
     session.activeForegroundTurnId = null;
-    session.client = createStub<CodexClientLike>({ request });
+    session.client = createStub<CodexClientLike>({ isShared: false, request });
 
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));

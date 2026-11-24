@@ -1546,6 +1546,8 @@ limit rather than truncating it. Daemons that support this operation advertise
 
 Plugin UI runs on desktop, browser, iOS, and Android, across every Paseo theme. `theme` is a typed `PluginTheme` mapped from the active host theme. Color and spacing must come from those props. Hardcoded colors and unstyled `Text` break when the host theme changes.
 
+Use `theme.colorScheme` (`"light" | "dark"`) for embedded content that needs the host's resolved appearance. It includes custom themes and updates with the active client theme. Updating only the daemon does not update this client API. On older clients without the field, keep the page usable and prompt to update the client; do not infer appearance from color values or the OS.
+
 Recreate styles when `theme` or `layout.compact` changes.
 
 | Key                             | Required for               | Use it for                          |
@@ -1605,6 +1607,12 @@ export default function contribute(client: PluginClientContext) {
 Every color is a hex string; anything else fails to load. Paseo expands the palette into the full
 token set the built-in dark themes use, so a contributed theme covers panels, menus, diffs, status
 colors, and the terminal without listing them.
+
+Clients advertising `client.features.themeOverrides` also accept an optional
+`overrides` palette for `surface3`, `surface4`, `surfaceDiffEmpty`, `surfaceSidebar`,
+`foregroundExtraMuted`, `borderAccent`, `accentBright`, `accentForeground`,
+`destructive`, `terminalBlack` and `terminalBrightBlack`. Every override is a
+validated hex color. Gate this once for older clients before registering the theme.
 
 | Color                  | Becomes                                                                        |
 | ---------------------- | ------------------------------------------------------------------------------ |
@@ -2519,6 +2527,15 @@ The [New workspace issues example](https://github.com/getpaseo/paseo/tree/main/p
 searches a fixed issue list from a daemon handler and sets the branch and metadata from the choice.
 
 ## Composer pills
+
+Clients advertising `client.features.composerExtensions` support
+`addComposerExtension({ id, Component })`. The component mounts with
+`{ agentId, workspaceId }` for each displayed composer, including private
+conversations that are intentionally absent from public agent lists. Use
+`useAgent(agentId, selector)` for that exact agent; `featureValues` contains its
+current provider feature selections. Register scoped pills in an effect and
+remove them in cleanup. The mount does not grant discovery or server permissions.
+Return an idempotent remover from the plugin entry as with other UI registrations.
 
 `client.addComposerPill({ id, workspaceId, agentId, button })` uses the same [button descriptor](#button-descriptor)
 and returns the same registration. It targets one agent's composer track alongside Tasks and

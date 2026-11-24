@@ -1,6 +1,7 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { SubscribeTerminalRequest } from "@getpaseo/protocol/messages";
 import type { TerminalOutputData } from "./terminal-emulator-runtime";
+import { restoreSubscriptionSendsFrame } from "./terminal-restore-options";
 import { i18n } from "@/i18n/i18next";
 
 export type TerminalStreamControllerClient = Pick<
@@ -38,6 +39,7 @@ export class TerminalStreamController {
   private subscription: ReturnType<DaemonClient["observeTerminal"]> | null = null;
   private terminalId: string | null = null;
   private disposed = false;
+  private awaitingRestore = false;
 
   constructor(private readonly options: TerminalStreamControllerOptions) {}
 
@@ -47,6 +49,7 @@ export class TerminalStreamController {
     }
     if (event.type === "replay") {
       this.options.onReplay?.({ terminalId: event.terminalId, replay: event.replay });
+      if (event.replay.type === "end") this.finishRestoreAttach(event.terminalId);
       return;
     }
     if (event.type === "output" && event.data.length > 0) {
@@ -60,6 +63,7 @@ export class TerminalStreamController {
     }
     const nextTerminalId = input.terminalId;
     this.terminalId = nextTerminalId;
+    this.awaitingRestore = false;
     void this.subscription?.release().catch(console.error);
     this.subscription = null;
     if (!nextTerminalId) {
@@ -70,6 +74,7 @@ export class TerminalStreamController {
     let subscription: ReturnType<DaemonClient["observeTerminal"]>;
     try {
       const restore = this.options.getRestoreOptions?.();
+      this.awaitingRestore = restoreSubscriptionSendsFrame(restore);
       const preferredSize = restore?.size ?? this.options.getPreferredSize();
       if (preferredSize)
         this.options.client.sendTerminalInput(nextTerminalId, {
@@ -103,11 +108,15 @@ export class TerminalStreamController {
         }
         if (payload.error) {
           this.terminalId = null;
+          this.awaitingRestore = false;
           this.options.onStatusChange?.({
             terminalId: nextTerminalId,
             isAttaching: false,
             error: payload.error,
           });
+          return;
+        }
+        if (this.awaitingRestore) {
           return;
         }
         this.options.onStatusChange?.({
@@ -121,12 +130,14 @@ export class TerminalStreamController {
         if (this.disposed || this.subscription !== subscription) {
           return;
         }
+        this.awaitingRestore = false;
         this.failAttach(nextTerminalId, error);
       });
   }
 
   private failAttach(terminalId: string, error: unknown): void {
     this.terminalId = null;
+    this.awaitingRestore = false;
     void this.subscription?.release().catch(console.error);
     this.subscription = null;
     this.options.onStatusChange?.({
@@ -143,6 +154,7 @@ export class TerminalStreamController {
     }
     this.options.onExit?.(input.terminalId);
     this.terminalId = null;
+    this.awaitingRestore = false;
     void this.subscription?.release().catch(console.error);
     this.subscription = null;
     this.options.onStatusChange?.({
@@ -157,9 +169,22 @@ export class TerminalStreamController {
       return;
     }
     this.disposed = true;
+    this.awaitingRestore = false;
     this.terminalId = null;
     void this.subscription?.release().catch(console.error);
     this.subscription = null;
     this.options.onStatusChange?.({ terminalId: null, isAttaching: false, error: null });
+  }
+
+  private finishRestoreAttach(terminalId: string): void {
+    if (!this.awaitingRestore || this.terminalId !== terminalId) {
+      return;
+    }
+    this.awaitingRestore = false;
+    this.options.onStatusChange?.({
+      terminalId,
+      isAttaching: false,
+      error: null,
+    });
   }
 }

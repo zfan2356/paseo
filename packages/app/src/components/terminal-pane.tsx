@@ -62,7 +62,7 @@ import { prepareDroppedPathsForTerminal } from "@/terminal/drop/terminal-path";
 import { toErrorMessage } from "@/utils/error-messages";
 import {
   EMPTY_FOCUS_CLAIM_STATE,
-  canRequestFocusClaim,
+  canRequestPassiveFocusClaim,
   reconcileFocusClaim,
   resolveTerminalResizeClaim,
   settleFocusClaim,
@@ -462,14 +462,17 @@ export function TerminalPane({
   useKeyboardFocusSurface("terminal", isTerminalPresented && isPaneFocused && terminalId != null);
 
   useEffect(() => {
-    const canRequest = canRequestFocusClaim({
-      isWorkspaceFocused: isTerminalPresented,
-      isPaneFocused,
-      isAppActivelyVisible,
-      isClientReady: client !== null,
-      isConnected,
-      isRendererReady: rendererReadyStreamKey === terminalStreamKey,
-    });
+    const canRequest = canRequestPassiveFocusClaim(
+      {
+        isWorkspaceFocused: isTerminalPresented,
+        isPaneFocused,
+        isAppActivelyVisible,
+        isClientReady: client !== null,
+        isConnected,
+        isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+      },
+      isMobile,
+    );
     const step = reconcileFocusClaim(paneFocusResizeClaimRef.current, {
       key: !isPaneFocused || !terminalId ? null : `${scopeKey}:${terminalId}`,
       canRequest,
@@ -484,6 +487,7 @@ export function TerminalPane({
     client,
     isAppActivelyVisible,
     isConnected,
+    isMobile,
     isPaneFocused,
     isTerminalPresented,
     rendererReadyStreamKey,
@@ -573,14 +577,17 @@ export function TerminalPane({
 
   const getPreferredStreamSize = useStableEvent(() => {
     if (
-      !canRequestFocusClaim({
-        isWorkspaceFocused: terminalPresentedRef.current,
-        isPaneFocused,
-        isAppActivelyVisible,
-        isClientReady: client !== null,
-        isConnected,
-        isRendererReady: rendererReadyStreamKey === terminalStreamKey,
-      })
+      !canRequestPassiveFocusClaim(
+        {
+          isWorkspaceFocused: terminalPresentedRef.current,
+          isPaneFocused,
+          isAppActivelyVisible,
+          isClientReady: client !== null,
+          isConnected,
+          isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+        },
+        isMobile,
+      )
     ) {
       return null;
     }
@@ -600,14 +607,17 @@ export function TerminalPane({
     resolveTerminalRestoreOptions({
       supportsTerminalRestoreModes,
       scrollbackLines: settings.terminalScrollbackLines,
-      canClaimSize: canRequestFocusClaim({
-        isWorkspaceFocused: terminalPresentedRef.current,
-        isPaneFocused,
-        isAppActivelyVisible,
-        isClientReady: client !== null,
-        isConnected,
-        isRendererReady: rendererReadyStreamKey === terminalStreamKey,
-      }),
+      canClaimSize: canRequestPassiveFocusClaim(
+        {
+          isWorkspaceFocused: terminalPresentedRef.current,
+          isPaneFocused,
+          isAppActivelyVisible,
+          isClientReady: client !== null,
+          isConnected,
+          isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+        },
+        isMobile,
+      ),
       size: measuredTerminalSizeRef.current,
     }),
   );
@@ -658,7 +668,6 @@ export function TerminalPane({
       terminalId,
       terminalStreamKey,
       rendererReadyStreamKey,
-      isWorkspaceFocused,
     });
     streamControllerRef.current?.setTerminal({
       terminalId: nextTerminalId,
@@ -1283,7 +1292,7 @@ const styles = StyleSheet.create((theme) => ({
     ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.16)",
+    backgroundColor: theme.colors.background,
   },
   floatingCopyContainer: {
     position: "absolute",

@@ -35,6 +35,31 @@ function outboundMessage(type: SessionOutboundMessage["type"]): SessionOutboundM
 }
 
 describe("SessionAuthorization", () => {
+  test("requires workspace write permission for side chat and conversation handoff", () => {
+    const reader = new SessionAuthorization(["workspace.read"]);
+    const writer = new SessionAuthorization(["workspace.write"]);
+    const hub = new SessionAuthorization(["hub.execute"]);
+    for (const type of [
+      "agent.side_question.ask.request",
+      "agent_terminal.switch_to_agent.request",
+      "codex_terminal.switch_to_agent.request",
+    ] as const) {
+      expect(reader.allowsInbound(inboundMessage(type))).toBe(false);
+      expect(hub.allowsInbound(inboundMessage(type))).toBe(false);
+      expect(writer.allowsInbound(inboundMessage(type))).toBe(true);
+    }
+    for (const type of [
+      "agent.side_question.ask.response",
+      "agent_terminal.switch_to_agent.response",
+      "codex_terminal.switch_to_agent.response",
+    ] as const) {
+      expect(reader.allowsOutbound(outboundMessage(type))).toBe(false);
+      expect(writer.allowsOutbound(outboundMessage(type))).toBe(true);
+    }
+    expect(reader.allowsOutbound(outboundMessage("agent.side_chat.agent_state"))).toBe(true);
+    expect(hub.allowsOutbound(outboundMessage("agent.side_chat.agent_state"))).toBe(false);
+  });
+
   test("owner authority covers every session operation", () => {
     const authorization = new SessionAuthorization(OWNER_PERMISSIONS);
 

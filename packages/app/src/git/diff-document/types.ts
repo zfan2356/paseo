@@ -20,7 +20,7 @@ export interface WorkingDiffMode {
   onFilePress?: (path: string) => void;
   focusPath?: string;
   focusRequestId?: number;
-  workspaceFileDragScope?: { serverId: string; workspaceId: string };
+  workspaceFileDragScope?: { serverId: string; workspaceId: string; workspaceRoot?: string };
   onOpenFile?: (path: string) => void;
   onOpenToSide?: (path: string) => void;
   onAddToChat?: (path: string) => void;

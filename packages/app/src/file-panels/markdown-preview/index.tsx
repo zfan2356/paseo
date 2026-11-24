@@ -5,30 +5,63 @@ import {
   useAssistantFileLinkEnvironment,
 } from "@/assistant-file-links";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import { useMemo } from "react";
+import { useEffect, useId, useMemo } from "react";
+import { isWeb } from "@/constants/platform";
+import { usePaneContext } from "@/panels/pane-context";
+import { useStableEvent } from "@/hooks/use-stable-event";
+import { MarkdownHeadingSlugger, resolveMarkdownPreviewLink, sameMarkdownDocument } from "./links";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { parseMarkdownPreviewDocument } from "./document";
 
 export function FileMarkdownPreview({
   source,
+  anchor,
+  navigationRevision,
   filePath,
   workspaceRoot,
   client,
   serverId,
 }: {
   source: string;
+  anchor?: string;
+  navigationRevision?: number;
   filePath: string;
   workspaceRoot?: string;
   client?: DaemonClient | null;
   serverId?: string;
 }) {
+  const previewId = useId();
+  const { openFileInWorkspace } = usePaneContext();
+  const navigateLink = useStableEvent((href: string) => {
+    const target = resolveMarkdownPreviewLink(href, filePath);
+    if (target.kind === "external") return false;
+    if (target.kind === "ignored") return true;
+    if (target.anchor && sameMarkdownDocument(target.path, filePath)) {
+      scrollToHeading(previewId, target.anchor);
+    } else {
+      const { kind: _kind, ...location } = target;
+      openFileInWorkspace({ location, disposition: "preferred" });
+    }
+    return true;
+  });
+  useEffect(() => {
+    if (!isWeb || !anchor) return;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => scrollToHeading(previewId, anchor));
+    });
+    let second = 0;
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [anchor, navigationRevision, previewId, source]);
   const document = useMemo(() => parseMarkdownPreviewDocument(source), [source]);
   const environment = useAssistantFileLinkEnvironment();
   const relativePathBase = resolveMarkdownFileDirectory({ markdownPath: filePath, workspaceRoot });
 
   return (
-    <View style={styles.outerGutter}>
+    <View nativeID={previewId} style={styles.outerGutter}>
       <View style={styles.readingFrame} testID="markdown-preview-frame">
         {document.frontMatter.length > 0 ? (
           <View style={styles.frontMatterTable} testID="markdown-front-matter">
@@ -57,6 +90,7 @@ export function FileMarkdownPreview({
         >
           <MarkdownRenderer
             text={document.body}
+            onNavigateLink={navigateLink}
             filePath={filePath}
             workspaceRoot={workspaceRoot}
             client={client}
@@ -66,6 +100,18 @@ export function FileMarkdownPreview({
       </View>
     </View>
   );
+}
+
+function scrollToHeading(previewId: string, anchor: string) {
+  if (!isWeb) return;
+  const root = document.getElementById(previewId);
+  const slugger = new MarkdownHeadingSlugger();
+  for (const heading of root?.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading]") ?? []) {
+    if (slugger.slug(heading.textContent ?? "") === anchor) {
+      heading.scrollIntoView({ block: "start" });
+      break;
+    }
+  }
 }
 
 const styles = StyleSheet.create((theme) => ({

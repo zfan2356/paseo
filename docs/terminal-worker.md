@@ -10,7 +10,7 @@ supervisor (paseo.pid) ──► daemon worker ──► launcher ──► term
 ```
 
 - The daemon starts the worker through a launcher (`terminal-worker-process.ts --launch`). The launcher spawns the worker `detached`, waits for `ready` on fd 3, prints the pid and exits, so the worker is re-parented and leaves the daemon's process tree. The supervisor's forced kill uses `tree-kill`, which walks parent pids: a worker that stayed a child, even detached, would die with a hung daemon.
-- The worker talks to one daemon at a time over a local socket (named pipe on Windows). Losing the daemon means "no controller", not exit: PTYs keep running, events are dropped, and the headless terminal keeps the screen for the next daemon's `listTerminals`.
+- The fork permits overlapping authenticated daemon connections over the local socket (named pipe on Windows). A failed replacement never disconnects the daemon still serving clients. Events are broadcast, but responses return only to their requester. With no daemon attached, PTYs keep running and the headless terminal keeps the screen for the next daemon's `listTerminals`.
 - A socket disconnect triggers reconnection to the same worker and a screen replay. Only confirmed process death retires its sessions; the next terminal creation shares one replacement launch. Dead-worker cleanup stays scoped to that worker, so a healthy draining peer keeps running. Shutdown and detach suppress recovery.
 - The worker exits on its own when it has no controller and no terminals, on `shutdown`, on SIGTERM (killing its terminals), and when its record disappears (a deleted `$PASEO_HOME`: nobody can ever reach it again).
 - Its stderr goes to `$PASEO_HOME/terminal-worker.log`. No pipe to the daemon survives the daemon.
@@ -18,6 +18,15 @@ supervisor (paseo.pid) ──► daemon worker ──► launcher ──► term
 The worker retains a fixed 10,000 history rows plus the screen in its existing xterm. Replay uses `@xterm/addon-serialize` 0.14 against headless xterm 6; no second cell grid or lifetime byte log is retained. The serializer boundary owns cursor position, visibility and explicit program-selected presentation; the addon alone does not preserve all three. An unset program style leaves each client’s configured cursor defaults intact. It also restores SGR mouse encoding: the addon preserves mouse tracking but omits its encoding, so switching away and back otherwise sends legacy wheel reports that Copilot CLI cannot use. These missing modes require xterm's internal services because its public modes API omits them. Standard modes come from the serializer; the existing input-mode tracker retains protocol modes such as Kitty and Win32 input. Commit that tracker with parsed output so replay bytes and metadata describe the same cut.
 
 Which triggers keep terminals and which close them is owned by the stop reason (`keepTerminals`) that flows from the request through the supervisor to `stop()`. The kill side always ends in the reaper (`terminal-worker-reaper.ts`), the only path that signals terminal processes outside a connected daemon.
+
+This fork preserves terminals when graceful shutdown omits `keepTerminals`,
+including a daemon signal without an explicit stop intent. Explicit close
+requests still win. Existing fork NDJSON workers are adopted through
+`legacy-worker-connection.ts`, not replaced or sent through the new reaper;
+their explicit close waits for each terminal to exit before disconnecting.
+They occupy the pool's draining slot: new terminals use the current worker,
+and closing the last legacy terminal releases that slot immediately.
+See [the fork design](../custom-feat/persistent-terminal-sessions.md).
 
 ## Record, socket and secret
 
@@ -75,7 +84,7 @@ Each create carries the controlling daemon's environment and Paseo CLI path (`ba
 
 ## Desktop
 
-Desktop app updates and version-mismatch restarts stop the daemon with "keep terminals" on macOS and Linux, through `daemon stop --keep-terminals` (the shutdown RPC; SIGTERM always means "stop and close"). A daemon that predates the feature cannot keep terminals: the CLI refuses before sending anything, and desktop logs that and stops it with its terminals closed.
+Desktop app updates and version-mismatch restarts stop the daemon with "keep terminals" on macOS and Linux, through `daemon stop --keep-terminals` (the shutdown RPC). A daemon that predates the feature cannot keep terminals: the CLI refuses before sending anything, and desktop logs that and stops it with its terminals closed.
 
 On Windows every desktop stop closes terminals. In the desktop app the worker runs as `Paseo.exe` with `ELECTRON_RUN_AS_NODE`, and a surviving one would lock the install folder the NSIS update replaces. Restarts, crashes and npm self-updates keep terminals on Windows too.
 

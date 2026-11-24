@@ -1,6 +1,6 @@
 import { memo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Summary } from "lucide-react-native";
+import { ListTree, Summary } from "lucide-react-native";
 import { useDisclosureHold } from "@/agent-stream/disclosure";
 import { ExpandableBadge } from "@/components/message";
 import { useOverviewSummaryLabel } from "@/tool-calls/detail-level/overview/label";
@@ -18,18 +18,27 @@ export const TurnSummaryLine = memo(function TurnSummaryLine({
   onExpandedChange: (hostId: string, expanded: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const label = useOverviewSummaryLabel(item.tools) || t("turnSummary.details");
+  const summaryLabel = useOverviewSummaryLabel(item.tools) || t("turnSummary.details");
+  const label = item.process ? t("intermediateProcess.label") : summaryLabel;
   const hold = useDisclosureHold();
   const toggle = useCallback(
     () => hold(() => onExpandedChange(item.hostId, !item.expanded)),
     [hold, onExpandedChange, item.expanded, item.hostId],
   );
 
+  let secondaryLabel: string | undefined;
+  if (item.process)
+    secondaryLabel = item.process.active
+      ? t("intermediateProcess.running")
+      : t("intermediateProcess.steps", { count: item.process.stepCount });
   return (
     <ExpandableBadge
-      testID="turn-summary"
+      testID={item.process ? "intermediate-process-group" : "turn-summary"}
       label={label}
-      icon={Summary}
+      icon={item.process ? ListTree : Summary}
+      secondaryLabel={secondaryLabel}
+      isLoading={item.process?.active}
+      isError={item.process?.hasError}
       isExpanded={item.expanded}
       onToggle={toggle}
       borderlessWhenExpanded

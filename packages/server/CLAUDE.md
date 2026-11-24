@@ -187,10 +187,11 @@ npm run db:query -- "SELECT * FROM agent_timeline_rows..."
 
 ## Relevant Docs
 
-| File                                                       | What it covers                                   |
-| ---------------------------------------------------------- | ------------------------------------------------ |
-| [../CLAUDE.md](../CLAUDE.md)                               | Repository overview, critical rules, quick start |
-| [../docs/architecture.md](../docs/architecture.md)         | System design, WebSocket protocol, data flow     |
-| [../docs/coding-standards.md](../docs/coding-standards.md) | Type hygiene, error handling, React patterns     |
-| [../docs/testing.md](../docs/testing.md)                   | TDD workflow, determinism, real deps over mocks  |
-| [../SECURITY.md](../SECURITY.md)                           | Relay threat model, E2E encryption               |
+| File                                                               | What it covers                                          |
+| ------------------------------------------------------------------ | ------------------------------------------------------- |
+| [../CLAUDE.md](../CLAUDE.md)                                       | Repository overview, critical rules, quick start        |
+| [../docs/architecture.md](../docs/architecture.md)                 | System design, WebSocket protocol, data flow            |
+| [../docs/coding-standards.md](../docs/coding-standards.md)         | Type hygiene, error handling, React patterns            |
+| [../docs/testing.md](../docs/testing.md)                           | TDD workflow, determinism, real deps over mocks         |
+| [../docs/terminal-performance.md](../docs/terminal-performance.md) | Terminal worker, IPC, snapshots, and latency invariants |
+| [../SECURITY.md](../SECURITY.md)                                   | Relay threat model, E2E encryption                      |

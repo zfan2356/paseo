@@ -39,6 +39,8 @@ export interface SidebarStatusWorkspacePlacement extends SidebarWorkspacePlaceme
 }
 
 export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
+  createdAt?: Date | null;
+  lastUserMessageAt?: Date | null;
   workspaceDirectory: string;
   workspaceDirectoryLabel: string;
   // Raw user-set title (null when the name is derived from branch/directory).
@@ -152,6 +154,8 @@ export function createSidebarWorkspaceEntry(input: {
   const effectiveStatus = deriveEffectiveWorkspaceStatus(input);
   return {
     workspaceKey: `${input.serverId}:${input.workspace.id}`,
+    createdAt: input.workspace.createdAt,
+    lastUserMessageAt: input.workspace.lastUserMessageAt,
     serverId: input.serverId,
     workspaceId: input.workspace.id,
     projectViewKey,

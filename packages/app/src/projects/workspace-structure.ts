@@ -205,7 +205,10 @@ function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V): V {
   return value;
 }
 
-function compareWorkspaceStructureItems(left: WorkspaceSortItem, right: WorkspaceSortItem): number {
+export function compareWorkspaceStructureItems(
+  left: Pick<WorkspaceSortItem, "workspaceName" | "workspaceKey">,
+  right: Pick<WorkspaceSortItem, "workspaceName" | "workspaceKey">,
+): number {
   return (
     left.workspaceName.localeCompare(right.workspaceName, undefined, {
       numeric: true,
@@ -214,8 +217,8 @@ function compareWorkspaceStructureItems(left: WorkspaceSortItem, right: Workspac
   );
 }
 
-function workspaceSortTime(
-  workspace: WorkspaceDescriptor,
+export function workspaceSortTime(
+  workspace: { createdAt?: Date | null; lastUserMessageAt?: Date | null },
   sort: WorkspaceSort | undefined,
 ): number {
   if (!sort) return 0;
@@ -226,6 +229,9 @@ function workspaceSortTime(
   return time?.getTime() ?? 0;
 }
 
-function compareWorkspaceTimes(left: WorkspaceSortItem, right: WorkspaceSortItem): number {
+export function compareWorkspaceTimes(
+  left: Pick<WorkspaceSortItem, "sortTime" | "workspaceKey">,
+  right: Pick<WorkspaceSortItem, "sortTime" | "workspaceKey">,
+): number {
   return right.sortTime - left.sortTime || left.workspaceKey.localeCompare(right.workspaceKey);
 }

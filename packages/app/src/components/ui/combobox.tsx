@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { Modal } from "@/components/ui/modal";
 import {
@@ -177,7 +178,9 @@ function ComboboxSheetBackground({ style }: BottomSheetBackgroundProps) {
     [style, theme.colors.surface0, theme.borderRadius],
   );
 
-  return <Animated.View pointerEvents="none" style={combinedStyle} />;
+  return (
+    <Animated.View dataSet={MATERIAL_SLOTS.sheet} pointerEvents="none" style={combinedStyle} />
+  );
 }
 
 export interface SearchInputProps {

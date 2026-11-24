@@ -1,3 +1,4 @@
+import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { memo, type ReactElement, useCallback, useMemo, useState } from "react";
 import { Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -28,7 +29,7 @@ import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 
 export interface FileHeaderProps {
   file: DiffFileHeader;
-  workspaceFileDragScope?: { serverId: string; workspaceId: string };
+  workspaceFileDragScope?: { serverId: string; workspaceId: string; workspaceRoot?: string };
   bodyVisible: boolean;
   showsBodyState?: boolean;
   isSelected?: boolean;
@@ -198,7 +199,7 @@ export const FileHeader = memo(function FileHeader({
     enabled: interactive,
     disabled: file.isDeleted,
     workspaceId: null,
-    path: file.path,
+    path: workspaceDragPath(file.path, workspaceFileDragScope),
     ...workspaceFileDragScope,
   });
   const interaction = useFileHeaderInteraction({
@@ -439,3 +440,9 @@ const styles = StyleSheet.create((theme) => ({
   directorySpacer: { flex: 1, minWidth: 0 },
   tooltip: { color: theme.colors.popoverForeground, fontSize: theme.fontSize.base },
 }));
+
+function workspaceDragPath(path: string, scope: FileHeaderProps["workspaceFileDragScope"]): string {
+  return scope?.workspaceRoot
+    ? buildAbsoluteExplorerPath({ workspaceRoot: scope.workspaceRoot, entryPath: path })
+    : path;
+}

@@ -30,6 +30,7 @@ describe("panel manifest", () => {
     expect(getPanelManifest("files").showCloseButton).toBe(false);
     expect(getPanelManifest("changes_tree").showCloseButton).toBe(false);
     expect(getPanelManifest("agent").showCloseButton).toBe(true);
+    expect(getPanelManifest("side_chat").showCloseButton).toBe(true);
     expect(getPanelManifest("terminal").showCloseButton).toBe(true);
     expect(getPanelManifest("file").showCloseButton).toBe(true);
     expect(getPanelManifest("working_diff").showCloseButton).toBe(true);
@@ -41,6 +42,7 @@ describe("panel manifest", () => {
     expect(panelCanLaunchInPane("files", ["changes_tree"])).toBe(true);
     expect(panelCanLaunchInPane("files", [])).toBe(true);
     expect(panelCanLaunchInPane("terminal", ["terminal"])).toBe(true);
+    expect(panelCanLaunchInPane("side_chat", ["side_chat"])).toBe(true);
   });
 
   it("keeps durable resource identity separate from transient target input", () => {

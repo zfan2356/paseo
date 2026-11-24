@@ -25,6 +25,8 @@ import {
   resolveMacTerminalEditingShortcut,
   shouldInterceptDomTerminalKey,
 } from "@/utils/terminal-keys";
+import { materializeDefaultInverseSgr } from "./inverse-sgr";
+import { isEmulatorGeneratedProtocolReply } from "./terminal-protocol-reply";
 import {
   createTerminalLocalFileLinkProvider,
   type TerminalLocalFileLinkSource,
@@ -323,6 +325,9 @@ export class TerminalEmulatorRuntime {
   private readonly inputModeTracker = new TerminalInputModeTracker();
   private lastInputModeState: TerminalInputModeState = this.inputModeTracker.getState();
   private themeBackgroundElements: HTMLElement[] = [];
+  private needsRefreshAfterHiddenFit = false;
+  private hostElement: HTMLDivElement | null = null;
+  private restoreCoverCount = 0;
 
   private handleVisibilityRestore = (): void => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
@@ -550,8 +555,13 @@ export class TerminalEmulatorRuntime {
   mount(input: TerminalEmulatorRuntimeMountInput): void {
     this.unmount();
 
+    input.host.setAttribute("data-pmono", "");
     input.host.innerHTML = "";
     this.lastSize = null;
+    this.needsRefreshAfterHiddenFit = false;
+    this.hostElement = input.host;
+    this.restoreCoverCount = 0;
+    input.host.style.opacity = "";
     this.inputModeTracker.reset();
     this.emitInputModeChange();
 
@@ -562,8 +572,10 @@ export class TerminalEmulatorRuntime {
     const terminal = new Terminal({
       allowProposedApi: true,
       convertEol: false,
-      cursorBlink: true,
+      cursorBlink: false,
+      cursorInactiveStyle: "bar",
       cursorStyle: "bar",
+      cursorWidth: 2,
       fontFamily: resolveTerminalFontFamily(input.fontFamily),
       fontSize: resolveTerminalFontSize(input.fontSize),
       // OSC 8 hyperlinks; without a handler xterm prompts and calls window.open().
@@ -677,7 +689,7 @@ export class TerminalEmulatorRuntime {
           disposeWebglRenderer();
         });
         terminal.loadAddon(webglAddon);
-        imageAddon = new ImageAddon();
+        imageAddon = new ImageAddon({ enableSizeReports: false });
         terminal.loadAddon(imageAddon);
         registerProtocolQuerySuppression();
         this.fitAndEmitResize?.({ forceRefresh: true, shouldClaim: false });
@@ -709,6 +721,7 @@ export class TerminalEmulatorRuntime {
       }
 
       if (input.root.offsetWidth === 0 || input.root.offsetHeight === 0) {
+        this.needsRefreshAfterHiddenFit = true;
         return;
       }
 
@@ -721,8 +734,10 @@ export class TerminalEmulatorRuntime {
       const nextRows = currentTerminal.rows;
       const nextCols = currentTerminal.cols;
       const previous = this.lastSize;
+      const refreshAfterHidden = this.needsRefreshAfterHiddenFit;
+      const shouldRefresh = forceRefresh || refreshAfterHidden;
       if (
-        !forceRefresh &&
+        !shouldRefresh &&
         !forceClaim &&
         previous &&
         previous.rows === nextRows &&
@@ -731,6 +746,7 @@ export class TerminalEmulatorRuntime {
         return;
       }
 
+      this.needsRefreshAfterHiddenFit = false;
       this.lastSize = { rows: nextRows, cols: nextCols };
       this.refreshVisibleRows();
       this.callbacks.onResize?.(
@@ -757,6 +773,9 @@ export class TerminalEmulatorRuntime {
     }
     const inputDisposable = terminal.onData((data) => {
       if (this.suppressInput && !this.isDispatchingUserInput()) {
+        return;
+      }
+      if (isEmulatorGeneratedProtocolReply(data)) {
         return;
       }
       this.callbacks.onInput?.(data);
@@ -956,12 +975,17 @@ export class TerminalEmulatorRuntime {
 
   replay(event: import("@getpaseo/client").TerminalReplayEvent): void {
     if (event.type === "begin") {
+      this.concealHostForRestore();
       this.replayResize ??= { shouldClaim: false };
       this.restoreOutput({ data: EMPTY_TERMINAL_OUTPUT, rows: event.rows, cols: event.cols });
     } else if (event.type === "data") {
       this.write({ data: event.data, suppressInput: true });
     } else {
-      this.outputOperations.push({ type: "fit", data: EMPTY_TERMINAL_OUTPUT });
+      this.outputOperations.push({
+        type: "fit",
+        data: EMPTY_TERMINAL_OUTPUT,
+        onCommitted: () => this.revealHostAfterRestore(),
+      });
       this.processOutputQueue();
     }
   }
@@ -978,7 +1002,9 @@ export class TerminalEmulatorRuntime {
       rows: input.rows,
       cols: input.cols,
       suppressInput: true,
-      ...(input.onCommitted ? { onCommitted: input.onCommitted } : {}),
+      onCommitted: () => {
+        input.onCommitted?.();
+      },
     });
     this.processOutputQueue();
   }
@@ -1133,6 +1159,12 @@ export class TerminalEmulatorRuntime {
     this.fitAddon = null;
     this.fitAndEmitResize = null;
     this.lastSize = null;
+    this.needsRefreshAfterHiddenFit = false;
+    this.restoreCoverCount = 0;
+    if (this.hostElement) {
+      this.hostElement.style.opacity = "";
+    }
+    this.hostElement = null;
     this.themeBackgroundElements = [];
     this.suppressInput = false;
     this.inputModeDecoder.decode();
@@ -1213,6 +1245,7 @@ export class TerminalEmulatorRuntime {
       this.emitInputModeChange();
     }
     this.hasUngatedWrites = true;
+    const data = this.paintDefaultInverseSgr(terminal, operation.data);
     const onCommitted = operation.onCommitted;
     const commit = () => {
       if (!this.pendingWriteCommits.delete(commit)) {
@@ -1222,7 +1255,7 @@ export class TerminalEmulatorRuntime {
     };
     this.pendingWriteCommits.add(commit);
     try {
-      terminal.write(operation.data, commit);
+      terminal.write(data, commit);
     } catch {
       commit();
     }
@@ -1313,12 +1346,47 @@ export class TerminalEmulatorRuntime {
     }, OUTPUT_OPERATION_TIMEOUT_MS);
 
     try {
-      terminal.write(data, () => {
+      terminal.write(this.paintDefaultInverseSgr(terminal, data), () => {
         finalizeOperation(operation);
       });
     } catch {
       finalizeOperation(operation);
     }
+  }
+
+  private concealHostForRestore(): void {
+    const host = this.hostElement;
+    if (!host) {
+      return;
+    }
+    this.restoreCoverCount += 1;
+    if (this.restoreCoverCount === 1) {
+      host.style.opacity = "0";
+    }
+  }
+
+  private revealHostAfterRestore(): void {
+    if (this.restoreCoverCount === 0) {
+      return;
+    }
+    this.restoreCoverCount -= 1;
+    if (this.restoreCoverCount > 0) {
+      return;
+    }
+    const host = this.hostElement;
+    if (host) {
+      host.style.opacity = "";
+    }
+  }
+
+  private paintDefaultInverseSgr(terminal: Terminal, data: Uint8Array): Uint8Array {
+    // Ink TUIs hide the hardware cursor and draw a caret as inverse+default-color
+    // space. WebGL skips that background, so paint the swapped theme colors explicitly.
+    return materializeDefaultInverseSgr({
+      data,
+      foreground: terminal.options.theme?.foreground,
+      background: terminal.options.theme?.background,
+    });
   }
 
   private clearInFlightOutputTimeout(): void {

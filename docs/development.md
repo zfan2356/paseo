@@ -42,6 +42,37 @@ Linux produces the `paseo-desktop` launcher and desktop entry. macOS produces
 Electron runtime and the checkout's built daemon, client, and renderer rather
 than downloading a published desktop release.
 
+## Installing a local macOS desktop build
+
+After `npm run build:desktop -- --dir`, deep-sign the candidate with the
+stable local identity so macOS TCC grants survive rebuilds:
+
+```bash
+npm run sign:desktop:local -- --app /path/to/Paseo.app
+```
+
+Ad-hoc signatures change cdhash every build and force a new authorization.
+The first certificate-signed install still needs one grant; later rebuilds
+reuse the same designated requirement. The identity lives under
+`~/Library/Application Support/Paseo/signing/` and is not a Developer ID.
+
+Then replace the installed client with the repository-owned one-shot installer:
+
+```bash
+npm run install:desktop:local -- --app /path/to/Paseo.app
+```
+
+The installer verifies the candidate signature, schedules a non-restarting
+LaunchAgent, waits ten seconds for the current conversation to finish, quits the
+app and daemon, swaps `/Applications/Paseo.app`, verifies and launches the new
+copy, and removes the rollback copy after launch succeeds. A failed install
+restores and reopens the previous app. It never uses `launchctl submit`, whose
+inferred keepalive behavior can replay a completed installer.
+
+Use `--dry-run` to validate the candidate and inspect the LaunchAgent without
+loading it. Override the grace period with `--delay <seconds>`; the minimum is
+five seconds. The install log is `/tmp/paseo-local-install.log`.
+
 ### PASEO_HOME
 
 `PASEO_HOME` is the directory that holds runtime state (agents, worktrees, workspace config, sockets, daemon log). Resolution rules:
@@ -636,7 +667,11 @@ npm run cli -- logs <id>             # View agent timeline
 npm run cli -- agent open <id>       # Focus an existing agent in Paseo Desktop
 npm run cli -- daemon status         # Check daemon status
 npm run cli -- clone owner/repo --dir ~/workspace # Clone GitHub repo and register project
+npm run cli -- send <id> --if-idle --message-id <stable-id> --prompt-file task.md --no-wait --json
+npm run cli -- agent receipt <id> <stable-id> --json
 ```
+
+`--if-idle` fails with `agent_busy` instead of steering or interrupting an active turn. It requires `--message-id`, which ordinary sends also accept; reuse the same ID across retries. A host without idle-only support reports `DAEMON_UPDATE_REQUIRED`; the command never falls back to a normal send. `agent receipt` reads the same stable ID without redelivering; see [Sending messages](../public-docs/cli.md#sending-messages) and [delivery receipt lookup](agent-lifecycle.md#delivery-receipt-lookup).
 
 Use the global `--host` option to point the CLI at a different daemon:
 

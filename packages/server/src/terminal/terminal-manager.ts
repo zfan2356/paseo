@@ -16,12 +16,14 @@ import { resolve, sep } from "node:path";
 import { assertAbsolutePath, isSameOrDescendantPath } from "../server/path-utils.js";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
 import { deriveTerminalActivityStatusBucket } from "@getpaseo/protocol/terminal-activity";
+import { AGENT_CONVERSATION_TERMINAL_ENV } from "./agent-hooks/agent-hook-installer.js";
 
 export interface TerminalListItem {
   id: string;
   name: string;
   cwd: string;
   workspaceId: string;
+  linkedAgentId?: string;
   title?: string;
   activity: TerminalActivity | null;
 }
@@ -38,6 +40,7 @@ export interface TerminalActivityTransitionEvent {
   name: string;
   cwd: string;
   workspaceId: string;
+  linkedAgentId?: string;
   activity: TerminalActivity | null;
   previous: TerminalActivity | null;
 }
@@ -65,6 +68,7 @@ export interface TerminalManager {
     id?: string;
     cwd: string;
     workspaceId: string;
+    linkedAgentId?: string;
     name?: string;
     title?: string;
     env?: Record<string, string>;
@@ -242,6 +246,7 @@ export function createTerminalManager(
       name: input.session.name,
       cwd: input.session.cwd,
       workspaceId: input.session.workspaceId,
+      ...(input.session.linkedAgentId ? { linkedAgentId: input.session.linkedAgentId } : {}),
       title: input.session.getTitle(),
       activity: input.session.getActivity(),
     };
@@ -281,6 +286,7 @@ export function createTerminalManager(
       name: input.session.name,
       cwd: input.session.cwd,
       workspaceId: input.session.workspaceId,
+      ...(input.session.linkedAgentId ? { linkedAgentId: input.session.linkedAgentId } : {}),
       activity: input.transition.activity,
       previous: input.transition.previous,
     };
@@ -335,6 +341,7 @@ export function createTerminalManager(
       id?: string;
       cwd: string;
       workspaceId: string;
+      linkedAgentId?: string;
       name?: string;
       title?: string;
       env?: Record<string, string>;
@@ -363,6 +370,7 @@ export function createTerminalManager(
       const activityEnv = {
         PASEO_TERMINAL_ID: terminalId,
         PASEO_ACTIVITY_TOKEN: activityToken,
+        ...(options.linkedAgentId ? { [AGENT_CONVERSATION_TERMINAL_ENV]: "1" } : {}),
         ...(terminalActivityUrl ? { PASEO_TERMINAL_ACTIVITY_URL: terminalActivityUrl } : {}),
       };
       terminalActivityTokenById.set(terminalId, activityToken);
@@ -373,6 +381,7 @@ export function createTerminalManager(
             id: terminalId,
             cwd: options.cwd,
             workspaceId: options.workspaceId,
+            linkedAgentId: options.linkedAgentId,
             name: options.name ?? defaultName,
             ...(options.title ? { title: options.title } : {}),
             ...(options.command ? { command: options.command } : {}),
@@ -380,7 +389,7 @@ export function createTerminalManager(
             ...(options.rows !== undefined ? { rows: options.rows } : {}),
             ...(options.cols !== undefined ? { cols: options.cols } : {}),
             ...(mergedEnv ? { env: mergedEnv } : {}),
-            ...(options.baseEnv ? { baseEnv: options.baseEnv } : {}),
+            baseEnv: options.baseEnv,
             ...(options.paseoCliPath === undefined ? {} : { paseoCliPath: options.paseoCliPath }),
             activityEnv,
           }),

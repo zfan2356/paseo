@@ -55,6 +55,7 @@ const MAX_EDITABLE_BYTES = 1024 * 1024;
 
 /** A rendered view of the file's text: the panel's Preview, shown instead of its source. */
 export interface TextFilePreviewProps {
+  revision: number;
   text: string;
   params: PluginFilePanelProps["params"];
   workspaceId: string;
@@ -90,12 +91,12 @@ function useTextFileView(
   params: PluginFilePanelParams,
   revision: number,
 ): [TextFileView, (view: TextFileView) => void] {
-  const lineTarget = params.lineStart ? revision : null;
-  const [view, setView] = useState<TextFileView>(lineTarget === null ? "preview" : "source");
-  const [shownLineTarget, setShownLineTarget] = useState(lineTarget);
-  if (lineTarget !== null && lineTarget !== shownLineTarget) {
-    setShownLineTarget(lineTarget);
-    setView("source");
+  const navigationTarget = params.lineStart || params.anchor ? revision : null;
+  const [view, setView] = useState<TextFileView>(params.lineStart ? "source" : "preview");
+  const [shownTarget, setShownTarget] = useState(navigationTarget);
+  if (navigationTarget !== null && navigationTarget !== shownTarget) {
+    setShownTarget(navigationTarget);
+    setView(params.lineStart ? "source" : "preview");
   }
   return [view, setView];
 }
@@ -149,6 +150,7 @@ function ReadonlyTextFile({
           preview={Preview}
           text={text.text}
           params={params}
+          revision={revision}
           workspaceId={workspaceId}
           host={host}
         />
@@ -255,6 +257,7 @@ function EditableTextFile({
           preview={Preview}
           text={snapshot.content}
           params={params}
+          revision={revision}
           workspaceId={workspaceId}
           host={host}
         />
@@ -297,16 +300,26 @@ function RetainedPreview({
   active,
   preview: Preview,
   text,
+  revision,
   params,
   workspaceId,
   host,
 }: TextFilePreviewProps & { active: boolean; preview: ComponentType<TextFilePreviewProps> }) {
-  const [shownText, setShownText] = useState(text);
-  if (active && shownText !== text) setShownText(text);
-  const previewText = active ? text : shownText;
+  const [shown, setShown] = useState({ text, revision });
+  if (active && (shown.text !== text || shown.revision !== revision)) setShown({ text, revision });
+  const previewText = active ? text : shown.text;
+  const previewRevision = active ? revision : shown.revision;
   const preview = useMemo(
-    () => <Preview text={previewText} params={params} workspaceId={workspaceId} host={host} />,
-    [Preview, previewText, params, workspaceId, host],
+    () => (
+      <Preview
+        text={previewText}
+        revision={previewRevision}
+        params={params}
+        workspaceId={workspaceId}
+        host={host}
+      />
+    ),
+    [Preview, previewText, previewRevision, params, workspaceId, host],
   );
   return <RetainedView active={active}>{preview}</RetainedView>;
 }

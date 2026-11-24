@@ -1,4 +1,5 @@
 import { getParentAddressFromLabels } from "@getpaseo/protocol/agent-labels";
+import { featuresFromControls } from "@getpaseo/protocol/option-controls";
 import { i18n } from "@/i18n/i18next";
 import type {
   PluginAgentSnapshot,
@@ -83,6 +84,13 @@ export function createPluginAgentSnapshot(agent: Agent, workspaceId: string): Pl
     workspace: entityRefs.workspace(agent.serverId, workspaceId),
     parentAgent: parent ? entityRefs.agent(parent.serverId, parent.agentId) : null,
     id: agent.id,
+    featureValues: Object.freeze(
+      Object.fromEntries(
+        featuresFromControls({ controls: agent.controls, options: agent.options }).map(
+          (feature) => [feature.id, feature.value],
+        ),
+      ),
+    ),
     workspaceId,
     provider: agent.provider,
     status: agent.status,

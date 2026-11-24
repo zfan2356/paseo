@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { Modal } from "@/components/ui/modal";
 import equal from "fast-deep-equal";
@@ -1098,7 +1099,12 @@ export function CommandCenter() {
       <Modal visible transparent animationType="fade" onRequestClose={state.close}>
         <View style={styles.overlay}>
           <Pressable style={styles.backdrop} onPress={state.close} />
-          <View ref={setOverlayScope} testID="command-center-panel" style={styles.panel}>
+          <View
+            ref={setOverlayScope}
+            dataSet={MATERIAL_SLOTS.dialog}
+            testID="command-center-panel"
+            style={styles.panel}
+          >
             <View style={styles.header} testID="command-center-header">
               <View style={styles.searchRow}>
                 <ThemedTextInput

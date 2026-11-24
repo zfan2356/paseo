@@ -27,7 +27,9 @@ export function resolveRestoreAfterOutputOverflow(
   return {
     mode: "visible-snapshot",
     scrollbackLines: Math.min(
-      restore?.scrollbackLines ?? MAX_VISIBLE_RESTORE_SCROLLBACK_LINES,
+      restore?.mode === "live"
+        ? 0
+        : (restore?.scrollbackLines ?? MAX_VISIBLE_RESTORE_SCROLLBACK_LINES),
       MAX_VISIBLE_RESTORE_SCROLLBACK_LINES,
     ),
   };

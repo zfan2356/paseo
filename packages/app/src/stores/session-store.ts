@@ -296,6 +296,7 @@ export interface DaemonServerInfo {
   desktopManaged?: boolean;
   capabilities?: ServerCapabilities;
   features?: ServerInfoStatusPayload["features"];
+  permissions?: ServerInfoStatusPayload["permissions"];
 }
 
 export function toDaemonServerInfo(serverInfo: ServerInfoStatusPayload): DaemonServerInfo {
@@ -308,6 +309,7 @@ export function toDaemonServerInfo(serverInfo: ServerInfoStatusPayload): DaemonS
       : {}),
     ...(serverInfo.capabilities ? { capabilities: serverInfo.capabilities } : {}),
     ...(serverInfo.features ? { features: serverInfo.features } : {}),
+    ...(serverInfo.permissions ? { permissions: serverInfo.permissions } : {}),
   };
 }
 
@@ -684,6 +686,7 @@ interface SessionStoreActions {
   setAgentLastActivityBatch: (
     updates: Map<string, Date> | ((prev: Map<string, Date>) => Map<string, Date>),
   ) => void;
+  clearAgentLastActivity: (agentId: string) => void;
   flushAgentLastActivity: () => void;
 
   // Permissions
@@ -789,6 +792,7 @@ function isSessionServerInfoUnchanged(input: {
   nextDesktopManaged: boolean | undefined;
   nextCapabilities: ServerCapabilities | undefined;
   nextFeatures: ServerInfoStatusPayload["features"] | undefined;
+  nextPermissions: ServerInfoStatusPayload["permissions"];
   nextServerId: string;
 }): boolean {
   const {
@@ -807,6 +811,7 @@ function isSessionServerInfoUnchanged(input: {
     prevVersion === nextVersion &&
     currentServerInfo?.desktopManaged === nextDesktopManaged &&
     areServerCapabilitiesEqual(currentServerInfo?.capabilities, nextCapabilities) &&
+    JSON.stringify(currentServerInfo?.permissions) === JSON.stringify(input.nextPermissions) &&
     areServerInfoFeaturesEqual(currentServerInfo?.features, nextFeatures)
   );
 }
@@ -955,6 +960,7 @@ export const useSessionStore = create<SessionStore>()(
               nextCapabilities,
               nextFeatures,
               nextServerId: info.serverId,
+              nextPermissions: info.permissions,
             })
           ) {
             return prev;
@@ -975,6 +981,7 @@ export const useSessionStore = create<SessionStore>()(
                     : {}),
                   ...(nextCapabilities ? { capabilities: nextCapabilities } : {}),
                   ...(nextFeatures ? { features: nextFeatures } : {}),
+                  ...(info.permissions ? { permissions: info.permissions } : {}),
                 },
               },
             },
@@ -1865,6 +1872,18 @@ export const useSessionStore = create<SessionStore>()(
             ...prev,
             agentLastActivity: new Map(nextActivity),
           };
+        });
+      },
+
+      clearAgentLastActivity: (agentId) => {
+        agentLastActivityCoalescer.deletePending(agentId);
+        set((prev) => {
+          if (!prev.agentLastActivity.has(agentId)) {
+            return prev;
+          }
+          const agentLastActivity = new Map(prev.agentLastActivity);
+          agentLastActivity.delete(agentId);
+          return { ...prev, agentLastActivity };
         });
       },
 

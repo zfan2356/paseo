@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { ChatFind, ChatFindExpansion } from "@/agent-stream/chat-find";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import React, {
@@ -72,6 +73,7 @@ import {
 } from "@/components/user-message/expansion-context";
 import { ToolCallSheetProvider } from "@/components/tool-call-sheet";
 import { createStreamPresentation } from "./presentation";
+import { AgentReportView } from "./agent-reports/view";
 import { OverviewToolCallGroupView } from "@/tool-calls/detail-level/overview/view";
 import { IndentRail } from "@/components/indent-rail";
 import { TurnSummaryLine } from "./turn-collapse/summary-line";
@@ -95,6 +97,7 @@ import {
 } from "./turn-footer";
 import { resolveBottomOverlayTailInset } from "./bottom-overlay-inset";
 import { layoutStream, type StreamLayoutItem } from "./layout";
+import type { ProcessExpansion } from "./turn-collapse/model";
 import {
   type BottomAnchorLocalRequest,
   type BottomAnchorRouteRequest,
@@ -294,7 +297,6 @@ function useRetainedValue<T>(value: T, active: boolean): T {
 }
 const EMPTY_PENDING_MESSAGE_SUBMISSIONS: readonly PendingMessageSubmission[] = [];
 const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
-
 function resolveBottomOverlayControlOffset(clearance: number | undefined): number {
   return Math.max(16, clearance ?? 0);
 }
@@ -304,6 +306,8 @@ function resolveBottomOverlayControlOffset(clearance: number | undefined): numbe
 const shouldDisableEntryExitAnimations = Platform.OS === "android";
 const scrollIndicatorFadeIn = shouldDisableEntryExitAnimations ? undefined : FadeIn.duration(200);
 const scrollIndicatorFadeOut = shouldDisableEntryExitAnimations ? undefined : FadeOut.duration(200);
+
+const scrollControlsDataSet = { ...CHAT_COLUMN_RAIL_DATASET, ...MATERIAL_SLOTS.scrollControls };
 
 function ScrollToBottomButton({
   nearBottom,
@@ -324,7 +328,7 @@ function ScrollToBottomButton({
   );
   if (isNearBottom && !isTimelineDetached) return null;
   return (
-    <View style={containerStyle} dataSet={CHAT_COLUMN_RAIL_DATASET} pointerEvents="box-none">
+    <View style={containerStyle} dataSet={scrollControlsDataSet} pointerEvents="box-none">
       <Animated.View entering={scrollIndicatorFadeIn} exiting={scrollIndicatorFadeOut}>
         <Pressable
           style={stylesheet.scrollToBottomButton}
@@ -390,6 +394,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const userMessageExpansion = useAgentUserMessageExpansion(agentId);
     const expandedToolCallGroups = useExpandedToolCallGroups(toolCallExpansion);
     const [expandedTurnHostIds, setExpandedTurnHostIds] = useState<ReadonlySet<string>>(new Set());
+    const [intermediateProcessExpansionById, setIntermediateProcessExpansionById] = useState<
+      Map<string, ProcessExpansion>
+    >(new Map());
 
     // Get serverId (fallback to agent's serverId if not provided)
     const resolvedServerId = serverId ?? context.serverId ?? "";
@@ -436,6 +443,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           loadOlder: historyPagination.onLoadOlder,
         }
       : agentHistoryPagination;
+    useEffect(() => {
+      setIntermediateProcessExpansionById(new Map());
+    }, [agentId]);
 
     const isActive = useRetainedPanelActive();
     const openInlineFile = useStableEvent(
@@ -532,6 +542,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           display: chatDisplay,
           autoExpandReasoning,
           expandedTurnHostIds,
+          processExpansion: intermediateProcessExpansionById,
           isTurnActive,
           activeTurnId: effectiveTurnPresentation.turnId,
         }),
@@ -543,6 +554,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         chatDisplay,
         autoExpandReasoning,
         expandedTurnHostIds,
+        intermediateProcessExpansionById,
         isTurnActive,
         effectiveTurnPresentation.turnId,
       ],
@@ -610,10 +622,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         baseRenderModel.segments.liveHead.map(getStreamItemMessageId),
       );
       return {
-        has: (messageId: string) =>
-          mountedHistoryMessageIds.has(messageId) || liveHeadMessageIds.has(messageId),
+        has: (messageId: string) => {
+          const reportHost = presentation.reportHosts.get(messageId) ?? messageId;
+          const hostId = presentation.turns.hostIdByFoldedMessageId.get(reportHost);
+          if (hostId && !presentation.turns.summaryRowsByHostId.get(hostId)?.expanded) return false;
+          return mountedHistoryMessageIds.has(reportHost) || liveHeadMessageIds.has(reportHost);
+        },
       };
-    }, [baseRenderModel.segments.liveHead, mountedHistoryMessageIds]);
+    }, [
+      baseRenderModel.segments.liveHead,
+      mountedHistoryMessageIds,
+      presentation.turns,
+      presentation.reportHosts,
+    ]);
     const outlineRail = useChatOutlineRail();
     const outlineInset = outlineRail.inset;
     const chatOutline = useChatOutline({
@@ -675,8 +696,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [streamRenderStrategy],
     );
 
-    // The summary line holds its row around this; chat find opens a turn without a hold.
-    const setTurnExpanded = useCallback((hostId: string, expanded: boolean) => {
+    const setTurnExpanded = useStableEvent((hostId: string, expanded: boolean) => {
+      const turn = presentation.turns.summaryRowsByHostId.get(hostId);
+      if (turn?.process) {
+        setIntermediateProcessExpansionById((previous) =>
+          new Map(previous).set(hostId, {
+            expanded,
+            phase: turn.process!.active ? "active" : "complete",
+          }),
+        );
+        return;
+      }
       setExpandedTurnHostIds((previous) => {
         if (previous.has(hostId) === expanded) return previous;
         const next = new Set(previous);
@@ -687,15 +717,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         }
         return next;
       });
-    }, []);
+    });
     // Chat find reveals a match inside a collapsed turn by opening the turn first.
     const revealLoadedMessage = useStableEvent((messageId: string): boolean => {
-      const hostId = presentation.turns.hostIdByFoldedMessageId.get(messageId);
-      if (hostId && !expandedTurnHostIds.has(hostId)) {
+      const reportHost = presentation.reportHosts.get(messageId) ?? messageId;
+      const hostId = presentation.turns.hostIdByFoldedMessageId.get(reportHost);
+      if (hostId && !presentation.turns.summaryRowsByHostId.get(hostId)?.expanded) {
         setTurnExpanded(hostId, true);
         return true;
       }
-      return revealLoadedHistory(messageId);
+      return revealLoadedHistory(reportHost);
     });
     // Read through a stable event so a collapse rerun does not change the renderer identity;
     // nested rows are revised through `historyRowRevision`.
@@ -713,7 +744,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderUserMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
-        return (
+        return item.agentReport ? (
+          <AgentReportView itemId={item.id} report={item.agentReport} serverId={resolvedServerId} />
+        ) : (
           <UserMessage
             itemId={item.id}
             serverId={resolvedServerId}

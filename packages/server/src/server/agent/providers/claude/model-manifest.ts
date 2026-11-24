@@ -455,18 +455,15 @@ export function normalizeClaudeRuntimeModelId(value: string | null | undefined):
   }
 
   const runtimeMatch = trimmed.match(
-    /claude[-_ ](mythos|fable|opus|sonnet|haiku)[-_ ]+(\d+)[-.](\d+)(\[1m\])?/i,
+    /claude[-_ ](mythos|fable|opus|sonnet|haiku)[-_ ]+(\d+)[-.](\d{1,2})(?!\d)(\[1m\])?/i,
   );
   if (runtimeMatch) {
-    const normalizedModelId = normalizeMajorMinorClaudeModelId(
+    return normalizeMajorMinorClaudeModelId(
       runtimeMatch[1],
       runtimeMatch[2],
       runtimeMatch[3],
       trimmed.toLowerCase().includes("[1m]"),
     );
-    if (normalizedModelId) {
-      return normalizedModelId;
-    }
   }
 
   const singleSegmentMatch = trimmed.match(

@@ -1,4 +1,5 @@
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
+import { AgentExternalBackgroundWorkSchema } from "@getpaseo/protocol/messages";
 import type { PluginHookAgent } from "@getpaseo/plugin/server";
 import { UsageScopeSchema, type UsageScope } from "@getpaseo/plugin/server/usage";
 import type {
@@ -121,6 +122,15 @@ export type PluginProcessRequest =
   | { type: "provider.close"; connectionId: string }
   | { type: "shutdown" }
   | { type: "paseo_frame"; data: string | Uint8Array; isBinary: boolean }
+  | { type: "paseo_close" }
+  | { type: "background.fetch"; requestId: string; sourceId: string }
+  | {
+      type: "background.stop";
+      requestId: string;
+      sourceId: string;
+      entry: import("@getpaseo/plugin/server").BackgroundWorkEntry;
+    }
+  | { type: "paseo_frame"; data: string | Uint8Array; isBinary: boolean }
   | { type: "paseo_close" };
 
 export type PluginProcessMessage =
@@ -136,6 +146,7 @@ export type PluginProcessMessage =
       subscriptions?: string[];
       providers: PluginProviderMetadata[];
       usageSources?: PluginUsageSourceMetadata[];
+      backgroundSources?: PluginUsageSourceMetadata[];
       hooks?: string[];
       worktreeManager?: PluginWorktreeManagerCapabilities | null;
     }
@@ -164,6 +175,28 @@ export type PluginProcessMessage =
   | { type: "paseo_frame"; data: string | Uint8Array; isBinary: boolean }
   | { type: "paseo_close" };
 
+const backgroundEntrySchema = z.object({
+  agentId: z.string(),
+  id: z.string(),
+  kind: z.string(),
+  description: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  canStop: z.boolean(),
+  external: AgentExternalBackgroundWorkSchema.omit({
+    source: true,
+    label: true,
+    freshness: true,
+    observedAt: true,
+  }),
+});
+export const BackgroundWorkSnapshotSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ready"),
+    observedAt: z.string(),
+    items: z.array(backgroundEntrySchema),
+  }),
+  z.object({ status: z.literal("unavailable"), message: z.string() }),
+]);
 const hooksSchema = z.array(z.string());
 const worktreeManagerCapabilitiesSchema = z
   .object({
@@ -243,6 +276,13 @@ export const PluginProcessRequestSchema: z.ZodType<PluginProcessRequest> = z.dis
         input: z.unknown(),
       })
       .strict(),
+    z.object({ type: z.literal("background.fetch"), requestId: z.string(), sourceId: z.string() }),
+    z.object({
+      type: z.literal("background.stop"),
+      requestId: z.string(),
+      sourceId: z.string(),
+      entry: backgroundEntrySchema,
+    }),
     z.object({ type: z.literal("tool.cancel"), requestId: z.string() }).strict(),
     z.object({ type: z.literal("tools.detach"), agentId: z.string() }).strict(),
     z
@@ -401,6 +441,7 @@ export const PluginProcessMessageSchema: z.ZodType<PluginProcessMessage> = z.dis
         subscriptions: z.array(z.string()).optional(),
         providers: z.array(providerMetadataSchema),
         usageSources: z.array(usageSourceMetadataSchema).optional(),
+        backgroundSources: z.array(usageSourceMetadataSchema).optional(),
         hooks: hooksSchema.optional(),
         worktreeManager: worktreeManagerCapabilitiesSchema.nullable().optional(),
       })

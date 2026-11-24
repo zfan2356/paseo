@@ -298,6 +298,24 @@ test("failing New workspace creation after switching workspaces shows an error t
   );
 });
 
+for (const remount of [false, true]) {
+  test(`editing a failed workspace prompt retries in its existing workspace (remount=${remount})`, async ({
+    creation,
+    startup,
+  }) => {
+    await creation.openWorkspaceForm("local");
+    await creation.submitPrompt("Original failed prompt.", "Create");
+    await creation.expectAgentStillStarting();
+    await startup.fail();
+    await creation.expectStartupFailure();
+    await creation.expectOneCreatedWorkspace();
+    if (remount) await creation.evictAndReturnToDraft();
+    await creation.submitPrompt("Corrected prompt after startup failed.");
+    await creation.expectPromptVisible("Corrected prompt after startup failed.");
+    await creation.expectAgentCount(1);
+  });
+}
+
 for (const entry of [
   {
     name: "agent draft",

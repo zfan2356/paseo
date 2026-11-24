@@ -2,6 +2,11 @@ import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { ACPProviderOptionsSchema } from "./acp-options.js";
 import { applyProviderOptionsPatch } from "../option-controls.js";
 import { assertChangesAreLive } from "../provider-options.js";
+import {
+  classifyACPSerializedErrorText,
+  parseACPSerializedTurnError,
+  type ACPSerializedTurnError,
+} from "./acp-serialized-error.js";
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -351,6 +356,14 @@ const ACP_IMPORT_HISTORY_BUDGET_MS = 60_000;
  */
 const COMMAND_INVENTORY_QUIET_MS = 600;
 const COMMAND_INVENTORY_POLL_MS = 25;
+
+/**
+ * Replaying a turn whose provider stream was cut costs another full inference,
+ * so stop after this many consecutive serialized-error retries and let the user
+ * decide. Cursor's transient provider interruptions usually clear on the first.
+ */
+const MAX_SERIALIZED_ERROR_RETRIES = 2;
+const SERIALIZED_ERROR_RETRY_DELAY_MS = 1_000;
 
 function summarizeMalformedACPStdoutError(error: unknown): { type: string; message: string } {
   return {
@@ -1909,7 +1922,27 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private historyRuntimeReleased = false;
   private replayingHistory = false;
   private bootstrapThreadEventPending = false;
+  /**
+   * Assistant text held back because it could still be a serialized turn error.
+   * Emitted once the chunk proves to be prose, dropped when the turn turns out
+   * to have failed, so a retry never leaves the error in the conversation.
+   */
+  private pendingAssistantText: { messageId: string; text: string } | null = null;
+  /** Set when the current turn's assistant output turned out to be a serialized provider error. */
+  private serializedTurnError: ACPSerializedTurnError | null = null;
+  /** Serialized-error retries already spent on the turn now running. */
+  private serializedErrorRetries = 0;
+  /** Prompt to replay when the current turn's output is a retriable serialized error. */
+  private activeTurnPrompt: AgentPromptInput | null = null;
   private readonly terminateProcess: ProcessTerminator;
+
+  /**
+   * Side chat: installed only when the agent advertised ACP `session/fork`, so
+   * the shared unsupported-provider guard keeps deciding for the other ACP
+   * agents instead of every one of them failing at fork time.
+   */
+  forkForSideChat?: () => Promise<AgentPersistenceHandle>;
+  disposeSideChatFork?: (handle: AgentPersistenceHandle) => Promise<void>;
 
   constructor(config: AgentSessionConfig, options: ACPAgentSessionOptions) {
     this.provider = options.provider;
@@ -1971,6 +2004,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.child = spawned.child;
       this.connection = spawned.connection;
       this.agentCapabilities = spawned.initialize.agentCapabilities ?? null;
+      this.installSideChatFork();
 
       const response = await this.runACPRequest(() =>
         this.connection!.newSession({
@@ -2008,6 +2042,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.child = spawned.child;
       this.connection = spawned.connection;
       this.agentCapabilities = spawned.initialize.agentCapabilities ?? null;
+      this.installSideChatFork();
       this.sessionId = handle.sessionId;
       this.bootstrapThreadEventPending = true;
 
@@ -2121,6 +2156,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     const turnId = randomUUID();
     const messageId = options?.clientMessageId ?? randomUUID();
     this.activeForegroundTurnId = turnId;
+    this.activeTurnPrompt = prompt;
+    this.pendingAssistantText = null;
+    this.serializedTurnError = null;
     this.fallbackAssistantMessageId = null;
     this.submittedUserMessageTurnId = null;
     this.emitBootstrapThreadEvent();
@@ -2448,7 +2486,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       return;
     }
 
+    // Config selection returns the new model's option IDs; the legacy RPC does not.
     if (
+      !selection.configChoice &&
       selection.availableModel &&
       typeof this.connection.unstable_setSessionModel === "function"
     ) {
@@ -2501,6 +2541,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       requestedValue: modelId,
       label: "model",
     });
+    this.thinkingOptionId = deriveCurrentConfigValue(this.configOptions, "thought_level");
     this.reportFeatureChanges(before);
     this.pushEvent({
       type: "model_changed",
@@ -3198,6 +3239,53 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
   }
 
+  /**
+   * Side chat: ACP `session/fork` creates the fork inside the live agent, and
+   * the returned session id is resumable through `session/load` or
+   * `session/resume`, which is what the resumed side-chat agent uses.
+   */
+  private installSideChatFork(): void {
+    if (this.agentCapabilities?.sessionCapabilities?.fork == null) {
+      this.forkForSideChat = undefined;
+      this.disposeSideChatFork = undefined;
+      return;
+    }
+    this.forkForSideChat = () => this.createSideChatFork();
+    this.disposeSideChatFork = (handle) => this.disposeSideChatForkHandle(handle);
+  }
+
+  private async createSideChatFork(): Promise<AgentPersistenceHandle> {
+    const connection = this.connection;
+    const sessionId = this.sessionId;
+    if (!connection || !sessionId) {
+      throw new Error("ACP session is not ready for side chat");
+    }
+    const forked = await this.runACPRequest(() =>
+      connection.unstable_forkSession({
+        sessionId,
+        cwd: this.config.cwd,
+        mcpServers: this.acpMcpServers(),
+      }),
+    );
+    return {
+      provider: this.provider,
+      sessionId: forked.sessionId,
+      nativeHandle: forked.sessionId,
+      metadata: { ...this.config, title: this.currentTitle },
+    };
+  }
+
+  /** Only an agent that also advertises `session/close` can drop a fork. */
+  private async disposeSideChatForkHandle(handle: AgentPersistenceHandle): Promise<void> {
+    const connection = this.connection;
+    if (!connection || this.agentCapabilities?.sessionCapabilities?.close == null) {
+      return;
+    }
+    await this.runACPRequest(() =>
+      connection.unstable_closeSession({ sessionId: handle.sessionId }),
+    );
+  }
+
   private acpMcpServers(): McpServer[] {
     return this.capabilities.supportsMcpServers ? normalizeMcpServers(this.config.mcpServers) : [];
   }
@@ -3330,10 +3418,17 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
 
     const pendingUserEvents = this.flushPendingUserMessage();
+    if (update.sessionUpdate !== "agent_message_chunk") {
+      pendingUserEvents.push(...this.flushPendingAssistantText());
+    }
     switch (update.sessionUpdate) {
       case "agent_message_chunk": {
         const item = this.createMessageTimelineItem("assistant_message", update);
-        return item ? [...pendingUserEvents, this.wrapTimeline(item)] : pendingUserEvents;
+        if (!item || item.type !== "assistant_message") {
+          return pendingUserEvents;
+        }
+        const buffered = this.bufferAssistantText(item.messageId, item.text);
+        return buffered ? [...pendingUserEvents, this.wrapTimeline(buffered)] : pendingUserEvents;
       }
       case "agent_thought_chunk": {
         this.fallbackAssistantMessageId = null;
@@ -3494,6 +3589,64 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     return this.fallbackAssistantMessageId;
   }
 
+  /**
+   * ACP agents may stream one assistant message in cumulative or incremental
+   * chunks, and Cursor serializes a failed turn into that message. Hold text
+   * that could still become such a message so a retry does not leave the error
+   * rendered as an answer. Returns the item to emit now, or null while held.
+   */
+  private bufferAssistantText(
+    messageId: string,
+    chunkText: string,
+  ): { type: "assistant_message"; text: string; messageId: string } | null {
+    const pending = this.pendingAssistantText;
+    const sameMessage = pending?.messageId === messageId;
+    let text = chunkText;
+    if (sameMessage && pending) {
+      // ACP chunks are either cumulative (the next one restarts with what was
+      // already sent) or incremental; accept both without duplicating text.
+      text = chunkText.startsWith(pending.text) ? chunkText : `${pending.text}${chunkText}`;
+    }
+
+    const verdict = classifyACPSerializedErrorText(text);
+    if (verdict === "possible") {
+      this.pendingAssistantText = { messageId, text };
+      return null;
+    }
+    this.pendingAssistantText = null;
+    if (verdict === "error") {
+      this.recordSerializedTurnError(text);
+      return null;
+    }
+    return { type: "assistant_message", text, messageId };
+  }
+
+  /**
+   * Emit held assistant text before anything that proves it was prose, such as
+   * reasoning, a tool call, or the end of the turn.
+   */
+  private flushPendingAssistantText(): AgentStreamEvent[] {
+    const pending = this.pendingAssistantText;
+    if (!pending) {
+      return [];
+    }
+    this.pendingAssistantText = null;
+    if (pending.text.trim().length === 0) {
+      return [];
+    }
+    return [
+      this.wrapTimeline({
+        type: "assistant_message",
+        text: pending.text,
+        messageId: pending.messageId,
+      }),
+    ];
+  }
+
+  private recordSerializedTurnError(text: string): void {
+    this.serializedTurnError = parseACPSerializedTurnError(text) ?? this.serializedTurnError;
+  }
+
   private handleCurrentModeUpdate(update: CurrentModeUpdate): void {
     this.currentMode = this.transformModeId(update.currentModeId);
   }
@@ -3602,6 +3755,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
 
   private handlePromptResponse(response: PromptResponse, turnId: string): void {
     this.currentTurnUsage = mapACPUsage(response.usage) ?? this.currentTurnUsage;
+    // A failed turn can arrive as ordinary assistant text and still report
+    // `end_turn`, so the response alone does not decide success.
+    this.deliverTranslatedEvents(this.flushPendingAssistantText());
 
     switch (response.stopReason) {
       case "cancelled":
@@ -3618,6 +3774,11 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       case "max_turn_requests":
       case "refusal":
       default:
+        if (this.serializedTurnError) {
+          this.failTurnFromSerializedError(this.serializedTurnError, turnId);
+          break;
+        }
+        this.serializedErrorRetries = 0;
         this.finishTurn({
           type: "turn_completed",
           provider: this.provider,
@@ -3691,9 +3852,61 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     };
   }
 
+  /**
+   * A serialized error in the assistant text is a failed turn that the provider
+   * reported as a successful one. Surface it as a real failure, and replay the
+   * turn once when the provider said it was transient: Cursor drops long
+   * streams on its side while the conversation itself stays valid.
+   */
+  private failTurnFromSerializedError(error: ACPSerializedTurnError, turnId: string): void {
+    const retryPrompt = this.activeTurnPrompt;
+    const canRetry =
+      error.retriable &&
+      this.serializedErrorRetries < MAX_SERIALIZED_ERROR_RETRIES &&
+      retryPrompt !== null &&
+      !this.closed;
+    this.finishTurn({
+      type: "turn_failed",
+      provider: this.provider,
+      error: `${error.kind}${error.code ? ` [${error.code}]` : ""}: ${error.message}`,
+      code: error.code,
+      diagnostic: this.collectDiagnostic(
+        `serialized provider error in assistant output | kind=${error.kind} | retry=${canRetry ? "yes" : "no"} | attempt=${this.serializedErrorRetries}`,
+      ),
+      turnId,
+    });
+    if (!canRetry || !retryPrompt) {
+      this.serializedErrorRetries = 0;
+      return;
+    }
+    this.serializedErrorRetries += 1;
+    const pending = setTimeout(() => {
+      void this.retrySerializedErrorTurn(retryPrompt);
+    }, SERIALIZED_ERROR_RETRY_DELAY_MS);
+    pending.unref?.();
+  }
+
+  private async retrySerializedErrorTurn(prompt: AgentPromptInput): Promise<void> {
+    if (this.closed || this.activeForegroundTurnId) {
+      this.serializedErrorRetries = 0;
+      return;
+    }
+    try {
+      await this.startTurn(prompt);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, error: summarizeACPRequestError(error).message },
+        `${this.provider} serialized-error retry could not start`,
+      );
+      this.serializedErrorRetries = 0;
+    }
+  }
+
   private finishTurn(
     event: Extract<AgentStreamEvent, { type: "turn_completed" | "turn_failed" | "turn_canceled" }>,
   ): void {
+    this.pendingAssistantText = null;
+    this.serializedTurnError = null;
     this.deliverTranslatedEvents(this.flushPendingUserMessage());
     // Failed and canceled turns clear every request in the manager. Answer the
     // same set here so an outside-turn request cannot keep the provider blocked.

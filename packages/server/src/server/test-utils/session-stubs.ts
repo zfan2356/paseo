@@ -35,6 +35,7 @@ export function asAgentManager(stub: {
   [K in keyof SessionOptions["agentManager"]]?: unknown;
 }): SessionOptions["agentManager"] {
   return createStub<SessionOptions["agentManager"]>({
+    assertAgentRuntimeAvailable: () => {},
     listProviderSubagentActivity: () => [],
     getRetiredInternalAgent: () => null,
     effectiveOptionsFor: (_provider: string, own?: Record<string, unknown>) => own ?? {},
@@ -307,6 +308,7 @@ export function createProviderSnapshotManagerStub(): {
 export function createMessageReceiptsStub(): SessionOptions["messageReceipts"] {
   return {
     send: (input) => input.send(async () => {}),
+    lookup: async () => "absent",
   };
 }
 

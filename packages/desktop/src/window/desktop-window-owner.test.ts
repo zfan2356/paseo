@@ -9,6 +9,7 @@ function harness() {
   const windows: OwnedDesktopWindow<Target>[] = [];
   const launches: Array<{ initialRoute: string | null; restoreWindowState: boolean }> = [];
   const sent: Target[] = [];
+  const windowActions: string[] = [];
   let nextId = 1;
   let focused: OwnedDesktopWindow<Target> | null = null;
   let closeWindow = (_id: number) => {};
@@ -25,9 +26,15 @@ function harness() {
         isDestroyed: () => false,
         isVisible: () => true,
         isMinimized: () => false,
-        restore: () => {},
-        show: () => {},
-        focus: () => {},
+        restore: () => {
+          windowActions.push(`restore:${id}`);
+        },
+        show: () => {
+          windowActions.push(`show:${id}`);
+        },
+        focus: () => {
+          windowActions.push(`focus:${id}`);
+        },
         sendAgent: (target) => sent.push(target),
       };
       windows.push(window);
@@ -44,6 +51,7 @@ function harness() {
     launches,
     sent,
     windows,
+    windowActions,
     setFocused: (window: OwnedDesktopWindow<Target>) => {
       focused = window;
     },
@@ -78,5 +86,39 @@ describe("desktop window owner", () => {
     await h.owner.openAdditional({ pendingProjectPath: "/project/a" });
     h.close(1);
     expect(h.owner.takePendingProject(1)).toBeNull();
+  });
+
+  it("restores and focuses a minimized window without opening another", async () => {
+    const h = harness();
+    await h.owner.openPrimary();
+    h.windows[0].isMinimized = () => true;
+    await h.owner.restoreWhenActivated();
+    expect(h.windowActions).toEqual(["restore:1", "show:1", "focus:1"]);
+    expect(h.launches).toHaveLength(1);
+  });
+
+  it("shows the focused window rather than an unrelated window", async () => {
+    const h = harness();
+    await h.owner.openPrimary();
+    await h.owner.openAdditional();
+    h.setFocused(h.windows[1]);
+    await h.owner.restoreWhenActivated();
+    expect(h.windowActions).toEqual(["show:2", "focus:2"]);
+    expect(h.launches).toHaveLength(2);
+  });
+
+  it("shows a hidden window", async () => {
+    const h = harness();
+    await h.owner.openPrimary();
+    h.windows[0].isVisible = () => false;
+    await h.owner.restoreWhenActivated();
+    expect(h.windowActions).toEqual(["show:1", "focus:1"]);
+    expect(h.launches).toHaveLength(1);
+  });
+
+  it("opens a primary window when activated without any windows", async () => {
+    const h = harness();
+    await h.owner.restoreWhenActivated();
+    expect(h.launches).toEqual([{ initialRoute: null, restoreWindowState: true }]);
   });
 });

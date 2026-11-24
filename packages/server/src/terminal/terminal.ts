@@ -35,9 +35,16 @@ import {
 import type { TerminalReplayOptions, TerminalReplayMetadata } from "./terminal-replay.js";
 import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode";
 import { TerminalActivityTracker } from "./activity/terminal-activity-tracker.js";
+import { KittyGraphicsReplyTracker } from "./kitty-graphics-protocol.js";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
 
 const require = createRequire(import.meta.url);
+const INHERITED_COLOR_PREFERENCE_ENV_KEYS = [
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "CLICOLOR",
+  "CLICOLOR_FORCE",
+] as const;
 let nodePtySpawnHelperChecked = false;
 const TERMINAL_TITLE_DEBOUNCE_MS = 150;
 const TERMINAL_EXIT_OUTPUT_LINE_LIMIT = 12;
@@ -94,6 +101,7 @@ export interface TerminalSession {
   name: string;
   cwd: string;
   workspaceId: string;
+  linkedAgentId?: string;
   send(msg: ClientMessage): void;
   subscribe(listener: (msg: ServerMessage) => void): () => void;
   onExit(listener: (info: TerminalExitInfo) => void): () => void;
@@ -144,6 +152,7 @@ export interface CreateTerminalOptions {
   id?: string;
   cwd: string;
   workspaceId: string;
+  linkedAgentId?: string;
   shell?: string;
   env?: Record<string, string>;
   activityEnv?: Record<string, string>;
@@ -451,14 +460,17 @@ function prepareZshShellIntegrationRuntimeDir(sourceDir = resolveZshShellIntegra
 export function buildTerminalEnvironment(
   input: BuildTerminalEnvironmentInput,
 ): Record<string, string> {
-  const baseEnv: Record<string, string> = createExternalProcessEnv(
-    input.baseEnv ?? process.env,
-    input.env,
-    {
-      TERM: "xterm-256color",
-      TERM_PROGRAM: "kitty",
-    },
-  );
+  const inheritedEnv = { ...(input.baseEnv ?? process.env) };
+  for (const key of INHERITED_COLOR_PREFERENCE_ENV_KEYS) {
+    if (!Object.hasOwn(input.env, key)) {
+      delete inheritedEnv[key];
+    }
+  }
+  const baseEnv: Record<string, string> = createExternalProcessEnv(inheritedEnv, input.env, {
+    COLORTERM: "truecolor",
+    TERM: "xterm-256color",
+    TERM_PROGRAM: "kitty",
+  });
   const envWithAgentHooks = prependPaseoCliToPath(
     baseEnv,
     input.paseoCliBinDir === undefined ? resolvePaseoCliBinDir() : input.paseoCliBinDir,
@@ -794,6 +806,7 @@ export async function createTerminal(
   let inputFlushImmediate: ReturnType<typeof setImmediate> | null = null;
   let stateRevision = 0;
   const inputModeTracker = new TerminalInputModeTracker();
+  const kittyGraphicsReplyTracker = new KittyGraphicsReplyTracker();
   const activityTracker = new TerminalActivityTracker();
   const activityChangeListeners = new Set<(transition: TerminalActivityTransition) => void>();
   let titleChangeSubscription: { dispose(): void } | null = null;
@@ -1017,6 +1030,7 @@ export async function createTerminal(
     recentOutputChunks.length = 0;
     recentOutputLength = 0;
     inputModeTracker.reset();
+    kittyGraphicsReplyTracker.reset();
     if (inputFlushImmediate) {
       clearImmediate(inputFlushImmediate);
       inputFlushImmediate = null;
@@ -1052,6 +1066,9 @@ export async function createTerminal(
   // Pipe PTY output to terminal emulator
   ptyProcess.onData((data) => {
     if (killed) return;
+    for (const response of kittyGraphicsReplyTracker.feed(data)) {
+      ptyProcess.write(response);
+    }
     recentOutputChunks.push(data);
     recentOutputLength += data.length;
     // Drop whole leading chunks while the rest still covers the char limit, so
@@ -1385,6 +1402,7 @@ export async function createTerminal(
     name,
     cwd,
     workspaceId,
+    ...(options.linkedAgentId ? { linkedAgentId: options.linkedAgentId } : {}),
     send,
     subscribe,
     onExit,

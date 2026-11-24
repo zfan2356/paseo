@@ -186,6 +186,7 @@ export interface PluginAgentPanelParams {
   readonly agentId: string;
 }
 export interface PluginFilePanelParams {
+  readonly anchor?: string;
   readonly path: string;
   readonly lineStart?: number;
   readonly lineEnd?: number;
@@ -229,7 +230,20 @@ interface PluginClientContextAliases {
   addSidebarItem(contribution: PluginSidebarContribution<PluginText>): PluginCleanup;
 }
 
+export interface PluginComposerExtensionProps {
+  agentId: string;
+  workspaceId: string;
+}
+
+export interface PluginComposerExtensionContribution {
+  id: string;
+  Component: ComponentType<PluginComposerExtensionProps>;
+}
+
 export interface PluginClientContext extends PluginCommandCapabilities, PluginClientContextAliases {
+  readonly features?: { readonly composerExtensions?: boolean; readonly themeOverrides?: boolean };
+  /** Mount agent-scoped pill registrations for every displayed composer, including private conversations. */
+  addComposerExtension(contribution: PluginComposerExtensionContribution): PluginCleanup;
   readonly i18n: import("./translations.js").PluginI18n;
   /** Play a base64-encoded audio file on this client; resolves when playback ends. */
   playAudio(source: { base64: string; mimeType: string }): Promise<void>;

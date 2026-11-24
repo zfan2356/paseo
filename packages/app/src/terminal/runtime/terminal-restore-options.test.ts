@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveTerminalRestoreOptions } from "./terminal-restore-options";
+import {
+  resolveTerminalRestoreOptions,
+  restoreSubscriptionSendsFrame,
+} from "./terminal-restore-options";
 
 describe("terminal restore options", () => {
   it("omits restore options for daemons without terminal restore modes", () => {
@@ -14,7 +17,7 @@ describe("terminal restore options", () => {
     ).toThrow("Update the host to view terminals.");
   });
 
-  it("requests visible snapshot restore with configured scrollback for capable daemons", () => {
+  it("requests a viewport-only visible snapshot so reopen does not replay scrollback", () => {
     expect(
       resolveTerminalRestoreOptions({
         scrollbackLines: 10000,
@@ -24,7 +27,7 @@ describe("terminal restore options", () => {
       }),
     ).toEqual({
       mode: "visible-snapshot",
-      scrollbackLines: 10000,
+      scrollbackLines: 0,
       size: { rows: 24, cols: 80 },
     });
   });
@@ -39,7 +42,7 @@ describe("terminal restore options", () => {
       }),
     ).toEqual({
       mode: "visible-snapshot",
-      scrollbackLines: 10000,
+      scrollbackLines: 0,
     });
   });
 
@@ -53,18 +56,28 @@ describe("terminal restore options", () => {
       }),
     ).toEqual({
       mode: "visible-snapshot",
-      scrollbackLines: 10000,
+      scrollbackLines: 0,
     });
+  });
+
+  it("expects a restore frame for snapshot modes and not for live", () => {
+    expect(restoreSubscriptionSendsFrame(undefined)).toBe(false);
+    expect(restoreSubscriptionSendsFrame({ mode: "live" })).toBe(false);
+    expect(restoreSubscriptionSendsFrame({ mode: "visible-snapshot" })).toBe(true);
+    expect(restoreSubscriptionSendsFrame({ mode: "full-snapshot" })).toBe(true);
   });
 });
 
-it.each([0, 5, 400, 10000])("requests exactly %s configured history rows", (scrollbackLines) => {
-  expect(
-    resolveTerminalRestoreOptions({
-      supportsTerminalRestoreModes: true,
-      scrollbackLines,
-      canClaimSize: false,
-      size: null,
-    }),
-  ).toEqual({ mode: "visible-snapshot", scrollbackLines });
-});
+it.each([0, 5, 400, 10000])(
+  "keeps restore viewport-only with %s configured history rows",
+  (scrollbackLines) => {
+    expect(
+      resolveTerminalRestoreOptions({
+        supportsTerminalRestoreModes: true,
+        scrollbackLines,
+        canClaimSize: false,
+        size: null,
+      }),
+    ).toEqual({ mode: "visible-snapshot", scrollbackLines: 0 });
+  },
+);

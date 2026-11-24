@@ -222,6 +222,7 @@ export interface WorkspaceHeaderMenuMobileProps extends WorkspaceHeaderWorkspace
   normalizedServerId: string;
   normalizedWorkspaceId: string;
   scripts: UseWorkspaceScriptsMenuPagesInput;
+  agentActions?: React.ReactNode;
   showCreateBrowserTab: boolean;
   createTerminalDisabled: boolean;
   onCreateTerminalWithProfile: (profile: TerminalProfile, paneId?: string) => void;
@@ -244,6 +245,7 @@ export function WorkspaceHeaderMenuMobile({
   createTerminalDisabled,
   onCreateTerminalWithProfile,
   onCreateBrowser,
+  agentActions,
   pane,
   onExitFocusMode,
   ...workspaceActions
@@ -306,6 +308,7 @@ export function WorkspaceHeaderMenuMobile({
         pages={pages}
         sheetTitle={t("workspace.header.actions.workspaceActions")}
       >
+        {agentActions}
         {onExitFocusMode ? (
           <DropdownMenuItem onSelect={onExitFocusMode}>
             {t("workspace.tabs.actions.exitFocusMode")}

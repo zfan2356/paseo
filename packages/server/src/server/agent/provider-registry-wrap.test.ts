@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type {
   AgentCapabilityFlags,
+  AgentPersistenceHandle,
   AgentPromptInput,
   AgentSession,
   AgentStreamEvent,
@@ -29,6 +30,10 @@ const OPTIONAL_AGENT_SESSION_METHOD_NAMES = [
   "revertConversation",
   "revertFiles",
   "revertBoth",
+  "forkForSideChat",
+  "disposeSideChatFork",
+  "askSideQuestion",
+  "getSubagentDefaults",
   "tryHandleOutOfBand",
 ] as const satisfies readonly OptionalAgentSessionMethodName[];
 
@@ -68,6 +73,7 @@ class FakeSession implements AgentSession {
   readonly steers: Array<{ prompt: AgentPromptInput; options: SteerActiveTurnOptions }> = [];
   readonly features = [];
   readonly recordedCalls: string[] = [];
+  disposedSideChatHandle: AgentPersistenceHandle | null = null;
 
   async run() {
     this.recordedCalls.push("run");
@@ -168,6 +174,30 @@ class FakeSession implements AgentSession {
     this.recordedCalls.push("revertBoth");
   }
 
+  async forkForSideChat() {
+    this.recordedCalls.push("forkForSideChat");
+    return {
+      provider: "claude" as const,
+      sessionId: "side-session-1",
+      nativeHandle: "side-session-1",
+    };
+  }
+
+  async disposeSideChatFork(handle: AgentPersistenceHandle) {
+    this.recordedCalls.push("disposeSideChatFork");
+    this.disposedSideChatHandle = handle;
+  }
+
+  async askSideQuestion() {
+    this.recordedCalls.push("askSideQuestion");
+    return { response: "side answer", synthetic: false };
+  }
+
+  async getSubagentDefaults() {
+    this.recordedCalls.push("getSubagentDefaults");
+    return { model: "configured-child", thinkingOptionId: "high" };
+  }
+
   tryHandleOutOfBand(_prompt: AgentPromptInput) {
     this.recordedCalls.push("tryHandleOutOfBand");
     return {
@@ -197,9 +227,29 @@ describe("wrapSessionProvider", () => {
     await wrapped.revertConversation?.({ messageId: "message-1" });
     await wrapped.revertFiles?.({ messageId: "message-1" });
     await wrapped.revertBoth?.({ messageId: "message-1" });
+    const sideHandle = await wrapped.forkForSideChat?.();
+    expect(sideHandle).toEqual({
+      provider: "custom-claude",
+      sessionId: "side-session-1",
+      nativeHandle: "side-session-1",
+    });
+    if (sideHandle) {
+      await wrapped.disposeSideChatFork?.(sideHandle);
+    }
+    expect(session.disposedSideChatHandle).toEqual({
+      provider: "claude",
+      sessionId: "side-session-1",
+      nativeHandle: "side-session-1",
+    });
+    const sideAnswer = await wrapped.askSideQuestion?.({ question: "What happened?" });
+    await expect(wrapped.getSubagentDefaults?.()).resolves.toEqual({
+      model: "configured-child",
+      thinkingOptionId: "high",
+    });
     const handler = wrapped.tryHandleOutOfBand?.("/compact");
     await handler?.run({ emit: () => {} });
 
+    expect(sideAnswer).toEqual({ response: "side answer", synthetic: false });
     expect(session.steers).toEqual([
       { prompt: "follow-up", options: { expectedTurnId: "turn-1" } },
     ]);
@@ -212,6 +262,10 @@ describe("wrapSessionProvider", () => {
       "revertConversation",
       "revertFiles",
       "revertBoth",
+      "forkForSideChat",
+      "disposeSideChatFork",
+      "askSideQuestion",
+      "getSubagentDefaults",
       "tryHandleOutOfBand",
       "tryHandleOutOfBand.run",
     ]);

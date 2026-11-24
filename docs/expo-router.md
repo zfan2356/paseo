@@ -119,6 +119,11 @@ hydration before opening the tab. Keep the stable agent URL free of a workspace
 hint. [Notifications](notifications.md) owns tap delivery and native lifecycle
 constraints.
 
+Session directory intents select the owning agent through this owner, then open an explicit
+directory target through navigateToWorkspace(). They do not update execution cwd or resolve a
+workspace from the directory path. Explorer owns target propagation and compact dismissal order;
+see [session directory targets](explorer-sidebar.md#session-directory-targets).
+
 When a workspace target cannot open yet, `navigateToWorkspace()` records a
 pending open in the layout model under that host and workspace key. The owning
 workspace screen consumes it once after hydration. Archived-workspace recovery

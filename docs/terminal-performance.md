@@ -5,7 +5,7 @@ How terminal output stays low-latency, what the invariants are, and how to measu
 ## The pipeline
 
 ```
-pty (node-pty, forked worker process)
+pty (node-pty, detached terminal worker)
   → headless xterm parse (worker, ANSI replay fidelity)
   → TerminalOutputCoalescer (worker, ≤1 socket frame per 5ms per terminal)
   → framed local socket → daemon main process
@@ -25,6 +25,10 @@ Terminal frames share the daemon main event loop with all agent traffic. The `ev
 - **Output coalescing happens in the worker, before IPC.** One socket frame per pty chunk was a main-loop flood under build output. Non-output messages (snapshotReady/titleChange/exit) must flush the coalescer first so ordering is preserved.
 - **Replay delivery is isolated per viewer.** Live worker output never waits for app delivery. Each daemon stream owns its bounded live tail and revision deduplication; a slow or failed replay cannot pause another viewer of the same terminal.
 - **Replay geometry belongs to the parser queue.** Native measurements and web fits must leave the captured dimensions intact through every chunk's commit. Apply the latest measured size after replay, before live bytes; clear, replacement and disposal must release that geometry ownership. A layout effect must not resize the renderer directly during replay.
+
+- **The terminal worker owns PTY lifetime.** The daemon authenticates over a private local socket, adopts the terminal listing before listening, and detaches on shutdown. Overlapping daemon starts may both attach, so a failed replacement cannot disconnect the daemon still serving clients. Output produced while no daemon is attached remains in the worker's headless terminal state for the next snapshot.
+
+- **Worker IPC stays compatible across daemon updates.** A terminal worker can outlive the package version that launched it. Keep request and event changes additive while the protocol version is unchanged; a version bump deliberately gives up reattachment to older live workers.
 - **Coalesced output carries the LAST chunk's revision.** Snapshot replay dedup (`replayTerminalOutputAfterSnapshot`) skips buffered output with `revision <= replayRevision`; a merged batch with a lower revision would be wrongly skipped (lost output).
 - **The input-mode tracker runs once per process boundary, not per hop.** The worker commits its authoritative tracker with xterm parsing before publishing the corresponding revision; the daemon caches current modes from ordered worker events and adoption. A replay response carries capture-time modes for its viewer; it must not overwrite the shared cache after newer live output. Apply that viewer's preamble before its buffered live bytes. Do not reintroduce a per-chunk `feed()` on the daemon main loop.
 - **Snapshot catch-up is backpressure-gated.** After more than 256 KiB of output, a stream catches up only when its transport reports more than 4 MiB queued, or exposes no backpressure reading. A draining client streams continuously. Pressure recovery sends at most 500 recent history rows plus the screen, preserving smaller explicit demands including zero; even a live-only subscription needs this resynchronization. It does not change the subscription's configured demand: later attach/reconnect restores still request the full configured history. The recent window avoids repeatedly serializing all retained history for a slow viewer.
@@ -33,6 +37,8 @@ Terminal frames share the daemon main event loop with all agent traffic. The `ev
 - **Find preserves the inspected xterm viewport, including at the live bottom.** Keep its output anchor inside the existing batched write path. Serializing output to preserve a search result would add terminal latency.
 - **Retained terminal tabs in the focused workspace keep their streams.** Hidden mounted terminals continue applying output, so switching tabs does not resubscribe or request a fresh snapshot. The retained-panel LRU bounds the number of live streams; terminals in an unfocused workspace detach.
 - **Terminal size has one daemon-owned claimant.** Focus and direct interaction send a `claim`; later geometry changes from that connection send `update`. A claim transfers ownership even when the dimensions are unchanged, while an update from any other connection is ignored. This lets an owning pane follow splits and keyboard insets without allowing an idle phone or browser to steal the PTY size.
+- **Visible restore is the current viewport.** The client requests `scrollbackLines: 0` so a long TUI session does not encode older rows as ANSI. The attach overlay stays up until that restore frame, and the emulator host stays at `opacity: 0` until the write commits. Replaying scrollback through `xterm.write` is what looks like history scrubbing on reopen.
+- **A mounted terminal pane keeps its stream.** Focus and retained-panel visibility gate size claims and the attach overlay, not subscribe. Switching away from a still-mounted TUI tab must not unsubscribe, or the next click restores again. Apply output and restore to the emulator while the pane is hidden so the buffer stays current.
 
 ## Measuring
 

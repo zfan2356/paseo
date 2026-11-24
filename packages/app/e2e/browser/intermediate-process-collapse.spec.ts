@@ -1,0 +1,81 @@
+import { expect, test } from "../support/fixtures";
+import { expectAgentIdle } from "../support/helpers/agent-stream";
+import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
+
+test("expands the live intermediate process and folds it after the final answer", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "@paseo:app-settings",
+      JSON.stringify({
+        autoExpandReasoning: true,
+        toolCallDetailLevel: "detailed",
+      }),
+    );
+  });
+  const agent = await seedMockAgentWorkspace({
+    repoPrefix: "intermediate-process-collapse-",
+    title: "Intermediate process collapse",
+    model: "one-minute-stream",
+  });
+
+  try {
+    await openAgentRoute(page, agent);
+    await agent.client.sendAgentMessage(agent.agentId, "Show the intermediate process lifecycle.");
+
+    const process = page.getByTestId("intermediate-process-group");
+    const processToggle = process.getByRole("button").first();
+    await expect(process).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("assistant-message").first()).toBeVisible();
+    await expect(page.getByTestId("tool-call-badge").first()).toBeVisible();
+
+    await page.getByTestId("agent-chat-scroll").hover();
+    await page.mouse.wheel(0, -1200);
+    await processToggle.click();
+    await expect(page.getByTestId("tool-call-badge")).toHaveCount(0);
+    await processToggle.click();
+    await expect(page.getByTestId("assistant-message").first()).toBeVisible();
+
+    await expectAgentIdle(page, 90_000);
+    await expect(page.getByTestId("tool-call-badge")).toHaveCount(0);
+    await expect(page.getByTestId("tool-call-badge")).toHaveCount(0);
+    await expect(
+      page.getByTestId("assistant-message").filter({ hasText: "(end of synthetic stream)" }),
+    ).toBeVisible();
+
+    await processToggle.click();
+    await expect(page.getByTestId("assistant-message").first()).toBeVisible();
+    await expect(page.getByTestId("tool-call-badge").first()).toBeVisible();
+  } finally {
+    await agent.cleanup();
+  }
+});
+
+test("search opens a completed process and reveals the matching message", async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("@paseo:app-settings", JSON.stringify({ chatDisplay: "collapseProcess" })),
+  );
+  const agent = await seedMockAgentWorkspace({
+    repoPrefix: "process-search-",
+    title: "Search folded process",
+    model: "ten-second-stream",
+    initialPrompt: "Inspect the scrolling behavior.",
+  });
+  try {
+    await agent.client.waitForFinish(agent.agentId, 30_000);
+    await openAgentRoute(page, agent);
+    await expect(page.getByTestId("intermediate-process-group")).toBeVisible();
+    const text = "Cycle 1";
+    const match = page.getByTestId("assistant-message").filter({ hasText: text });
+    await expect(match).toHaveCount(0);
+    await page.getByTestId("assistant-message").last().click();
+    await page.keyboard.press("ControlOrMeta+f");
+    await page.getByRole("textbox", { name: "Find in pane", exact: true }).fill(text);
+    await expect(match.first()).toBeVisible();
+    await expect(page.getByRole("status", { name: "Find matches" })).toContainText("1");
+  } finally {
+    await agent.cleanup();
+  }
+});

@@ -1,0 +1,428 @@
+import { describe, expect, test } from "vitest";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import {
+  buildAgentConversationTerminalLaunch,
+  buildAgentConversationTerminalName,
+  buildCodexConversationTerminalLaunch,
+  buildCodexConversationTerminalName,
+  getAgentConversationTerminalDisplayName,
+  parseAgentConversationTerminalLink,
+  parseCodexConversationTerminalAgentId,
+} from "./codex-fork-terminal.js";
+
+describe("agent conversation terminal metadata", () => {
+  test.each([
+    ["codex", "Codex Conversation"],
+    ["claude", "Claude Code Conversation"],
+    ["cursor", "Cursor Conversation"],
+    ["antigravity", "Antigravity Conversation"],
+  ] as const)("round-trips a %s terminal link", (provider, displayName) => {
+    const name = buildAgentConversationTerminalName("agent-1", provider);
+    expect(parseAgentConversationTerminalLink(name)).toEqual({ agentId: "agent-1", provider });
+    expect(getAgentConversationTerminalDisplayName(provider)).toBe(displayName);
+  });
+
+  test("recognizes legacy Codex terminal names", () => {
+    expect(
+      parseAgentConversationTerminalLink(buildCodexConversationTerminalName("agent-1")),
+    ).toEqual({
+      agentId: "agent-1",
+      provider: "codex",
+    });
+  });
+});
+
+describe("buildAgentConversationTerminalLaunch", () => {
+  test("resumes Antigravity through its ACP wrapper with the same session and environment", () => {
+    expect(
+      buildAgentConversationTerminalLaunch({
+        provider: "antigravity",
+        cwd: "/work/project",
+        persistence: { provider: "antigravity", sessionId: "native-session" },
+        config: { model: "gemini-3.8-flash", modeId: "auto_edit" },
+        runtimeSettings: {
+          command: { mode: "replace", argv: ["/opt/antigravity-acp-ichat"] },
+          env: { ANTIGRAVITY_ICHAT_HOME: "/work/profile" },
+        },
+      }),
+    ).toEqual({
+      provider: "antigravity",
+      name: "Antigravity Conversation",
+      command: "/opt/antigravity-acp-ichat",
+      args: ["--tui", "native-session", "--model", "gemini-3.8-flash", "--mode", "accept-edits"],
+      env: { ANTIGRAVITY_ICHAT_HOME: "/work/profile" },
+    });
+  });
+
+  test("reattaches shared Codex terminals to the same service", () => {
+    const launch = buildAgentConversationTerminalLaunch({
+      provider: "codex",
+      cwd: "/work/paseo",
+      persistence: { provider: "codex", sessionId: "shared-thread" },
+      runtimeSettings: { env: { PASEO_CODEX_APP_SERVER_SOCKET: "/tmp/codex.sock" } },
+    });
+    expect(launch.args).toEqual([
+      "--remote",
+      "unix:///tmp/codex.sock",
+      "resume",
+      "--include-non-interactive",
+      "--cd",
+      "/work/paseo",
+      "shared-thread",
+    ]);
+  });
+
+  test("resumes a Claude Code session with its active model, effort, and permission mode", () => {
+    expect(
+      buildAgentConversationTerminalLaunch({
+        provider: "claude",
+        cwd: "/work/paseo",
+        persistence: {
+          provider: "claude",
+          sessionId: "session-1",
+          nativeHandle: "session-native",
+        },
+        runtimeInfo: {
+          provider: "claude",
+          sessionId: "session-native",
+          model: "claude-opus-5[1m]",
+          thinkingOptionId: "xhigh",
+          modeId: "bypassPermissions",
+        },
+        currentModeId: "bypassPermissions",
+        config: {
+          model: "stale-model",
+          thinkingOptionId: "medium",
+          modeId: "bypassPermissions",
+        },
+      }),
+    ).toEqual({
+      provider: "claude",
+      name: "Claude Code Conversation",
+      command: "claude",
+      args: [
+        "--resume",
+        "session-native",
+        "--model",
+        "claude-opus-5[1m]",
+        "--effort",
+        "xhigh",
+        "--permission-mode",
+        "bypassPermissions",
+      ],
+    });
+  });
+
+  test("resumes a Cursor chat with its workspace, model, mode, and auto-accept setting", () => {
+    expect(
+      buildAgentConversationTerminalLaunch({
+        provider: "cursor",
+        cwd: "/work/paseo",
+        persistence: {
+          provider: "cursor",
+          sessionId: "chat-1",
+        },
+        runtimeInfo: {
+          provider: "cursor",
+          sessionId: "chat-1",
+          model: "grok-4.6",
+          thinkingOptionId: "high",
+          modeId: "plan",
+        },
+        currentModeId: "plan",
+        config: {
+          model: "stale-model",
+          modeId: "plan",
+          featureValues: { auto_accept: true },
+        },
+      }),
+    ).toEqual({
+      provider: "cursor",
+      name: "Cursor Conversation",
+      command: "cursor-agent",
+      env: { CURSOR_CONFIG_DIR: join(homedir(), ".cursor") },
+      args: [
+        "--resume",
+        "chat-1",
+        "--workspace",
+        "/work/paseo",
+        "--trust",
+        "--model",
+        "grok-4.6",
+        "--mode",
+        "plan",
+        "--yolo",
+      ],
+    });
+  });
+
+  test("does not launch Cursor TUI through the Agent ACP transport", () => {
+    expect(
+      buildAgentConversationTerminalLaunch({
+        provider: "cursor",
+        cwd: "/work/paseo",
+        persistence: {
+          provider: "cursor",
+          sessionId: "chat-1",
+        },
+        runtimeSettings: {
+          command: {
+            mode: "replace",
+            argv: ["/opt/cursor-agent", "--use-system-ca", "acp"],
+          },
+          env: { CURSOR_API_KEY: "test-key" },
+        },
+      }),
+    ).toEqual({
+      provider: "cursor",
+      name: "Cursor Conversation",
+      command: "/opt/cursor-agent",
+      env: {
+        CURSOR_CONFIG_DIR: join(homedir(), ".cursor"),
+        CURSOR_API_KEY: "test-key",
+      },
+      args: ["--use-system-ca", "--resume", "chat-1", "--workspace", "/work/paseo", "--trust"],
+    });
+  });
+
+  test("rejects unsupported providers and missing persistence handles", () => {
+    expect(() =>
+      buildAgentConversationTerminalLaunch({
+        provider: "opencode",
+        cwd: "/work/paseo",
+        persistence: { provider: "opencode", sessionId: "session-1" },
+      }),
+    ).toThrow("does not support a conversation terminal");
+
+    expect(() =>
+      buildAgentConversationTerminalLaunch({
+        provider: "claude",
+        cwd: "/work/paseo",
+        persistence: null,
+      }),
+    ).toThrow("resumable session id");
+  });
+});
+
+describe("buildCodexConversationTerminalLaunch", () => {
+  test.each(["default", "priority", "ultrafast"])(
+    "keeps the live %s speed tier when switching to TUI",
+    (serviceTier) => {
+      const launch = buildCodexConversationTerminalLaunch({
+        provider: "codex",
+        cwd: "/work/paseo",
+        persistence: { provider: "codex", sessionId: "thread-1" },
+        config: { featureValues: { service_tier: "stale-tier", fast_mode: true } },
+        features: [
+          {
+            type: "select",
+            id: "service_tier",
+            label: "Speed",
+            value: serviceTier,
+            options: [{ id: serviceTier, label: serviceTier }],
+          },
+        ],
+      });
+
+      expect(launch.args).toContain(`service_tier="${serviceTier}"`);
+      expect(launch.args).not.toContain('service_tier="stale-tier"');
+      expect(launch.args).not.toContain('service_tier="fast"');
+    },
+  );
+
+  test("restores the saved speed tier when no live features are available", () => {
+    const launch = buildCodexConversationTerminalLaunch({
+      provider: "codex",
+      cwd: "/work/paseo",
+      persistence: { provider: "codex", sessionId: "thread-1" },
+      config: { featureValues: { service_tier: "ultrafast" } },
+    });
+
+    expect(launch.args).toContain('service_tier="ultrafast"');
+  });
+
+  test("keeps wrapper and generated config overrides in the root CLI scope", () => {
+    const launch = buildCodexConversationTerminalLaunch({
+      provider: "codex",
+      cwd: "/work/paseo",
+      persistence: { provider: "codex", sessionId: "thread-1" },
+      runtimeSettings: {
+        command: {
+          mode: "replace",
+          argv: ["codex", "-c", 'model_provider="custom"'],
+        },
+      },
+      config: {
+        thinkingOptionId: "high",
+        featureValues: { fast_mode: true },
+        providerOptions: { features: { multi_agent: true } },
+      },
+    });
+    const resumeIndex = launch.args.indexOf("resume");
+    expect(resumeIndex).toBeGreaterThan(0);
+    expect(launch.args.slice(0, resumeIndex)).toEqual([
+      "-c",
+      'model_provider="custom"',
+      "--config",
+      'model_reasoning_effort="high"',
+      "--config",
+      'service_tier="fast"',
+      "--config",
+      "features.multi_agent=true",
+    ]);
+    expect(launch.args.slice(resumeIndex)).not.toContain("--config");
+  });
+
+  test("round-trips the linked Agent id through the persistent terminal name", () => {
+    const name = buildCodexConversationTerminalName("agent-1");
+    expect(parseCodexConversationTerminalAgentId(name)).toBe("agent-1");
+    expect(parseCodexConversationTerminalAgentId("Codex Conversation")).toBeNull();
+  });
+
+  test("inherits the active model, thinking, full-access, and fast settings", () => {
+    expect(
+      buildCodexConversationTerminalLaunch({
+        provider: "codex",
+        cwd: "/work/paseo",
+        workspaceId: "workspace-1",
+        persistence: {
+          provider: "codex",
+          sessionId: "thread-1",
+          nativeHandle: "thread-native",
+        },
+        runtimeInfo: {
+          provider: "codex",
+          sessionId: "thread-native",
+          model: "gpt-5.6-sol",
+          thinkingOptionId: "xhigh",
+          modeId: "full-access",
+        },
+        currentModeId: "full-access",
+        config: {
+          modeId: "full-access",
+          model: "stale-model",
+          thinkingOptionId: "medium",
+          featureValues: { fast_mode: false },
+        },
+        features: [
+          {
+            type: "toggle",
+            id: "fast_mode",
+            label: "Fast",
+            value: true,
+          },
+        ],
+      }),
+    ).toEqual({
+      provider: "codex",
+      name: "Codex Conversation",
+      command: "codex",
+      args: [
+        "--model",
+        "gpt-5.6-sol",
+        "--config",
+        'model_reasoning_effort="xhigh"',
+        "--config",
+        'service_tier="fast"',
+        "--ask-for-approval",
+        "never",
+        "--sandbox",
+        "danger-full-access",
+        "resume",
+        "--include-non-interactive",
+        "--cd",
+        "/work/paseo",
+        "thread-native",
+      ],
+    });
+  });
+
+  test("inherits the configured Codex command and environment", () => {
+    expect(
+      buildCodexConversationTerminalLaunch({
+        provider: "codex",
+        cwd: "/work/paseo",
+        persistence: { provider: "codex", sessionId: "thread-1" },
+        runtimeSettings: {
+          command: {
+            mode: "replace",
+            argv: ["/opt/codex-wrapper", "--ichat"],
+          },
+          env: { CODEX_HOME: "/work/codex-home" },
+        },
+      }),
+    ).toEqual({
+      provider: "codex",
+      name: "Codex Conversation",
+      command: "/opt/codex-wrapper",
+      args: ["--ichat", "resume", "--include-non-interactive", "--cd", "/work/paseo", "thread-1"],
+      env: { CODEX_HOME: "/work/codex-home" },
+    });
+  });
+
+  test("lets validated provider options override the permission preset", () => {
+    expect(
+      buildCodexConversationTerminalLaunch({
+        provider: "codex",
+        cwd: "/work/paseo",
+        persistence: { provider: "codex", sessionId: "thread-2" },
+        currentModeId: "full-access",
+        config: {
+          providerOptions: {
+            approval_policy: "on-request",
+            sandbox_mode: "workspace-write",
+            sandbox_workspace_write: {
+              writable_roots: ["/tmp/shared"],
+              network_access: true,
+            },
+          },
+        },
+      }).args,
+    ).toEqual([
+      "--ask-for-approval",
+      "on-request",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      'sandbox_workspace_write.writable_roots=["/tmp/shared"]',
+      "--config",
+      "sandbox_workspace_write.network_access=true",
+      "resume",
+      "--include-non-interactive",
+      "--cd",
+      "/work/paseo",
+      "thread-2",
+    ]);
+  });
+
+  test("does not turn a provider default mode into an explicit CLI override", () => {
+    expect(
+      buildCodexConversationTerminalLaunch({
+        provider: "codex",
+        cwd: "/work/paseo",
+        persistence: { provider: "codex", sessionId: "thread-default" },
+        currentModeId: "auto-review",
+        config: {},
+      }).args,
+    ).toEqual(["resume", "--include-non-interactive", "--cd", "/work/paseo", "thread-default"]);
+  });
+
+  test("rejects non-Codex agents and missing thread ids", () => {
+    expect(() =>
+      buildCodexConversationTerminalLaunch({
+        provider: "claude",
+        cwd: "/work/paseo",
+        persistence: { provider: "claude", sessionId: "session-1" },
+      }),
+    ).toThrow("Only Codex conversations");
+
+    expect(() =>
+      buildCodexConversationTerminalLaunch({
+        provider: "codex",
+        cwd: "/work/paseo",
+        persistence: null,
+      }),
+    ).toThrow("resumable thread id");
+  });
+});

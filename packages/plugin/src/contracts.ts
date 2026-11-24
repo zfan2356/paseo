@@ -5,6 +5,7 @@ import type { PluginSerializableIcon } from "./icons.js";
 import type { PluginRpcContract } from "./rpc.js";
 
 export interface PluginTheme {
+  readonly colorScheme: "light" | "dark";
   readonly colors: {
     readonly surface0: string;
     readonly surface1: string;
@@ -53,6 +54,7 @@ export interface PluginWorkspaceSnapshot {
 }
 
 export interface PluginAgentSnapshot {
+  readonly featureValues?: Readonly<Record<string, unknown>>;
   readonly ref: AgentRef;
   readonly hostId: string;
   readonly workspace: WorkspaceRef;
@@ -103,6 +105,23 @@ export interface PluginThemeContribution<Text extends PluginText = string> {
   name: Text;
   appearance: "light" | "dark";
   colors: PluginThemeColors;
+  /** Optional semantic colors for palettes whose surfaces differ from the compact defaults. */
+  overrides?: Partial<
+    Record<
+      | "surface3"
+      | "surface4"
+      | "surfaceDiffEmpty"
+      | "surfaceSidebar"
+      | "foregroundExtraMuted"
+      | "borderAccent"
+      | "accentBright"
+      | "accentForeground"
+      | "destructive"
+      | "terminalBlack"
+      | "terminalBrightBlack",
+      string
+    >
+  >;
 }
 
 export interface PluginAttachmentSourceContribution<Text extends PluginText = string> {

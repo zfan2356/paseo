@@ -28,6 +28,7 @@ import {
   type AgentClientInstallation,
   type AgentSession,
   type AgentSessionConfig,
+  type AgentSubagentDefaults,
   type SteerActiveTurnOptions,
   type SteerResult,
   type AgentSlashCommand,
@@ -35,6 +36,7 @@ import {
   type AgentTimelineItem,
   type ToolCallTimelineItem,
   type AgentUsage,
+  type AgentSideQuestionResult,
   type FetchCatalogOptions,
   type ImportableProviderSession,
   type ImportProviderSessionContext,
@@ -57,9 +59,11 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
-import { composeAgentSystemPrompt } from "../system-prompt.js";
+import { composeAgentSystemPrompt, composeSystemPromptParts } from "../system-prompt.js";
 import { CodexInstructionSnapshot } from "./codex/instruction-snapshot.js";
+import { CODEX_GOAL_CONTROL_INSTRUCTIONS } from "./codex/goal-control.js";
 import { CodexAsyncQuestions, codexAsyncQuestionToTimeline } from "./codex/async-questions.js";
+import { resolveIchatServiceTiers } from "./codex/ichat-service-tiers.js";
 import {
   fileChangesToPreview,
   mapCodexToolCallEnvelope,
@@ -102,9 +106,22 @@ import {
   type CodexThreadRollbackParams,
   type CodexThreadRollbackResponse,
   type CodexAppServerTraceContext,
+  type CodexAppServerEndpoint,
 } from "./codex/app-server-transport.js";
+import {
+  CodexAppServerSocket,
+  resolveSharedCodexSocket,
+  type SharedCodexFeatures,
+} from "./codex/shared-app-server.js";
 import { codexAppServerStartup } from "./codex/app-server-startup.js";
 import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
+import {
+  buildCodexSideQuestionForkParams,
+  buildCodexSideQuestionPrompt,
+  buildCodexSideQuestionTurnParams,
+  CODEX_SIDE_QUESTION_TIMEOUT_MS,
+  CodexSideQuestionRun,
+} from "./codex/side-question.js";
 import {
   type CodexHistoryRow,
   type CodexHistoryStatus,
@@ -291,6 +308,7 @@ const CODEX_APP_SERVER_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindConversation: true,
   supportsRewindFiles: false,
   supportsRewindBoth: false,
+  supportsSideQuestion: true,
 };
 
 const CODEX_MODES: AgentMode[] = [
@@ -3813,6 +3831,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     resolve: () => void;
     cancelRequested: boolean;
   } | null = null;
+  private pendingSideChatForkSourceId: string | null = null;
   private client: CodexAppServerClient | null = null;
   private readonly background = new CodexBackgroundInventory((event) => this.emitEvent(event));
   private threadRollbackAvailable = true;
@@ -3872,6 +3891,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private subAgentCallsByCallId = new Map<string, CodexSubAgentCallState>();
   private subAgentCallIdByChildThreadId = new Map<string, string>();
   private pendingSubAgentNotificationsByThreadId = new Map<string, ParsedCodexNotification[]>();
+  private readonly sideQuestionRunsByThreadId = new Map<string, CodexSideQuestionRun>();
   private warnedUnknownNotificationMethods = new Set<string>();
   private warnedInvalidNotificationPayloads = new Set<string>();
   private warnedIncompleteEditToolCallIds = new Set<string>();
@@ -3891,6 +3911,8 @@ export class CodexAppServerAgentSession implements AgentSession {
   // `thread/compacted` and a completed `contextCompaction` item.
   private unpairedCompactionNotificationCompletions = 0;
   private unpairedCompactionItemCompletions = 0;
+  private sharedThreadSubscribed = false;
+  private sharedResumeTurnPending = false;
   private connectionState: "disconnected" | "history-ready" | "connected" = "disconnected";
   private connectionPromise: Promise<void> | null = null;
   private readonly startupAbort = new AbortController();
@@ -3931,9 +3953,13 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   constructor(
     config: AgentSessionConfig,
-    private readonly resumeHandle: { sessionId: string; metadata?: Record<string, unknown> } | null,
+    private readonly resumeHandle: {
+      sessionId: string;
+      metadata?: Record<string, unknown>;
+      sideChatForkFromThreadId?: string;
+    } | null,
     logger: Logger,
-    private readonly spawnAppServer: () => Promise<ChildProcessWithoutNullStreams>,
+    private readonly spawnAppServer: () => Promise<CodexAppServerEndpoint>,
     private readonly deps: CodexAppServerAgentDeps = {},
     private readonly ephemeral: boolean = false,
     private readonly goalsEnabled: boolean = false,
@@ -3955,7 +3981,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       validateProviderOptions("codex", CodexProviderOptionsSchema, config.providerOptions) ?? {};
     this.config = config;
     this.instructionSnapshot = new CodexInstructionSnapshot(
-      composeAgentSystemPrompt(config),
+      this.threadDeveloperInstructions(),
       resumeHandle?.metadata?.paseoInstructionReceipt,
     );
     this.harnessEnvironment = deps.environment ?? buildCodexAppServerEnv();
@@ -3965,7 +3991,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.requestedServiceTier = readCodexServiceTier(this.providerOptions);
     this.planModeEnabled = this.providerOptions.plan_mode === true;
 
-    if (this.resumeHandle?.sessionId) {
+    if (this.resumeHandle?.sideChatForkFromThreadId) {
+      this.pendingSideChatForkSourceId = this.resumeHandle.sideChatForkFromThreadId;
+    } else if (this.resumeHandle?.sessionId) {
       this.currentThreadId = this.resumeHandle.sessionId;
       this.savedThreadId = this.resumeHandle.sessionId;
       this.historyIndexed = false;
@@ -4066,6 +4094,27 @@ export class CodexAppServerAgentSession implements AgentSession {
       await this.loadCollaborationModes();
       await this.loadSkills();
 
+      if (this.pendingSideChatForkSourceId) {
+        // The fork must be created by this process: codex takes a
+        // cross-process writer lock on every loaded thread, so a fork created
+        // by the parent agent's app-server could never be resumed here.
+        const sourceThreadId = this.pendingSideChatForkSourceId;
+        const forked = await forkCodexThread(client, {
+          threadId: sourceThreadId,
+          cwd: this.config.cwd ?? null,
+          model: this.config.model ?? null,
+          serviceTier: this.serviceTier,
+          excludeTurns: true,
+        });
+        this.pendingSideChatForkSourceId = null;
+        this.currentThreadId = forked.thread.id;
+        this.savedThreadId = forked.thread.id;
+        this.logger.info(
+          { sourceThreadId, threadId: forked.thread.id },
+          "Forked Codex side chat thread inside the side agent process",
+        );
+      }
+
       if (this.currentThreadId) {
         await this.ensureThreadLoaded();
         await this.applyDefaultModelAndThinking();
@@ -4135,6 +4184,8 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private handleUnexpectedTermination(error: Error): void {
+    this.sharedThreadSubscribed = false;
+    this.sharedResumeTurnPending = false;
     this.connectionState = "disconnected";
     this.background.stop();
     const hasActiveRootTurn = this.activeForegroundTurnId !== null || this.currentTurnId !== null;
@@ -4295,7 +4346,21 @@ export class CodexAppServerAgentSession implements AgentSession {
    * lacks runs as Normal; the session says so in `openOptionsPatch`, so the options and the
    * control agree (as when the model is switched later).
    */
+  private threadDeveloperInstructions(): string | undefined {
+    return composeSystemPromptParts(
+      composeAgentSystemPrompt(this.config),
+      this.goalsEnabled ? CODEX_GOAL_CONTROL_INSTRUCTIONS : undefined,
+    );
+  }
+
   private normalizeSpeed(): void {
+    for (const model of this.speedModels) {
+      model.serviceTiers = resolveIchatServiceTiers(
+        model.model ?? model.id,
+        model.serviceTiers,
+        this.deps.environment,
+      );
+    }
     const requested = this.requestedServiceTier;
     const resolved = this.resolveServiceTier(requested);
     if (requested === resolved) return;
@@ -4550,18 +4615,19 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   private async ensureThreadLoaded(): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
-    // Paseo reads history only when it replays it; the resume response needs no turns.
+    if (this.sharedThreadSubscribed) return;
+    // Shared joins need the active turn identity before accepting another prompt.
     const params: Record<string, unknown> = {
       threadId: this.currentThreadId,
       cwd: this.config.cwd ?? null,
-      excludeTurns: true,
+      excludeTurns: !this.client.isShared,
     };
     if (this.deps.customCodexConfig) {
       // Resume otherwise prefers the provider stored on the thread, including
       // the unnamespaced key emitted by earlier Paseo versions.
       params.modelProvider = this.deps.customCodexConfig.model_provider;
     }
-    const developerInstructions = composeAgentSystemPrompt(this.config);
+    const developerInstructions = this.threadDeveloperInstructions();
     if (developerInstructions) {
       params.developerInstructions = developerInstructions;
     }
@@ -4572,10 +4638,22 @@ export class CodexAppServerAgentSession implements AgentSession {
     try {
       const loaded = toObjectRecord(await this.client.request("thread/loaded/list", {}));
       const ids = Array.isArray(loaded?.data) ? loaded.data : [];
-      if (!ids.includes(this.currentThreadId)) {
+      const alreadyLoaded = ids.includes(this.currentThreadId);
+      if (this.client.isShared && alreadyLoaded) {
+        const response = await this.client.request("thread/resume", {
+          threadId: this.currentThreadId,
+          excludeTurns: false,
+        });
+        this.rememberResolvedSandboxPolicy(response);
+        this.rememberRestoredCollaborationMode(response);
+        this.rememberSharedResume(response);
+        return;
+      }
+      if (!alreadyLoaded) {
         const response = await this.client.request("thread/resume", params);
         this.rememberResolvedSandboxPolicy(response);
         this.rememberRestoredCollaborationMode(response);
+        this.rememberSharedResume(response);
       }
     } catch (error) {
       const threadId = this.currentThreadId;
@@ -4591,6 +4669,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         const response = await this.client.request("thread/resume", params);
         this.rememberResolvedSandboxPolicy(response);
         this.rememberRestoredCollaborationMode(response);
+        this.rememberSharedResume(response);
         this.logger.info({ threadId }, "Unarchived Codex thread to restore active Paseo agent");
       } else {
         this.logger.warn({ error, threadId }, "Failed to resume persisted Codex thread");
@@ -4618,6 +4697,19 @@ export class CodexAppServerAgentSession implements AgentSession {
         typeof settings.reasoning_effort === "string" ? settings.reasoning_effort : null,
     };
     this.refreshResolvedCollaborationMode();
+  }
+
+  private rememberSharedResume(response: unknown): void {
+    if (!this.client?.isShared) return;
+    this.sharedThreadSubscribed = true;
+    const thread = toObjectRecord(toObjectRecord(response)?.thread);
+    const turns = Array.isArray(thread?.turns) ? thread.turns : [];
+    const activeTurn = turns.map(toObjectRecord).find((turn) => turn?.status === "inProgress");
+    if (typeof activeTurn?.id === "string" && !this.currentTurnId) {
+      this.currentTurnId = activeTurn.id;
+      this.activeForegroundTurnId = this.createTurnId();
+      this.sharedResumeTurnPending = true;
+    }
   }
 
   private parseSlashCommandInput(text: string): { commandName: string; args?: string } | null {
@@ -4733,7 +4825,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (options?.outputSchema) {
       params.outputSchema = normalizeCodexOutputSchema(options.outputSchema);
     }
-    const developerInstructions = composeAgentSystemPrompt(this.config);
+    const developerInstructions = this.threadDeveloperInstructions();
     const codexConfig = this.buildCodexInnerConfig();
     if (codexConfig) {
       params.config = codexConfig;
@@ -4876,6 +4968,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       cancelRequested: false,
     };
     this.pendingForegroundStart = pendingStart;
+    let admittedTurnId: string | null = null;
 
     this.dismissPendingPlanApprovals("Dismissed by a new prompt");
 
@@ -4899,7 +4992,11 @@ export class CodexAppServerAgentSession implements AgentSession {
       }
 
       const turnStart = await this.buildTurnStartParams(effectivePrompt, options);
+      if (this.client.isShared && this.currentTurnId) {
+        throw new Error("A foreground turn is already active in another Codex client");
+      }
       const turnId = this.createTurnId();
+      admittedTurnId = turnId;
       this.activeForegroundTurnId = turnId;
       this.activeClientMessageId = options?.clientMessageId ?? null;
       this.currentTurnId = null;
@@ -4932,10 +5029,12 @@ export class CodexAppServerAgentSession implements AgentSession {
       await this.client.request("turn/start", turnStart.params, TURN_START_TIMEOUT_MS);
       return { turnId };
     } catch (error) {
-      this.pendingForegroundTurnIdentification?.resolve(null);
-      this.pendingForegroundTurnIdentification = null;
-      this.activeForegroundTurnId = null;
-      this.activeClientMessageId = null;
+      if (!this.client?.isShared || this.activeForegroundTurnId === admittedTurnId) {
+        this.pendingForegroundTurnIdentification?.resolve(null);
+        this.pendingForegroundTurnIdentification = null;
+        this.activeForegroundTurnId = null;
+        this.activeClientMessageId = null;
+      }
       throw error;
     } finally {
       if (this.pendingForegroundStart === pendingStart) {
@@ -5094,6 +5193,28 @@ export class CodexAppServerAgentSession implements AgentSession {
         timestamp: entry.timestamp,
       };
     }
+    if (this.sharedResumeTurnPending && this.activeForegroundTurnId) {
+      this.sharedResumeTurnPending = false;
+      yield { type: "turn_started", provider: CODEX_PROVIDER, turnId: this.activeForegroundTurnId };
+    }
+  }
+
+  async getSubagentDefaults(): Promise<AgentSubagentDefaults> {
+    await this.connect();
+    const response = toObjectRecord(
+      await this.client!.request("config/read", { cwd: this.config.cwd ?? null }),
+    );
+    const config = toObjectRecord(response?.config);
+    const agents = toObjectRecord(config?.agents);
+    const model = agents?.default_subagent_model;
+    const effort = agents?.default_subagent_reasoning_effort;
+    return {
+      model:
+        normalizeCodexModelId(typeof model === "string" ? model : undefined) ?? this.config.model,
+      thinkingOptionId:
+        normalizeCodexThinkingOptionId(typeof effort === "string" ? effort : undefined) ??
+        normalizeCodexThinkingOptionId(this.config.thinkingOptionId),
+    };
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
@@ -5526,7 +5647,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       model: this.config.model ?? null,
       serviceTier: this.serviceTier,
       config: this.buildCodexInnerConfig(),
-      developerInstructions: composeAgentSystemPrompt(this.config),
+      developerInstructions: this.threadDeveloperInstructions(),
       userMessageTurns: this.codexUserMessageTurns(),
       threadRollbackAvailable: this.threadRollbackAvailable,
       setThreadId: async (threadId) => {
@@ -5543,6 +5664,104 @@ export class CodexAppServerAgentSession implements AgentSession {
         this.reconcileAsyncQuestionsAfterRewind(this.stagedHistory.timeline);
       },
     });
+  }
+
+  async forkForSideChat(): Promise<AgentPersistenceHandle> {
+    await this.connect();
+    if (this.currentThreadId) {
+      await this.ensureThreadLoaded();
+    } else {
+      await this.ensureThread();
+    }
+    const threadId = this.currentThreadId;
+    if (!threadId) {
+      throw new Error("Codex thread is not ready for side chat");
+    }
+    // Return a pending handle instead of forking here: the fork has to be
+    // created inside the side agent's own app-server process (see
+    // establishConnection), because codex holds a cross-process writer lock
+    // for every loaded thread and a fork created here would stay locked to
+    // this process.
+    const current = this.describePersistence();
+    return {
+      provider: CODEX_PROVIDER,
+      sessionId: threadId,
+      nativeHandle: threadId,
+      metadata: {
+        ...current?.metadata,
+        threadId,
+      },
+      sideChatForkPending: true,
+    };
+  }
+
+  async disposeSideChatFork(handle: AgentPersistenceHandle): Promise<void> {
+    if (handle.sideChatForkPending) {
+      // The fork was never realized; there is no side thread to archive.
+      return;
+    }
+    await this.connect();
+    if (!this.client) {
+      throw new Error("Codex client is not initialized");
+    }
+    await this.client.request("thread/archive", { threadId: handle.sessionId });
+  }
+
+  async askSideQuestion(input: { question: string }): Promise<AgentSideQuestionResult | null> {
+    await this.connect();
+    const client = this.client;
+    if (!client) {
+      throw new Error("Codex client is not initialized");
+    }
+    if (this.currentThreadId) {
+      await this.ensureThreadLoaded();
+    } else {
+      await this.ensureThread();
+    }
+    const threadId = this.currentThreadId;
+    if (!threadId) {
+      throw new Error("Codex thread is not ready for side questions");
+    }
+
+    // The fork shares the main thread's history without touching it; the
+    // answer turn runs on the forked thread and its notifications are
+    // intercepted before timeline and sub-agent routing.
+    const forked = await forkCodexThread(
+      client,
+      buildCodexSideQuestionForkParams({
+        threadId,
+        cwd: this.config.cwd ?? null,
+        model: this.config.model ?? null,
+        serviceTier: this.serviceTier,
+      }),
+    );
+    const sideThreadId = forked.thread.id;
+    const run = new CodexSideQuestionRun();
+    this.sideQuestionRunsByThreadId.set(sideThreadId, run);
+    this.pendingSubAgentNotificationsByThreadId.delete(sideThreadId);
+    try {
+      await client.request(
+        "turn/start",
+        buildCodexSideQuestionTurnParams({
+          threadId: sideThreadId,
+          input: await this.buildUserInput(buildCodexSideQuestionPrompt(input.question)),
+          model: this.config.model ?? null,
+          serviceTier: this.serviceTier,
+        }),
+        TURN_START_TIMEOUT_MS,
+      );
+      const outcome = await run.waitForCompletion(CODEX_SIDE_QUESTION_TIMEOUT_MS);
+      if (outcome.status === "failed") {
+        throw new Error(outcome.errorMessage ?? "Codex side question turn failed");
+      }
+      const response = run.answerText();
+      return response === null ? null : { response, synthetic: false };
+    } finally {
+      this.sideQuestionRunsByThreadId.delete(sideThreadId);
+      // The ephemeral fork flag already prevents persistence on newer
+      // app-servers; archiving covers the ones that ignored it.
+      void client.request("thread/archive", { threadId: sideThreadId }).catch(() => undefined);
+    }
   }
 
   async interrupt(): Promise<void> {
@@ -5779,6 +5998,8 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async close(): Promise<void> {
     this.closed = true;
+    // A shared approval belongs to the server; detaching must not answer it with cancel.
+    if (this.client?.isShared) await this.disposeClient();
     this.startupAbort.abort(this.createClosedError());
     this.background.stop();
     this.clearPendingPermissions();
@@ -5814,6 +6035,8 @@ export class CodexAppServerAgentSession implements AgentSession {
   private async disposeClient(): Promise<void> {
     this.background.stop();
     const client = this.client;
+    this.sharedThreadSubscribed = false;
+    this.sharedResumeTurnPending = false;
     this.connectionState = "disconnected";
     this.currentTurnId = null;
     if (client) {
@@ -6071,6 +6294,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
     this.currentThreadId = threadId;
     this.instructionSnapshot.recordNewThread(threadId);
+    if (this.client.isShared) {
+      this.sharedThreadSubscribed = true;
+    }
   }
 
   private buildThreadStartRequest(model: string): {
@@ -6082,7 +6308,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     const approvalPolicy = this.hasWorkflowModeOverride ? preset.approvalPolicy : undefined;
     const sandbox = this.hasWorkflowModeOverride ? preset.sandbox : undefined;
     const innerConfig = this.buildCodexInnerConfig();
-    const developerInstructions = composeAgentSystemPrompt(this.config);
+    const developerInstructions = this.threadDeveloperInstructions();
     const params: Record<string, unknown> = {
       model,
       cwd: this.config.cwd ?? null,
@@ -6177,11 +6403,16 @@ export class CodexAppServerAgentSession implements AgentSession {
     return this.pendingNotifications;
   }
 
+  private ignoresSharedNotification(method: string): boolean {
+    return this.client?.isShared === true && (method === "thread/started" || !this.currentThreadId);
+  }
+
   private async processNotification(method: string, params: unknown): Promise<void> {
     if (method === CODEX_MCP_STARTUP_STATUS_METHOD) {
       this.logMcpStartupStatus(params);
       return;
     }
+    if (this.ignoresSharedNotification(method)) return;
     const notificationParams = toObjectRecord(params);
     if (method === "serverRequest/resolved" && typeof notificationParams?.requestId === "number") {
       const requestId = this.mcpElicitationPermissionIds.get(notificationParams.requestId);
@@ -6205,7 +6436,15 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
     const parsed = CodexNotificationSchema.parse({ method, params });
     this.traceParsedNotification(method, params, parsed);
-    const route = this.resolveCodexThreadRoute(getCodexNotificationThreadId(parsed));
+    const notificationThreadId = getCodexNotificationThreadId(parsed);
+    const sideQuestionRun = notificationThreadId
+      ? this.sideQuestionRunsByThreadId.get(notificationThreadId)
+      : undefined;
+    if (sideQuestionRun) {
+      sideQuestionRun.handleNotification(parsed);
+      return;
+    }
+    const route = this.resolveCodexThreadRoute(notificationThreadId);
     if (route.kind === "pending_sub_agent") {
       this.bufferPendingSubAgentNotification(route.threadId, parsed);
       return;
@@ -6943,6 +7182,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
     this.markCurrentThreadSaved(parsed.threadId);
     this.currentTurnId = parsed.turnId;
+    if (this.client?.isShared && !this.activeForegroundTurnId) {
+      this.activeForegroundTurnId = this.createTurnId();
+    }
     const pendingIdentification = this.pendingForegroundTurnIdentification;
     if (
       pendingIdentification &&
@@ -7012,6 +7254,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.pendingForegroundTurnIdentification?.resolve(null);
     this.pendingForegroundTurnIdentification = null;
     this.pendingSubAgentNotificationsByThreadId.clear();
+    this.sharedResumeTurnPending = false;
     this.resetTurnTrackingState();
   }
 
@@ -8149,12 +8392,45 @@ export class CodexAppServerAgentClient implements AgentClient {
   };
   private goalsEnabledPromise: Promise<boolean> | null = null;
   private autoReviewEnabledPromise: Promise<boolean> | null = null;
+  private readonly sharedSocketPath: string | null;
+  private sharedFeaturesPromise: Promise<SharedCodexFeatures> | null = null;
 
   constructor(
     private readonly logger: Logger,
     private readonly runtimeSettings?: ProviderRuntimeSettings,
     private readonly deps: CodexAppServerAgentDeps = {},
-  ) {}
+  ) {
+    this.sharedSocketPath = resolveSharedCodexSocket(runtimeSettings);
+  }
+
+  private sharedFeatures(): Promise<SharedCodexFeatures> {
+    this.sharedFeaturesPromise ??= (async () => {
+      const environment = buildCodexAppServerEnv(this.runtimeSettings);
+      const spawn = await this.prepareAppServerSpawn({ environment });
+      const client = new CodexAppServerClient(await spawn(), this.logger);
+      try {
+        const initialized = toObjectRecord(
+          await client.request("initialize", buildCodexAppServerInitializeParams()),
+        );
+        client.notify("initialized", {});
+        const config = toObjectRecord(
+          toObjectRecord(await client.request("config/read", {}))?.config,
+        );
+        const features = toObjectRecord(config?.features);
+        const userAgent = typeof initialized?.userAgent === "string" ? initialized.userAgent : "";
+        return {
+          goals: features?.goals === true,
+          autoReview: codexVersionAtLeast(userAgent, CODEX_AUTO_REVIEW_MIN_VERSION),
+        };
+      } finally {
+        await client.dispose();
+      }
+    })().catch((error) => {
+      this.sharedFeaturesPromise = null;
+      throw error;
+    });
+    return this.sharedFeaturesPromise;
+  }
 
   private async readInstalledCodex(signal: AbortSignal): Promise<InstalledCodex> {
     const installed = await this.resolveInstalledCommand();
@@ -8202,6 +8478,7 @@ export class CodexAppServerAgentClient implements AgentClient {
   }
 
   private resolveGoalsEnabled(): Promise<boolean> {
+    if (this.sharedSocketPath) return this.sharedFeatures().then((features) => features.goals);
     if (!this.goalsEnabledPromise) {
       this.goalsEnabledPromise = (async () => {
         try {
@@ -8227,6 +8504,7 @@ export class CodexAppServerAgentClient implements AgentClient {
   }
 
   private resolveAutoReviewEnabled(signal?: AbortSignal): Promise<boolean> {
+    if (this.sharedSocketPath) return this.sharedFeatures().then((features) => features.autoReview);
     if (signal) return this.probeAutoReviewEnabled(signal);
     if (!this.autoReviewEnabledPromise) {
       this.autoReviewEnabledPromise = this.probeAutoReviewEnabled();
@@ -8257,7 +8535,11 @@ export class CodexAppServerAgentClient implements AgentClient {
     environment: Record<string, string>;
     goalsEnabled?: boolean;
     agentId?: string;
-  }): Promise<() => ChildProcessWithoutNullStreams> {
+  }): Promise<() => CodexAppServerEndpoint | Promise<CodexAppServerEndpoint>> {
+    if (this.sharedSocketPath) {
+      const socketPath = this.sharedSocketPath;
+      return () => CodexAppServerSocket.connect(socketPath);
+    }
     const processPort = this.deps.appServerProcess ?? defaultCodexAppServerProcess;
     const launchPrefix = await processPort.resolvePrefix({ runtimeSettings: this.runtimeSettings });
     const args = [...launchPrefix.args, "app-server"];
@@ -8364,7 +8646,9 @@ export class CodexAppServerAgentClient implements AgentClient {
     });
     const session = new CodexAppServerAgentSession(
       merged,
-      handle,
+      options?.sideChatForkFromThreadId
+        ? { ...handle, sideChatForkFromThreadId: options.sideChatForkFromThreadId }
+        : handle,
       this.logger,
       async () => spawn(),
       { ...this.sessionDeps(launchContext?.env), environment },
@@ -8387,7 +8671,8 @@ export class CodexAppServerAgentClient implements AgentClient {
       stateDirKey: codexStartupStateDirKey(environment),
       spawn,
       createClient: (child) =>
-        this.deps._createCodexClient?.(child, this.logger, () => ({})) ??
+        (!(child instanceof CodexAppServerSocket) &&
+          this.deps._createCodexClient?.(child, this.logger, () => ({}))) ||
         new CodexAppServerClient(child, this.logger),
       initializeParams: buildCodexAppServerInitializeParams(),
       logger: this.logger,
@@ -8566,12 +8851,20 @@ export class CodexAppServerAgentClient implements AgentClient {
   }
 
   async isAvailable(): Promise<boolean> {
+    if (this.sharedSocketPath) {
+      const connection = await CodexAppServerSocket.connect(this.sharedSocketPath);
+      await connection.close();
+      return true;
+    }
     const launch = await resolveCodexLaunch(this.runtimeSettings);
     const availability = await checkCodexLaunchAvailable(launch);
     return availability.available;
   }
 
   async getDiagnostic(): Promise<{ diagnostic: string }> {
+    if (this.sharedSocketPath) {
+      return { diagnostic: `Shared Codex app-server socket: ${this.sharedSocketPath}` };
+    }
     try {
       const launch = await resolveCodexLaunch(this.runtimeSettings);
       const availability = await checkCodexLaunchAvailable(launch);

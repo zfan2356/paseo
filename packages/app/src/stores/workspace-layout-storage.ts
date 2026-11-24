@@ -28,6 +28,7 @@ const WorkspaceTabTargetStorageSchema = z.discriminatedUnion("kind", [
     setup: WorkspaceDraftTabSetupStorageSchema.optional(),
   }),
   z.strictObject({ kind: z.literal("agent"), agentId: z.string() }),
+  z.strictObject({ kind: z.literal("side_chat"), parentAgentId: z.string() }),
   z.strictObject({
     kind: z.literal("provider_subagent"),
     parentAgentId: z.string(),
@@ -35,17 +36,30 @@ const WorkspaceTabTargetStorageSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({ kind: z.literal("terminal"), terminalId: z.string() }),
   z.strictObject({ kind: z.literal("browser"), browserId: z.string() }),
-  z.strictObject({ kind: z.literal("changes_tree") }),
-  z.strictObject({ kind: z.literal("files") }),
+  z.strictObject({
+    kind: z.literal("changes_tree"),
+    directory: z.string().optional(),
+    sessionAgentId: z.string().optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("files"),
+    directory: z.string().optional(),
+    sessionAgentId: z.string().optional(),
+  }),
   z.strictObject({ kind: z.literal("pull_request") }),
   z.strictObject({
     kind: z.literal("file"),
+    directory: z.string().optional(),
+    sessionAgentId: z.string().optional(),
     path: z.string(),
     lineStart: z.number().int().positive().optional(),
     lineEnd: z.number().int().positive().optional(),
+    anchor: z.string().min(1).optional(),
   }),
   z.strictObject({
     kind: z.literal("working_diff"),
+    directory: z.string().optional(),
+    sessionAgentId: z.string().optional(),
     focusPath: z.string().optional(),
     focusRequestId: z.number().optional(),
     // COMPAT(workingDiffTarget): accepted from pre-canonical tab ids; normalization removes them.
@@ -54,7 +68,12 @@ const WorkspaceTabTargetStorageSchema = z.discriminatedUnion("kind", [
     ignoreWhitespace: z.boolean().optional(),
   }),
   z.strictObject({ kind: z.literal("setup"), workspaceId: z.string() }),
-  z.strictObject({ kind: z.literal("commit_diff"), sha: z.string() }),
+  z.strictObject({
+    kind: z.literal("commit_diff"),
+    sha: z.string(),
+    directory: z.string().optional(),
+    sessionAgentId: z.string().optional(),
+  }),
   z.discriminatedUnion("context", [
     z.strictObject({
       kind: z.literal("plugin"),

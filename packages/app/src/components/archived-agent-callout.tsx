@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { useCallback, useState } from "react";
 import { View, Text } from "react-native";
 import { useTranslation } from "react-i18next";
@@ -39,7 +40,7 @@ export function ArchivedAgentCallout({ serverId, agentId }: ArchivedAgentCallout
       <View style={styles.inputAreaContainer} dataSet={CHAT_COLUMN_RAIL_DATASET}>
         <View style={styles.inputAreaContent}>
           <View style={styles.calloutStack}>
-            <View style={styles.callout}>
+            <View dataSet={MATERIAL_SLOTS.callout} style={styles.callout}>
               <Text style={styles.calloutText}>{t("agentPanel.archived.callout")}</Text>
               <Button
                 variant="secondary"

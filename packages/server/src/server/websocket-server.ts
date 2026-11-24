@@ -1,3 +1,4 @@
+import type { SessionContextStore } from "./session-context-store.js";
 import {
   ChunkedTransport,
   ChunkedTransportProtocolError,
@@ -33,6 +34,7 @@ import type { AgentManager, AgentMetricsSnapshot } from "./agent/agent-manager.j
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
+import { parseAgentConversationTerminalLink } from "../terminal/codex-fork-terminal.js";
 import type pino from "pino";
 import type { ProjectRegistry, WorkspaceRegistry } from "./workspace-registry.js";
 import type { ProjectUpdate } from "./workspace-reconciliation-service.js";
@@ -722,6 +724,7 @@ export class VoiceAssistantWebSocketServer {
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
     workspaceArchiveOperations?: WorkspaceArchiveOperations,
+    private readonly sessionContexts?: SessionContextStore,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -894,6 +897,19 @@ export class VoiceAssistantWebSocketServer {
   }): void {
     this.speech = params.speech ?? null;
     this.terminalManager = params.terminalManager ?? null;
+    this.agentManager.setExternalRuntimeOwnerResolver(
+      this.terminalManager
+        ? (agentId, terminalId) => {
+            const terminal = this.terminalManager?.getTerminal(terminalId);
+            return (
+              terminal?.linkedAgentId === agentId ||
+              (terminal
+                ? parseAgentConversationTerminalLink(terminal.name)?.agentId === agentId
+                : false)
+            );
+          }
+        : null,
+    );
     if (this.terminalManager) {
       this.unsubscribeTerminalActivity = this.terminalManager.subscribeTerminalActivity((event) => {
         const reason = resolveTerminalAttentionReason({
@@ -1732,6 +1748,7 @@ export class VoiceAssistantWebSocketServer {
       workspaceRegistry: this.workspaceRegistry,
       workspaceBaseBranch: this.workspaceBaseBranch,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
+      sessionContexts: this.sessionContexts,
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -2089,6 +2106,7 @@ export class VoiceAssistantWebSocketServer {
         creationLifecycle: true,
         hubAgentRpc: true,
         backgroundWorkspaces: true,
+        automaticTaskProjects: true,
         // COMPAT(backgroundAgents): added in v0.15.0; remove gate after 2027-05-03.
         backgroundAgents: true,
         workspaceBaseBranch: true,
@@ -2099,7 +2117,10 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(directorySync): added in v0.3.x, remove gate after 2027-02-12.
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
-        ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        ...(this.workspaceLabelService
+          ? { workspaceLabels: true, workspaceLabelCreate: true }
+          : {}),
+        ...(this.sessionContexts ? { sessionContext: true } : {}),
         terminalCollection: true,
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
@@ -2212,12 +2233,26 @@ export class VoiceAssistantWebSocketServer {
         agentForkContext: true,
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: true,
+        // Legacy clients only understand one-way fork semantics and must hide this action.
+        codexForkTerminal: false,
+        // COMPAT(codexConversationViewSwitch): added in the custom fork on 2026-08-13.
+        codexConversationViewSwitch: true,
+        // COMPAT(agentConversationViewSwitch): added in the custom fork on 2026-08-13.
+        agentConversationViewSwitch: true,
+        // COMPAT(codexTerminalImagePaste): added in the custom fork on 2026-08-13.
+        codexTerminalImagePaste: true,
+        // COMPAT(agentSideQuestion): added in the custom fork on 2026-08-21.
+        agentSideQuestion: true,
+        // COMPAT(agentSideChatFork): added in the custom fork on 2026-08-23.
+        agentSideChatFork: true,
+        agentSideChatHistory: true,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: true,
         // COMPAT(agentBackgroundWork): added after v0.11.0-beta.5, remove gate after 2027-04-06.
         agentBackgroundWork: true,
         // COMPAT(agentBackgroundWorkStop): added after v0.15.0, remove after 2027-05-03.
         agentBackgroundWorkStop: true,
+        externalBackgroundWork: true,
         // COMPAT(projectedSubagentTimeline): added after v0.8.0, remove gates after 2027-03-14; retain advertisement.
         projectedSubagentTimeline: true,
         wholeTurnTimeline: true,
@@ -2266,6 +2301,10 @@ export class VoiceAssistantWebSocketServer {
         agentMessageBatching: true,
         // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove gate after 2027-05-22.
         agentActiveTurnBehaviors: true,
+        // COMPAT(agentMessageIfIdle): added in v0.13.0, remove gate after 2027-10-23.
+        agentMessageIfIdle: true,
+        // COMPAT(agentMessageReceiptLookup): added in v0.13.1, remove gate after 2027-10-25.
+        agentMessageReceiptLookup: true,
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
         stableProjectIdentity: true,
         // COMPAT(workspaceScriptManagement): added in v0.1.105, remove gate after 2027-01-10.

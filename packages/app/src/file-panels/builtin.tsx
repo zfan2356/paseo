@@ -26,7 +26,7 @@ function HtmlPanel(props: PluginFilePanelProps) {
 }
 
 /** Shows Loading until the rendered Markdown has laid out once; later edits keep the content. */
-function MarkdownPreview({ text, params, workspaceId, host }: TextFilePreviewProps) {
+function MarkdownPreview({ text, params, revision, workspaceId, host }: TextFilePreviewProps) {
   const client = useSessionStore((state) => state.sessions[host.id]?.client ?? null);
   const workspaceRoot = useWorkspace(workspaceId, (workspace) => workspace.directory);
   const [rendered, setRendered] = useState(false);
@@ -37,6 +37,8 @@ function MarkdownPreview({ text, params, workspaceId, host }: TextFilePreviewPro
         <View onLayout={handleLayout}>
           <FileMarkdownPreview
             source={text}
+            anchor={params.anchor}
+            navigationRevision={revision}
             filePath={params.path}
             workspaceRoot={workspaceRoot ?? ""}
             client={client}

@@ -43,7 +43,7 @@ export type PullRequestOpenLocation = "main" | "side" | "explorer";
 /** What a sidebar workspace row shows in the space to the right of its title. */
 export type SidebarWorkspaceTrailing = "diff" | "timestamp" | "none";
 /** How much of an agent's work the chat shows between the user's message and the reply. */
-export type ChatDisplay = "full" | "collapseToolCalls" | "collapseTurns";
+export type ChatDisplay = "full" | "collapseToolCalls" | "collapseTurns" | "collapseProcess";
 
 const ThemePreferenceSchema = z.enum([
   ...THEME_OPTIONS.map((option) => option.name),
@@ -166,7 +166,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sidebarFooterItems: [],
   usage: DEFAULT_USAGE_PREFERENCES,
   autoExpandReasoning: false,
-  chatDisplay: "collapseTurns",
+  chatDisplay: "collapseProcess",
   chatOutlineEnabled: true,
   vimKeybindings: false,
   sendShortcut: "enter",
@@ -221,6 +221,13 @@ const DEFAULT_STORED_APP_SETTINGS = {
   needsWrite: false,
 } satisfies StoredAppSettingsFallback;
 
+function migrateBaseFontSize(current: number | undefined, legacy: number | undefined): number {
+  return (
+    current ??
+    (legacy === undefined ? DEFAULT_UI_BASE_FONT_SIZE : Math.round((FONT_SIZE.base * legacy) / 16))
+  );
+}
+
 const StoredAppSettingsSchema = z
   .looseObject({
     theme: ThemePreferenceSchema.catch(DEFAULT_THEME_PREFERENCE),
@@ -266,7 +273,12 @@ const StoredAppSettingsSchema = z
     sidebarFooterItems: z.array(z.object({ key: z.string(), visible: z.boolean() })).catch([]),
     usage: UsagePreferencesSchema,
     autoExpandReasoning: z.boolean().catch(false),
-    chatDisplay: z.enum(["full", "collapseToolCalls", "collapseTurns"]).optional().catch("full"),
+    chatDisplay: z
+      .enum(["full", "collapseToolCalls", "collapseTurns", "collapseProcess"])
+      .optional()
+      .catch("collapseProcess"),
+    // COMPAT(forkProcessDisplay): full previously meant process folding; remove after 2027-04-29.
+    chatDisplayVersion: z.literal(1).optional().catch(undefined),
     // COMPAT(toolCallDetailLevel): replaced by chatDisplay in v0.13, remove after 2027-04-24.
     toolCallDetailLevel: z
       .enum(["overview", "detailed"])
@@ -312,13 +324,10 @@ const StoredAppSettingsSchema = z
     const { legacyPullRequestsInSidePane, ...openInSidePane } = stored.openInSidePane;
     const needsWrite =
       contentMaxWidth !== undefined ||
+      (stored.chatDisplay === "full" && stored.chatDisplayVersion === undefined) ||
       (stored.uiBaseFontSize === undefined && stored.uiFontSize !== undefined) ||
       stored.contentFontSize === undefined;
-    const uiBaseFontSize =
-      stored.uiBaseFontSize ??
-      (stored.uiFontSize === undefined
-        ? DEFAULT_UI_BASE_FONT_SIZE
-        : Math.round((FONT_SIZE.base * stored.uiFontSize) / 16));
+    const uiBaseFontSize = migrateBaseFontSize(stored.uiBaseFontSize, stored.uiFontSize);
     const sidebarChecksDisplay =
       stored.sidebarChecksDisplay ??
       (isChecksHiddenByLegacyRowItem(stored.sidebarRowItems)
@@ -327,7 +336,12 @@ const StoredAppSettingsSchema = z
     const groupsToolCalls = stored.toolCallDetailLevel
       ? stored.toolCallDetailLevel === "overview"
       : stored.compactToolCalls === true;
-    const chatDisplay = stored.chatDisplay ?? (groupsToolCalls ? "collapseToolCalls" : "full");
+    const previousDisplay =
+      stored.chatDisplay ?? (groupsToolCalls ? "collapseToolCalls" : "collapseProcess");
+    const chatDisplay =
+      previousDisplay === "full" && stored.chatDisplayVersion === undefined
+        ? "collapseProcess"
+        : previousDisplay;
     return {
       ...stored,
       contentWidth: stored.contentWidth ?? contentMaxWidth ?? "default",
@@ -380,7 +394,7 @@ export async function saveAppSettings(input: {
   const storedCurrent =
     input.queryClient.getQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY) ??
     (await loadAppSettingsFromStorage(input.deps));
-  const current = normalizeAppSettings(storedCurrent);
+  const current = normalizeAppSettings({ ...storedCurrent, chatDisplayVersion: 1 });
   const updates = typeof input.updates === "function" ? input.updates(current) : input.updates;
   const next = { ...current, ...updates };
   input.queryClient.setQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY, next);
@@ -472,6 +486,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     releaseChannel: _releaseChannel,
     compactToolCalls: _compactToolCalls,
     toolCallDetailLevel: _toolCallDetailLevel,
+    chatDisplayVersion: _chatDisplayVersion,
     uiFontSize: _uiFontSize,
     ...settings
   } = StoredAppSettingsSchema.parse(value);
@@ -639,6 +654,7 @@ async function writeAppSettings(
     JSON.stringify({
       ...persistedStored,
       ...settings,
+      chatDisplayVersion: 1,
       sidebarRowItems: { ...storedSidebarRowItems, ...settings.sidebarRowItems },
     }),
   );

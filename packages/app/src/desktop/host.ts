@@ -2,6 +2,8 @@ import { Platform } from "react-native";
 import { getElectronHost } from "@/desktop/electron/host";
 import type { BrowserKeyboardPolicy } from "@/keyboard";
 import type { SessionInboundMessage, SessionOutboundMessage } from "@getpaseo/protocol/messages";
+import type { MenuBarSnapshot } from "../../../desktop/src/features/menu-bar/state";
+import type { MagpieAction } from "../../../desktop/src/features/menu-bar/quotas";
 
 type BrowserAutomationExecuteRequest = Extract<
   SessionOutboundMessage,
@@ -173,6 +175,13 @@ export interface DesktopInvokeBridge {
 }
 
 export interface DesktopHostBridge {
+  menuBar?: {
+    update: (snapshot: MenuBarSnapshot | null) => Promise<void>;
+    onAction?: (
+      handler: (request: { requestId: string; action: MagpieAction }) => void,
+    ) => () => void;
+    actionResult?: (result: { requestId: string; ok: boolean; error?: string }) => void;
+  };
   platform?: string;
   windowChromeMode?: string;
   browserHostLabel?: string;

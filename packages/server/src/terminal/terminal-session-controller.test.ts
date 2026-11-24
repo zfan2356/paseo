@@ -204,12 +204,14 @@ function listSession(input: {
   name: string;
   cwd: string;
   workspaceId?: string;
+  linkedAgentId?: string;
 }): TerminalSession {
   return {
     id: input.id,
     name: input.name,
     cwd: input.cwd,
     workspaceId: input.workspaceId ?? "ws-test",
+    ...(input.linkedAgentId ? { linkedAgentId: input.linkedAgentId } : {}),
     send: vi.fn(),
     subscribe: () => vi.fn(),
     onExit: () => vi.fn(),
@@ -300,6 +302,8 @@ describe("terminal-session-controller legacy terminal creation", () => {
             cwd: terminalCwd,
             workspaceId: "ws-app",
             activity: null,
+            createdAt: null,
+            isScript: false,
           },
           error: null,
           requestId: "req-1",
@@ -359,6 +363,208 @@ describe("terminal-session-controller legacy terminal creation", () => {
     expect(createTerminal).toHaveBeenCalledWith(
       expect.objectContaining({ cwd: "/work/repo", workspaceId: "ws-1", rows: 55, cols: 136 }),
     );
+  });
+
+  test("creates a linked conversation terminal from the server-resolved launch", async () => {
+    const outboundMessages: SessionOutboundMessage[] = [];
+    const createTerminal = vi.fn(
+      async (options: Parameters<TerminalManager["createTerminal"]>[0]) =>
+        listSession({
+          id: options.id ?? "term-conversation",
+          name: options.name ?? "Terminal 1",
+          cwd: options.cwd,
+          workspaceId: options.workspaceId,
+          linkedAgentId: options.linkedAgentId,
+        }),
+    );
+    const terminalManager = {
+      getTerminals: vi.fn(),
+      createTerminal,
+      registerCwdEnv: vi.fn(),
+      validateTerminalActivityToken: vi.fn(() => "unknown"),
+      getTerminal: vi.fn(),
+      getTerminalState: vi.fn(),
+      setTerminalTitle: vi.fn(),
+      setTerminalActivity: vi.fn(),
+      clearTerminalAttention: vi.fn(),
+      killTerminal: vi.fn(),
+      killTerminalAndWait: vi.fn(),
+      captureTerminal: vi.fn(),
+      listDirectories: vi.fn(() => []),
+      killAll: vi.fn(),
+      subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeTerminalActivity: vi.fn(() => vi.fn()),
+      subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
+    } as unknown as TerminalManager;
+    const resolveAgentTerminalLaunch = vi.fn(async () => ({
+      provider: "claude" as const,
+      name: "Claude Code Conversation",
+      command: "claude",
+      args: ["--resume", "session-1"],
+      env: { CLAUDE_CONFIG_DIR: "/tmp/claude-config" },
+    }));
+    const prepareAgentTerminalHooks = vi.fn();
+    const controller = new TerminalSessionController({
+      terminalManager,
+      emit: (message) => outboundMessages.push(message),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+      resolveAgentTerminalLaunch,
+      prepareAgentTerminalHooks,
+      listTerminalWorkspaceRefs: async () => [{ workspaceId: "ws-1", cwd: "/work/repo" }],
+    });
+
+    await controller.dispatch({
+      type: "create_terminal_request",
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+      agentId: "agent-1",
+      requestId: "req-fork",
+    });
+
+    expect(resolveAgentTerminalLaunch).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      terminalId: expect.any(String),
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+    });
+    expect(prepareAgentTerminalHooks).toHaveBeenCalledWith("claude");
+    expect(createTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: "/work/repo",
+        workspaceId: "ws-1",
+        linkedAgentId: "agent-1",
+        name: "__paseo_agent_conversation__:claude:agent-1",
+        command: "claude",
+        args: ["--resume", "session-1"],
+        env: { CLAUDE_CONFIG_DIR: "/tmp/claude-config" },
+      }),
+    );
+    expect(outboundMessages).toContainEqual({
+      type: "create_terminal_response",
+      payload: {
+        terminal: {
+          id: expect.any(String),
+          name: "Claude Code Conversation",
+          cwd: "/work/repo",
+          workspaceId: "ws-1",
+          linkedAgentId: "agent-1",
+          activity: null,
+          createdAt: null,
+          isScript: false,
+        },
+        error: null,
+        requestId: "req-fork",
+      },
+    });
+  });
+
+  test.each([
+    ["agent_terminal.switch_to_agent.request", "agent_terminal.switch_to_agent.response"],
+    ["codex_terminal.switch_to_agent.request", "codex_terminal.switch_to_agent.response"],
+  ] as const)("stops a linked conversation terminal for %s", async (requestType, responseType) => {
+    const outboundMessages: SessionOutboundMessage[] = [];
+    const actions: string[] = [];
+    const terminal = listSession({
+      id: "term-conversation",
+      name: "Cursor Conversation",
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+      linkedAgentId: "agent-1",
+    });
+    const terminalManager = {
+      getTerminal: vi.fn(() => terminal),
+      killTerminalAndWait: vi.fn(async () => {
+        actions.push("terminal-stopped");
+      }),
+    } as unknown as TerminalManager;
+    const resumeAgentFromTerminal = vi.fn(async () => {
+      actions.push("agent-resumed");
+    });
+    const controller = new TerminalSessionController({
+      terminalManager,
+      emit: (message) => outboundMessages.push(message),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+      resumeAgentFromTerminal,
+    });
+
+    await controller.dispatch({
+      type: requestType,
+      terminalId: terminal.id,
+      requestId: "req-switch",
+    });
+
+    expect(actions).toEqual(["terminal-stopped", "agent-resumed"]);
+    expect(resumeAgentFromTerminal).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      terminalId: "term-conversation",
+    });
+    expect(outboundMessages).toContainEqual({
+      type: responseType,
+      payload: {
+        terminalId: "term-conversation",
+        agentId: "agent-1",
+        success: true,
+        error: null,
+        requestId: "req-switch",
+      },
+    });
+  });
+
+  test("resumes a linked Agent before acknowledging a legacy terminal kill", async () => {
+    const outboundMessages: SessionOutboundMessage[] = [];
+    const actions: string[] = [];
+    const terminal = listSession({
+      id: "term-conversation",
+      name: "Claude Code Conversation",
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+      linkedAgentId: "agent-1",
+    });
+    const terminalManager = {
+      getTerminal: vi.fn(() => terminal),
+      killTerminal: vi.fn(),
+      killTerminalAndWait: vi.fn(async () => {
+        actions.push("terminal-stopped");
+      }),
+    } as unknown as TerminalManager;
+    const resumeAgentFromTerminal = vi.fn(async () => {
+      actions.push("agent-resumed");
+    });
+    const controller = new TerminalSessionController({
+      terminalManager,
+      emit: (message) => outboundMessages.push(message),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+      resumeAgentFromTerminal,
+    });
+
+    await controller.dispatch({
+      type: "kill_terminal_request",
+      terminalId: terminal.id,
+      requestId: "req-kill",
+    });
+
+    expect(actions).toEqual(["terminal-stopped", "agent-resumed"]);
+    expect(resumeAgentFromTerminal).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      terminalId: "term-conversation",
+    });
+    expect(outboundMessages).toContainEqual({
+      type: "kill_terminal_response",
+      payload: {
+        terminalId: "term-conversation",
+        success: true,
+        requestId: "req-kill",
+      },
+    });
   });
 });
 
@@ -880,7 +1086,7 @@ describe("terminal-session-controller backpressure snapshot fallback", () => {
         [{ mode: "visible-snapshot", scrollbackLines: 0 }, 0],
         [{ mode: "full-snapshot", scrollbackLines: 0 }, 0],
         [{ mode: "live", scrollbackLines: 0 }, 0],
-        [{ mode: "live" }, 500],
+        [{ mode: "live" }, 0],
         [undefined, 500],
       ] as const) {
         const fixture = await setup(() => 8 * 1024 * 1024, chunked, undefined, restore);

@@ -89,7 +89,7 @@ async function selectWorkspaceTab(tab: Locator): Promise<void> {
 
 /** Reveal the Explorer sidebar without changing its selected view. */
 export async function ensureExplorerSidebar(page: Page): Promise<Locator> {
-  const toggle = page.getByTestId("workspace-explorer-toggle").first();
+  const toggle = page.getByTestId("workspace-explorer-toggle").filter({ visible: true }).first();
   await expect(toggle).toBeVisible({ timeout: 30_000 });
   // Decide from the toggle, which reports the open state. The sidebar's own visibility lags it:
   // a compact layout draws its closed Explorer for a frame before hiding it.

@@ -15,6 +15,7 @@
     "*.lock",
     "**/*.gen.ts",
     "**/*.gen.tsx",
+    "third_party/magpie/**",
     "packages/react-native-enriched-markdown/**"
   ]
 }

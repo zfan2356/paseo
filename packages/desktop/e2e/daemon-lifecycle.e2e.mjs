@@ -1,4 +1,5 @@
 import { verifyAttachedDaemonControls } from "./daemon-lifecycle-renderer.electron.mjs";
+import { runMenuBarRegression } from "./menu-bar.electron.mjs";
 import { once } from "node:events";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, copyFile } from "node:fs/promises";
@@ -86,6 +87,7 @@ async function command(name, args) {
   );
 }
 try {
+  await runMenuBarRegression();
   // A daemon the user started through the CLI, which Desktop must never stop on its own.
   // Older bundled CLIs exported PASEO_DESKTOP_MANAGED, and the CLI launch must not record it.
   const launch = await startDaemonInstance({

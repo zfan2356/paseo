@@ -189,6 +189,67 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+test("side chat list and resume preserve the requested conversation identity", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "side-chat-test",
+    transportFactory: () => mock.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  mock.triggerOpen();
+  await connecting;
+  const listing = client.listAgentSideChats("parent");
+  const listRequest = JSON.parse(assertStr(mock.sent.at(-1))).message;
+  expect(listRequest).toMatchObject({ operation: "list", agentId: "parent" });
+  expect(listRequest.sideAgentId).toBeUndefined();
+  const sideChats = [
+    {
+      sideAgentId: "saved-side",
+      title: "Earlier question",
+      createdAt: "2026-09-10T00:00:00Z",
+      updatedAt: "2026-09-10T00:00:00Z",
+      status: "closed",
+    },
+  ];
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.side_question.ask.response",
+      payload: {
+        requestId: listRequest.requestId,
+        agentId: "parent",
+        sideChats,
+        response: null,
+        error: null,
+      },
+    }),
+  );
+  expect((await listing).sideChats).toEqual(sideChats);
+  const opening = client.openAgentSideChat("parent", "resume-request", {
+    sideAgentId: "saved-side",
+  });
+  expect(JSON.parse(assertStr(mock.sent.at(-1))).message).toMatchObject({
+    operation: "open",
+    agentId: "parent",
+    sideAgentId: "saved-side",
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.side_question.ask.response",
+      payload: {
+        requestId: "resume-request",
+        agentId: "parent",
+        sideAgentId: "saved-side",
+        response: null,
+        error: null,
+      },
+    }),
+  );
+  expect((await opening).sideAgentId).toBe("saved-side");
+});
+
 test("traces WebSocket frames, message types, and JSON parse duration", async () => {
   const mock = createMockTransport();
   const recorder = createTraceRecorder();
@@ -1129,6 +1190,7 @@ test("advertises client capabilities in hello", async () => {
     capabilities: {
       agent_active_turn_behaviors: true,
       all_providers: true,
+      external_background_work: true,
       selective_agent_timeline: true,
       timeline_replacement_invalidation: true,
       provider_snapshot_references: true,
@@ -4464,6 +4526,62 @@ test("metadata needs a host that advertises entityMetadata and sends nothing to 
   await expect(client.setAgentMetadata("agent-1", { key: null })).rejects.toThrow(update);
   await expect(client.setWorkspaceMetadata("workspace-1", { key: null })).rejects.toThrow(update);
   expect(mock.sent).toHaveLength(0);
+});
+
+test("automatic project creation requires host support unless a project is explicit", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "automatic-project-test",
+    transportFactory: () => mock.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { creationLifecycle: true } });
+  await connected;
+  mock.sent.length = 0;
+  await expect(
+    client.createWorkspace({ source: { kind: "directory", path: "/tmp/review" }, automatic: true }),
+  ).rejects.toThrow("Update the host to use automatic task projects.");
+  expect(mock.sent).toHaveLength(0);
+  void client
+    .createWorkspace({
+      source: { kind: "directory", path: "/tmp/review", projectId: "prj_existing" },
+      automatic: true,
+    })
+    .catch(() => undefined);
+  expect(mock.sent.map((frame) => parseSentFrame(frame))).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "workspace.create.request",
+        source: { kind: "directory", path: "/tmp/review", projectId: "prj_existing" },
+      }),
+    ]),
+  );
+});
+
+test("automatic project creation preserves its marker without creation lifecycle support", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "automatic-project-legacy-transport-test",
+    transportFactory: () => mock.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { automaticTaskProjects: true } });
+  await connected;
+  mock.sent.length = 0;
+  void client
+    .createWorkspace({ source: { kind: "directory", path: "/tmp/review" }, automatic: true })
+    .catch(() => undefined);
+  expect(mock.sent.map((frame) => parseSentFrame(frame))).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ type: "workspace.create.request", automatic: true }),
+    ]),
+  );
 });
 
 test("sends internal workspace creation and internal listings only to hosts that support them", async () => {
@@ -8920,6 +9038,178 @@ describe("agent sender active-turn behaviors", () => {
   });
 });
 
+test("idle-only delivery neither falls back to legacy send nor invents an active-turn behavior", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "if-idle",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: {} });
+  await connecting;
+
+  await expect(
+    client.sendAgentMessageIfIdle("agent-1", "notification", { messageId: "message-1" }),
+  ).rejects.toMatchObject({ code: "unsupported_operation" });
+  expect(transport.sent).toHaveLength(0);
+
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "status",
+      payload: {
+        status: "server_info",
+        serverId: "srv_if_idle",
+        features: { agentMessageIfIdle: true },
+      },
+    }),
+  );
+  const accepted = client.sendAgentMessageIfIdle("agent-1", "notification", {
+    messageId: "message-1",
+  });
+  const request = parseSentFrame(transport.sent[0]);
+  expect(request).toMatchObject({
+    type: "agent.message.send_if_idle.request",
+    agentId: "agent-1",
+    text: "notification",
+    messageId: "message-1",
+  });
+  expect(request).not.toHaveProperty("activeTurnBehavior");
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.message.send_if_idle.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "canonical-agent",
+        accepted: true,
+        error: null,
+      },
+    }),
+  );
+  await expect(accepted).resolves.toEqual({ agentId: "canonical-agent" });
+});
+
+test("idle-only delivery surfaces the daemon rejection code", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "if-idle-busy",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: { agentMessageIfIdle: true } });
+  await connecting;
+
+  const result = client.sendAgentMessageIfIdle("agent-1", "notification", {
+    messageId: "message-1",
+  });
+  const request = parseSentFrame(transport.sent[0]);
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.message.send_if_idle.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "agent-1",
+        accepted: false,
+        error: "agent_busy",
+      },
+    }),
+  );
+  await expect(result).rejects.toMatchObject({ code: "agent_busy", message: "agent_busy" });
+});
+
+test("receipt lookup is gated on host capability and sends no delivery payload", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "receipt-lookup",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: {} });
+  await connecting;
+
+  await expect(client.getAgentMessageReceipt("agent-1", "message-1")).rejects.toMatchObject({
+    code: "unsupported_operation",
+  });
+  expect(transport.sent).toHaveLength(0);
+
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "status",
+      payload: {
+        status: "server_info",
+        serverId: "srv_receipt_lookup",
+        features: { agentMessageReceiptLookup: true },
+      },
+    }),
+  );
+  const lookup = client.getAgentMessageReceipt("agent-1", "message-1");
+  const request = parseSentFrame(transport.sent[0]);
+  expect(request).toMatchObject({
+    type: "agent.message.get_receipt.request",
+    agentId: "agent-1",
+    messageId: "message-1",
+  });
+  expect(request).not.toHaveProperty("text");
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.message.get_receipt.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "agent-1",
+        messageId: "message-1",
+        status: "pending",
+        error: null,
+      },
+    }),
+  );
+  await expect(lookup).resolves.toEqual({
+    agentId: "agent-1",
+    messageId: "message-1",
+    status: "pending",
+  });
+});
+
+test("receipt lookup surfaces a daemon error instead of inventing a status", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "receipt-lookup-error",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: { agentMessageReceiptLookup: true } });
+  await connecting;
+
+  const lookup = client.getAgentMessageReceipt("missing", "message-1");
+  const request = parseSentFrame(transport.sent[0]);
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.message.get_receipt.response",
+      payload: {
+        requestId: request.requestId,
+        agentId: "missing",
+        messageId: "message-1",
+        status: null,
+        error: "Agent not found: missing",
+      },
+    }),
+  );
+  await expect(lookup).rejects.toMatchObject({
+    code: "Agent not found: missing",
+    message: "Agent not found: missing",
+  });
+});
+
 test("measures an outbound message in UTF-8 bytes against the daemon's message limit", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({
@@ -9388,6 +9678,101 @@ test("closes before admission when a protected-capable daemon is reached in lega
   // Only the application hello reached the daemon; the queued command never did.
   expect(daemonReceived).toHaveLength(1);
   expect(JSON.parse(daemonReceived[0] as string)).toMatchObject({ type: "hello" });
+});
+
+test("session context gates old hosts before sending and restores owned observations", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "context",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: {} });
+  await connecting;
+  expect(() => client.getSessionContext("one")).toThrow("Update the host");
+  expect(() => client.mutateSessionContext("one", { kind: "pin", pinned: true })).toThrow(
+    "Update the host",
+  );
+  expect(() => client.observeSessionContext("one")).toThrow("Update the host");
+  expect(transport.sent).toEqual([]);
+  transport.triggerClose();
+  const reconnect = client.connect();
+  transport.triggerOpen({ features: { sessionContext: true, ownedSubscriptions: true } });
+  await reconnect;
+  const context = {
+    agentId: "one",
+    launchDirectory: "/repo",
+    projectId: null,
+    pinnedAt: null,
+    sidebarLabelNames: [],
+    linkedDirectories: [],
+    autoLinkDirectories: true,
+    excludedDirectoryPaths: [],
+  };
+  const observation = client.observeSessionContext("one");
+  const request = parseSentFrame(transport.sent.at(-1));
+  expect(request).toMatchObject({
+    type: "agent.context.get.request",
+    agentId: "one",
+    subscribe: {},
+  });
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.context.get.response",
+      payload: { requestId: request.requestId, subscriptionId: "context-1", context },
+    }),
+  );
+  await expect(observation.ready).resolves.toMatchObject({ context });
+  const updates: unknown[] = [];
+  observation.subscribe({ snapshot: () => {}, update: (message) => updates.push(message) });
+  const update = {
+    type: "agent.context.update",
+    payload: { subscriptionId: "context-1", context: { ...context, projectId: "other" } },
+  };
+  transport.triggerMessage(wrapSessionMessage(update));
+  expect(updates).toEqual([update]);
+  let restoredSnapshot!: () => void;
+  const restoration = new Promise<void>((resolve) => {
+    restoredSnapshot = resolve;
+  });
+  observation.subscribe({
+    snapshot: (snapshot) => {
+      if (snapshot.subscriptionId === "context-2") restoredSnapshot();
+    },
+    update: () => {},
+  });
+  transport.triggerClose();
+  const again = client.connect();
+  transport.triggerOpen({ features: { sessionContext: true, ownedSubscriptions: true } });
+  await again;
+  const restored = parseSentFrame(transport.sent.at(-1));
+  expect(restored.type).toBe("agent.context.get.request");
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.context.get.response",
+      payload: { requestId: restored.requestId, subscriptionId: "context-2", context },
+    }),
+  );
+  await restoration;
+  const release = observation.release();
+  await vi.waitFor(() =>
+    expect(parseSentFrame(transport.sent.at(-1)).type).toBe("subscription.release.request"),
+  );
+  const releasing = parseSentFrame(transport.sent.at(-1));
+  expect(releasing).toMatchObject({
+    type: "subscription.release.request",
+    subscriptionId: "context-2",
+  });
+  transport.triggerMessage(
+    wrapSessionMessage({
+      type: "subscription.release.response",
+      payload: { requestId: releasing.requestId, subscriptionId: "context-2", released: true },
+    }),
+  );
+  await release;
 });
 
 test.each([

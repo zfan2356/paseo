@@ -13,6 +13,7 @@ export interface AgentBackgroundWorkInput {
 export interface AgentBackgroundWorkItem extends AgentBackgroundWorkInput {
   startedAt: string;
   stopToken?: string;
+  external?: import("@getpaseo/protocol/messages").AgentExternalBackgroundWorkPayload;
 }
 
 export interface DaemonBackgroundWorkKey {

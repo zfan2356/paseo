@@ -12,6 +12,7 @@ import { pluginOverviewUrl } from "@getpaseo/protocol/plugin-overview";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import type { Theme } from "@/styles/theme";
+import { prepareMathSource } from "./math-source";
 import { isWeb } from "@/constants/platform";
 import { density, resolveDensity } from "@/styles/density";
 import { MarkdownBlockStack } from "./block-stack";
@@ -54,6 +55,8 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
   selectable?: boolean;
   streaming?: boolean;
   onLinkPress?: (url: string) => unknown;
+  /** Return true when a document-specific navigator handled the link. */
+  onNavigateLink?: (url: string) => boolean;
   agentCommands?: boolean;
   /**
    * Author-controlled Markdown from outside this host, such as a plugin README: only its https
@@ -94,6 +97,7 @@ const MarkdownPart = memo(function MarkdownPart({
   selectable = true,
   streaming = false,
   onLinkPress,
+  onNavigateLink,
   agentCommands: _agentCommands,
   external = false,
   commandHints = null,
@@ -108,8 +112,9 @@ const MarkdownPart = memo(function MarkdownPart({
     (environment.client?.readFile
       ? { readFile: environment.client.readFile.bind(environment.client) }
       : undefined);
+  const mathSource = useMemo(() => (isWeb ? prepareMathSource(text) : text), [text]);
   const { markdown, imageSources, linkRecognition, linkSource } = useMarkdownSource(
-    text,
+    mathSource,
     {
       workspaceRoot: environment.workspaceRoot,
       serverId: environment.serverId,
@@ -135,6 +140,7 @@ const MarkdownPart = memo(function MarkdownPart({
       commandHints.insert(command);
       return;
     }
+    if (sourceType === "markdown" && onNavigateLink?.(url)) return;
     const forgeUrl = sourceType === "text" ? forgeShorthand?.resolve(url) : null;
     if (forgeUrl) {
       void openExternalUrl(forgeUrl);

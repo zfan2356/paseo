@@ -28,6 +28,7 @@ import { createMcpHandler } from "@modelcontextprotocol/server";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { AgentManager, type ManagedAgent } from "./agent-manager.js";
 import { AgentStorage, type StoredAgentRecord } from "./agent-storage.js";
+import { formatSystemNotificationPrompt } from "./agent-messages/index.js";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
 import { OmpAgentClient } from "./providers/omp/agent.js";
 import { FakeOmp } from "./providers/omp/test-utils/fake-omp.js";
@@ -117,6 +118,7 @@ interface LooseContentBlock {
 }
 
 interface RegisteredMcpTool {
+  description?: string;
   inputSchema: LooseInputSchema;
   callback?: (
     input: unknown,
@@ -1594,6 +1596,96 @@ describe("create_agent MCP tool", () => {
   });
   const ensureWorkspaceForCreate = async () => "workspace-created";
 
+  it("reads subagent defaults for each creation and preserves explicit overrides", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const getSubagentDefaults = vi.fn(async () => ({
+      model: "configured-child",
+      thinkingOptionId: "high",
+    }));
+    const parent = {
+      id: "parent-agent",
+      provider: "codex",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+      currentModeId: "full-access",
+      config: {},
+      session: { getSubagentDefaults },
+    } as unknown as ManagedAgent;
+    const child = {
+      id: "child-agent",
+      provider: "codex",
+      cwd: existingCwd,
+      lifecycle: "idle",
+      currentModeId: "full-access",
+      availableModes: [],
+      config: {},
+    } as ManagedAgent;
+    spies.agentManager.getAgent.mockImplementation((id: string) =>
+      id === parent.id ? parent : child,
+    );
+    spies.agentManager.createAgent.mockResolvedValue(child);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: parent.id,
+      logger,
+    });
+    const tool = registeredTool(server, "create_agent");
+    const input = { title: "Child", initialPrompt: "Do work" };
+    expect((await tool.inputSchema.safeParseAsync(input)).success).toBe(true);
+    await tool.handler(input);
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      provider: "codex",
+      model: "configured-child",
+      thinkingOptionId: "high",
+    });
+
+    getSubagentDefaults.mockResolvedValue({ model: "updated-child", thinkingOptionId: "low" });
+    await tool.handler(input);
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      model: "updated-child",
+      thinkingOptionId: "low",
+    });
+    await tool.handler({ ...input, provider: "codex/explicit-child" });
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      model: "explicit-child",
+      thinkingOptionId: "low",
+    });
+    await tool.handler({ ...input, settings: { thinkingOptionId: "high" } });
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      model: "updated-child",
+      thinkingOptionId: "high",
+    });
+    getSubagentDefaults.mockClear();
+    await tool.handler({
+      ...input,
+      provider: "claude/other-model",
+      settings: { modeId: "bypassPermissions" },
+    });
+    expect(getSubagentDefaults).not.toHaveBeenCalled();
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      provider: "claude",
+      model: "other-model",
+    });
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0].thinkingOptionId).toBeUndefined();
+    getSubagentDefaults.mockRejectedValue(new Error("configuration unavailable"));
+    const creationCount = spies.agentManager.createAgent.mock.calls.length;
+    await expect(tool.handler(input)).rejects.toThrow("configuration unavailable");
+    expect(spies.agentManager.createAgent).toHaveBeenCalledTimes(creationCount);
+    getSubagentDefaults.mockClear();
+    await tool.handler({
+      ...input,
+      provider: "codex/explicit-child",
+      settings: { thinkingOptionId: "high" },
+    });
+    expect(getSubagentDefaults).not.toHaveBeenCalled();
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      model: "explicit-child",
+      thinkingOptionId: "high",
+    });
+  });
+
   it("requires a concise title no longer than 60 characters", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
@@ -1871,6 +1963,11 @@ describe("create_agent MCP tool", () => {
 
     const parsed = await tool.inputSchema.safeParseAsync(input);
     expect(parsed.success).toBe(true);
+    const invalid = await tool.inputSchema.safeParseAsync({
+      ...input,
+      settings: { features: "invalid" },
+    });
+    expect(invalid.success).toBe(false);
 
     await tool.handler(input);
 
@@ -1883,6 +1980,50 @@ describe("create_agent MCP tool", () => {
       undefined,
       { workspaceId: "workspace-created", background: false },
     );
+  });
+
+  it("treats null provider features as omitted", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.createAgent.mockResolvedValue({
+      id: "feature-null-agent",
+      cwd: REPO_CWD,
+      lifecycle: "idle",
+      currentModeId: null,
+      availableModes: [],
+      config: { title: "Feature null test" },
+    } as ManagedAgent);
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      ensureWorkspaceForCreate,
+      logger,
+    });
+    const tool = registeredTool(server, "create_agent");
+    const input = {
+      ...detachedDirectoryWorkspace(existingCwd),
+      title: "Feature null test",
+      provider: "codex/gpt-5.4",
+      initialPrompt: "Do work",
+      settings: { features: null },
+    };
+
+    const parsed = await tool.inputSchema.safeParseAsync(input);
+    expect(parsed.success).toBe(true);
+
+    await tool.handler(input);
+
+    const createArgs = spies.agentManager.createAgent.mock.calls.at(-1);
+    expect(createArgs?.[0]).toMatchObject({
+      provider: "codex",
+      model: "gpt-5.4",
+    });
+    expect(createArgs?.[0]).not.toHaveProperty("featureValues");
+    expect(createArgs?.[2]).toMatchObject({
+      workspaceId: "workspace-created",
+      background: false,
+    });
   });
 
   it("returns create_agent structured content with full provider modes", async () => {
@@ -4166,6 +4307,143 @@ describe("send_agent_prompt MCP tool", () => {
   const logger = createTestLogger();
   const existingCwd = process.cwd();
 
+  it.each([true, false])(
+    "acknowledges self-directed goal commands without waiting or notifying (background=%s)",
+    async (background) => {
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      spies.agentManager.getAgent.mockReturnValue(
+        createManagedAgent({
+          id: "self-agent",
+          cwd: existingCwd,
+          workspaceId: "wks_parent",
+          lifecycle: "running",
+        }),
+      );
+      spies.agentManager.tryRunOutOfBand.mockReturnValue(true);
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        callerAgentId: "self-agent",
+        logger,
+      });
+      const tool = registeredTool(server, "send_agent_prompt");
+      expect(tool.description).toContain('agentId="self-agent"');
+      expect(tool.description).toContain("explicit user request");
+      const response = await invokeToolWithParsedInput(tool, {
+        agentId: "self-agent",
+        prompt: "/goal pause",
+        background,
+      });
+      expect(response.structuredContent).toMatchObject({
+        success: true,
+        status: "running",
+        lastMessage: null,
+        permission: null,
+        guidance: expect.stringContaining("Dispatch does not confirm"),
+      });
+      expect(spies.agentManager.tryRunOutOfBand).toHaveBeenCalledWith(
+        "self-agent",
+        "/goal pause",
+        undefined,
+      );
+      expect(spies.agentManager.streamAgent).not.toHaveBeenCalled();
+      expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
+    },
+  );
+
+  it("delivers scheduled observer prompts as internal agent context", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const observer = createManagedAgent({
+      id: "observer-agent",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+      labels: { "paseo.schedule-id": "schedule-1", "paseo.schedule-run": "run-1" },
+    });
+    const parent = createManagedAgent({
+      id: "parent-agent",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+    });
+    spies.agentManager.getAgent.mockImplementation((agentId: string) => {
+      if (agentId === observer.id) return observer;
+      if (agentId === parent.id) return parent;
+      return null;
+    });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: observer.id,
+      logger,
+    });
+    const prompt = "Heartbeat observer checked the running job; no duplicate action needed.";
+
+    await invokeToolWithParsedInput(registeredTool(server, "send_agent_prompt"), {
+      agentId: parent.id,
+      prompt,
+      background: true,
+      notifyOnFinish: false,
+    });
+
+    expect(spies.agentManager.streamAgent).toHaveBeenCalledOnce();
+    expect(parseAgentMessage(spies.agentManager.streamAgent.mock.calls[0][1])).toMatchObject({
+      source: { kind: "agent-message", agentId: observer.id },
+      text: prompt,
+    });
+    expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "top-level", callerAgentId: undefined, prompt: "/goal pause" },
+    { name: "self-directed", callerAgentId: "child-agent", prompt: "/goal pause" },
+    {
+      name: "already enveloped",
+      callerAgentId: "parent-agent",
+      prompt: formatSystemNotificationPrompt("Observer update"),
+    },
+  ])(
+    "preserves $name prompt content and authenticated provenance",
+    async ({ callerAgentId, prompt }) => {
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      spies.agentManager.getAgent.mockReturnValue(
+        createManagedAgent({ id: "child-agent", cwd: existingCwd, workspaceId: "wks_parent" }),
+      );
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        callerAgentId,
+        logger,
+      });
+
+      await invokeToolWithParsedInput(registeredTool(server, "send_agent_prompt"), {
+        agentId: "child-agent",
+        prompt,
+        background: true,
+        notifyOnFinish: false,
+      });
+
+      if (callerAgentId) {
+        expect(parseAgentMessage(spies.agentManager.streamAgent.mock.calls[0][1])).toMatchObject({
+          source: { kind: "agent-message", agentId: callerAgentId },
+          text: prompt,
+        });
+      } else {
+        expect(spies.agentManager.tryRunOutOfBand).toHaveBeenCalledWith(
+          "child-agent",
+          prompt,
+          undefined,
+        );
+        expect(spies.agentManager.streamAgent).toHaveBeenCalledWith(
+          "child-agent",
+          prompt,
+          undefined,
+        );
+      }
+    },
+  );
+
   it("defaults agent-scoped prompts to background finish notifications", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const parentAgent = {
@@ -4255,6 +4533,11 @@ describe("send_agent_prompt MCP tool", () => {
 
     await tool.handler(parsed.data as Record<string, unknown>);
 
+    expect(spies.agentManager.streamAgent).toHaveBeenCalledWith(
+      "child-agent",
+      "Follow up",
+      undefined,
+    );
     expect(serverSubscriptionRecords.get(server)!.size).toBe(0);
     expect(spies.agentManager.waitForAgentEvent).not.toHaveBeenCalled();
   });

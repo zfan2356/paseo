@@ -43,12 +43,14 @@ import {
   createInitDeferred,
   rejectInitDeferred,
 } from "@/utils/agent-initialization";
-import { derivePendingPermissionKey } from "@/utils/agent-snapshots";
+import { derivePendingPermissionKey, normalizeAgentSnapshot } from "@/utils/agent-snapshots";
+import { AgentStoreProjection } from "@/runtime/directory-sync/internal/agent-store";
 import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
 import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache";
 import { resyncProviderSubagents, useProviderSubagentStore } from "@/subagents/provider-store";
+import { clearSideChatForParent, restoreSideChatsForServer } from "@/side-chat/lifecycle";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -211,6 +213,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const clearAgentStreamHead = useSessionStore((state) => state.clearAgentStreamHead);
   const setInitializingAgents = useSessionStore((state) => state.setInitializingAgents);
   const setAgents = useSessionStore((state) => state.setAgents);
+  const setAgentDetails = useSessionStore((state) => state.setAgentDetails);
   const flushAgentLastActivity = useSessionStore((state) => state.flushAgentLastActivity);
   const setPendingPermissions = useSessionStore((state) => state.setPendingPermissions);
   const updateSessionServerInfo = useSessionStore((state) => state.updateSessionServerInfo);
@@ -354,6 +357,14 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     }
   }, [flushAgentLastActivity, serverId, isConnected, setInitializingAgents]);
 
+  useEffect(
+    () =>
+      client.subscribeConnectionStatus((connection) => {
+        if (connection.status === "connected") void restoreSideChatsForServer(serverId, client);
+      }),
+    [client, serverId],
+  );
+
   useEffect(() => {
     const setAgentInitializing = createSetAgentInitializing(serverId, setInitializingAgents);
     const onStream = (message: SessionOutboundMessage) => {
@@ -489,6 +500,36 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           if (message.type === type) handler(message);
         },
       });
+
+    const unsubSideChatAgentState = client.on("agent.side_chat.agent_state", (message) => {
+      if (message.type !== "agent.side_chat.agent_state") return;
+      const normalized = normalizeAgentSnapshot(message.payload.agent, serverId);
+      const session = useSessionStore.getState().sessions[serverId];
+      const parent =
+        session?.agents.get(message.payload.parentAgentId) ??
+        session?.agentDetails.get(message.payload.parentAgentId);
+      const agent = {
+        ...normalized,
+        projectPlacement: parent?.projectPlacement,
+      };
+      setAgentDetails(serverId, (current) => {
+        const next = new Map(current);
+        next.set(agent.id, agent);
+        return next;
+      });
+      new AgentStoreProjection(serverId).replacePendingPermissions(agent);
+    });
+
+    const unsubSideChatParentDeleted = client.on("agent_deleted", (message) => {
+      if (message.type === "agent_deleted") {
+        clearSideChatForParent(serverId, message.payload.agentId);
+      }
+    });
+    const unsubSideChatParentArchived = client.on("agent_archived", (message) => {
+      if (message.type === "agent_archived") {
+        clearSideChatForParent(serverId, message.payload.agentId);
+      }
+    });
 
     const unsubAgentAttention = onFeed("agent_attention_required", (message) => {
       if (message.type !== "agent_attention_required") return;
@@ -668,6 +709,9 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       void feeds
         .release()
         .catch((error) => console.warn("[Session] Failed to release feeds", error));
+      unsubSideChatAgentState();
+      unsubSideChatParentDeleted();
+      unsubSideChatParentArchived();
       unsubProviderSubagentUpdate();
       unsubAgentAttention();
       unsubCheckoutStatusUpdate();
@@ -690,6 +734,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     clearAgentStreamHead,
     setInitializingAgents,
     setAgents,
+    setAgentDetails,
     setPendingPermissions,
     notifyAgentAttention,
     updateSessionServerInfo,

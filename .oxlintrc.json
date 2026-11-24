@@ -3,7 +3,11 @@
   "options": {
     "typeAware": false
   },
-  "ignorePatterns": [".dev/**", "packages/react-native-enriched-markdown/**"],
+  "ignorePatterns": [
+    ".dev/**",
+    "third_party/magpie/**",
+    "packages/react-native-enriched-markdown/**"
+  ],
   "plugins": ["react", "react-perf", "unicorn", "typescript", "oxc", "import", "promise"],
   "jsPlugins": ["./scripts/oxlint/paseo-plugin.mjs"],
   "categories": {
@@ -211,6 +215,16 @@
                 "openSync",
                 "rmSync",
                 "writeSync"
+              ],
+              // Legacy worker adoption only: private endpoint/token setup; remove with the NDJSON adapter after old workers drain.
+              "terminal/persistent-terminal-worker-transport.ts": [
+                "chmodSync",
+                "closeSync",
+                "existsSync",
+                "openSync",
+                "readFileSync",
+                "rmSync",
+                "writeFileSync"
               ],
               // Worker startup only: choose and secure the local listening socket before accepting a controller.
               "terminal/terminal-worker-socket-path.ts": ["lstatSync", "mkdirSync"],

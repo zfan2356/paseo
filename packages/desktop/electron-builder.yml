@@ -12,6 +12,7 @@ directories:
   output: release
 files:
   - dist/**/*
+  - assets/menu-barTemplate*.png
   - "!**/*.map"
   - "!node_modules/@getpaseo/*/src/**"
   - "!node_modules/@getpaseo/**/*.test.*"

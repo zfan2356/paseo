@@ -7,6 +7,8 @@ import { Session as InspectorSession } from "node:inspector/promises";
 import type { HeapProfiler } from "node:inspector";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
+import { SIDE_CHAT_PARENT_LABEL } from "@getpaseo/protocol/agent-labels";
+
 import { AgentStorage } from "./agent-storage.js";
 import { buildConfigOverrides, buildSessionConfig } from "../persistence-hooks.js";
 import type { ManagedAgent } from "./agent-manager.js";
@@ -129,6 +131,8 @@ function createManagedAgent(overrides: ManagedAgentOverrides = {}): ManagedAgent
     lastUsage: overrides.lastUsage,
     sessionMetrics: overrides.sessionMetrics,
     lastError: overrides.lastError,
+    labels: overrides.labels ?? {},
+    internal: overrides.internal,
   };
 }
 
@@ -436,6 +440,21 @@ describe("AgentStorage", () => {
     const rewritten = JSON.parse(await fs.readFile(file, "utf8"));
     expect(rewritten.config).not.toHaveProperty("featureValues");
     expect(rewritten).not.toHaveProperty("features");
+  });
+
+  test("applySnapshot restores internal for a side chat whose flag was dropped", async () => {
+    await storage.applySnapshot(
+      createManagedAgent({
+        id: "leaked-side-chat",
+        internal: false,
+        labels: { [SIDE_CHAT_PARENT_LABEL]: "parent-agent" },
+      }),
+    );
+
+    expect(await storage.get("leaked-side-chat")).toMatchObject({
+      internal: true,
+      labels: { [SIDE_CHAT_PARENT_LABEL]: "parent-agent" },
+    });
   });
 
   test("applySnapshot preserves original createdAt timestamp", async () => {
@@ -762,4 +781,49 @@ describe("AgentStorage", () => {
     const after = await afterReload.listAll();
     expect(after.some((r) => r.id === agentId)).toBe(false);
   });
+});
+
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy agent files are rewritten.
+test("loads legacy session links and drops retired fields on disk rewrite", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-retired-links-"));
+  try {
+    const seed = new AgentStorage(dir, createTestLogger());
+    const agent = createManagedAgent({ id: "legacy-agent" });
+    await seed.applySnapshot(agent);
+    const record = await new AgentStorage(dir, createTestLogger()).get(agent.id);
+    const files = await fs.readdir(dir, { recursive: true });
+    const recordPath = path.join(dir, files.find((file) => file.endsWith("legacy-agent.json"))!);
+    await fs.writeFile(
+      recordPath,
+      JSON.stringify({
+        ...record,
+        linkedChangeRequests: [
+          {
+            key: "old",
+            forge: "tgit",
+            host: "tgit.example.org",
+            projectPath: "team/repo",
+            number: 7,
+            url: "https://tgit.example.org/team/repo/merge_requests/7",
+            source: "manual",
+            addedAt: "2026-11-13T00:00:00Z",
+          },
+        ],
+        autoLinkChangeRequests: false,
+        excludedChangeRequestKeys: ["removed"],
+      }),
+    );
+    const storage = new AgentStorage(dir, createTestLogger());
+    expect(await storage.get(agent.id)).toEqual(record);
+    await storage.setTitle(agent.id, "Updated title");
+    expect(JSON.parse(await fs.readFile(recordPath, "utf8"))).toEqual({
+      ...record,
+      title: "Updated title",
+    });
+    await storage.applySnapshot(agent);
+    const restored = new AgentStorage(dir, createTestLogger());
+    expect(await restored.get(agent.id)).toEqual({ ...record, title: "Updated title" });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

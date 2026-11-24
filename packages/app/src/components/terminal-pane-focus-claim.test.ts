@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_FOCUS_CLAIM_STATE,
   canRequestFocusClaim,
+  canRequestPassiveFocusClaim,
   reconcileFocusClaim,
   resolveTerminalResizeClaim,
   settleFocusClaim,
@@ -149,6 +150,20 @@ describe("terminal pane focus claim", () => {
     });
 
     expect([withoutClient, withoutRenderer]).toEqual([false, false]);
+  });
+
+  it("keeps compact terminal viewing passive until direct interaction", () => {
+    const readiness = {
+      isWorkspaceFocused: true,
+      isPaneFocused: true,
+      isAppActivelyVisible: true,
+      isClientReady: true,
+      isConnected: true,
+      isRendererReady: true,
+    };
+
+    expect(canRequestPassiveFocusClaim(readiness, true)).toBe(false);
+    expect(canRequestPassiveFocusClaim(readiness, false)).toBe(true);
   });
 
   it("does not deliver a requested claim after the host disconnects", () => {

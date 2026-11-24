@@ -57,6 +57,8 @@ $PASEO_HOME/
 ├── agents/
 │   └── {sanitized-cwd}/
 │       └── {agentId}.json               # One file per agent
+├── agent-contexts/
+│   └── {agentId}.json                 # Independent session grouping and directory links
 ├── schedules/
 │   └── {scheduleId}.json                # One file per schedule
 ├── projects/
@@ -66,6 +68,9 @@ $PASEO_HOME/
 │   ├── workspace-labels.transaction.json # Recoverable catalog/assignment compound commit
 │   └── icons/                           # Host-local custom project icon images
 ├── runtime/
+│   ├── terminal-worker/
+│   │   ├── auth-token                    # Private daemon-to-worker authentication token
+│   │   └── worker-v{protocol}.sock       # Versioned Unix IPC socket (Windows uses a named pipe)
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
 ├── plugins/
@@ -78,11 +83,31 @@ The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` b
 
 ---
 
+## Session context
+
+Each agent has an independent side file under `agent-contexts/`. Older daemons rewrite agent records through a stripping schema, so session metadata must stay outside those records. Only a missing context file permits initialization. Malformed, inaccessible, or inconsistent files fail explicitly and remain untouched.
+
+Before accepting clients on the first upgraded boot, capture the existing agent IDs and initialize their missing side files. Visible roots inherit workspace pins and label names once; archived/internal sessions and same-workspace children receive empty sidebar metadata. The atomic `.legacy-import-complete` marker closes this cohort only after every file succeeds. An interrupted import retries missing files without overwriting initialized user values. Later boots, new/imported sessions and ordinary missing-file reads initialize only the recorded cwd and workspace project, with no inherited pin or labels. Later workspace edits never enter session metadata. Missing historical cwd information is not reconstructed.
+
+A corrupt or inaccessible context file during the first import prevents daemon startup and identifies the affected agent. Repair that file or its permissions, or restore a valid backup; then retry startup. Keep initialized context files and the cohort marker intact. Deleting either to force a new import can replace independent session metadata with legacy workspace values. An invalid cohort marker also fails explicitly and must be repaired or restored rather than discarded.
+
+Session project membership can point at an existing active project or be explicitly ungrouped. Automatic initial membership and the legacy assignment boundary are defined in the [session navigation design](session-context.md). It does not change workspace membership, workspace identity, execution cwd, or agent titles. Orphaned project references remain readable for a client to repair. The launch directory is immutable; directory links neither own files nor retain worktrees. Directory mutations require absolute paths and normalize them lexically, never by realpath or Git identity. See the [target navigation design](session-context.md).
+
+A daemon-owned serialization boundary protects reads, initialization and mutations, including shared label catalog commits. All context reads go through that boundary. The shared catalog journal includes context before-images when assignments change; a prepared journal rolls back catalog, workspace and context values together. A committed marker is cleanup only and never replays stale values. An uncertain outcome blocks both workspace and context writes until restart. Ordinary workspace assignments read no context files; session assignments read only their target. Only catalog rename/delete enumerate contexts, and an invalid file identifies the session and aborts the operation without overwriting it. Session assignment selects an existing catalog label; label creation, rename and deletion retain the existing host catalog API. Labels left outside the catalog by an old daemon remain readable by name and can always be unassigned; upgrade never guesses an alias or deletes them silently.
+
+Contexts survive daemon downgrade because old versions never read or write their directory. The client delete-agent RPC removes the side file after deleting the agent. Internal failed-creation cleanup and old-daemon deletion can leave an orphan side file; it is not a new session and reads still require the agent to exist. No speculative orphan cleanup runs during startup.
+
+`server_info.features.sessionContext` gates the SDK once per operation and reconnect. `agent.context.get.request` optionally opens a source-owned subscription; `agent.context.mutate.request` changes one context. Only subscribed sources receive `agent.context.update`; a normal legacy connection receives its existing messages. Release/disconnect drops demand, and reconnect obtains a fresh snapshot.
+
+---
+
 ## 1. Agent Record
 
 **Path:** `$PASEO_HOME/agents/{project-dir}/{agentId}.json`
 
 Each agent is stored as a separate JSON file, grouped by project directory.
+Session PR/MR associations belong to [the Multica plugin](plugins.md#session-change-requests).
+Old association fields are ignored on load and dropped when the agent record is rewritten.
 
 | Field                | Type                                     | Description                                                                                                                                                                                                                                                                                                                                                                         |
 | -------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -175,7 +200,9 @@ Each agent is stored as a separate JSON file, grouped by project directory.
 
 ## Runtime-only Terminal Sessions
 
-Terminals are live daemon state, not persisted JSON records. A terminal carries a `workspaceId` while it is running; workspace-scoped terminal lists include only terminals with the matching `workspaceId`. Legacy live terminals without an owner remain visible to unscoped terminal reads but contribute to no workspace status.
+Terminals are live state owned by a detached terminal worker, not persisted JSON records. The daemon attaches to that worker through private local IPC and rebuilds its terminal index before accepting clients. Stopping, restarting, or updating the daemon only detaches it; the worker and its PTYs stay alive until their terminals exit. A machine reboot or terminal-worker failure still ends those sessions.
+
+A terminal carries a `workspaceId` while it is running; workspace-scoped terminal lists include only terminals with the matching `workspaceId`. Legacy live terminals without an owner remain visible to unscoped terminal reads but contribute to no workspace status.
 
 Terminal activity contributes to the workspace status bucket **per `workspaceId`**: a working terminal drives `running` onto the workspace it carries only. Same-`cwd` siblings are untouched; terminal visibility is likewise `workspaceId`-scoped.
 
@@ -565,10 +592,7 @@ These live in React Native `AsyncStorage` or browser `IndexedDB`, not on the dae
 
 ### Keying convention: directory-backed vs workspace-owned
 
-Right-sidebar client state splits on whether it is determined by the directory or owned by the workspace (two workspaces can share one `cwd`). The split is enforced by the cache key, so changing a key changes the sharing semantics — see [architecture.md](architecture.md#right-sidebar-boundary-directory-backed-vs-workspace-owned) for the full table.
-
-- **Directory-backed** (shared by same-`cwd` workspaces): keyed by `(serverId, cwd)`. Git status/diff, GitHub PR status, PR timeline, file preview content. These are TanStack Query caches, not persisted stores.
-- **Workspace-owned** (independent per workspace): keyed by `workspaceId`, with `cwd` used only as a fallback when no `workspaceId` is present. Review draft comments (`@paseo:review-draft-store`), diff-mode overrides (in-memory), workspace composer attachments, and file-explorer nav/expand state. The `workspaceId` part of these keys is **opaque** — never parse it back into a path.
+Shared directory data, session browsing state and workspace resources have separate identities; see [navigation and resource identity](architecture.md#navigation-and-resource-identity). The device-local `session-navigation` record keeps expanded sessions, pinned order and the last explicitly browsed directory per session. It waits for both preference stores and the authoritative agent directory before expanding legacy pinned workspace order into session keys. Existing workspace layouts and terminal identities remain intact.
 
 ### Replica row store
 

@@ -10,7 +10,12 @@ import {
 import { isNative } from "@/constants/platform";
 import { useAppSettings, type ChatDisplay } from "@/hooks/use-settings";
 
-const CHAT_DISPLAYS: readonly ChatDisplay[] = ["full", "collapseToolCalls", "collapseTurns"];
+const CHAT_DISPLAYS: readonly ChatDisplay[] = [
+  "full",
+  "collapseProcess",
+  "collapseToolCalls",
+  "collapseTurns",
+];
 
 export function ChatSection() {
   const { t } = useTranslation();

@@ -453,7 +453,22 @@ export function isOnDefaultBranch(
   return (lookup.currentBranch ?? lookup.headRef) === defaultBranch;
 }
 
+export interface ForgeRepositoryTarget {
+  host: string;
+  projectPath: string;
+  number: number;
+}
+export type ExplicitPullRequestOptions = ForgeRepositoryTarget & { cwd: string };
 export interface ForgeService {
+  getPullRequestStatus?(
+    options: ExplicitPullRequestOptions,
+  ): Promise<CurrentPullRequestStatus | null>;
+  retainPullRequestStatusPoll?(
+    options: ExplicitPullRequestOptions & {
+      onStatus: (status: CurrentPullRequestStatus | null) => void;
+      onError: (error: unknown) => void;
+    },
+  ): { unsubscribe: () => void };
   listPullRequests(options: ListPullRequestsOptions): Promise<PullRequestSummary[]>;
   listIssues(options: ListIssuesOptions): Promise<IssueSummary[]>;
   getPullRequest(options: GetPullRequestOptions): Promise<PullRequestSummary>;
@@ -530,6 +545,7 @@ export interface ForgeService {
   authProbeCanThrow?: boolean;
   retainCurrentPullRequestStatusPoll?(
     options: CurrentPullRequestLookup & {
+      repository?: ForgeRepositoryTarget;
       onStatus?: (status: CurrentPullRequestStatus | null) => void;
       onError?: (error: unknown) => void;
     },

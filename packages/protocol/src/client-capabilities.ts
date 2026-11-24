@@ -55,6 +55,7 @@ export const CLIENT_CAPS = {
   // Sources without it never receive agent-level background agents in inclusive lists or
   // update subscriptions, because older apps auto-open a tab for every replicated root agent.
   backgroundAgents: "background_agents",
+  externalBackgroundWork: "external_background_work",
   browserHost: "browser_host",
   // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove after 2027-05-22 once client floor >= v0.17.2.
   // An agent sender's steer means wait-for-turn-end from clients without it, because older

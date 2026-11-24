@@ -38,6 +38,7 @@ interface TestPaseoDaemonOptions {
   paseoHomeRoot?: string;
   staticDir?: string;
   cleanup?: boolean;
+  preserveTerminalsOnClose?: boolean;
   openai?: PaseoOpenAIConfig;
   // localModelsDir defaults to the local provider's modelsDir, then to a dir under paseoHome.
   speech?: Omit<PaseoSpeechConfig, "localModelsDir"> & { localModelsDir?: string };
@@ -125,7 +126,7 @@ export async function createTestPaseoDaemon(
       }
 
       const close = async (): Promise<void> => {
-        await daemon.stop().catch(() => undefined);
+        await daemon.stop({ keepTerminals: options.preserveTerminalsOnClose === true });
         await daemon.agentManager.flush().catch(() => undefined);
         if (options.cleanup ?? true) {
           await new Promise((r) => setTimeout(r, 50));

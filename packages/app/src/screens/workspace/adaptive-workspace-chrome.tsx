@@ -1,3 +1,4 @@
+import { publishChromeClearance, workspaceChromeSlot } from "@/fork/materials/floating-layout";
 import { useCallback, useState, type ReactNode } from "react";
 import { View, type LayoutChangeEvent } from "react-native";
 import { selectWorkspaceChrome } from "./workspace-tab-layout";
@@ -10,19 +11,22 @@ import type { WorkspaceTabDescriptor } from "./workspace-tabs-types";
  */
 export function AdaptiveWorkspaceChrome({
   compactHeader,
+  materialTab,
   children,
 }: {
   compactHeader: ReactNode | null;
+  materialTab?: { kind: string } | null;
   children: ReactNode;
 }) {
   const [width, setWidth] = useState<number | null>(null);
   const measure = useCallback((event: LayoutChangeEvent) => {
+    publishChromeClearance(event);
     const measured = event.nativeEvent.layout.width;
     if (measured > 0) setWidth(measured);
   }, []);
   return (
     <WorkspaceTabMeasurementScope>
-      <View onLayout={measure}>
+      <View onLayout={measure} dataSet={workspaceChromeSlot(materialTab)}>
         {compactHeader === null
           ? children
           : selectWorkspaceChrome({ width, compact: compactHeader, full: children })}

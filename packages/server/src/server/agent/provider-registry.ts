@@ -71,6 +71,7 @@ export interface ProviderDefinition extends AgentProviderDefinition {
   configuration: Omit<ResolvedProvider, "createBaseClient" | "contract"> | null;
   iconSvg?: string;
   enabled: boolean;
+  runtimeSettings?: ProviderRuntimeSettings;
   /**
    * The id of another *registered* provider this one extends (e.g. a Z.AI
    * profile that extends "claude"). null for built-in providers and for
@@ -437,6 +438,9 @@ function mergeModelAdditions(
 type ForwardedAgentSession = { [K in keyof Required<AgentSession>]: AgentSession[K] };
 
 export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession): AgentSession {
+  const forkForSideChat = inner.forkForSideChat?.bind(inner);
+  const disposeSideChatFork = inner.disposeSideChatFork?.bind(inner);
+
   return {
     provider,
     get id() {
@@ -487,6 +491,17 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
     revertConversation: inner.revertConversation?.bind(inner),
     revertFiles: inner.revertFiles?.bind(inner),
     revertBoth: inner.revertBoth?.bind(inner),
+    forkForSideChat: forkForSideChat
+      ? async () => {
+          const handle = await forkForSideChat();
+          return { ...handle, provider };
+        }
+      : undefined,
+    disposeSideChatFork: disposeSideChatFork
+      ? (handle) => disposeSideChatFork({ ...handle, provider: inner.provider })
+      : undefined,
+    askSideQuestion: inner.askSideQuestion?.bind(inner),
+    getSubagentDefaults: inner.getSubagentDefaults?.bind(inner),
     tryHandleOutOfBand: inner.tryHandleOutOfBand?.bind(inner),
   } satisfies ForwardedAgentSession;
 }
@@ -668,6 +683,7 @@ function createRegistryEntry(
     ...resolved.definition,
     configuration,
     enabled: resolved.enabled,
+    runtimeSettings: resolved.runtimeSettings,
     derivedFromProviderId: resolved.derivedFromProviderId,
     supportsExactMcpPreapproval: resolved.contract.supportsExactMcpPreapproval,
     applyToolPolicy: (config, toolPolicy) => {

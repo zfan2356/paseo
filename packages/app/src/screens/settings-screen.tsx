@@ -1,5 +1,6 @@
 import { useSettingsContentPresented } from "@/navigation/settings-presentation";
 import { AppearanceText as Text } from "@/appearance/text";
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { useHardwareKeyboardPresent } from "@/keyboard";
 import { useAddHost } from "@/hosts/add-host";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -47,6 +48,7 @@ import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
 import { HostPicker as SharedHostPicker } from "@/components/hosts/host-picker";
 import { HostStatusDot } from "@/components/host-status-dot";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
+import { MenuBarQuotaSection } from "@/desktop/components/menu-bar-quota-section";
 import { AppearanceSection } from "@/screens/settings/appearance/appearance-section";
 import { OpenLocationSection } from "@/screens/settings/open-location/open-location-section";
 import { TerminalSection } from "@/screens/settings/terminal/terminal-section";
@@ -1351,6 +1353,13 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
       const item = SIDEBAR_SECTION_ITEMS.find((candidate) => candidate.id === view.section);
       if (!item || !isSectionAvailable(item, isDesktopApp, hardwareKeyboardPresent)) return null;
       switch (view.section) {
+        case "appearance":
+          return (
+            <>
+              <MenuBarQuotaSection />
+              <AppearanceSection />
+            </>
+          );
         case "general":
           return (
             <>
@@ -1431,7 +1440,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
   // region + traffic-light padding; detail pane renders whatever header the
   // selected section provides.
   return (
-    <View style={styles.container} onLayout={onContentLayout}>
+    <View style={styles.container} onLayout={onContentLayout} dataSet={MATERIAL_SLOTS.settings}>
       <View style={desktopStyles.row}>
         <WindowChromeRegion corners="top-left">
           <SettingsSidebar

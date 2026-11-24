@@ -102,7 +102,7 @@ function getFallbackTabOptionDescription(
   if (tab.target.kind === "browser") {
     return labels.browser;
   }
-  if (tab.target.kind === "provider_subagent") {
+  if (tab.target.kind === "provider_subagent" || tab.target.kind === "side_chat") {
     return labels.agent;
   }
   if (tab.target.kind === "commit_diff") {

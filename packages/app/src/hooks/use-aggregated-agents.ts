@@ -104,6 +104,7 @@ export function useAggregatedAgents(options?: {
           backgroundWork: agent.backgroundWork,
           turn: agent.turn,
           lastActivityAt: agent.lastActivityAt,
+          lastError: agent.lastError,
           cwd: agent.cwd,
           workspaceId: agent.workspaceId,
           provider: agent.provider,

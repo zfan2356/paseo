@@ -1,5 +1,6 @@
 import { page, userEvent } from "@vitest/browser/context";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Terminal } from "@xterm/xterm";
 import type { TerminalInputModeState } from "@getpaseo/protocol/terminal-input-mode";
 import type { TerminalFile } from "../file-paste";
 import {
@@ -243,6 +244,34 @@ function getBrowserTerminal(): BrowserTerminal {
   return terminal;
 }
 
+function inspectMountedTerminal(): Terminal {
+  const terminal = window.__paseoTerminal;
+  if (!terminal) {
+    throw new Error("Expected xterm to be exposed for browser test inspection");
+  }
+  return terminal;
+}
+
+function readActiveCell(col: number): {
+  chars: string;
+  bgRgb: boolean;
+  bgColor: number;
+  inverse: number;
+} | null {
+  const terminal = window.__paseoTerminal;
+  const line = terminal?.buffer.active.getLine(terminal.buffer.active.baseY);
+  const cell = line?.getCell(col);
+  if (!cell) {
+    return null;
+  }
+  return {
+    chars: cell.getChars(),
+    bgRgb: cell.isBgRGB(),
+    bgColor: cell.getBgColor(),
+    inverse: cell.isInverse(),
+  };
+}
+
 interface DispatchTerminalKeyInput {
   host: HTMLElement;
   key: string;
@@ -344,6 +373,103 @@ describe("terminal emulator runtime in a real browser", () => {
 
     expect(window.__paseoTerminal).toBe(terminal);
     expect(window.__paseoTerminal?.options.scrollback).toBe(42_000);
+  });
+
+  it("keeps a solid bar caret visible while the pane is unfocused", async () => {
+    await page.viewport(900, 600);
+    createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({
+      predicate: () => window.__paseoTerminal !== undefined,
+    });
+
+    const options = inspectMountedTerminal().options;
+    expect({
+      cursorBlink: options.cursorBlink,
+      cursorStyle: options.cursorStyle,
+      cursorInactiveStyle: options.cursorInactiveStyle,
+      cursorWidth: options.cursorWidth,
+    }).toEqual({
+      cursorBlink: false,
+      cursorStyle: "bar",
+      cursorInactiveStyle: "bar",
+      cursorWidth: 2,
+    });
+  });
+
+  it("paints an Ink inverse-space caret after the hardware cursor is hidden", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    mounted.runtime.write({
+      data: terminalOutput("\x1b[?25lhello\x1b[7m \x1b[27m"),
+    });
+
+    await waitFor({
+      predicate: () => readActiveCell(5)?.bgRgb === true,
+    });
+
+    expect(readActiveCell(5)).toEqual({
+      chars: " ",
+      bgRgb: true,
+      bgColor: 0xe6e6e6,
+      inverse: 0,
+    });
+  });
+
+  it("does not forward Kitty graphics replies as typed input", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+    await nextFrame();
+    await nextFrame();
+
+    mounted.runtime.write({
+      data: terminalOutput("\x1b_Gi=469108283,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\"),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(mounted.inputs.some((value) => value.includes("\x1b_G") || value.includes("_Gi="))).toBe(
+      false,
+    );
+  });
+
+  it("refreshes after the host is hidden with display none and shown again", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    mounted.runtime.write({
+      data: terminalOutput("\x1b[?25lhello\x1b[7m \x1b[27m"),
+    });
+    await waitFor({
+      predicate: () => readActiveCell(5)?.bgRgb === true,
+    });
+
+    const terminal = getBrowserTerminal();
+    const refreshCalls: Array<[number, number]> = [];
+    const originalRefresh = terminal.refresh.bind(terminal);
+    terminal.refresh = (start, end) => {
+      refreshCalls.push([start, end]);
+      originalRefresh(start, end);
+    };
+
+    mounted.root.style.display = "none";
+    await nextFrame();
+    mounted.root.style.display = "block";
+    await waitFor({ predicate: () => refreshCalls.length > 0 });
+
+    expect(refreshCalls.at(-1)).toEqual([0, terminal.rows - 1]);
+    expect(readActiveCell(5)).toEqual({
+      chars: " ",
+      bgRgb: true,
+      bgColor: 0xe6e6e6,
+      inverse: 0,
+    });
   });
 
   it("does not claim PTY ownership from passive mount refits", async () => {
@@ -776,6 +902,26 @@ describe("terminal emulator runtime in a real browser", () => {
     mounted.runtime.replay({ type: "end" });
     expect(reset).not.toHaveBeenCalled();
     await nextFrame();
+  });
+
+  it("hides the host until a long snapshot restore commits", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+
+    await waitFor({ predicate: () => mounted.sizes.length > 0 });
+
+    mounted.runtime.replay({ type: "begin", rows: 4, cols: 16 });
+    mounted.runtime.replay({
+      type: "data",
+      data: terminalOutput(Array.from({ length: 80 }, (_, index) => `OLD${index}\r\n`).join("")),
+    });
+    expect(mounted.host.style.opacity).toBe("0");
+    await nextFrame();
+    expect(mounted.host.style.opacity).toBe("0");
+    mounted.runtime.replay({ type: "data", data: terminalOutput("NOW") });
+    mounted.runtime.replay({ type: "end" });
+    await waitFor({ predicate: () => mounted.host.style.opacity === "" });
+    expect(mounted.host.style.opacity).toBe("");
   });
 
   it("opens OSC 8 hyperlinks the same way as plain-text URLs", async () => {

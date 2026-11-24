@@ -1,3 +1,4 @@
+import { applyClaudeBashResult } from "./bash-result.js";
 import { setImmediate } from "node:timers/promises";
 import { ClaudeResultMeter } from "./metrics.js";
 import { ClaudeRuntimeSafety } from "./runtime-safety.js";
@@ -14,6 +15,8 @@ import stripAnsi from "strip-ansi";
 import { createImportDescriptorScheduler } from "./import-descriptor-scheduler.js";
 import { bypassApprovesAsk } from "./bypass-approval.js";
 import {
+  deleteSession,
+  forkSession,
   type AgentDefinition,
   type CanUseTool,
   type HookCallback,
@@ -88,7 +91,12 @@ import {
 } from "./options.js";
 import { renderPromptAttachmentAsText } from "../../prompt-attachments.js";
 import { discoverClaudeModels, killExitingClaudeModelDiscoveries } from "./model-discovery.js";
-import { claudeQuery, type ClaudeOptions, type ClaudeQueryFactory } from "./query.js";
+import {
+  askClaudeSideQuestion,
+  claudeQuery,
+  type ClaudeOptions,
+  type ClaudeQueryFactory,
+} from "./query.js";
 import {
   findSteeredMessageParent,
   realClaudeRewindSdk,
@@ -139,6 +147,7 @@ import {
   type AgentRunResult,
   type AgentSession,
   type AgentSessionConfig,
+  type AgentSideQuestionResult,
   type AgentSlashCommand,
   type SteerActiveTurnOptions,
   type SteerResult,
@@ -400,6 +409,7 @@ const CLAUDE_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindConversation: true,
   supportsRewindFiles: true,
   supportsRewindBoth: true,
+  supportsSideQuestion: true,
 };
 
 const DEFAULT_MODES: AgentMode[] = [
@@ -3428,6 +3438,31 @@ class ClaudeAgentSession implements AgentSession {
     await this.revertConversation(input);
   }
 
+  async forkForSideChat(): Promise<AgentPersistenceHandle> {
+    await this.ensureQuery();
+    const sessionId = this.claudeSessionId;
+    if (!sessionId) {
+      throw new Error("Claude session is not ready for side chat");
+    }
+    const forked = await forkSession(sessionId, { dir: this.config.cwd });
+    const current = this.describePersistence();
+    return {
+      provider: "claude",
+      sessionId: forked.sessionId,
+      nativeHandle: forked.sessionId,
+      metadata: { ...(current?.metadata ?? this.config) },
+    };
+  }
+
+  async disposeSideChatFork(handle: AgentPersistenceHandle): Promise<void> {
+    await deleteSession(handle.sessionId, { dir: this.config.cwd });
+  }
+
+  async askSideQuestion(input: { question: string }): Promise<AgentSideQuestionResult | null> {
+    const query = await this.ensureQuery();
+    return askClaudeSideQuestion(query, input.question);
+  }
+
   private resolveSlashCommandInvocation(prompt: AgentPromptInput): SlashCommandInvocation | null {
     if (typeof prompt !== "string") {
       return null;
@@ -5281,7 +5316,7 @@ class ClaudeAgentSession implements AgentSession {
       return;
     }
     if (Array.isArray(content)) {
-      await this.appendUserContentArrayEvents(content, messageId, events);
+      await this.appendUserContentArrayEvents(content, messageId, events, message.tool_use_result);
     }
   }
 
@@ -5311,10 +5346,12 @@ class ClaudeAgentSession implements AgentSession {
     content: ReadonlyArray<unknown>,
     messageId: string | undefined,
     events: AgentStreamEvent[],
+    toolResult?: unknown,
   ): Promise<void> {
-    const timelineItems = await this.mapBlocksToTimeline(content, {
+    const mapped = await this.mapBlocksToTimeline(content, {
       textMessageType: "user_message",
     });
+    const timelineItems = applyClaudeBashResult(mapped, content, toolResult);
     for (const item of timelineItems) {
       if (item.type === "user_message" && messageId && !item.messageId) {
         events.push({

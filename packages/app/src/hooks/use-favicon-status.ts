@@ -8,6 +8,8 @@ import { isNative } from "@/constants/platform";
 import { useSessionStore } from "@/stores/session-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import { useHosts } from "@/runtime/host-runtime";
+import { useMenuBarStatus } from "@/desktop/menu-bar/use-menu-bar-status";
+import { useAggregatedAgents } from "./use-aggregated-agents";
 
 type ColorScheme = "dark" | "light";
 
@@ -98,6 +100,8 @@ export function useFaviconStatus() {
   );
   const status = useSessionStore(selectFaviconStatus);
   const dockBadgeCount = useSessionStore(selectMacDockBadgeCount);
+  const { agents } = useAggregatedAgents({ demand: !isNative });
+  useMenuBarStatus(agents);
   const [colorScheme, setColorScheme] = useState<ColorScheme>(getSystemColorScheme);
   const lastDockBadgeCountRef = useRef<number | undefined>(undefined);
 

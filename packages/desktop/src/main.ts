@@ -28,7 +28,6 @@ import {
   protocol,
   screen,
   session,
-  shell,
   webContents,
 } from "electron";
 import { registerDaemonManager } from "./daemon/daemon-manager.js";
@@ -47,6 +46,7 @@ import {
   setupDragDropPrevention,
   buildStandardContextMenuItems,
 } from "./window/window-manager.js";
+import { materialWindowOptions, setupWindowMaterial } from "./fork/materials/window-material.js";
 import { setupDarwinCompositorWatchdog } from "./window/compositor-watchdog/index.js";
 import { reloadWhenRendererExits } from "./window/renderer-recovery.js";
 import { showWindowWhenReady } from "./window/show-when-ready.js";
@@ -56,11 +56,16 @@ import {
   registerNotificationHandlers,
   ensureNotificationCenterRegistration,
 } from "./features/notifications.js";
-import { createExternalUrlOpener } from "./features/opener.js";
+import {
+  createChromeAwareExternalUrlOwner,
+  createExternalUrlOpener,
+  installMainWindowExternalLinkHandling,
+} from "./features/opener.js";
 import { createBrowserCaptureService } from "./features/browser-capture.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { resolveAppIconPath } from "./features/stamped-icon.js";
 import { setupApplicationMenu } from "./features/menu.js";
+import { setupMenuBar } from "./features/menu-bar.js";
 import {
   BROWSER_NEW_TAB_REQUEST_EVENT,
   decideBrowserWindowOpenRequest,
@@ -370,6 +375,7 @@ let pendingAgentNavigation = parseAgentDeepLinkFromArgv(process.argv);
 // in-app "Open in new window" action) land on the right project without
 // racing a global.
 let desktopWindowOwner: DesktopWindowOwner<AgentDeepLinkTarget>;
+let menuBar: ReturnType<typeof setupMenuBar> = null;
 
 if (PASEO_DEBUG) {
   log.info("[open-project] argv:", process.argv);
@@ -708,7 +714,7 @@ async function createWindow(
     title,
     ...resolveWindowBounds(restoredWindowState),
     show: false,
-    backgroundColor: getWindowBackgroundColor(systemTheme),
+    ...materialWindowOptions(getWindowBackgroundColor(systemTheme)),
     ...(iconPath ? { icon: iconPath } : {}),
     ...getMainWindowChromeOptions({
       mode: DESKTOP_WINDOW_CHROME_MODE,
@@ -726,6 +732,8 @@ async function createWindow(
     },
   });
   applyDesktopWindowChromeMode({ win: mainWindow, mode: DESKTOP_WINDOW_CHROME_MODE });
+  setupWindowMaterial(mainWindow, getWindowBackgroundColor(systemTheme));
+  menuBar?.attach(mainWindow);
 
   const webContentsId = mainWindow.webContents.id;
   options.onCreated?.(webContentsId);
@@ -757,6 +765,11 @@ async function createWindow(
   }
   setupDefaultContextMenu(mainWindow);
   setupDragDropPrevention(mainWindow);
+  installMainWindowExternalLinkHandling({
+    window: mainWindow,
+    appScheme: APP_SCHEME,
+    devServerOrigin: app.isPackaged ? null : new URL(DEV_SERVER_URL).origin,
+  });
   mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
     if (!isPaseoBrowserWebviewAttach(params)) {
       event.preventDefault();
@@ -835,10 +848,13 @@ desktopWindowOwner = createDesktopWindowOwner<AgentDeepLinkTarget>({
     });
     return ownedDesktopWindow(win);
   },
-  windows: () => BrowserWindow.getAllWindows().map(ownedDesktopWindow),
+  windows: () =>
+    BrowserWindow.getAllWindows()
+      .filter((win) => !menuBar?.isDashboard(win))
+      .map(ownedDesktopWindow),
   focusedWindow: () => {
     const win = BrowserWindow.getFocusedWindow();
-    if (!win) return null;
+    if (!win || menuBar?.isDashboard(win)) return null;
     return ownedDesktopWindow(win);
   },
   agentRoute: buildAgentDeepLinkRoute,
@@ -986,7 +1002,7 @@ async function bootstrap(): Promise<void> {
   registerWindowManager({ mode: DESKTOP_WINDOW_CHROME_MODE });
   registerDialogHandlers();
   registerNotificationHandlers();
-  const openExternalUrl = createExternalUrlOpener({ open: shell.openExternal });
+  const openExternalUrl = createExternalUrlOpener(createChromeAwareExternalUrlOwner());
   ipcMain.handle("paseo:opener:openUrl", (_event, value: unknown) => openExternalUrl(value));
   registerEditorTargetHandlers();
   registerBrowserAutomationIpc();
@@ -1001,6 +1017,11 @@ async function bootstrap(): Promise<void> {
     await desktopWindowOwner.openAdditional({
       pendingProjectPath: typeof pendingPath === "string" ? pendingPath : null,
     });
+  });
+
+  menuBar = setupMenuBar({
+    onShow: () => desktopWindowOwner.restoreWhenActivated(),
+    onOpenAgent: (target) => desktopWindowOwner.openOrFocusAgent(target),
   });
 
   // The first window of the session restores and persists saved geometry.

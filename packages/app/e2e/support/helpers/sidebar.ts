@@ -1,3 +1,4 @@
+import { openDirectoryResources } from "./workspace-ui";
 import { expect, type Page } from "@playwright/test";
 import { getServerId } from "./server-id";
 import { projectEquivalenceViewKey } from "./project-view-key";
@@ -41,6 +42,7 @@ async function expectContextMenuAtPointer(
 }
 
 export async function openWorkspaceContextMenu(page: Page, workspaceId: string): Promise<void> {
+  await openDirectoryResources(page);
   const workspaceKey = `${getServerId()}:${workspaceId}`;
   const menuTestID = `sidebar-workspace-context-menu-${workspaceKey}`;
   const anchor = await openContextMenuAtRowPoint(
@@ -52,6 +54,7 @@ export async function openWorkspaceContextMenu(page: Page, workspaceId: string):
 }
 
 export async function showWorkspaceHoverCard(page: Page, workspaceId: string): Promise<void> {
+  await openDirectoryResources(page);
   const workspaceKey = `${getServerId()}:${workspaceId}`;
   await page.getByTestId(`sidebar-workspace-row-${workspaceKey}`).hover();
   await expect(page.getByTestId("workspace-hover-card")).toBeVisible();
@@ -67,6 +70,7 @@ export async function focusWorkspaceRowWithKeyboard(
   page: Page,
   workspaceId: string,
 ): Promise<void> {
+  await openDirectoryResources(page);
   const row = page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspaceId}`);
   await row.focus();
   await page.keyboard.press("Shift+Tab");
@@ -75,6 +79,7 @@ export async function focusWorkspaceRowWithKeyboard(
 }
 
 export async function scrollWorkspaceList(page: Page): Promise<void> {
+  await openDirectoryResources(page);
   const list = page.getByTestId("sidebar-project-workspace-list-scroll");
   const before = await list.evaluate((element) => element.scrollTop);
   await list.evaluate((element) =>
@@ -162,6 +167,7 @@ export async function expectWorkspaceContextMenuActions(
 }
 
 export async function openProjectContextMenu(page: Page, projectViewKey: string): Promise<void> {
+  await openDirectoryResources(page);
   const menuTestID = `sidebar-project-context-menu-${projectViewKey}`;
   const anchor = await openContextMenuAtRowPoint(
     page,
@@ -185,6 +191,7 @@ export async function expectProjectContextMenuActions(
 }
 
 export async function selectWorkspaceInSidebar(page: Page, workspaceId: string): Promise<void> {
+  await openDirectoryResources(page);
   const row = page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspaceId}`);
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
@@ -215,6 +222,7 @@ export async function openWorkspaceSidebarKebab(page: Page, workspaceId: string)
 }
 
 export async function expectWorkspaceListed(page: Page, name: string): Promise<void> {
+  await openDirectoryResources(page);
   await expect(
     page.locator('[data-testid^="sidebar-workspace-row-"]').filter({ hasText: name }).first(),
   ).toBeVisible({ timeout: 30_000 });
@@ -260,7 +268,11 @@ export async function expectWorkspaceAbsentFromSidebar(
 // row. Every caller has to walk the same path, so it lives here: when the menu's shape moves
 // again, this is the only place that has to follow.
 export async function openSidebarDisplayPage(page: Page, branchTestID: string): Promise<void> {
-  await page.getByTestId("sidebar-display-preferences-menu").click();
+  await openDirectoryResources(page);
+  await page
+    .getByTestId("workspace-resource-list")
+    .getByTestId("sidebar-display-preferences-menu")
+    .click();
   await page.getByTestId(branchTestID).click();
 }
 

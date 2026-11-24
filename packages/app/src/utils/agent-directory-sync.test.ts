@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { DaemonClient, FetchAgentsEntry } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
@@ -213,6 +213,24 @@ describe("replaceFetchedAgentDirectory", () => {
         new Map([["permission", { key: "permission", agentId, request: null as never }]]),
       );
       store.setInitializingAgents(serverId, new Map([[agentId, true]]));
+      useSessionStore.setState((state) => ({
+        ...state,
+        sessions: {
+          ...state.sessions,
+          [serverId]: {
+            ...state.sessions[serverId]!,
+            focusedAgentId: agentId,
+            agentTasks: new Map([[agentId, []]]),
+            messageSubmissions: new Map([[agentId, []]]),
+            agentTimelineHasOlder: new Map([[agentId, true]]),
+            agentTimelineHasNewer: new Map([[agentId, true]]),
+            agentTimelineOlderFetchInFlight: new Map([[agentId, true]]),
+            agentHistorySyncGeneration: new Map([[agentId, 1]]),
+            agentAuthoritativeHistoryApplied: new Map([[agentId, true]]),
+            fileExplorer: new Map([[agentId, null as never]]),
+          },
+        },
+      }));
       setAgentArchiving({ queryClient, serverId, agentId, isArchiving: true });
 
       const projection = new AgentStoreProjection(serverId);
@@ -227,6 +245,15 @@ describe("replaceFetchedAgentDirectory", () => {
         cursor: session?.agentTimelineCursor.has(agentId),
         permissions: session?.pendingPermissions.size,
         initializing: session?.initializingAgents.has(agentId),
+        focusedAgentId: session?.focusedAgentId,
+        tasks: session?.agentTasks.has(agentId),
+        submissions: session?.messageSubmissions.has(agentId),
+        hasOlder: session?.agentTimelineHasOlder.has(agentId),
+        hasNewer: session?.agentTimelineHasNewer.has(agentId),
+        olderFetch: session?.agentTimelineOlderFetchInFlight.has(agentId),
+        historyGeneration: session?.agentHistorySyncGeneration.has(agentId),
+        authoritativeHistory: session?.agentAuthoritativeHistoryApplied.has(agentId),
+        explorer: session?.fileExplorer.has(agentId),
         archivePending: isAgentArchiving({ queryClient, serverId, agentId }),
       }).toEqual({
         agents: false,
@@ -235,12 +262,37 @@ describe("replaceFetchedAgentDirectory", () => {
         cursor: kind === "directory",
         permissions: 0,
         initializing: false,
+        focusedAgentId: null,
+        tasks: false,
+        submissions: false,
+        hasOlder: kind === "directory",
+        hasNewer: kind === "directory",
+        olderFetch: kind === "directory",
+        historyGeneration: kind === "directory",
+        authoritativeHistory: kind === "directory",
+        explorer: false,
         archivePending: false,
       });
 
       store.clearSession(serverId);
     },
   );
+
+  it("discards a pending activity update when removing an agent", () => {
+    vi.useFakeTimers();
+    const serverId = "server-removal-activity";
+    const agentId = "removed-agent";
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, null as unknown as DaemonClient);
+    store.setAgentLastActivity(agentId, new Date("2026-07-27T10:00:00.000Z"));
+
+    new AgentStoreProjection(serverId).remove(agentId);
+    vi.runAllTimers();
+
+    expect(useSessionStore.getState().agentLastActivity.has(agentId)).toBe(false);
+    store.clearSession(serverId);
+    vi.useRealTimers();
+  });
 
   it("keeps newer metadata while accepting usage-only updates and legacy workspace ownership", () => {
     const serverId = "server-usage";

@@ -23,6 +23,11 @@ import {
   AgentActiveTurnBehaviorSchema,
   AgentProfileSchema,
 } from "@getpaseo/protocol/messages";
+import { resolveSubagentSelection } from "./subagent-defaults.js";
+import {
+  goalControlToolDescription,
+  OUT_OF_BAND_COMMAND_GUIDANCE,
+} from "../providers/codex/goal-control.js";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import { featuresFromControls } from "@getpaseo/protocol/option-controls";
 import {
@@ -1115,8 +1120,10 @@ function createToolCatalog(
       thinkingOptionId: z.string().optional().describe("Thinking option ID."),
       features: z
         .record(z.string(), z.unknown())
-        .optional()
-        .describe("Provider-specific feature values, for example { fast_mode: true } for Codex."),
+        .nullish()
+        .describe(
+          "Provider-specific feature values, for example { fast_mode: true } for Codex. Omit when no override is needed; null is treated as omitted.",
+        ),
     })
     .strict();
   const UpdateAgentSettingsInputSchema = z
@@ -1199,9 +1206,14 @@ function createToolCatalog(
       .min(1, "Title is required")
       .max(60, "Title must be 60 characters or fewer")
       .describe("Short descriptive title (<= 60 chars) summarizing the agent's focus."),
-    provider: ProviderModelInputSchema.describe(
-      "Required provider/model pair, for example codex/gpt-5.4.",
-    ),
+    provider:
+      scope === "agent"
+        ? ProviderModelInputSchema.optional().describe(
+            "Optional provider/model override. Omit to use the caller provider's configured subagent defaults.",
+          )
+        : ProviderModelInputSchema.describe(
+            "Required provider/model pair, for example codex/gpt-5.4.",
+          ),
     labels: z.record(z.string(), z.string()).optional().describe("Labels to set on the agent"),
     settings: CreateAgentSettingsInputSchema.optional().describe(
       "Initial runtime settings for the new agent.",
@@ -1277,8 +1289,8 @@ function createToolCatalog(
       .describe("Legacy thinking option ID. Prefer settings.thinkingOptionId."),
     features: z
       .record(z.string(), z.unknown())
-      .optional()
-      .describe("Legacy feature values. Prefer settings.features."),
+      .nullish()
+      .describe("Legacy feature values. Prefer settings.features. Null is treated as omitted."),
   };
   const createAgentInputSchema = z
     .object(scope === "agent" ? agentToAgentInputSchema : canonicalTopLevelInputSchema)
@@ -1620,7 +1632,7 @@ function createToolCatalog(
     {
       title: "Create agent",
       description:
-        "Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Top-level creation without workspaceId creates a new local workspace. Requires provider/model (for example codex/gpt-5.4) and an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Do not guess; call list_providers and list_models first if uncertain.",
+        "Create an agent, including a cross-provider or cross-harness subagent such as a Codex child from a Claude or Gemini parent. Agent-scoped creation defaults to your workspace and creates your subagent. Omit provider and settings.thinkingOptionId to use the caller provider's configured subagent defaults; specify them only to override those defaults. Top-level creation requires provider/model (for example codex/gpt-5.4) and creates a new local workspace when workspaceId is omitted. Requires an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Omit settings.features when no feature override is needed. Do not send null for feature overrides. Do not guess; call list_providers and list_models first if uncertain.",
       inputSchema: createAgentInputSchema,
       outputSchema: {
         agentId: z.string(),
@@ -1642,7 +1654,13 @@ function createToolCatalog(
       } else {
         notifyOnFinish = resolvedArgs.parsedArgs.notifyOnFinish ?? false;
       }
-      const selectedProvider = resolveRequiredProviderModel(parsedArgs.provider).provider;
+      const { provider, thinkingOptionId } = await resolveSubagentSelection({
+        caller: resolveCallerAgent(),
+        detached: resolvedArgs.detached,
+        provider: parsedArgs.provider,
+        thinkingOptionId: parsedArgs.settings?.thinkingOptionId,
+      });
+      const selectedProvider = resolveRequiredProviderModel(provider).provider;
       const inheritedConfig = resolveInheritedProviderConfig(selectedProvider);
       const { snapshot, initialPromptStarted } = await createAgentCommand(
         {
@@ -1661,14 +1679,14 @@ function createToolCatalog(
         },
         {
           kind: "mcp",
-          provider: parsedArgs.provider,
+          provider,
           title: parsedArgs.title,
           initialPrompt: parsedArgs.initialPrompt,
           config: inheritedConfig,
           cwd: resolvedArgs.cwd,
           workspaceId: resolvedArgs.workspaceId,
-          thinking: parsedArgs.settings?.thinkingOptionId,
-          providerOptions: parsedArgs.settings?.features,
+          thinking: thinkingOptionId,
+          providerOptions: parsedArgs.settings?.features ?? undefined,
           labels: {
             ...parsedArgs.labels,
             ...(callerAgentId && !resolvedArgs.detached && options.serverId
@@ -1973,6 +1991,25 @@ function createToolCatalog(
     );
   }
 
+  async function dispatchSelfCommand(agentId: string, prompt: string) {
+    if (
+      callerAgentId !== agentId ||
+      !(await agentManager.tryRunOutOfBand(agentId, prompt, undefined))
+    )
+      return null;
+    return {
+      content: [],
+      structuredContent: {
+        success: true,
+        disposition: "out_of_band",
+        status: agentManager.getAgent(agentId)?.lifecycle ?? "idle",
+        lastMessage: null,
+        permission: null,
+        guidance: OUT_OF_BAND_COMMAND_GUIDANCE,
+      },
+    };
+  }
+
   const PROMPTED_AGENT_NOTIFICATION_GUIDANCE =
     "You will get notified when the prompted agent finishes, errors, or needs permission. Do not poll for status; continue with other work until the notification arrives.";
 
@@ -1981,9 +2018,10 @@ function createToolCatalog(
     {
       title: "Send agent prompt",
       description:
-        scope === "agent"
+        (scope === "agent"
           ? "Send a message to another agent. The response returns at once. Its guidance says whether the message waits for the running turn to end, joins it, or interrupts it, and how to deliver a waiting message now. Leave activeTurnBehavior out unless the message cannot wait. The recipient reads your messages in the order you sent them. A steer the recipient has not read is lost if its turn stops or is interrupted, along with the messages it carried. Completion reports include the target’s last response by default. Paseo supplies caller identity."
-          : "Send a prompt to an agent. A running turn is interrupted unless activeTurnBehavior is steer.",
+          : "Send a prompt to an agent. A running turn is interrupted unless activeTurnBehavior is steer.") +
+        goalControlToolDescription(callerAgentId),
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
         success: z.boolean(),
@@ -2005,17 +2043,16 @@ function createToolCatalog(
       if (callerAgentId && !agentManager.getAgent(agentId) && !(await agentStorage.get(agentId))) {
         throw new PaseoToolInputError(`Agent ${agentId} not found`);
       }
-      const notifying = Boolean(callerAgentId && notifyOnFinish);
-      const notification =
-        notifying && callerAgentId
-          ? await (() => {
-              if (!options.finishSubscriptions)
-                throw new Error("Finish subscriptions are not configured");
-              return options
-                .finishSubscriptions()
-                .register({ childAgentId: agentId, callerAgentId }, true);
-            })()
-          : undefined;
+      const command = await dispatchSelfCommand(agentId, prompt);
+      if (command) return command;
+      const notifyCallerId =
+        notifyOnFinish && callerAgentId !== agentId ? callerAgentId : undefined;
+      const notification = notifyCallerId
+        ? await finishSubscriptions().register(
+            { childAgentId: agentId, callerAgentId: notifyCallerId },
+            true,
+          )
+        : undefined;
       function confirmDispatch(_disposition: PromptDispatchDisposition): void {
         notification?.accept();
       }
@@ -2061,7 +2098,7 @@ function createToolCatalog(
             messageId: receipt.messageId,
             activeTurnBehavior: receipt.activeTurnBehavior,
             status: agentManager.getAgent(agentId)?.lifecycle ?? "idle",
-            guidance: notifying
+            guidance: notifyCallerId
               ? `${receipt.guidance} ${PROMPTED_AGENT_NOTIFICATION_GUIDANCE}`
               : receipt.guidance,
           },
@@ -2074,7 +2111,6 @@ function createToolCatalog(
         agentStorage,
         agentId,
         prompt,
-        source: callerAgentId ? { kind: "agent-message", agentId: callerAgentId } : undefined,
         sessionMode,
         activeTurnBehavior,
         onDispatch: confirmDispatch,
@@ -2099,13 +2135,16 @@ function createToolCatalog(
       }
       const currentSnapshot = agentManager.getAgent(agentId);
 
+      const completionGuidance = notifyCallerId
+        ? PROMPTED_AGENT_NOTIFICATION_GUIDANCE
+        : "Dispatch acknowledged. Observe completion using get_agent_status/get_agent_activity or SDK/RPC subscriptions and wait APIs.";
       const responseData = {
         success: true,
         disposition,
         status: currentSnapshot?.lifecycle ?? "idle",
-        guidance: notifying
-          ? PROMPTED_AGENT_NOTIFICATION_GUIDANCE
-          : "Dispatch acknowledged. Observe completion using get_agent_status/get_agent_activity or SDK/RPC subscriptions and wait APIs.",
+        lastMessage: null,
+        permission: null,
+        guidance: disposition === "out_of_band" ? OUT_OF_BAND_COMMAND_GUIDANCE : completionGuidance,
       };
       const validJson = ensureValidJson(responseData);
 

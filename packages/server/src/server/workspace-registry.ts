@@ -144,6 +144,7 @@ export interface ProjectRegistry {
   get(projectId: string): Promise<PersistedProjectRecord | null>;
   getOrCreateActiveByRoot(input: {
     rootPath: string;
+    reuseArchived?: boolean;
     kind: PersistedProjectKind;
     displayName: string;
     projectKey?: string;
@@ -418,6 +419,7 @@ export class FileBackedProjectRegistry
 
   async getOrCreateActiveByRoot(input: {
     rootPath: string;
+    reuseArchived?: boolean;
     kind: PersistedProjectKind;
     displayName: string;
     projectKey?: string;
@@ -430,19 +432,27 @@ export class FileBackedProjectRegistry
     try {
       const active = (await this.list())
         .filter(
-          (project) => !project.archivedAt && areEquivalentPaths(project.rootPath, input.rootPath),
+          (project) =>
+            (input.reuseArchived || !project.archivedAt) &&
+            areEquivalentPaths(project.rootPath, input.rootPath),
         )
         .sort(
           (left, right) =>
+            Number(Boolean(left.archivedAt)) - Number(Boolean(right.archivedAt)) ||
             Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
             left.projectId.localeCompare(right.projectId),
         )[0];
       if (active) {
-        if (active.kind === input.kind && active.projectKey === (input.projectKey ?? null))
+        if (
+          !active.archivedAt &&
+          active.kind === input.kind &&
+          active.projectKey === (input.projectKey ?? null)
+        )
           return active;
         const refreshed = {
           ...active,
           kind: input.kind,
+          archivedAt: null,
           projectKey: input.projectKey ?? null,
           updatedAt: input.timestamp,
         };

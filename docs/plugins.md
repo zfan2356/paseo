@@ -6,6 +6,13 @@ Paseo executes `index.server.ts` in a subprocess and `index.client.tsx` in every
 
 > **Trust every plugin you add.** `paseo plugin add` and `paseo plugin install` mean “I trust this codebase.” Plugins are unsandboxed: server code and preparation commands run with the daemon user's access on the daemon host, and client contributions run inside Paseo. The repository's dependencies and future updates are part of that trust decision. With `--host`, preparation runs on that remote daemon host.
 
+## Session change requests
+
+Multica owns session PR/MR associations on its issues. Use the paseo-multica
+plugin panel to view them; Paseo no longer stores or collects session links.
+Workspace PR tabs and `forge_change_request` prompt attachments remain separate
+Paseo features.
+
 ## Install a directory source
 
 Create a typecheckable plugin project, install its development dependencies, then install it into
@@ -603,6 +610,30 @@ owns author workflow, lifecycle, testing, and distribution guidance.
 It must resolve inside that directory to a regular file that passes the shared SVG icon rules
 (see [Plugin icons](#plugin-icons)). Paseo reads and validates the file when the plugin starts; the
 string is never inline SVG or a URL.
+
+## Background work sources
+
+Use `server.registerBackgroundWorkSource` for work owned outside an agent provider. Return a complete
+host snapshot from `fetch({ paseo })`, with each entry addressed to an existing Paseo agent ID.
+Resolve ownership from the external system's frozen return address; titles, current assignees and
+provider session pins do not establish a Paseo address.
+
+The daemon fetches immediately and every five seconds, including when no app is connected. Each
+installation/source owns its inventory independently of provider updates. A failed fetch retains the
+previous snapshot, marks it stale and revokes stop tokens. Return `unavailable` with a safe, actionable
+message for missing configuration or capabilities; return an empty ready snapshot only after a
+successful complete read. Do not include credentials, full argv, output or log paths.
+
+The daemon authorizes stop requests using the host's existing background-work permissions before
+calling `stop(entry, { paseo })`. Recheck the external target there and cancel only the owned local
+wait. The UI keeps terminal entries until the source removes them, so a source can retain an ended
+wait until its delivery is handled. Use null for unknown times; observation time is not start time.
+A crashed plugin retains stale inventory and revokes controls. Explicit disable or removal revokes
+its inventory without stopping external work. A reloaded
+instance must reconstruct from the external authority.
+
+Old clients receive provider inventory only. New clients declare `external_background_work` and
+require `server_info.features.externalBackgroundWork` for the external source contract.
 
 ## Usage sources
 

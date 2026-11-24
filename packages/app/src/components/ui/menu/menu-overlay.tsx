@@ -316,6 +316,7 @@ export function AnchoredSurface({
   const surfaceDataSet = useMemo(
     () => ({
       menuSurface: "true",
+      material: "menu",
       ...(keyboardFocusScope ? { keyboardScope: keyboardFocusScope } : null),
     }),
     [keyboardFocusScope],

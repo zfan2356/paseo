@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { PressHighlight } from "@/components/ui/press-highlight";
-import { DEFAULT_THEME_PREFERENCE, useAppSettings, type AppSettings } from "@/hooks/use-settings";
+import { useAppSettings, type AppSettings } from "@/hooks/use-settings";
 import type { PluginThemeOption } from "@/plugins/themes";
 import {
   THEME_OPTIONS,
@@ -14,6 +14,8 @@ import {
   type Theme,
 } from "@/styles/theme";
 import { useContributedThemes } from "./provider";
+import { resolveThemeSelection } from "./theme-selection";
+import { CODEX_THEME_ID } from "../../../../plugins/codex-theme/shared/palette";
 
 type BuiltInThemePreference = Exclude<AppSettings["theme"], typeof PLUGIN_THEME_PREFERENCE>;
 
@@ -34,8 +36,11 @@ export function ThemePicker() {
   const { settings, updateSettings } = useAppSettings();
   const { options: pluginThemes, selected: selectedPluginTheme, select } = useContributedThemes();
   // A selected contribution that is no longer installed shows the fallback the app renders.
-  const builtInValue =
-    settings.theme === PLUGIN_THEME_PREFERENCE ? DEFAULT_THEME_PREFERENCE : settings.theme;
+  const builtInValue = resolveThemeSelection(settings).fallbackPreference;
+  const themeOptions = PICKER_THEME_OPTIONS.filter(
+    (option) =>
+      option.name !== "codex" || !pluginThemes.some((theme) => theme.id === CODEX_THEME_ID),
+  );
 
   const selectBuiltIn = useCallback(
     (theme: BuiltInThemePreference) => {
@@ -50,7 +55,7 @@ export function ThemePicker() {
       accessibilityRole="radiogroup"
       accessibilityLabel={t("settings.appearance.theme.title")}
     >
-      {PICKER_THEME_OPTIONS.map((option) => (
+      {themeOptions.map((option) => (
         <BuiltInThemeTile
           key={option.name}
           value={option.name}

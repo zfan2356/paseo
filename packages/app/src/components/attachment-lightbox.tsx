@@ -1,3 +1,4 @@
+import { MATERIAL_SLOTS } from "@/fork/materials/slots";
 import { useOverlayRegistration, type KeyboardInputEvent } from "@/keyboard";
 import { Modal } from "@/components/ui/modal";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
@@ -90,7 +91,7 @@ export function AttachmentLightbox({ source, onClose }: AttachmentLightboxProps)
             where the image was opened (inside a sheet tab, the bottom one is already spent). */}
         <WindowSafeArea>
           <WindowChromeRootRegion corners="both">
-            <View ref={setOverlayScope} style={styles.root}>
+            <View dataSet={MATERIAL_SLOTS.fullscreen} ref={setOverlayScope} style={styles.root}>
               <Pressable
                 testID="attachment-lightbox-backdrop"
                 accessibilityRole="button"

@@ -87,6 +87,13 @@ export function canRequestFocusClaim(input: FocusClaimReadiness): boolean {
   );
 }
 
+export function canRequestPassiveFocusClaim(
+  input: FocusClaimReadiness,
+  isCompact: boolean,
+): boolean {
+  return !isCompact && canRequestFocusClaim(input);
+}
+
 export function reconcileFocusClaim(
   state: FocusClaimState,
   input: { key: string | null; canRequest: boolean },

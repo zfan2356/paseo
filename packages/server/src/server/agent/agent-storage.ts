@@ -12,6 +12,7 @@ import {
   AgentStatusSchema,
 } from "../messages.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
+import { getSideChatParentId } from "./side-chat-history.js";
 import type { ManagedAgent } from "./agent-manager.js";
 import type { AgentSessionConfig } from "./agent-sdk-types.js";
 import { AgentOwnerSchema, daemonExecutionKey, type DaemonAgentOwner } from "./agent-owner.js";
@@ -51,6 +52,8 @@ const PERSISTENCE_HANDLE_SCHEMA = z
   .nullable()
   .optional();
 
+// COMPAT(sessionChangeRequests): retired after v0.15.3; remove after 2027-05-17 once legacy agent files are rewritten.
+// Zod strips the retired association fields when loading old records.
 const RAW_STORED_AGENT_SCHEMA = z.object({
   id: z.string(),
   provider: z.string(),
@@ -310,15 +313,18 @@ export class AgentStorage {
     mutate: (existing: StoredAgentRecord | null) => StoredAgentRecord,
   ): Promise<void> {
     const prev = this.pendingWrites.get(agentId) ?? Promise.resolve();
-    const next = prev.then(async () => {
-      if (this.deleting.has(agentId)) {
-        return undefined;
-      }
+    // A failed mutation belongs to its caller; it must not cancel later queued snapshots.
+    const next = prev
+      .catch(() => undefined)
+      .then(async () => {
+        if (this.deleting.has(agentId)) {
+          return undefined;
+        }
 
-      const record = mutate(this.cache.get(agentId) ?? null);
-      await this.writeRecord(record);
-      return undefined;
-    });
+        const record = mutate(this.cache.get(agentId) ?? null);
+        await this.writeRecord(record);
+        return undefined;
+      });
 
     const tracked = next.finally(() => {
       if (this.pendingWrites.get(agentId) === tracked) {
@@ -409,10 +415,17 @@ export class AgentStorage {
     const hasInternalOverride =
       options !== undefined && Object.prototype.hasOwnProperty.call(options, "internal");
     await this.queueRecordMutation(agent.id, (existing) => {
+      let internal = agent.internal ?? existing?.internal;
+      if (hasInternalOverride) {
+        internal = options?.internal;
+      }
+      if (getSideChatParentId(agent) != null) {
+        internal = true;
+      }
       const record = toStoredAgentRecord(agent, {
         title: hasTitleOverride ? (options?.title ?? null) : (existing?.title ?? null),
         createdAt: existing?.createdAt,
-        internal: hasInternalOverride ? options?.internal : (agent.internal ?? existing?.internal),
+        internal,
       });
 
       // Preserve soft-delete/archive status across snapshot flushes. The

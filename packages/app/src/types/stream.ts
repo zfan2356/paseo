@@ -9,6 +9,7 @@ import type {
 import { timelineItemIdentity } from "@getpaseo/protocol/timeline-identity";
 import type { AgentAttachment, AgentStreamEventPayload } from "@getpaseo/protocol/messages";
 import type { AttachmentMetadata } from "@/attachments/types";
+import type { AgentReport } from "@/agent-stream/agent-reports/model";
 import type { OverviewSummary } from "@/tool-calls/detail-level/overview/model";
 import { stampCompletedTurnMetrics } from "@/timeline/turn-metrics";
 import { extractTaskEntriesFromToolCall } from "../utils/tool-call-parsers";
@@ -97,6 +98,7 @@ export type UserMessageImageAttachment = AttachmentMetadata;
 export interface UserMessageItem {
   /** Attribution added by presentation for received agent messages. */
   sender?: AgentMessage["sender"];
+  agentReport?: AgentReport;
   kind: "user_message";
   id: string;
   clientMessageId?: string;
@@ -849,6 +851,7 @@ export interface TurnSummaryItem {
   hostId: string;
   expanded: boolean;
   tools: OverviewSummary;
+  process?: { active: boolean; hasError: boolean; stepCount: number };
 }
 
 export interface TodoEntry {

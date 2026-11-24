@@ -8,6 +8,8 @@ import { createTempDirectory, createTempGitRepo } from "./workspace";
 export interface SeedWorkspaceDescriptor {
   id: string;
   name: string;
+  pinnedAt?: string | null;
+  archivingAt?: string | null;
   projectId: string;
   projectDisplayName: string;
   projectRootPath: string;
@@ -28,6 +30,17 @@ interface SeedProjectDescriptor {
  * prefer those wrappers over reaching for this client directly.
  */
 export interface SeedDaemonClient {
+  getSessionContext(
+    agentId: string,
+  ): Promise<{ context: import("@getpaseo/protocol/session-context").SessionContext }>;
+  listWorkspaceLabels(): Promise<{
+    labels: import("@getpaseo/protocol/workspace-labels").WorkspaceLabelDefinition[];
+  }>;
+
+  mutateSessionContext(
+    agentId: string,
+    mutation: import("@getpaseo/protocol/session-context").SessionContextMutation,
+  ): Promise<{ context: import("@getpaseo/protocol/session-context").SessionContext }>;
   patchDaemonConfig(
     config: import("@getpaseo/protocol/messages").MutableDaemonConfigPatch,
   ): Promise<{ config: import("@getpaseo/protocol/messages").MutableDaemonConfig }>;
@@ -102,8 +115,10 @@ export interface SeedDaemonClient {
       id: string;
       name: string;
       cwd: string;
+      linkedAgentId?: string;
       title?: string;
       activity?: TerminalActivity | null;
+      capabilities?: { imagePaste?: boolean };
     }>;
     error?: string | null;
   }>;
