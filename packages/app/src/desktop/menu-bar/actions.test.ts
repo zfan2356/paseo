@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   online: true,
   invoke: vi.fn(),
+  catalog: vi.fn(),
+  nativeRefresh: vi.fn(),
   setQueryData: vi.fn(),
   push: vi.fn(),
 }));
@@ -10,11 +12,12 @@ vi.mock("expo-router", () => ({ router: { push: state.push } }));
 vi.mock("@/runtime/host-runtime", () => ({
   getHostRuntimeStore: () => ({
     getHosts: () => [{ serverId: "host", label: "devcloud" }],
-    getClient: () => ({ invokePluginRpc: state.invoke }),
+    getClient: () => ({ invokePluginRpc: state.invoke, getPluginCatalog: state.catalog }),
     getSnapshot: () => ({ connectionStatus: state.online ? "online" : "offline" }),
   }),
 }));
 vi.mock("@/data/query-client", () => ({ queryClient: { setQueryData: state.setQueryData } }));
+vi.mock("@/usage/queries", () => ({ refreshUsageSource: state.nativeRefresh }));
 
 import { executeMagpieAction } from "./actions.electron";
 
@@ -76,6 +79,13 @@ describe("Magpie board actions", () => {
   it("opens the selected host's login surface without invoking a settings mutation", async () => {
     await executeMagpieAction({ kind: "magpie", hostId: "host" });
     expect(state.push).toHaveBeenCalledWith("/h/host/plugin/magpie/surface/main");
+    expect(state.invoke).not.toHaveBeenCalled();
+  });
+
+  it("refreshes native usage on a host without Magpie", async () => {
+    state.catalog.mockResolvedValue([]);
+    await executeMagpieAction({ kind: "refresh", hostId: "host" });
+    expect(state.nativeRefresh).toHaveBeenCalledWith(expect.anything(), "host", "antigravity");
     expect(state.invoke).not.toHaveBeenCalled();
   });
 

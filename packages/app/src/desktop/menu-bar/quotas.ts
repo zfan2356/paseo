@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import type { UsageReportEntry } from "@/usage/types";
 import {
   MenuBarQuotaAccountSchema,
   MagpieGroupSchema,
@@ -37,6 +38,45 @@ export function deriveMenuBarQuotaReport(input: QuotaInput): MenuBarQuotaReport 
       : {}),
     ...(!payload.available ? { issue: "Magpie 网关不可用，请打开账号管理检查服务。" } : {}),
   };
+}
+
+export function withAntigravityUsage(
+  host: MenuBarQuotaReport,
+  entries: readonly UsageReportEntry[],
+): MenuBarQuotaReport {
+  const accounts = entries.flatMap(
+    ({ sourceId, sourceLabel, account, id, fetchedAt, report, defaultEnabled }) => {
+      if (sourceId !== "antigravity" || (report.status !== "available" && defaultEnabled === false))
+        return [];
+      const available = report.status === "available" ? report : undefined;
+      const windows = (available?.windows ?? []).flatMap((window) =>
+        window.remainingPct == null
+          ? []
+          : [
+              {
+                name: window.label,
+                remaining: window.remainingPct,
+                unlimited: false,
+                resetsAt: window.resetsAt ?? "",
+              },
+            ],
+      );
+      const parsed = MenuBarQuotaAccountSchema.safeParse({
+        usageId: id,
+        provider: sourceId,
+        name: sourceLabel,
+        user: account.label ?? "",
+        plan: available?.planLabel ?? "",
+        balance: "",
+        error: available ? "" : "请检查主机上的 agy 登录状态。",
+        readAt: available?.observedAt ?? fetchedAt,
+        windows,
+      });
+      return parsed.success ? [parsed.data] : [];
+    },
+  );
+  if (!accounts.length) return host;
+  return { ...host, state: "ready", accounts: [...host.accounts, ...accounts].slice(0, 128) };
 }
 
 interface FetchInput {
