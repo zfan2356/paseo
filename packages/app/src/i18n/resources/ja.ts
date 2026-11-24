@@ -76,7 +76,6 @@ export const ja: TranslationResources = {
     changesHint:
       "このディレクトリの変更には、他のセッションやツールの作業が含まれる場合があります。",
   },
-  agentChangeRequests: en.agentChangeRequests,
   paneFind: {
     connectionFailure:
       "このチャットを検索できませんでした。ホストへの接続を確認して再試行してください。",

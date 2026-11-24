@@ -76,7 +76,6 @@ export const ptBR: TranslationResources = {
     changesHint:
       "As alterações neste diretório podem incluir trabalho de outras sessões e ferramentas.",
   },
-  agentChangeRequests: en.agentChangeRequests,
   paneFind: {
     connectionFailure:
       "Não foi possível pesquisar nesta conversa. Verifique a conexão com o host e tente novamente.",

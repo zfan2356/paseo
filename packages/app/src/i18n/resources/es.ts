@@ -77,7 +77,6 @@ export const es: TranslationResources = {
     changesHint:
       "Los cambios de este directorio pueden incluir trabajo de otras sesiones y herramientas.",
   },
-  agentChangeRequests: en.agentChangeRequests,
   paneFind: {
     connectionFailure:
       "No se pudo buscar en este chat. Comprueba la conexión con el host y vuelve a intentarlo.",

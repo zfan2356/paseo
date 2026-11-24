@@ -72,7 +72,6 @@ export const ar: TranslationResources = {
     execution: "التنفيذ: {{path}}",
     changesHint: "قد تشمل تغييرات هذا المجلد عمل جلسات وأدوات أخرى.",
   },
-  agentChangeRequests: en.agentChangeRequests,
   paneFind: {
     connectionFailure: "تعذر البحث في هذه المحادثة. تحقق من الاتصال بالمضيف وأعد المحاولة.",
     historyChangedFailure: "تغيّرت المحادثة أثناء البحث. أعد البحث.",

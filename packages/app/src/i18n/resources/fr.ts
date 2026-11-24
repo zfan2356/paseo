@@ -75,7 +75,6 @@ export const fr: TranslationResources = {
     execution: "Exécution : {{path}}",
     changesHint: "Les modifications du répertoire peuvent provenir d’autres sessions et outils.",
   },
-  agentChangeRequests: en.agentChangeRequests,
   paneFind: {
     connectionFailure:
       "Impossible de rechercher dans cette conversation. Vérifiez la connexion à l’hôte et réessayez.",

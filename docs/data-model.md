@@ -106,6 +106,8 @@ Contexts survive daemon downgrade because old versions never read or write their
 **Path:** `$PASEO_HOME/agents/{project-dir}/{agentId}.json`
 
 Each agent is stored as a separate JSON file, grouped by project directory.
+Session PR/MR associations belong to [the Multica plugin](plugins.md#session-change-requests).
+Old association fields are ignored on load and dropped when the agent record is rewritten.
 
 | Field                | Type                                     | Description                                                                                                                                                                                                                                                                                                                                                                         |
 | -------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
