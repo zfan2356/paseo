@@ -1,4 +1,5 @@
 import { getParentAddressFromLabels } from "@getpaseo/protocol/agent-labels";
+import { featuresFromControls } from "@getpaseo/protocol/option-controls";
 import { i18n } from "@/i18n/i18next";
 import type {
   PluginAgentSnapshot,
@@ -6,6 +7,7 @@ import type {
   PluginProjectSnapshot,
 } from "@getpaseo/plugin";
 import type { Agent, WorkspaceDescriptor, ProjectDescriptor } from "@/stores/session-store";
+import { cloneAndFreeze } from "../freeze";
 
 import { entityRefs } from "./refs";
 import { deriveEffectiveWorkspaceStatus } from "@/workspace-status";
@@ -83,11 +85,17 @@ export function createPluginAgentSnapshot(agent: Agent, workspaceId: string): Pl
     parentAgent: parent ? entityRefs.agent(parent.serverId, parent.agentId) : null,
     id: agent.id,
     featureValues: Object.freeze(
-      Object.fromEntries((agent.features ?? []).map((feature) => [feature.id, feature.value])),
+      Object.fromEntries(
+        featuresFromControls({ controls: agent.controls, options: agent.options }).map(
+          (feature) => [feature.id, feature.value],
+        ),
+      ),
     ),
     workspaceId,
     provider: agent.provider,
     status: agent.status,
+    backgroundWork: Object.freeze({ count: agent.backgroundWork?.count ?? 0 }),
+    background: agent.background ?? false,
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
     lastActivityAt: agent.lastActivityAt.toISOString(),
@@ -100,6 +108,7 @@ export function createPluginAgentSnapshot(agent: Agent, workspaceId: string): Pl
     attentionReason: agent.attentionReason ?? null,
     parentAgentId: agent.parentAgentId,
     labels: Object.freeze({ ...agent.labels }),
+    metadata: cloneAndFreeze(agent.metadata ?? {}),
   });
   const byWorkspace = agentSnapshots.get(agent) ?? new Map<string, PluginAgentSnapshot>();
   byWorkspace.set(workspaceId, snapshot);

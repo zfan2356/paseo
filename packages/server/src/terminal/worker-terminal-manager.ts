@@ -1013,6 +1013,11 @@ export interface StartWorkerTerminalManagerOptions {
   logger: Logger;
   getTerminalActivityUrl?: () => string | null;
   requestTimeoutMs?: number;
+  /**
+   * When false, skip launching a fresh terminal worker until the first terminal
+   * is created (existing workers are still adopted). Production leaves this true.
+   */
+  eagerLaunch?: boolean;
 }
 
 // The current worker plus one draining a previous protocol. Every live worker counts,
@@ -1025,6 +1030,13 @@ interface LiveWorkerRecord {
   path: string;
   record: TerminalWorkerRecord;
   fit: TerminalWorkerProtocolFit;
+}
+
+function requiresWorkerCleanup(record: TerminalWorkerRecord): boolean {
+  return (
+    Boolean(record.closing) ||
+    !writtenDuringThisBoot({ startedAt: record.createdAt, bootId: record.bootId })
+  );
 }
 
 /**
@@ -1054,10 +1066,7 @@ export async function startWorkerTerminalManager(
       continue;
     }
     const { record } = file;
-    if (
-      record.closing ||
-      !writtenDuringThisBoot({ startedAt: record.createdAt, bootId: record.bootId })
-    ) {
+    if (requiresWorkerCleanup(record)) {
       toReap.push(file.path);
       continue;
     }
@@ -1291,7 +1300,7 @@ export async function startWorkerTerminalManager(
   };
 
   await prune();
-  if (!current) {
+  if (!current && options.eagerLaunch !== false) {
     try {
       current = await startCurrent();
     } catch (error) {

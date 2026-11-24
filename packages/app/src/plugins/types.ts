@@ -11,11 +11,14 @@ import type {
   PluginFilePanelContribution as SDKPluginFilePanelContribution,
   PluginCommandCenterItemContribution as SDKPluginCommandCenterItemContribution,
   PluginClientSlashCommandContribution as SDKPluginClientSlashCommandContribution,
+  PluginComposerItemContribution,
+  PluginNewWorkspaceItemContribution,
   PluginComposerPillContribution as SDKPluginComposerPillContribution,
   PluginComposerExtensionContribution,
   PluginSidebarContribution as SDKPluginSidebarContribution,
   PluginSidebarViewContribution,
   PluginSidebarItemContribution as SDKPluginSidebarItemContribution,
+  PluginWorkspaceRowBadgeItemContribution as SDKPluginWorkspaceRowBadgeItemContribution,
   PluginScreenContribution as SDKPluginScreenContribution,
   PluginSettingsScreenContribution as SDKPluginSettingsScreenContribution,
   PluginTimelineRendererContribution,
@@ -32,6 +35,8 @@ type PluginClientSlashCommandContribution = SDKPluginClientSlashCommandContribut
 type PluginComposerPillContribution = SDKPluginComposerPillContribution<PluginText>;
 type PluginSidebarContribution = SDKPluginSidebarContribution<PluginText>;
 type PluginSidebarItemContribution = SDKPluginSidebarItemContribution<PluginText>;
+type PluginWorkspaceRowBadgeItemContribution =
+  SDKPluginWorkspaceRowBadgeItemContribution<PluginText>;
 type PluginScreenContribution = SDKPluginScreenContribution<PluginText>;
 type PluginSettingsScreenContribution = SDKPluginSettingsScreenContribution<PluginText>;
 type WorkspacePanelInput = SDKPluginWorkspacePanelContribution<PluginText>;
@@ -56,7 +61,10 @@ export interface EvaluatedPlugin {
   // COMPAT(pluginSidebarAliases): added in v0.11.0, remove after 2027-03-29
   /** `addSidebarItem` registrations, so `/plugin/<id>/sidebar/<item>` routes keep resolving. */
   legacySidebarItems: PluginSidebarContribution[];
+  workspaceRowBadgeItems: PluginWorkspaceRowBadgeItemContribution[];
   filePanels: PluginFilePanelContribution[];
+  composerItems: PluginComposerItemContribution[];
+  newWorkspaceItems: PluginNewWorkspaceItemContribution[];
   workspacePanels: EvaluatedPluginWorkspacePanelContribution[];
   commandCenterItems: PluginCommandCenterItemContribution[];
   clientSlashCommands: PluginClientSlashCommandContribution[];
@@ -88,9 +96,12 @@ export type {
   PluginAttachmentSourceContribution,
   PluginCommandCenterItemContribution,
   PluginClientSlashCommandContribution,
+  PluginComposerItemContribution,
+  PluginNewWorkspaceItemContribution,
   PluginComposerPillContribution,
   PluginSidebarContribution,
   PluginSidebarItemContribution,
+  PluginWorkspaceRowBadgeItemContribution,
   PluginScreenContribution,
   PluginSettingsScreenContribution,
   PluginThemeContribution,

@@ -38,6 +38,7 @@ export function asAgentManager(stub: {
     assertAgentRuntimeAvailable: () => {},
     listProviderSubagentActivity: () => [],
     getRetiredInternalAgent: () => null,
+    effectiveOptionsFor: (_provider: string, own?: Record<string, unknown>) => own ?? {},
     getAgentBackgroundWorkSummary: () => undefined,
     ...stub,
   });
@@ -238,7 +239,7 @@ export function createProviderSnapshotManagerStub(): {
   const listModes = vi.fn<ProviderSnapshotManager["listModes"]>(async () => []);
   const resolveCreateConfig = vi.fn<ProviderSnapshotManager["resolveCreateConfig"]>(async () => ({
     modeId: undefined,
-    featureValues: undefined,
+    providerOptions: undefined,
   }));
   const resolveDefaultModel = vi.fn<ProviderSnapshotManager["resolveDefaultModel"]>(
     async () => undefined,
@@ -306,7 +307,7 @@ export function createProviderSnapshotManagerStub(): {
 
 export function createMessageReceiptsStub(): SessionOptions["messageReceipts"] {
   return {
-    send: (input) => input.send(),
+    send: (input) => input.send(async () => {}),
     lookup: async () => "absent",
   };
 }

@@ -72,7 +72,7 @@ export function useFetchQueries<TData>(
   return useQueries({ queries: inputs.map((input) => fetchQueryOptions(input)) });
 }
 
-function replicaQueryOptions<
+export function replicaQueryOptions<
   TQueryFnData,
   TError = Error,
   TData = TQueryFnData,
@@ -92,7 +92,9 @@ function replicaQueryOptions<
       },
     },
     queryFn: options.queryFn ?? skipToken,
-    refetchOnMount: false,
+    // Pushes keep a replica fresh; a mount only refetches what an invalidation marked stale
+    // while nothing observed it.
+    refetchOnMount: (query) => query.state.isInvalidated,
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
     staleTime: Infinity,

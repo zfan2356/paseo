@@ -67,6 +67,10 @@ import {
   useAgentToolCallExpansion,
   useExpandedToolCallGroups,
 } from "@/tool-calls/expansion-context";
+import {
+  UserMessageExpansionContext,
+  useAgentUserMessageExpansion,
+} from "@/components/user-message/expansion-context";
 import { ToolCallSheetProvider } from "@/components/tool-call-sheet";
 import { createStreamPresentation } from "./presentation";
 import { AgentReportView } from "./agent-reports/view";
@@ -80,6 +84,7 @@ import { renderStreamRow, type RenderStreamItem } from "./stream-row";
 import { type NearBottom, useIsNearBottom, useNearBottom } from "./near-bottom";
 import { ChatOutlineRail } from "@/agent-stream/chat-outline/rail";
 import { useChatOutline } from "@/agent-stream/chat-outline/use-chat-outline";
+import { CHAT_COLUMN_RAIL_DATASET, useChatOutlineRail } from "@/chat-rail";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
 import {
@@ -186,6 +191,7 @@ function renderStreamItemWithTurnFooter(input: {
       items={footerHost.items}
       timing={footerHost.timing}
       startIndex={footerHost.startIndex}
+      turnMetrics={footerHost.turnMetrics}
       supportsTimelineCursor={input.supportsTimelineCursor}
       onForkAssistantTurn={input.onForkAssistantTurn}
     />
@@ -301,6 +307,8 @@ const shouldDisableEntryExitAnimations = Platform.OS === "android";
 const scrollIndicatorFadeIn = shouldDisableEntryExitAnimations ? undefined : FadeIn.duration(200);
 const scrollIndicatorFadeOut = shouldDisableEntryExitAnimations ? undefined : FadeOut.duration(200);
 
+const scrollControlsDataSet = { ...CHAT_COLUMN_RAIL_DATASET, ...MATERIAL_SLOTS.scrollControls };
+
 function ScrollToBottomButton({
   nearBottom,
   isTimelineDetached,
@@ -320,7 +328,7 @@ function ScrollToBottomButton({
   );
   if (isNearBottom && !isTimelineDetached) return null;
   return (
-    <View dataSet={MATERIAL_SLOTS.scrollControls} style={containerStyle} pointerEvents="box-none">
+    <View style={containerStyle} dataSet={scrollControlsDataSet} pointerEvents="box-none">
       <Animated.View entering={scrollIndicatorFadeIn} exiting={scrollIndicatorFadeOut}>
         <Pressable
           style={stylesheet.scrollToBottomButton}
@@ -363,7 +371,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const { t } = useTranslation();
     const autoExpandReasoning = useSettings((settings) => settings.autoExpandReasoning);
     const chatDisplay = useSettings((settings) => settings.chatDisplay);
-    const chatOutlineEnabled = useSettings((settings) => settings.chatOutlineEnabled);
     const contentMaxWidth = useSettings(resolveContentMaxWidth);
     const viewportRef = useRef<StreamViewportHandle | null>(null);
     const pendingClientMessageIds = useMemo(
@@ -384,6 +391,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       new Set(),
     );
     const toolCallExpansion = useAgentToolCallExpansion(agentId);
+    const userMessageExpansion = useAgentUserMessageExpansion(agentId);
     const expandedToolCallGroups = useExpandedToolCallGroups(toolCallExpansion);
     const [expandedTurnHostIds, setExpandedTurnHostIds] = useState<ReadonlySet<string>>(new Set());
     const [intermediateProcessExpansionById, setIntermediateProcessExpansionById] = useState<
@@ -403,10 +411,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const supportsAgentForkContextCursor = useSessionStore(
       (state) =>
         state.sessions[resolvedServerId]?.serverInfo?.features?.agentForkContextCursor === true,
-    );
-    const supportsChatOutline = useSessionStore(
-      (state) =>
-        state.sessions[resolvedServerId]?.serverInfo?.features?.agentTimelinePromptIndex === true,
     );
     const timelineEpoch = useSessionStore(
       (state) => state.sessions[resolvedServerId]?.agentTimelineCursor.get(agentId)?.epoch ?? null,
@@ -631,13 +635,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       presentation.turns,
       presentation.reportHosts,
     ]);
+    const outlineRail = useChatOutlineRail();
+    const outlineInset = outlineRail.inset;
     const chatOutline = useChatOutline({
       agentId,
       serverId: resolvedServerId,
       timelineEpoch,
       tail: effectiveStreamItems,
       head: effectiveStreamHead,
-      enabled: supportsChatOutline && chatOutlineEnabled,
+      enabled: outlineRail.enabled,
       viewportRef,
       onJumpError: handleTimelineHistoryLoadError,
       mountedHistoryMessageIds,
@@ -742,6 +748,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           <AgentReportView itemId={item.id} report={item.agentReport} serverId={resolvedServerId} />
         ) : (
           <UserMessage
+            itemId={item.id}
             serverId={resolvedServerId}
             agentId={agentId}
             messageId={item.messageId}
@@ -908,6 +915,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                         status={call.status}
                         isLastInSequence={index === group.run.calls.length - 1}
                         defaultExpanded={false}
+                        maxDetailHeight={GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT}
                         standalone={false}
                         onInlineDetailsExpandedChangeByItemId={setInlineDetailsExpanded}
                       />
@@ -1200,39 +1208,44 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           <AssistantSelectionCopySurface style={stylesheet.container}>
             <MessageOuterSpacingProvider disableOuterSpacing>
               <ToolCallExpansionContext.Provider value={toolCallExpansion}>
-                {streamRenderStrategy.render({
-                  readingRowReplacements: presentation.readingRowReplacements,
-                  agentId,
-                  segments: renderModel.segments,
-                  historyRowRevision,
-                  liveHeadRowRevision: expandedToolCallGroups,
-                  boundary,
-                  renderers,
-                  listEmptyComponent,
-                  viewportRef,
-                  routeBottomAnchorRequest,
-                  isAuthoritativeHistoryReady,
-                  isInitialHistoryLoading,
-                  revealInitialHistory,
-                  onNearBottomChange: nearBottom.set,
-                  onReadingPositionChange: handleReadingPositionChange,
-                  onNearHistoryStart: loadOlder,
-                  isLoadingOlderHistory: isLoadingOlder,
-                  hasOlderHistory: hasOlder,
-                  olderHistoryProgressKey: progressKey,
-                  scrollEnabled: streamScrollEnabled,
-                  listStyle: stylesheet.list,
-                  baseListContentContainerStyle: stylesheet.listContentContainer,
-                  forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
-                  contentMaxWidth,
-                })}
+                <UserMessageExpansionContext.Provider value={userMessageExpansion}>
+                  {streamRenderStrategy.render({
+                    readingRowReplacements: presentation.readingRowReplacements,
+                    agentId,
+                    segments: renderModel.segments,
+                    historyRowRevision,
+                    liveHeadRowRevision: expandedToolCallGroups,
+                    boundary,
+                    renderers,
+                    listEmptyComponent,
+                    viewportRef,
+                    routeBottomAnchorRequest,
+                    isAuthoritativeHistoryReady,
+                    isInitialHistoryLoading,
+                    revealInitialHistory,
+                    onNearBottomChange: nearBottom.set,
+                    onReadingPositionChange: handleReadingPositionChange,
+                    onNearHistoryStart: loadOlder,
+                    isLoadingOlderHistory: isLoadingOlder,
+                    hasOlderHistory: hasOlder,
+                    olderHistoryProgressKey: progressKey,
+                    scrollEnabled: streamScrollEnabled,
+                    listStyle: stylesheet.list,
+                    baseListContentContainerStyle: stylesheet.listContentContainer,
+                    forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
+                    contentMaxWidth,
+                    outlineInset,
+                  })}
+                </UserMessageExpansionContext.Provider>
               </ToolCallExpansionContext.Provider>
             </MessageOuterSpacingProvider>
-            <ChatOutlineRail
-              prompts={chatOutline.prompts}
-              activePrompt={chatOutline.activePrompt}
-              onJumpToPrompt={chatOutline.jumpToPrompt}
-            />
+            {outlineInset > 0 && chatOutline.prompts.length >= 2 ? (
+              <ChatOutlineRail
+                prompts={chatOutline.prompts}
+                activePrompt={chatOutline.activePrompt}
+                onJumpToPrompt={chatOutline.jumpToPrompt}
+              />
+            ) : null}
             <ScrollToBottomButton
               nearBottom={nearBottom}
               isTimelineDetached={isTimelineDetached}
@@ -1290,7 +1303,8 @@ function collectAgentSetupDiffs(left: AgentScreenAgent, right: AgentScreenAgent)
   if (left.runtimeInfo?.thinkingOptionId !== right.runtimeInfo?.thinkingOptionId) {
     reasons.push("agent.runtimeInfo.thinkingOptionId");
   }
-  if (left.features !== right.features) reasons.push("agent.features");
+  if (left.options !== right.options) reasons.push("agent.options");
+  if (left.controls !== right.controls) reasons.push("agent.controls");
   return reasons;
 }
 
@@ -1397,6 +1411,7 @@ interface ThoughtSlotProps {
   isLastInSequence: boolean;
   defaultExpanded: boolean;
   standalone?: boolean;
+  maxDetailHeight?: number;
 }
 
 // Reasoning text is paced the same way assistant text is; see @/hooks/use-revealed-text.
@@ -1408,6 +1423,7 @@ function ThoughtSlot({
   isLastInSequence,
   defaultExpanded,
   standalone,
+  maxDetailHeight,
 }: ThoughtSlotProps) {
   const revealedText = useRevealedText(text, status === "ready" ? "complete" : "streaming");
   return (
@@ -1420,6 +1436,7 @@ function ThoughtSlot({
       isLastInSequence={isLastInSequence}
       defaultExpanded={defaultExpanded}
       standalone={standalone}
+      maxDetailHeight={maxDetailHeight}
       forceInline={defaultExpanded}
     />
   );

@@ -30,6 +30,17 @@ describe("deriveAgentStateBucket", () => {
     ).toBe("failed");
     expect(deriveAgentStateBucket({ status: "idle", backgroundWork: { count: 0 } })).toBe("done");
   });
+  it("keeps passive background work visible without changing agent status or priority", () => {
+    const passive = { status: "idle", backgroundWork: { count: 1, runningCount: 0 } } as const;
+    expect(deriveAgentStateBucket(passive)).toBe("done");
+    expect(deriveAgentStateBucket({ ...passive, requiresAttention: true })).toBe("attention");
+    expect(deriveAgentStateBucket({ ...passive, status: "running" })).toBe("running");
+    expect(getAgentStatusPriority(passive)).toBe(getAgentStatusPriority({ status: "idle" }));
+    expect(
+      deriveAgentStateBucket({ ...passive, backgroundWork: { count: 2, runningCount: 1 } }),
+    ).toBe("running");
+  });
+
   it("keeps completed external waits in the count without showing an idle agent as running", () => {
     const backgroundWork = { count: 2, runningCount: 0 };
     expect(deriveAgentStateBucket({ status: "idle", backgroundWork })).toBe("done");

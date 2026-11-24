@@ -1,8 +1,5 @@
-import type {
-  AgentFeature,
-  AgentPersistenceHandle,
-  AgentRuntimeInfo,
-} from "../server/agent/agent-sdk-types.js";
+import type { AgentFeature } from "@getpaseo/protocol/agent-types";
+import type { AgentPersistenceHandle, AgentRuntimeInfo } from "../server/agent/agent-sdk-types.js";
 import type { ProviderRuntimeSettings } from "../server/agent/provider-launch-config.js";
 import { resolveCursorConfigDirectory } from "./cursor-conversation-store.js";
 import { resolveSharedCodexSocket } from "../server/agent/providers/codex/shared-app-server.js";
@@ -198,7 +195,8 @@ function resolveFeatureToggle(
     );
     return liveFeature?.value ?? null;
   }
-  const configuredValue = source.config?.featureValues?.[featureId];
+  const configuredValue =
+    source.config?.providerOptions?.[featureId] ?? source.config?.featureValues?.[featureId];
   return typeof configuredValue === "boolean" ? configuredValue : null;
 }
 
@@ -254,7 +252,9 @@ function appendModelAndPerformanceArgs(
     (feature) => feature.type === "select" && feature.id === "service_tier",
   );
   const serviceTier = nonEmptyString(
-    speedFeature?.value ?? source.config?.featureValues?.service_tier,
+    speedFeature?.value ??
+      source.config?.providerOptions?.service_tier ??
+      source.config?.featureValues?.service_tier,
   );
   if (serviceTier) {
     pushConfigArg(args, "service_tier", serviceTier);
@@ -373,7 +373,10 @@ function buildCursorLaunch(
     args.push("--mode", mode);
   }
 
-  if (source.config?.featureValues?.auto_accept === true) {
+  if (
+    (source.config?.providerOptions?.auto_accept ?? source.config?.featureValues?.auto_accept) ===
+    true
+  ) {
     args.push("--yolo");
   }
 

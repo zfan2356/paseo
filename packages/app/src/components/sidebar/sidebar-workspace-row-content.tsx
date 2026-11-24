@@ -32,7 +32,7 @@ import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sideba
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SCRIM_WIDTH, TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
 import {
-  ARCHIVE_BUTTON_SIZE,
+  ARCHIVE_BUTTON_FOOTPRINT,
   SidebarWorkspaceArchiveButton,
 } from "@/components/sidebar/sidebar-workspace-menu";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
@@ -47,10 +47,13 @@ const ThemedCircleAlert = withUnistyles(CircleAlert);
 export function SidebarWorkspaceRowFrame({
   workspace,
   isDragging = false,
+  isEditingTitle = false,
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
   isDragging?: boolean;
+  /** Hover would fade the kebab in over the title being edited and open the hover card. */
+  isEditingTitle?: boolean;
   children: (input: {
     isHovered: boolean;
     contextMenuOpen: boolean;
@@ -78,10 +81,10 @@ export function SidebarWorkspaceRowFrame({
       workspace={workspace}
       prHint={workspace.prHint}
       isDragging={isDragging}
-      disabled={contextMenuOpen}
+      disabled={contextMenuOpen || isEditingTitle}
     >
       {children({
-        isHovered: isHovered && !contextMenuOpen && !isDragging,
+        isHovered: isHovered && !contextMenuOpen && !isDragging && !isEditingTitle,
         contextMenuOpen,
         onContextMenuOpenChange: handleContextMenuOpenChange,
         hoverHandlers,
@@ -103,6 +106,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   shortcutNumber = null,
   showShortcutBadge = false,
   reserveIdleStatusIndicatorSpace = true,
+  titleEditor = null,
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
@@ -120,6 +124,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   showShortcutBadge?: boolean;
   /** Keep the empty leading slot when the workspace has no active status. */
   reserveIdleStatusIndicatorSpace?: boolean;
+  /** Takes the title's place, in a box exactly one title line tall, while renaming in place. */
+  titleEditor?: ReactNode;
   children?: ReactNode;
 }) {
   const {
@@ -161,6 +167,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   const metadata = useMemo(
     () => (
       <WorkspaceMetaRow
+        backdrop={backdrop}
+        workspace={workspace}
         currentBranch={workspace.currentBranch}
         projectName={leadingProjectName}
         hostBadge={hostBadge ?? null}
@@ -169,10 +177,11 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         labels={labels}
       />
     ),
-    [workspace, leadingProjectName, hostBadge, serviceSummary, labels],
+    [backdrop, workspace, leadingProjectName, hostBadge, serviceSummary, labels],
   );
   return (
     <SidebarCardContent
+      titleEditor={titleEditor}
       title={workspaceLabel}
       titleTestID={`sidebar-workspace-title-${workspace.workspaceKey}`}
       isHovered={isHovered}
@@ -186,6 +195,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
 });
 
 export function SidebarCardContent({
+  titleEditor,
   onPress,
   selected = false,
   title,
@@ -198,6 +208,7 @@ export function SidebarCardContent({
   shortcutNumber = null,
 }: {
   onPress?: () => void;
+  titleEditor?: ReactNode;
   selected?: boolean;
   title: string;
   titleTestID?: string;
@@ -217,6 +228,26 @@ export function SidebarCardContent({
     [isHovered, isCreating],
   );
   const selectedState = useMemo(() => ({ selected }), [selected]);
+  let titleContent = (
+    <Text style={titleStyle} numberOfLines={1} testID={titleTestID}>
+      {title}
+    </Text>
+  );
+  if (titleEditor) {
+    titleContent = <View style={styles.workspaceTitleEditorSlot}>{titleEditor}</View>;
+  } else if (onPress) {
+    titleContent = (
+      <PressHighlight
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityState={selectedState}
+        aria-selected={selected}
+        style={styles.titlePress}
+      >
+        {titleContent}
+      </PressHighlight>
+    );
+  }
   return (
     <View style={styles.workspaceRowContent}>
       <View style={styles.workspaceRowMain}>
@@ -229,23 +260,7 @@ export function SidebarCardContent({
         )}
         <View style={styles.workspaceContentColumn}>
           <View style={[styles.workspaceTitleRow, onPress && styles.interactiveTitleRow]}>
-            {onPress ? (
-              <PressHighlight
-                onPress={onPress}
-                accessibilityRole="button"
-                accessibilityState={selectedState}
-                aria-selected={selected}
-                style={styles.titlePress}
-              >
-                <Text style={titleStyle} numberOfLines={1} testID={titleTestID}>
-                  {title}
-                </Text>
-              </PressHighlight>
-            ) : (
-              <Text style={titleStyle} numberOfLines={1} testID={titleTestID}>
-                {title}
-              </Text>
-            )}
+            {titleContent}
             <View style={sidebarWorkspaceRowStyles.rowRight}>{trailing}</View>
           </View>
           {metadata}
@@ -518,9 +533,6 @@ export function SidebarWorkspaceTrailingActionBase({
   );
 }
 
-// The archive button plus the kebab's marginLeft, which is the gap between them.
-const ARCHIVE_BUTTON_SCRIM_WIDTH = ARCHIVE_BUTTON_SIZE + 2;
-
 export function SidebarWorkspaceTrailingActionOverlay({
   visible,
   scrimBackdrop,
@@ -545,7 +557,7 @@ export function SidebarWorkspaceTrailingActionOverlay({
       {scrimBackdrop ? (
         <TrailingActionScrim
           backdrop={scrimBackdrop}
-          width={onArchiveButtonPress ? SCRIM_WIDTH + ARCHIVE_BUTTON_SCRIM_WIDTH : SCRIM_WIDTH}
+          width={onArchiveButtonPress ? SCRIM_WIDTH + ARCHIVE_BUTTON_FOOTPRINT : SCRIM_WIDTH}
           testID="sidebar-workspace-trailing-scrim"
         />
       ) : null}
@@ -632,6 +644,11 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: "400",
     lineHeight: TITLE_LINE_HEIGHT,
     opacity: 0.76,
+    flex: 1,
+    minWidth: 0,
+  },
+  workspaceTitleEditorSlot: {
+    height: TITLE_LINE_HEIGHT,
     flex: 1,
     minWidth: 0,
   },

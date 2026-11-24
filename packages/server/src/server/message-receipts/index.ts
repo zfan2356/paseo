@@ -16,8 +16,11 @@ interface SendMessageInput {
   agentId: string;
   messageId: string;
   request: unknown;
-  send: () => Promise<void>;
-  prepare?: () => Promise<void>;
+  /**
+   * Delivers the message. It awaits `beforeDispatch` immediately before the provider can receive
+   * the message; a failure before that call proves nothing was submitted and leaves no receipt.
+   */
+  send: (beforeDispatch: () => Promise<void>) => Promise<void>;
   /**
    * Only for an error that proves the provider saw no work: the pending receipt
    * is removed so the same message ID may retry. Any other error keeps the
@@ -80,15 +83,15 @@ export class MessageReceipts {
       // A provider may have accepted the message before its receipt was committed.
       throw new Error("agent_request_outcome_unknown");
     }
-    await input.prepare?.();
     const receipt = { fingerprint, agentId: input.agentId };
-    await writeJsonFileAtomic(file, { ...receipt, state: "pending" });
+    let pending: Promise<void> | null = null;
     try {
-      await input.send();
+      await input.send(() => {
+        pending ??= writeJsonFileAtomic(file, { ...receipt, state: "pending" });
+        return pending;
+      });
     } catch (error) {
-      if (input.isProvenNoEffect?.(error)) {
-        await rm(file, { force: true });
-      }
+      if (pending && input.isProvenNoEffect?.(error)) await rm(file, { force: true });
       throw error;
     }
     await writeJsonFileAtomic(file, { ...receipt, state: "completed" });

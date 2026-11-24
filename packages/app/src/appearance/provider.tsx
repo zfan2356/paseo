@@ -67,6 +67,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     return options.find((option) => option.id === requestedId) ?? null;
   }, [options, requestedId]);
 
+  const contentMaxWidth = resolveContentMaxWidth(settings);
   useEffect(() => {
     if (isLoading) return;
     applyTheme({
@@ -80,7 +81,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       uiBaseFontSize: settings.uiBaseFontSize,
       contentFontSize: settings.contentFontSize,
       codeFontSize: settings.codeFontSize,
-      contentMaxWidth: resolveContentMaxWidth({ contentMaxWidth: settings.contentMaxWidth }),
+      contentMaxWidth,
       syntaxTheme: settings.syntaxTheme,
     });
     setHasAppliedAppearance(true);
@@ -93,7 +94,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     settings.uiBaseFontSize,
     settings.contentFontSize,
     settings.codeFontSize,
-    settings.contentMaxWidth,
+    contentMaxWidth,
     settings.syntaxTheme,
   ]);
 

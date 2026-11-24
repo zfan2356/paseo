@@ -44,6 +44,7 @@ function FilePanel() {
   return (
     <FilePane
       serverId={serverId}
+      workspaceId={workspaceId}
       workspaceRoot={root}
       location={target}
       navigationRevision={panelRevision ?? 0}

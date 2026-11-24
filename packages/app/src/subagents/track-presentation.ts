@@ -1,7 +1,8 @@
-import { runningBackgroundWorkCount } from "@getpaseo/protocol/agent-state-bucket";
 import type { TFunction } from "i18next";
 import type { ComposerTrackPillSegment } from "@/composer/tracks";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
+import { isAgentRunning } from "@getpaseo/protocol/agent-state-bucket";
+import type { AgentBackgroundWorkSummary } from "@getpaseo/protocol/messages";
 import type { AgentLifecycleStatus } from "@getpaseo/protocol/agent-lifecycle";
 import { STATUS_BUCKET_ORDER } from "@/utils/sidebar-agent-state";
 import type { SubagentRow } from "./select";
@@ -22,10 +23,10 @@ function presentationStatus(row: SubagentRow) {
  */
 export function deriveSubagentStatusBucket(
   status: AgentLifecycleStatus,
-  backgroundWork?: { count: number } | null,
+  backgroundWork?: AgentBackgroundWorkSummary | null,
 ): SidebarStateBucket {
   if (status === "error") return "failed";
-  if (status === "running" || runningBackgroundWorkCount(backgroundWork) > 0) return "running";
+  if (isAgentRunning({ status, backgroundWork })) return "running";
   return "done";
 }
 

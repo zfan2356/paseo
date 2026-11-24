@@ -1,11 +1,6 @@
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { memo, type ReactElement, useCallback, useMemo, useState } from "react";
-import {
-  Text,
-  View,
-  type GestureResponderEvent,
-  type PressableStateCallbackType,
-} from "react-native";
+import { Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-drag-source";
 import { DiffStat } from "@/components/diff-stat";
@@ -93,18 +88,17 @@ function useFileHeaderHover(enabled: boolean, onActiveChange?: (active: boolean)
   return { isHovered, handlePointerEnter, handlePointerLeave };
 }
 
+// Press feedback is the pressable's `highlightStyle`, so it is not part of the active fill.
 function fileHeaderIsActive(input: {
   isHovered: boolean;
-  pressed: boolean;
   showsBodyState: boolean;
   isSelected: boolean;
 }): boolean {
-  return input.isHovered || input.pressed || (!input.showsBodyState && input.isSelected);
+  return input.isHovered || (!input.showsBodyState && input.isSelected);
 }
 
 function fileHeaderInteractionStyle(input: {
   isHovered: boolean;
-  pressed: boolean;
   showsBodyState: boolean;
   isSelected: boolean;
 }) {
@@ -218,8 +212,8 @@ export const FileHeader = memo(function FileHeader({
       [file.path, onHeaderHeightChange],
     ),
   });
-  const pressableStyle = useCallback(
-    ({ pressed }: PressableStateCallbackType) => [
+  const pressableStyle = useMemo(
+    () => [
       styles.header,
       !showsBodyState && workspaceTreeRowStyles.row,
       showsBodyState && styles.documentHeader,
@@ -230,18 +224,14 @@ export const FileHeader = memo(function FileHeader({
         : null,
       fileHeaderInteractionStyle({
         isHovered: hover.isHovered,
-        pressed,
         showsBodyState,
         isSelected,
       }),
     ],
     [depth, hover.isHovered, isSelected, showsBodyState],
   );
-  const canvasPressableStyle = useCallback(
-    (state: PressableStateCallbackType) => [
-      pressableStyle(state),
-      canvasRendered && styles.canvasInteraction,
-    ],
+  const canvasPressableStyle = useMemo(
+    () => [pressableStyle, canvasRendered && styles.canvasInteraction],
     [canvasRendered, pressableStyle],
   );
   const accessibilityState = useMemo(
@@ -325,7 +315,7 @@ export const FileHeader = memo(function FileHeader({
   } else {
     trigger = (
       <View
-        style={[pressableStyle({ pressed: false }), canvasRendered && styles.canvasInteraction]}
+        style={[pressableStyle, canvasRendered && styles.canvasInteraction]}
         accessibilityLabel={accessibilityLabel}
       >
         {renderedContent}

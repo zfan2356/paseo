@@ -1,7 +1,8 @@
 import { type Command, Option } from "commander";
-import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
+import type { AgentActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import { collectMultiple } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
+import type { AgentMessageReceipt } from "@getpaseo/client/internal/daemon-client";
 import type {
   CommandOptions,
   SingleResult,
@@ -15,6 +16,8 @@ import { extname, resolve } from "node:path";
 export interface AgentSendResult {
   agentId: string;
   status: "queued" | "sent" | "completed" | "timeout" | "permission" | "error";
+  /** What the host applied to an agent's message with a running turn. */
+  activeTurnBehavior?: AgentActiveTurnBehavior;
   message: string;
 }
 
@@ -29,7 +32,7 @@ export const agentSendSchema: OutputSchema<AgentSendResult> = {
 };
 
 export interface AgentSendOptions extends CommandOptions {
-  behavior?: ActiveTurnBehavior;
+  behavior?: AgentActiveTurnBehavior;
   wait?: boolean;
   image?: string[];
   prompt?: string;
@@ -49,8 +52,8 @@ export function addSendOptions(cmd: Command): Command {
     .addOption(
       new Option(
         "--behavior <behavior>",
-        "Active-turn behavior (agent default: steer; otherwise: interrupt)",
-      ).choices(["interrupt", "steer"]),
+        "Leave out unless the message cannot wait. From an agent (PASEO_AGENT_ID set): queue (default) waits for the running turn to end, steer joins it, interrupt replaces it. From a person: interrupt (default) or steer",
+      ).choices(["queue", "steer", "interrupt"]),
     )
     .option("--message-id <id>", "Caller-supplied ID for message deduplication")
     .option(
@@ -177,6 +180,22 @@ function buildSendResult(agentIdArg: string, state: SendWaitState): AgentSendRes
   return { agentId, status: "completed", message: "Agent completed processing the message" };
 }
 
+export function buildNoWaitResult(agentId: string, receipt: AgentMessageReceipt): AgentSendResult {
+  return {
+    agentId,
+    status: receipt.deliveryStatus ?? "sent",
+    ...(receipt.activeTurnBehavior ? { activeTurnBehavior: receipt.activeTurnBehavior } : {}),
+    message: sendReceiptMessage(receipt),
+  };
+}
+
+function sendReceiptMessage(receipt: AgentMessageReceipt): string {
+  if (receipt.deliveryStatus !== "queued") return "Message sent, not waiting for completion";
+  // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove after 2027-05-22 once daemon
+  // floor >= v0.17.2. Older hosts return no guidance.
+  return receipt.guidance ?? "Message queued for delivery after the current turn ends";
+}
+
 const SEND_IF_IDLE_ERROR_CODES = new Set([
   "agent_busy",
   "agent_request_key_conflict",
@@ -227,7 +246,7 @@ function resolveIfIdleRequest(
 
 interface SendAcceptance {
   agentId: string;
-  queued?: boolean;
+  receipt?: AgentMessageReceipt;
 }
 
 async function sendIfIdle(
@@ -261,13 +280,13 @@ async function finishSend(
     if (wait === false) {
       return {
         type: "single",
-        data: {
-          agentId: acceptance.agentId,
-          status: acceptance.queued ? "queued" : "sent",
-          message: acceptance.queued
-            ? "Message queued for delivery after two quiet seconds"
-            : "Message sent, not waiting for completion",
-        },
+        data: acceptance.receipt
+          ? buildNoWaitResult(acceptance.agentId, acceptance.receipt)
+          : {
+              agentId: acceptance.agentId,
+              status: "sent",
+              message: "Message sent, not waiting for completion",
+            },
         schema: agentSendSchema,
       };
     }
@@ -328,10 +347,10 @@ export async function runSendCommand(
       const receipt = await client.sendAgentMessage(agentIdArg, promptInput, {
         images,
         sourceAgentId,
-        activeTurnBehavior: options.behavior ?? (sourceAgentId ? "steer" : "interrupt"),
+        activeTurnBehavior: options.behavior,
         messageId,
       });
-      acceptance = { agentId: agentIdArg, queued: receipt.deliveryStatus === "queued" };
+      acceptance = { agentId: agentIdArg, receipt };
     }
 
     return await finishSend(client, acceptance, options.wait);

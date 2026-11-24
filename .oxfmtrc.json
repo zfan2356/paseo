@@ -11,5 +11,11 @@
   "arrowParens": "always",
   "bracketSameLine": false,
   "bracketSpacing": true,
-  "ignorePatterns": ["*.lock", "**/*.gen.ts", "**/*.gen.tsx", "third_party/magpie/**"]
+  "ignorePatterns": [
+    "*.lock",
+    "**/*.gen.ts",
+    "**/*.gen.tsx",
+    "third_party/magpie/**",
+    "packages/react-native-enriched-markdown/**"
+  ]
 }

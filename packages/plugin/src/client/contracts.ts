@@ -6,6 +6,12 @@ import type { AgentTimelineItem, JsonValue } from "@getpaseo/protocol/agent-type
 import type { ZodType, input as ZodInput, output as ZodOutput } from "zod";
 import type { PluginFile } from "./file.js";
 import type {
+  PluginComposer,
+  PluginComposerItemContribution,
+  PluginComposerSelector,
+} from "./composer.js";
+import type { PluginNewWorkspaceItemContribution } from "./new-workspace.js";
+import type {
   PluginRpcContract,
   PluginSubscribeOptions,
   PluginSubscriptionContract,
@@ -43,16 +49,25 @@ export interface PluginHostProps {
 interface PluginNavigableHostProps extends PluginHostProps {
   /** Client-owned navigation. Undefined on older hosts; hide dependent affordances when absent. */
   readonly navigation?: {
+    /** This client supports the focusHost option on agent/workspace navigation. */
+    readonly supportsFocusHost?: boolean;
     /** Present only on Electron. The browser runs locally; serverId selects workspace ownership. */
     readonly openBrowser?: (input: {
       readonly url: string;
       readonly workspaceId: string;
       readonly serverId?: string;
     }) => void;
-    readonly openAgent: (input: { readonly agentId: string; readonly serverId?: string }) => void;
+    readonly openAgent: (input: {
+      readonly agentId: string;
+      readonly serverId?: string;
+      /** Select only the destination host in the sidebar and clear project/label filters. */
+      readonly focusHost?: boolean;
+    }) => void;
     readonly openWorkspace: (input: {
       readonly workspaceId: string;
       readonly serverId?: string;
+      /** Select only the destination host in the sidebar and clear project/label filters. */
+      readonly focusHost?: boolean;
     }) => void;
   };
 }
@@ -113,6 +128,22 @@ export interface PluginSidebarViewContribution<Text extends PluginText = string>
   title: Text;
   description?: Text;
   Component: ComponentType<PluginSidebarViewProps>;
+}
+
+export interface PluginWorkspaceRowBadgeItemProps extends PluginHostProps {
+  workspaceId: string;
+}
+
+/**
+ * Part of the line under a workspace's title in the sidebar, on every workspace of the plugin's host.
+ * Render `WorkspaceRowBadge`, or nothing when there is nothing to say about this workspace.
+ */
+export interface PluginWorkspaceRowBadgeItemContribution<Text extends PluginText = string> {
+  id: string;
+  /** The item's toggle in the sidebar's Show menu. */
+  title: Text;
+  icon: PluginIcon;
+  Component: ComponentType<PluginWorkspaceRowBadgeItemProps>;
 }
 
 /**
@@ -222,6 +253,9 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
   addSidebarHeaderItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
   addSidebarFooterItem(contribution: PluginSidebarItemContribution<PluginText>): PluginCleanup;
   addAgentPanel(contribution: PluginAgentPanelContribution<PluginText>): PluginCleanup;
+  addWorkspaceRowBadgeItem(
+    contribution: PluginWorkspaceRowBadgeItemContribution<PluginText>,
+  ): PluginCleanup;
   addWorkspacePanel(contribution: PluginWorkspacePanelContribution<PluginText>): PluginCleanup;
   addCommandCenterItem(
     contribution: PluginCommandCenterItemContribution<PluginText>,
@@ -234,6 +268,8 @@ export interface PluginClientContext extends PluginCommandCapabilities, PluginCl
     contribution: PluginComposerPillContribution<PluginText>,
   ): PluginButtonRegistration<PluginText>;
   addAttachmentSource(contribution: PluginAttachmentSourceContribution<PluginText>): PluginCleanup;
+  addComposerItem(contribution: PluginComposerItemContribution): PluginCleanup;
+  addNewWorkspaceItem(contribution: PluginNewWorkspaceItemContribution): PluginCleanup;
   addTheme(contribution: PluginThemeContribution<PluginText>): PluginCleanup;
   addFilePanel(contribution: PluginFilePanelContribution<PluginText>): PluginCleanup;
   addTimelineTransformer<ItemType extends AgentTimelineItem["type"]>(
@@ -348,6 +384,8 @@ export interface PluginCommandCapabilities {
     input: PluginWireInput<ZodInput<InputSchema>>,
   ): Promise<ZodOutput<OutputSchema>>;
   openScreen(input: PluginOpenScreenInput): void;
+  /** The composers `selector` names, whether or not their tabs are open; see `useComposers`. */
+  composers(selector: PluginComposerSelector): readonly PluginComposer[];
   /** @deprecated Use `openScreen`. */
   openSurface(id: string): void;
   openSettings(id: string): void;

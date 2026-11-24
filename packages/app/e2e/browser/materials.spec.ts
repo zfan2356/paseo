@@ -971,7 +971,7 @@ for (const platform of ["darwin", "web"] as const) {
               (el) => el.getBoundingClientRect().width > 0,
             ) ?? null;
           const frame = document.querySelector('[data-material="panel-frame"]');
-          const column = document.querySelector('[data-material="workspace-row"] > :first-child');
+          const column = document.querySelector('[data-material="workspace-column"]');
           if (!frame || !column) return null;
           const sidebar = document.querySelector('[data-material="sidebar"]');
           const explorer = visible('[data-testid="workspace-explorer-sidebar"]');
@@ -1016,7 +1016,7 @@ for (const platform of ["darwin", "web"] as const) {
             return found;
           };
           const separator = document.querySelector(
-            '[data-material="workspace-row"] > :not(:first-child) [role="separator"]',
+            '[data-testid="workspace-explorer-sidebar-resize-handle"] [role="separator"]',
           );
           const s = sidebar?.getBoundingClientRect();
           const e = explorer?.getBoundingClientRect();

@@ -73,22 +73,23 @@ function skeletonCss(root: string, scheme: Theme["colorScheme"], surfaceSidebar:
 function explorerCss(root: string, scheme: Scheme): string {
   const { panel } = MATERIAL;
   const row = '[data-material="workspace-row"]';
+  const column = `${row} > [data-material="workspace-column"]`;
   const separator = '[role="separator"][aria-orientation="vertical"]';
   // The row's other children include the workspace portal host; only the one holding the
   // separator is the Explorer. `:has()` does not nest, so the open check spells it out.
-  const explorer = `${row} > :not(:first-child):has(${separator})`;
-  const panelOpen = `[data-material="panel"]:has(${row} > :not(:first-child) ${separator})`;
+  const explorer = `${column} ~ *:has(${separator})`;
+  const panelOpen = `[data-material="panel"]:has(${column} ~ * ${separator})`;
   const open = `${root} ${panelOpen}`;
   const pinned = `${root}:has([data-material="sidebar"]) ${panelOpen}`;
   return `
     ${open} { background: transparent; border-radius: 0; border-left: 0; box-shadow: none; overflow: visible; }
     ${open} div:has(${row}), ${open} ${row} { background: transparent !important; }
-    ${open} ${row} > :first-child {
+    ${open} ${column} {
       margin-right: ${panel.inset}px; background: ${MATERIAL[scheme].content}; overflow: hidden;
       border-top-right-radius: ${panel.radius}px; border-bottom-right-radius: ${panel.radius}px;
       border-right: ${panel.border[scheme]}; box-shadow: ${panel.shadow[scheme]};
     }
-    ${pinned} ${row} > :first-child {
+    ${pinned} ${column} {
       border-top-left-radius: ${panel.radius}px; border-bottom-left-radius: ${panel.radius}px;
       border-left: ${panel.border[scheme]};
     }

@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { View, Text } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
+import { CHAT_COLUMN_RAIL_DATASET } from "@/chat-rail";
 import { FOOTER_HEIGHT } from "@/constants/layout";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { KeyboardTranslateView } from "@/keyboard/shift";
@@ -36,7 +37,7 @@ export function ArchivedAgentCallout({ serverId, agentId }: ArchivedAgentCallout
 
   return (
     <KeyboardTranslateView style={styles.container}>
-      <View style={styles.inputAreaContainer}>
+      <View style={styles.inputAreaContainer} dataSet={CHAT_COLUMN_RAIL_DATASET}>
         <View style={styles.inputAreaContent}>
           <View style={styles.calloutStack}>
             <View dataSet={MATERIAL_SLOTS.callout} style={styles.callout}>

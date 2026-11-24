@@ -8,6 +8,7 @@ export default function contribute(server: PluginServerContext) {
     id: "codex",
     label: "Codex",
     icon: "icon.svg",
+    providers: ["codex", "opencode", "pi", "omp"],
     input: usageInputSchema,
     discover: async (scope) => magpie.discover(scope, await discover(scope)),
     fetch: (input) => {

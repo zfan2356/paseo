@@ -101,47 +101,23 @@ export const TOOLBAR_DISC_SIZES = { touch: 36, pointer: 28 } satisfies SizingVal
 export const TOOLBAR_DISC_SIZE = bySizing(TOOLBAR_DISC_SIZES);
 
 /**
- * The space between adjacent toolbar controls. Touch-sized it is the visible space between what
- * the controls paint, because each control lays out at its painted width (`toolbarSlot`).
+ * The space between adjacent toolbar controls. Touch-sized there is none: each control lays out at
+ * its fully rounded highlight, so neighbouring highlights touch and never overlap.
  */
-export const TOOLBAR_CONTROL_GAPS = { touch: 20, pointer: 4 } satisfies SizingValue;
+export const TOOLBAR_CONTROL_GAPS = { touch: 0, pointer: 4 } satisfies SizingValue;
 export const TOOLBAR_CONTROL_GAP = bySizing(TOOLBAR_CONTROL_GAPS);
 
-/**
- * A toolbar control's frame: a disc-sized circle, which is also its fully rounded highlight.
- * Touch-sized it lays out at the width of the glyph it paints, `shapeWidth`, and the circle reaches
- * into the gaps on either side, so the row spaces what you see. Pointer-sized it is the square
- * control.
- */
-export function toolbarSlot(shapeWidth: number): {
-  width: LayoutValue;
-  height: LayoutValue;
-  marginHorizontal: LayoutValue;
-} {
-  return {
-    width: TOOLBAR_DISC_SIZE,
-    height: TOOLBAR_DISC_SIZE,
-    marginHorizontal: bySizing({
-      touch: (shapeWidth - TOOLBAR_DISC_SIZES.touch) / 2,
-      pointer: 0,
-    }),
-  };
+/** A labelled toolbar control's padding on each side of its content. */
+export const TOOLBAR_LABEL_PADDING = 8;
+
+/** An icon-only toolbar control's frame: a disc-sized circle, which is also its highlight. */
+export function toolbarSlot(): { width: LayoutValue; height: LayoutValue } {
+  return { width: TOOLBAR_DISC_SIZE, height: TOOLBAR_DISC_SIZE };
 }
 
-/**
- * A toolbar control as wide as its content, such as a labelled picker: a disc-tall pill. Touch-sized
- * its padding reaches into the gaps, so its content is what the row spaces.
- */
-export function toolbarContentSlot(padding: number): {
-  height: LayoutValue;
-  paddingHorizontal: number;
-  marginHorizontal: LayoutValue;
-} {
-  return {
-    height: TOOLBAR_DISC_SIZE,
-    paddingHorizontal: padding,
-    marginHorizontal: bySizing({ touch: -padding, pointer: 0 }),
-  };
+/** A toolbar control as wide as its content, such as a labelled picker: a disc-tall pill. */
+export function toolbarContentSlot(): { height: LayoutValue; paddingHorizontal: number } {
+  return { height: TOOLBAR_DISC_SIZE, paddingHorizontal: TOOLBAR_LABEL_PADDING };
 }
 
 /**
@@ -156,9 +132,10 @@ export function iconSizeFor(size: IconSize): SizingValue {
 }
 
 /**
- * The glyph a toolbar control paints. Touch-sized every toolbar glyph matches the header icons:
- * 20pt at the app's 1.5px stroke, resting at `foreground`. Pointer-sized it is the `md` glyph at
- * the same stroke and rests muted until hovered.
+ * The glyph a toolbar control paints. Touch-sized every toolbar glyph is 20pt at the app's 1.5px
+ * stroke. An icon-only control's glyph matches the header icons and rests at `foreground`; a glyph
+ * paired with a label rests muted so the control reads as one quiet unit with its label.
+ * Pointer-sized it is the `md` glyph at the same stroke and rests muted until hovered.
  */
 export type ToolbarGlyphTone = "foreground" | "muted";
 
@@ -184,7 +161,7 @@ const POINTER_TOOLBAR_GLYPH: ToolbarGlyph = {
 const TOOLBAR_GLYPHS: Record<ControlSizing, ToolbarGlyphs> = {
   touch: {
     icon: { size: TOUCH_ICON_SIZE.md, strokeWidth: ICON_STROKE_WIDTH, tone: "foreground" },
-    label: { size: TOUCH_ICON_SIZE.md, strokeWidth: ICON_STROKE_WIDTH, tone: "foreground" },
+    label: { size: TOUCH_ICON_SIZE.md, strokeWidth: ICON_STROKE_WIDTH, tone: "muted" },
   },
   pointer: { icon: POINTER_TOOLBAR_GLYPH, label: POINTER_TOOLBAR_GLYPH },
 };
@@ -246,8 +223,11 @@ export interface SwitchGeometry {
   thumbSize: number;
   /** How far the thumb slides between off and on. */
   thumbTravel: number;
-  /** The control height the switch reserves, so its row lines up with one holding a button. */
-  reservedHeight: number;
+  /**
+   * The height of the area that takes the press: the control height of the switch's size. The
+   * switch itself is only as tall as its track, so it never makes a row taller.
+   */
+  hitHeight: number;
 }
 
 function switchSize(trackWidth: number, trackHeight: number, thumbSize: number) {
@@ -259,13 +239,22 @@ const SWITCH_POINTER = switchSize(34, 20, 16);
 const SWITCH_TOUCH = switchSize(44, 26, 22);
 
 /**
+ * The height of a default switch. Exported so a row can be as tall as one holding a switch whether
+ * or not it holds one. A breakpoint value, so it only works inside a Unistyles stylesheet.
+ */
+export const SWITCH_HEIGHT = bySizing({
+  touch: SWITCH_TOUCH.trackHeight,
+  pointer: SWITCH_POINTER.trackHeight,
+});
+
+/**
  * A switch follows the same two sizes as every other control. Its thumb travel feeds an
  * animation, so the size is resolved to plain numbers here instead of a stylesheet breakpoint.
  */
 export function switchGeometryForLayout(size: ControlSize, isCompact: boolean): SwitchGeometry {
   const touchSized = controlSizingForLayout(isCompact) === "touch";
   const track = size === "md" && touchSized ? SWITCH_TOUCH : SWITCH_POINTER;
-  return { ...track, reservedHeight: controlHeightForLayout(size, isCompact) };
+  return { ...track, hitHeight: controlHeightForLayout(size, isCompact) };
 }
 
 function fieldLineHeight(fontSize: number): number {
