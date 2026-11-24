@@ -22,6 +22,7 @@ export const MagpieActionSchema = z.discriminatedUnion("kind", [
 ]);
 export type MagpieAction = z.infer<typeof MagpieActionSchema>;
 export const MenuBarQuotaAccountSchema = z.object({
+  usageId: label.optional(),
   provider: label,
   name: label,
   user: label,
@@ -114,7 +115,9 @@ export function menuBarQuotaItems(
     if (report.state !== "ready") continue;
     for (const [index, account] of report.accounts.entries()) {
       const key =
-        accountIdentity(account) ??
+        (account.usageId
+          ? JSON.stringify(["usage", report.hostId, account.usageId])
+          : accountIdentity(account)) ??
         JSON.stringify([
           "host",
           report.hostId,
@@ -145,7 +148,9 @@ function accountQuotaItem(
     : null;
   const readAt = Date.parse(account.readAt);
   const cached =
-    !Number.isFinite(readAt) || now - readAt > 300_000 || now - report.checkedAt > 120_000;
+    !Number.isFinite(readAt) ||
+    now - readAt > 300_000 ||
+    (!account.usageId && now - report.checkedAt > 120_000);
   let summary = account.balance || "暂无额度数据";
   if (account.windows.length > 0) summary = "不限额";
   if (remaining !== null) summary = `剩余 ${remaining}%`;
@@ -163,7 +168,12 @@ function accountQuotaItem(
     if (window.resetsAt) details.push(`重置：${window.resetsAt}`);
   }
   if (account.readAt) details.push(`数据时间：${account.readAt}`);
-  if (account.error) details.push("请在 Magpie 面板中刷新额度或检查账号登录。");
+  if (account.error)
+    details.push(
+      account.usageId
+        ? "请检查主机上的 agy 登录状态。"
+        : "请在 Magpie 面板中刷新额度或检查账号登录。",
+    );
   const identity = maskQuotaIdentity(account.user);
   const title = [account.name || account.provider, identity].filter(Boolean).join(" · ");
   return {

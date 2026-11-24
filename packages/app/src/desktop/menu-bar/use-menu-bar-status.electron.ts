@@ -2,24 +2,23 @@ import { useEffect, useRef } from "react";
 import { getDesktopHost } from "@/desktop/host";
 import { getHostRuntimeStore, useHosts, useHostRegistryLoaded } from "@/runtime/host-runtime";
 import { deriveMenuBarSnapshot, type MenuBarAgent, type MenuBarHost } from "./status";
-import { useMenuBarQuotas } from "./use-menu-bar-quotas.electron";
+import { readMenuBarQuota, useMenuBarQuotas } from "./use-menu-bar-quotas.electron";
 import { executeMagpieAction } from "./actions.electron";
 import { queryClient } from "@/data/query-client";
 import { useDesktopSettings } from "@/desktop/settings/desktop-settings";
-import type { MenuBarQuotaReport } from "../../../../desktop/src/features/menu-bar/quotas";
 
 export function useMenuBarStatus(agents: readonly MenuBarAgent[]): void {
   const hosts = useHosts();
   const registryLoaded = useHostRegistryLoaded();
-  const quotaReports = useMenuBarQuotas();
+  useMenuBarQuotas();
   const { settings } = useDesktopSettings();
   const quotaPreference = settings.menuBarQuota;
-  const latest = useRef({ agents, hosts, registryLoaded, quotaReports, quotaPreference });
+  const latest = useRef({ agents, hosts, registryLoaded, quotaPreference });
   const publishRef = useRef<() => void>(() => {});
   useEffect(() => {
-    latest.current = { agents, hosts, registryLoaded, quotaReports, quotaPreference };
+    latest.current = { agents, hosts, registryLoaded, quotaPreference };
     publishRef.current();
-  }, [agents, hosts, registryLoaded, quotaReports, quotaPreference]);
+  }, [agents, hosts, registryLoaded, quotaPreference]);
   useEffect(() => {
     const desktop = getDesktopHost();
     if (desktop?.platform !== "darwin" || !desktop.menuBar) return;
@@ -56,21 +55,7 @@ export function useMenuBarStatus(agents: readonly MenuBarAgent[]): void {
         snapshot.quotaPreference = current.quotaPreference;
         snapshot.quotaReports = current.hosts.map((host) => {
           const online = runtime.getSnapshot(host.serverId)?.connectionStatus === "online";
-          const report = queryClient.getQueryData<MenuBarQuotaReport>([
-            "menu-bar",
-            "magpie-quotas",
-            host.serverId,
-            "online",
-          ]);
-          if (online && report) return report;
-          return {
-            hostId: host.serverId,
-            hostLabel: host.label,
-            state: online ? "loading" : "unavailable",
-            checkedAt: 0,
-            accounts: [],
-            issue: online ? "等待主机返回数据。" : "主机未连接，请恢复连接后重试。",
-          };
+          return readMenuBarQuota(host, online);
         });
       }
       const serialized = JSON.stringify(snapshot);
@@ -85,7 +70,11 @@ export function useMenuBarStatus(agents: readonly MenuBarAgent[]): void {
     const unsubscribe = runtime.subscribeAll(() => publish());
     // Read the cache at publish time, not a React render's earlier async snapshot.
     const unsubscribeQueries = queryClient.getQueryCache().subscribe((event) => {
-      if (event.query.queryKey[0] === "menu-bar") publish();
+      if (
+        event.type === "updated" &&
+        ["menu-bar", "usage", "daemon-config"].includes(String(event.query.queryKey[0]))
+      )
+        publish();
     });
     const heartbeat = setInterval(() => publish(true), 15_000);
     return () => {

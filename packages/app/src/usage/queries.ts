@@ -10,6 +10,8 @@ import {
 } from "@tanstack/react-query";
 import { useShallow } from "zustand/shallow";
 import { useFetchQuery } from "@/data/query";
+import { daemonConfigQueryKey } from "@/data/daemon-config";
+import type { MutableDaemonConfig } from "@getpaseo/protocol/messages";
 import {
   getHostRuntimeStore,
   useHostRuntimeConnectionStatuses,
@@ -49,7 +51,7 @@ function hostUsageQueryKey(serverId: string) {
  * a list shape keeps the previous key's data while the next one loads, which would show one host's
  * reports as another's.
  */
-function usageReportsQueryKey(serverId: string) {
+export function usageReportsQueryKey(serverId: string) {
   return [...hostUsageQueryKey(serverId), "reports"] as const;
 }
 
@@ -98,7 +100,7 @@ async function streamReports(input: {
   return settleReports(queryClient.getQueryData<UsageReportEntry[]>(queryKey), reports);
 }
 
-async function listReports(
+export async function listReports(
   queryClient: QueryClient,
   serverId: string,
   forceRefresh = false,
@@ -151,6 +153,36 @@ async function refreshReports(queryClient: QueryClient, serverId: string): Promi
     queryFn: () => listReports(queryClient, serverId, true),
     staleTime: 0,
   });
+}
+
+export async function refreshUsageSource(
+  queryClient: QueryClient,
+  serverId: string,
+  sourceId: string,
+) {
+  if (
+    queryClient.getQueryData<MutableDaemonConfig>(daemonConfigQueryKey(serverId))?.usage
+      ?.enabled === false
+  )
+    return;
+  const queryKey = usageReportsQueryKey(serverId);
+  const entries = queryClient.getQueryData<UsageReportEntry[]>(queryKey) ?? [];
+  const reportIds = entries.filter((entry) => entry.sourceId === sourceId).map((entry) => entry.id);
+  if (!reportIds.length) return;
+  const { reports } = await requireClient(serverId).listUsageReports({
+    reportIds,
+    forceRefresh: true,
+  });
+  queryClient.setQueryData<UsageReportEntry[]>(queryKey, (current) =>
+    reportIds.reduce(
+      (updated, id) => replaceReport(updated, id, reports.find((entry) => entry.id === id) ?? null),
+      current ?? [],
+    ),
+  );
+  const failed = reports.find(
+    (entry) => entry.report.status !== "available" && entry.defaultEnabled !== false,
+  );
+  if (failed) throw new Error(`${failed.sourceLabel} 额度刷新失败，请检查主机上的账号登录状态。`);
 }
 
 function toQueryState(query: {

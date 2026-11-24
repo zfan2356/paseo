@@ -68,6 +68,10 @@ after this rollout.
 data for menu-bar quotas and composer shortcuts. Quota failures remain distinct
 from source configuration and never imply a fallback route exists.
 
+The macOS menu bar also shows native Antigravity quota windows and reset times
+from the host's Usage reports. Hosts signed in through `agy` can display those
+windows without a Magpie gateway.
+
 Composer shortcuts now belong to the Magpie client plugin. A generic
 `addComposerExtension` mount follows the displayed composer, including Side Chat,
 and registers standard `addComposerPill` buttons through existing Magpie RPCs.
