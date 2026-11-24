@@ -66,6 +66,8 @@ export function createContextWindow(
   let initialized = false;
   let latestIdx = -1;
   let modelFloor = -1;
+  let flushFloor = -1;
+  let flushPending = false;
   let limit: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const stop = () => clearTimeout(timer);
@@ -73,10 +75,13 @@ export function createContextWindow(
 
   function checkAfterFlush(attempt = 0): void {
     stop();
-    if (source.signal.aborted || attempt === flushDelaysMs.length) return;
+    if (source.signal.aborted || !flushPending || attempt === flushDelaysMs.length) {
+      flushPending = false;
+      return;
+    }
     timer = setTimeout(() => {
       source.refresh();
-      checkAfterFlush(attempt + 1);
+      if (flushPending) checkAfterFlush(attempt + 1);
     }, flushDelaysMs[attempt]);
     timer.unref();
   }
@@ -87,18 +92,21 @@ export function createContextWindow(
       model = currentModel;
       modelBytes = model === undefined ? undefined : Buffer.from(model);
     }
+    let matchedIdx: number | undefined;
     if (changedModel) {
       stop();
+      flushPending = false;
       // Establish the old model's high-water mark in the same DB before accepting any new rows.
       modelFloor =
         readConversationDb(file, (db) => {
           const row = db.prepare("SELECT idx FROM gen_metadata ORDER BY idx DESC LIMIT 1").get();
           return typeof row?.idx === "number" ? row.idx : -1;
         }) ?? latestIdx;
+      flushFloor = modelFloor;
       limit = undefined;
     } else if (modelBytes && (!initialized || reason !== "config")) {
       const expectedModel = modelBytes;
-      readConversationDb(file, (db) => {
+      matchedIdx = readConversationDb(file, (db) => {
         const rows = db
           .prepare(`
           SELECT idx, CASE WHEN length(data) <= ? THEN data END AS data
@@ -112,14 +120,22 @@ export function createContextWindow(
           const value = effectiveWindow(data, expectedModel);
           if (value !== undefined) {
             limit = value;
-            break;
+            return idx;
           }
         }
+        return undefined;
       });
     }
     initialized = true;
-    // agy can commit gen_metadata after both usage_update and the prompt response.
-    if (reason === "usage" || reason === "settled") checkAfterFlush();
+    if (matchedIdx !== undefined && matchedIdx > flushFloor) {
+      flushFloor = matchedIdx;
+      flushPending = false;
+      stop();
+    } else if (reason === "usage" || reason === "settled") {
+      // agy can commit gen_metadata after both usage_update and the prompt response.
+      flushPending = true;
+      checkAfterFlush();
+    }
     return limit;
   };
 }

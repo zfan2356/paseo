@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync } from "node:fs";
+import { lstatSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
@@ -41,18 +41,29 @@ function flag(args: readonly string[], hyphen: string, underscore: string): stri
   return value;
 }
 
+const minAgentVersion = [1, 5, 14] as const;
+
+function supportsConversationDb(version: string | undefined): boolean {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version ?? "");
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  if (major !== minAgentVersion[0]) return major > minAgentVersion[0];
+  if (minor !== minAgentVersion[1]) return minor > minAgentVersion[1];
+  return patch >= minAgentVersion[2];
+}
+
 export function conversationDbPath(context: {
   nativeSessionId: string;
   agentVersion?: string;
   args: readonly string[];
   env: Readonly<Record<string, string | undefined>>;
 }): ConversationDbLocation | undefined {
-  // The conversation DB is an internal format. This layout was verified with agy 1.5.14.
-  const patch = /^1\.5\.(\d+)$/.exec(context.agentVersion ?? "")?.[1];
+  // The conversation DB is an internal format. This layout was verified with agy 1.5.14+.
   if (
     !sqlite.success ||
-    !patch ||
-    Number(patch) < 14 ||
+    !supportsConversationDb(context.agentVersion) ||
     !conversationId.test(context.nativeSessionId)
   ) {
     return undefined;
@@ -76,7 +87,7 @@ export function readConversationDb<T>(
 ): T | undefined {
   if (!sqlite.success) return undefined;
   try {
-    if (!lstatSync(location.gemini).isDirectory()) return undefined;
+    if (!statSync(location.gemini).isDirectory()) return undefined;
     const file = path.join(realpathSync(location.gemini), location.database);
     // Resolve the host's Gemini parent, but do not follow links within the native data directory.
     if (!lstatSync(file).isFile() || realpathSync(file) !== file) return undefined;

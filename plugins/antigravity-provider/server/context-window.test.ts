@@ -3,7 +3,8 @@ import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import type { ProviderEvent } from "@getpaseo/plugin/server/provider";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createContextWindow } from "./context-window.js";
 import { createAntigravityProvider } from "./provider.js";
 
 const directories: string[] = [];
@@ -52,6 +53,7 @@ describe("effective Antigravity context", () => {
   async function openContextSession(options?: {
     version?: string;
     linkedDb?: boolean;
+    linkedGeminiDir?: boolean;
     loadedModel?: string;
     unattributed?: boolean;
   }) {
@@ -59,8 +61,14 @@ describe("effective Antigravity context", () => {
     directories.push(directory);
     const executable = path.join(directory, "agy.cjs");
     await writeFile(executable, contextAgent);
-    const conversations = path.join(directory, "gemini", "custom", "conversations");
+    const geminiRoot = options?.linkedGeminiDir
+      ? path.join(directory, "real-gemini")
+      : path.join(directory, "gemini");
+    const conversations = path.join(geminiRoot, "custom", "conversations");
     await mkdir(conversations, { recursive: true });
+    if (options?.linkedGeminiDir) {
+      await symlink(geminiRoot, path.join(directory, "gemini"), "dir");
+    }
     const candidate = path.join(conversations, `${nativeId}.db`);
     const dbPath = options?.linkedDb ? path.join(directory, "outside.db") : candidate;
     const db = new DatabaseSync(dbPath);
@@ -179,7 +187,23 @@ describe("effective Antigravity context", () => {
     },
   );
 
-  it.each([{ linkedDb: true }, { version: "unknown" }, { model: "neon" }])(
+  it.each([{ version: "1.6.0" }, { version: "1.5.16-rc.1" }, { linkedGeminiDir: true }])(
+    "reads effective window for newer agy releases and symlinked gemini roots: %j",
+    async (options) => {
+      const session = await openContextSession(options);
+      try {
+        await session.open();
+        expect(session.usage()).toMatchObject({
+          contextWindowUsedTokens: 10458,
+          contextWindowMaxTokens: 512544,
+        });
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
+  it.each([{ linkedDb: true }, { version: "1.5.13" }, { version: "unknown" }, { model: "neon" }])(
     "retains native ACP usage when local metadata cannot be attributed: %j",
     async (options) => {
       const session = await openContextSession(options);
@@ -194,4 +218,43 @@ describe("effective Antigravity context", () => {
       }
     },
   );
+
+  it("stops flush retries once a fresh row for the current model is read", async () => {
+    vi.useFakeTimers();
+    const directory = await mkdtemp(path.join(tmpdir(), "paseo-antigravity-flush-"));
+    directories.push(directory);
+    const conversations = path.join(directory, "gemini", "custom", "conversations");
+    await mkdir(conversations, { recursive: true });
+    const db = new DatabaseSync(path.join(conversations, `${nativeId}.db`));
+    db.exec("CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)");
+    const put = db.prepare("INSERT OR REPLACE INTO gen_metadata VALUES (?, ?)");
+    const controller = new AbortController();
+    let refreshes = 0;
+    let read: ReturnType<typeof createContextWindow>;
+    try {
+      read = createContextWindow({
+        nativeSessionId: nativeId,
+        agentVersion: "1.6.0",
+        args: ["acp", "--gemini_dir=gemini", "--app_data_dir", "custom"],
+        env: { HOME: directory, USERPROFILE: directory },
+        signal: controller.signal,
+        refresh: () => {
+          refreshes++;
+          read?.("carbon", "refresh");
+        },
+      });
+      expect(read).toBeDefined();
+      expect(read!("carbon", "usage")).toBeUndefined();
+      put.run(1, carbonRow);
+      vi.advanceTimersByTime(50);
+      expect(refreshes).toBe(1);
+      expect(read!("carbon", "config")).toBe(512544);
+      vi.advanceTimersByTime(1000);
+      expect(refreshes).toBe(1);
+    } finally {
+      controller.abort();
+      db.close();
+      vi.useRealTimers();
+    }
+  });
 });

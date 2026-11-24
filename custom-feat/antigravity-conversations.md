@@ -44,11 +44,22 @@ named Antigravity. Side Chat needs the updated wrapper on its next process start
 the TUI entry point also needs the updated daemon and frontend. Preserve the
 official version pins until the round-trip test passes against an upgrade.
 
-Upstream also ships an Antigravity plugin that drives `agy` directly. The configured
+Upstream also ships an Antigravity plugin that drives `agy` directly over ACP. The configured
 `extends: "acp"` provider takes precedence over that plugin in the provider registry;
 keep that precedence so the snapshot and same-session TUI contracts remain available.
 
+For the bundled ACP `antigravity-provider`, the fork adds an `AcpTransformer.contextWindow`
+hook (`plugins/antigravity-provider/server/context-window.ts` and `conversation-db.ts`) that
+reads the model-attributed effective context window from `agy`'s SQLite `gen_metadata` table
+(`agy >= 1.5.14`), resolving symlinked `.gemini` roots while refusing symlinks inside the
+native data directory and stopping flush retries once a fresh row is read. Because it uses
+`node:sqlite`, it requires Node 22+ and degrades to native ACP usage on Node 20 hosts.
+
 ## Validation
+
+- `plugins/antigravity-provider/server/context-window.test.ts` covers resume/switch window
+  attribution, `agy` version gating, symlinked `.gemini` root vs symlinked DB rejection, and
+  early flush-poll termination.
 
 - Bridge unit tests exercise WAL snapshots, parent isolation, path validation,
   write exclusion, existing-file conflicts, capability advertisement, and failed
