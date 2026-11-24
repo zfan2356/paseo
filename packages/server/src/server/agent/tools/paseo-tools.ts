@@ -1112,8 +1112,10 @@ function createToolCatalog(
       thinkingOptionId: z.string().optional().describe("Thinking option ID."),
       features: z
         .record(z.string(), z.unknown())
-        .optional()
-        .describe("Provider-specific feature values, for example { fast_mode: true } for Codex."),
+        .nullish()
+        .describe(
+          "Provider-specific feature values, for example { fast_mode: true } for Codex. Omit when no override is needed; null is treated as omitted.",
+        ),
     })
     .strict();
   const UpdateAgentSettingsInputSchema = z
@@ -1279,8 +1281,8 @@ function createToolCatalog(
       .describe("Legacy thinking option ID. Prefer settings.thinkingOptionId."),
     features: z
       .record(z.string(), z.unknown())
-      .optional()
-      .describe("Legacy feature values. Prefer settings.features."),
+      .nullish()
+      .describe("Legacy feature values. Prefer settings.features. Null is treated as omitted."),
   };
   const createAgentInputSchema = z
     .object(scope === "agent" ? agentToAgentInputSchema : canonicalTopLevelInputSchema)
@@ -1619,7 +1621,7 @@ function createToolCatalog(
     {
       title: "Create agent",
       description:
-        "Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Omit provider and settings.thinkingOptionId to use the caller provider's configured subagent defaults; specify them only to override those defaults. Top-level creation requires provider/model (for example codex/gpt-5.4) and creates a new local workspace when workspaceId is omitted. Requires an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Do not guess; call list_providers and list_models first if uncertain.",
+        "Create an agent, including a cross-provider or cross-harness subagent such as a Codex child from a Claude or Gemini parent. Agent-scoped creation defaults to your workspace and creates your subagent. Omit provider and settings.thinkingOptionId to use the caller provider's configured subagent defaults; specify them only to override those defaults. Top-level creation requires provider/model (for example codex/gpt-5.4) and creates a new local workspace when workspaceId is omitted. Requires an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Omit settings.features when no feature override is needed. Do not send null for feature overrides. Do not guess; call list_providers and list_models first if uncertain.",
       inputSchema: createAgentInputSchema,
       outputSchema: {
         agentId: z.string(),
@@ -1673,7 +1675,7 @@ function createToolCatalog(
           cwd: resolvedArgs.cwd,
           workspaceId: resolvedArgs.workspaceId,
           thinking: thinkingOptionId,
-          features: parsedArgs.settings?.features,
+          features: parsedArgs.settings?.features ?? undefined,
           labels: {
             ...parsedArgs.labels,
             ...(callerAgentId && !resolvedArgs.detached && options.serverId

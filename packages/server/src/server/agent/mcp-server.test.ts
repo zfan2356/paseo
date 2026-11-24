@@ -1932,6 +1932,11 @@ describe("create_agent MCP tool", () => {
 
     const parsed = await tool.inputSchema.safeParseAsync(input);
     expect(parsed.success).toBe(true);
+    const invalid = await tool.inputSchema.safeParseAsync({
+      ...input,
+      settings: { features: "invalid" },
+    });
+    expect(invalid.success).toBe(false);
 
     await tool.handler(input);
 
@@ -1944,6 +1949,50 @@ describe("create_agent MCP tool", () => {
       undefined,
       { workspaceId: "workspace-created", background: false },
     );
+  });
+
+  it("treats null provider features as omitted", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.createAgent.mockResolvedValue({
+      id: "feature-null-agent",
+      cwd: REPO_CWD,
+      lifecycle: "idle",
+      currentModeId: null,
+      availableModes: [],
+      config: { title: "Feature null test" },
+    } as ManagedAgent);
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      ensureWorkspaceForCreate,
+      logger,
+    });
+    const tool = registeredTool(server, "create_agent");
+    const input = {
+      ...detachedDirectoryWorkspace(existingCwd),
+      title: "Feature null test",
+      provider: "codex/gpt-5.4",
+      initialPrompt: "Do work",
+      settings: { features: null },
+    };
+
+    const parsed = await tool.inputSchema.safeParseAsync(input);
+    expect(parsed.success).toBe(true);
+
+    await tool.handler(input);
+
+    const createArgs = spies.agentManager.createAgent.mock.calls.at(-1);
+    expect(createArgs?.[0]).toMatchObject({
+      provider: "codex",
+      model: "gpt-5.4",
+    });
+    expect(createArgs?.[0]).not.toHaveProperty("featureValues");
+    expect(createArgs?.[2]).toMatchObject({
+      workspaceId: "workspace-created",
+      background: false,
+    });
   });
 
   it("returns create_agent structured content with full provider modes", async () => {

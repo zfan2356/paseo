@@ -36,3 +36,16 @@ and propagation of config/read errors.
 
 The server change requires a daemon deployment. Reloading a conversation alone
 does not replace the running daemon's tool implementation.
+
+## Cross-harness input compatibility
+
+The shared `create_agent` MCP tool accepts `settings.features: null` from
+clients that serialize an unset optional field as null and normalizes it to an
+omitted feature override. Non-object feature values remain invalid. The tool
+description directs Claude Code and other MCP clients to use Paseo
+`create_agent` for cross-harness children and to omit feature overrides when
+they are unnecessary.
+
+The compatibility regression lives in
+`packages/server/src/server/agent/mcp-server.test.ts` under the
+`create_agent MCP tool` suite.
