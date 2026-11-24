@@ -26,6 +26,36 @@ if (args.includes("models")) {
   process.stdout.write(fixture("models-api-key").join("\n") + "\n");
   process.exit(0);
 }
+if (args.includes("acp")) {
+  const lines = createInterface({ input: process.stdin });
+  for await (const line of lines) {
+    const { id, method, params } = JSON.parse(line);
+    const send = (message) =>
+      process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+    if (method === "initialize") {
+      send({ id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true } } });
+    } else if (method === "session/load") {
+      record({ load: params.sessionId, cwd: params.cwd });
+      for (const [sessionUpdate, text] of [
+        ["user_message_chunk", "SYSTEM PREFIX\n\nHELLO"],
+        ["agent_message_chunk", "old "],
+        ["agent_message_chunk", "reply"],
+      ]) {
+        send({
+          method: "session/update",
+          params: {
+            sessionId: params.sessionId,
+            update: { sessionUpdate, content: { type: "text", text } },
+          },
+        });
+      }
+      if (process.env.AGY_TEST_REPLAY_ERROR)
+        send({ id, error: { code: -32000, message: "History unavailable" } });
+      else send({ id, result: {} });
+    } else if (id !== undefined) send({ id, result: {} });
+  }
+  process.exit(0);
+}
 if (process.env.AGY_TEST_STARTUP === "auth") {
   process.stderr.write(fixture("not-signed-in", "stderr").join("\n"));
   process.stdout.write(JSON.stringify(fixture("not-signed-in")[0]) + "\n");

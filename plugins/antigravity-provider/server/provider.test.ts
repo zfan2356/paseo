@@ -78,13 +78,17 @@ async function harness(env: Record<string, string> = {}) {
             event.type === "catalog"),
       );
   }
-  async function open(restored?: ProviderPersistence, sessionId = "s") {
+  async function open(
+    restored?: ProviderPersistence,
+    sessionId = "s",
+    history: "replay" | "skip" = "replay",
+  ) {
     await request({
       type: "session.open",
       requestId: `open-${events.length}`,
       sessionId,
       persistence: restored,
-      history: "replay",
+      history,
       config: {
         cwd,
         env: { AGY_SESSION_VALUE: "session-overlay" },
@@ -508,7 +512,7 @@ it("defers model and mode changes until the next prompt, then respawns with vali
   );
 });
 
-it("resumes after connection close without replay or another system prefix", async () => {
+it("restores native messages before ready and continues the same conversation", async () => {
   const first = await harness();
   await first.open();
   await first.completed(await first.prompt("HELLO"));
@@ -516,13 +520,39 @@ it("resumes after connection close without replay or another system prefix", asy
   await first.connection.close();
   const second = await harness();
   await second.open(persistence);
-  expect(second.events.filter((event) => event.type === "timeline.item")).toEqual([]);
+  const ready = second.events.findIndex((event) => event.type === "session.ready");
+  expect(
+    second.events.slice(0, ready).filter((event) => event.type === "timeline.item"),
+  ).toMatchObject([
+    { item: { type: "user_message", text: "HELLO" } },
+    { item: { type: "assistant_message", text: "old reply" } },
+  ]);
+  const load = (await second.records()).find((entry) => entry.load);
+  expect({ version: 1, data: { conversationId: load.load } }).toEqual(persistence);
+  expect(load.cwd).toBe(second.cwd);
   await second.completed(await second.prompt("RESUME"));
   expect(
     (await second.records())
       .filter((entry) => entry.input)
       .map((entry) => entry.input.message.content),
   ).toEqual(["RESUME"]);
+});
+
+it("opens without partial history and can still chat when replay fails", async () => {
+  const session = await harness({ AGY_TEST_REPLAY_ERROR: "1" });
+  await session.open();
+  const persistence = session.persistence();
+  await session.open(persistence, "skip", "skip");
+  expect((await session.records()).filter((entry) => entry.load)).toEqual([]);
+  await session.open(persistence, "restored");
+  expect(session.events).toContainEqual(
+    expect.objectContaining({
+      type: "session.notice",
+      notice: expect.objectContaining({ title: "Antigravity history unavailable" }),
+    }),
+  );
+  expect(session.events.filter((event) => event.type === "timeline.item")).toEqual([]);
+  await session.completed(await session.message([{ type: "text", text: "RESUME" }], "restored"));
 });
 
 it.each(["auth", "exit", "stderr"])(

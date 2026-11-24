@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { readAcpSessionHistory } from "@getpaseo/plugin/server/acp";
 import type {
   ProviderCatalog,
   ProviderConfigChanges,
@@ -60,7 +61,12 @@ export class Session {
     validateSelection(this.config, options.catalog());
   }
 
-  async open(requestId: string, capabilities: readonly string[]): Promise<void> {
+  async open(
+    requestId: string,
+    capabilities: readonly string[],
+    history: "replay" | "skip",
+  ): Promise<void> {
+    const restoredId = this.conversationId;
     await this.ensureDriver();
     this.emit({
       type: "session.opened",
@@ -74,8 +80,39 @@ export class Session {
     });
     this.publishFullAccessNotice();
     this.publishConfig();
+    if (restoredId && history === "replay") await this.replayHistory(restoredId);
     this.emit({ type: "session.commands", sessionId: this.options.id, commands: [] });
     this.emit({ type: "session.ready", requestId, sessionId: this.options.id });
+  }
+
+  private async replayHistory(conversationId: string): Promise<void> {
+    const { launch } = this.options;
+    let items: ProviderTimelineItem[];
+    try {
+      items = await readAcpSessionHistory(
+        { ...launch, args: [...launch.args, "acp"], env: { ...launch.env, ...this.config.env } },
+        conversationId,
+        this.config.cwd,
+      );
+    } catch (error) {
+      this.emit({
+        type: "session.notice",
+        sessionId: this.options.id,
+        notice: {
+          id: `${this.options.id}:history`,
+          severity: "warning",
+          title: "Antigravity history unavailable",
+          description: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return;
+    }
+    const firstUser = items.find((item) => item.type === "user_message");
+    const prefix = this.config.systemPrompt && `${this.config.systemPrompt}\n\n`;
+    if (firstUser && prefix && firstUser.text.startsWith(prefix)) {
+      firstUser.text = firstUser.text.slice(prefix.length);
+    }
+    for (const item of items) this.item(item);
   }
 
   async prompt(prompt: ProviderPrompt): Promise<void> {

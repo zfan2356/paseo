@@ -9,6 +9,7 @@ import {
   type Client,
   type AgentCapabilities,
   type ContentBlock,
+  type LoadSessionRequest,
   type NewSessionResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
@@ -351,6 +352,38 @@ interface StartRuntimeOptions {
   emit(event: ProviderEvent): void;
 }
 
+export async function readAcpSessionHistory(
+  launch: ProviderLaunch,
+  sessionId: string,
+  cwd: string,
+): Promise<ProviderTimelineItem[]> {
+  const items = new Map<string, ProviderTimelineItem>();
+  const runtime = await AcpRuntime.start({
+    launch,
+    options: {
+      id: launch.command,
+      label: launch.command,
+      command: [launch.command, ...launch.args],
+    },
+    boundarySessionId: sessionId,
+    env: {},
+    emit(event) {
+      if (event.type === "timeline.item") items.set(event.item.id, event.item);
+    },
+  });
+  try {
+    if (!runtime.agentCapabilities.loadSession) throw new Error("ACP session/load is unavailable");
+    await withTimeout(
+      runtime.load({ sessionId, cwd, mcpServers: [] }, "replay"),
+      30_000,
+      "ACP history replay timed out",
+    );
+    return [...items.values()];
+  } finally {
+    await runtime.close();
+  }
+}
+
 class AcpRuntime {
   readonly connection: ClientSideConnection;
   agentCapabilities: AgentCapabilities = {};
@@ -505,23 +538,10 @@ class AcpRuntime {
     };
     let response: Pick<NewSessionResponse, "modes" | "configOptions">;
     if (nativeSessionId) {
-      // ACP agents replay the loaded session's updates before session/load resolves,
-      // so the native id must be registered first for them to pass the session filter.
-      this.nativeSessionId = nativeSessionId;
-      this.replayWindow = input.history === "replay" ? "replay" : "skip";
-      try {
-        response = await this.call(
-          this.connection.loadSession({
-            sessionId: nativeSessionId,
-            cwd: input.config.cwd,
-            mcpServers,
-            _meta: metadata,
-          }),
-        );
-        await this.drainNotifications();
-      } finally {
-        this.replayWindow = null;
-      }
+      response = await this.load(
+        { sessionId: nativeSessionId, cwd: input.config.cwd, mcpServers, _meta: metadata },
+        input.history,
+      );
     } else {
       const newSession = await this.call(
         this.connection.newSession({
@@ -559,6 +579,18 @@ class AcpRuntime {
     }
     this.emit({ type: "session.ready", requestId: input.requestId, sessionId: input.sessionId });
     return sessionCapabilities;
+  }
+
+  async load(request: LoadSessionRequest, history: "replay" | "skip") {
+    this.nativeSessionId = request.sessionId;
+    this.replayWindow = history;
+    try {
+      const response = await this.call(this.connection.loadSession(request));
+      await this.drainNotifications();
+      return response;
+    } finally {
+      this.replayWindow = null;
+    }
   }
 
   async discover(cwd?: string): Promise<ProviderCatalog> {
