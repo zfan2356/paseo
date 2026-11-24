@@ -1076,7 +1076,9 @@ function DesktopCenterColumnChrome({
 }) {
   return (
     <WindowChromeRegion corners={explorerOpen && !focusModeEnabled ? "top-left" : "both"}>
-      <View style={styles.centerColumn}>{children}</View>
+      <View style={styles.centerColumn} dataSet={MATERIAL_SLOTS.workspaceColumn}>
+        {children}
+      </View>
     </WindowChromeRegion>
   );
 }

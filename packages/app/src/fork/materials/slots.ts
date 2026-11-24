@@ -19,6 +19,7 @@ export const MATERIAL_SLOTS = {
   panel: { material: "panel" },
   sidebar: { material: "sidebar" },
   workspaceRow: { material: "workspace-row" },
+  workspaceColumn: { material: "workspace-column" },
   settings: { material: "settings" },
   header: { material: "header" },
   dialog: { material: "dialog" },
