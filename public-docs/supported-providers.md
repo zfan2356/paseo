@@ -23,26 +23,23 @@ Work out of the box once the underlying CLI is installed and authenticated.
 
 ### Antigravity
 
-Install the Antigravity CLI (`agy`) on your daemon host, then run `agy` once to sign in. Pick
+Install Antigravity CLI (`agy`) 1.5.0 or later on your daemon host, then run `agy` once to sign in. Pick
 **Antigravity** in Paseo. The provider ships with Paseo; no separate plugin install is required.
 
-**Full access** is the only permission mode. Antigravity cannot ask for permission when another
-app drives it, so Paseo starts `agy` with `--dangerously-skip-permissions`. Every tool call,
-including shell commands, runs without asking. Each session starts with a warning explaining
-this, including when you reopen a chat. Antigravity's own policy can still deny
-an action.
+**Full access** is the default. Paseo approves ordinary tool requests in this mode and shows a
+warning when you open the session. Select **Default** to review permission requests.
 
 If you accept full access on this host, set `PASEO_ANTIGRAVITY_ACK_FULL_ACCESS` to `"1"` in
 `agents.providers.antigravity.env` in `~/.paseo/config.json` to skip the timeline warning on
 subsequent session opens. The mode menu still displays **Full access**.
 
-After a daemon restart, Antigravity remembers the conversation, but Paseo's transcript starts
-fresh because `agy` does not replay its history.
+When you reopen a conversation after a daemon restart, Paseo restores its transcript from `agy`.
+The meter shows the used tokens reported by ACP. It uses the current model's effective compaction
+limit when available from local conversation metadata and falls back to the ACP model window.
 
 This integration uses your installed CLI and sign-in. It is not endorsed by Google.
 
-Paseo MCP tools and steering are unavailable. Your own `agy` MCP servers still work. Attached
-images are passed as file references for the agent to read.
+Antigravity receives the agent's MCP servers and advertises its commands through ACP.
 
 If `agy` is outside your daemon's PATH, override its command in `~/.paseo/config.json`. Use `env`
 for provider-specific environment variables:
@@ -52,7 +49,7 @@ for provider-specific environment variables:
   "agents": {
     "providers": {
       "antigravity": {
-        "command": ["/absolute/path/to/agy"],
+        "command": ["/absolute/path/to/agy", "acp", "--disable-telemetry"],
         "env": { "EXAMPLE_VARIABLE": "value" }
       }
     }
