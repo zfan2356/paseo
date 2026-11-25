@@ -13,6 +13,7 @@ function agent(overrides: Partial<MenuBarAgent> = {}): MenuBarAgent {
     id: "task",
     serverId: "local",
     title: "Test task",
+    labels: {},
     status: "idle",
     turn: { phase: "idle", cancellationRequestId: null },
     pendingPermissionCount: 0,
@@ -144,5 +145,129 @@ describe("menu bar task snapshot", () => {
     });
     expect(snapshot.tasks).toHaveLength(14);
     expect(snapshot.running).toBe(20);
+  });
+});
+
+describe("main-session task board", () => {
+  it("shows one running task for an idle parent with active descendants", () => {
+    const secondHost = { ...host, serverId: "remote" };
+    const child = agent({
+      id: "worker",
+      serverId: "remote",
+      status: "running",
+      labels: { "paseo.parent-agent-id": "task", "paseo.parent-server-id": "local" },
+    });
+    const grandchild = agent({
+      id: "grandchild",
+      serverId: "remote",
+      status: "running",
+      labels: { "paseo.parent-agent-id": "worker" },
+    });
+    const snapshot = deriveMenuBarSnapshot(
+      [agent(), child, grandchild, grandchild],
+      [host, secondHost],
+    );
+
+    expect(snapshot.running).toBe(1);
+    expect(snapshot.tasks).toEqual([
+      expect.objectContaining({
+        agentId: "task",
+        serverId: "local",
+        status: "running",
+        mainStatus: "idle",
+        runningSubagents: 2,
+      }),
+    ]);
+    expect(MenuBarSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+
+    const disconnected = deriveMenuBarSnapshot(
+      [agent(), child, grandchild],
+      [host, { ...secondHost, connectionStatus: "offline" }],
+    );
+    expect(disconnected.running).toBe(0);
+    expect(disconnected.tasks).toEqual([]);
+  });
+
+  it("keeps the main turn state distinct and drops the child badge when work ends", () => {
+    const parent = agent({ status: "running" });
+    const waiting = agent({
+      id: "waiting-for-permission",
+      status: "running",
+      pendingPermissionCount: 1,
+      labels: { "paseo.parent-agent-id": parent.id },
+    });
+    const nativeKey = ["local", parent.id, "provider-child"].join("\0");
+    const snapshot = deriveMenuBarSnapshot(
+      [parent, waiting],
+      [host],
+      new Map([[nativeKey, { parentAgentId: parent.id, status: "running" }]]),
+    );
+    expect(snapshot).toMatchObject({
+      running: 1,
+      waiting: 0,
+      tasks: [
+        { agentId: parent.id, status: "running", mainStatus: "running", runningSubagents: 1 },
+      ],
+    });
+
+    const settled = deriveMenuBarSnapshot(
+      [parent, waiting],
+      [host],
+      new Map([[nativeKey, { parentAgentId: parent.id, status: "completed" }]]),
+    );
+    expect(settled.running).toBe(1);
+    expect(settled.tasks[0]).not.toHaveProperty("runningSubagents");
+  });
+
+  it("excludes subagents from every status count and task list even when their parent is absent", () => {
+    const labels = { "paseo.parent-agent-id": "parent-not-in-directory" };
+    const snapshot = deriveMenuBarSnapshot(
+      [
+        agent({ id: "main", status: "running" }),
+        ...Array.from({ length: 20 }, (_, index) =>
+          agent({ id: `child-${index}`, status: "running", labels }),
+        ),
+        agent({ id: "child-waiting", pendingPermissionCount: 1, labels }),
+        agent({ id: "child-failed", status: "error", labels }),
+        agent({
+          id: "child-finished",
+          requiresAttention: true,
+          attentionReason: "finished",
+          labels,
+        }),
+      ],
+      [host],
+    );
+    expect(snapshot).toMatchObject({ running: 1, waiting: 0, failed: 0, finished: 0 });
+    expect(snapshot.tasks.map((task) => task.agentId)).toEqual(["main"]);
+    expect(MenuBarSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+  });
+
+  it("excludes cross-host subagents and includes sessions detached from their parent", () => {
+    const snapshot = deriveMenuBarSnapshot(
+      [
+        agent({
+          id: "remote-child",
+          status: "running",
+          labels: {
+            "paseo.parent-agent-id": "remote-parent",
+            "paseo.parent-server-id": "another-host",
+          },
+        }),
+        agent({ id: "detached", status: "running", labels: {} }),
+      ],
+      [host],
+    );
+    expect(snapshot.running).toBe(1);
+    expect(snapshot.tasks.map((task) => task.agentId)).toEqual(["detached"]);
+  });
+
+  it("does not treat empty parent labels as delegated sessions", () => {
+    const snapshot = deriveMenuBarSnapshot(
+      [agent({ status: "running", labels: { "paseo.parent-agent-id": "  " } })],
+      [host],
+    );
+    expect(snapshot.running).toBe(1);
+    expect(snapshot.tasks).toHaveLength(1);
   });
 });

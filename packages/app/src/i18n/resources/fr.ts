@@ -2231,6 +2231,8 @@ export const fr: TranslationResources = {
     title: "Sous-agents",
     pillLabelOne: "1 sous-agent",
     pillLabelMany: "{{count}} sous-agents",
+    runningOne: "1 sous-agent en cours",
+    runningMany: "{{count}} sous-agents en cours",
     pillLabelWorking: "{{count}} en cours",
     pillLabelFailed: "{{count}} en échec",
     pillLabelNeedsInputOne: "1 attend une réponse",

@@ -2,7 +2,7 @@ import type { Theme } from "@/styles/theme";
 import { StatusIcon } from "@/components/status-icon";
 import { useCallback, useMemo, type ReactElement, type ReactNode } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
-import { Check } from "lucide-react-native";
+import { Check, GitFork } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import invariant from "tiny-invariant";
@@ -11,6 +11,8 @@ import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import type { SurfaceBackdrop } from "@/styles/surface-backdrop";
 import { usePanelInstanceAttributes } from "@/panels/panel-instance-attributes";
+import { useRunningSubagentCount } from "@/subagents/activity-context";
+import { getStatusDotColor } from "@/utils/status-dot-color";
 
 export interface WorkspaceTabPresentation {
   key: string;
@@ -23,6 +25,7 @@ export interface WorkspaceTabPresentation {
   titleState: "ready" | "loading";
   icon: React.ComponentType<PanelIconProps>;
   statusBucket: SidebarStateBucket | null;
+  runningSubagents?: number;
 }
 
 interface WorkspaceTabPresentationResolverProps {
@@ -71,6 +74,10 @@ function WorkspaceTabPresentationResolverInner({
     tabId: tab.tabId,
   });
   const attributes = usePanelInstanceAttributes({ serverId, workspaceId, tabId: tab.tabId });
+  const runningSubagents = useRunningSubagentCount(
+    serverId,
+    tab.target.kind === "agent" ? tab.target.agentId : null,
+  );
 
   const presentation = useMemo(
     () => ({
@@ -84,6 +91,7 @@ function WorkspaceTabPresentationResolverInner({
       titleState: descriptor.titleState,
       icon: descriptor.icon,
       statusBucket: descriptor.statusBucket,
+      runningSubagents,
     }),
     [
       descriptor.icon,
@@ -96,6 +104,7 @@ function WorkspaceTabPresentationResolverInner({
       tab.kind,
       attributes.modified,
       registration.showCloseButton,
+      runningSubagents,
     ],
   );
 
@@ -118,7 +127,28 @@ interface WorkspaceTabIconProps {
 }
 
 const ThemedCheckIcon = withUnistyles(Check);
+const ThemedGitFork = withUnistyles(GitFork);
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const runningColorMapping = (theme: Theme) => ({
+  color: getStatusDotColor({ theme, bucket: "running" }) ?? theme.colors.foregroundMuted,
+});
+
+export function useRunningSubagentLabel(count = 0): string | undefined {
+  const { t } = useTranslation();
+  if (count === 0) return undefined;
+  return count === 1 ? t("subagents.runningOne") : t("subagents.runningMany", { count });
+}
+
+export function WorkspaceTabSubagentBadge({ count = 0 }: { count?: number }) {
+  if (count === 0) return null;
+  return (
+    <View style={styles.subagentBadge} aria-hidden testID="workspace-tab-running-subagents">
+      <ThemedGitFork size={12} uniProps={runningColorMapping} />
+      <Text style={styles.subagentCount}>{count > 99 ? "99+" : count}</Text>
+    </View>
+  );
+}
+
 export function WorkspaceTabIcon({
   presentation,
   active = false,
@@ -157,6 +187,7 @@ export function WorkspaceTabOptionRow({
   trailingAccessory,
 }: WorkspaceTabOptionRowProps): ReactElement {
   const { t } = useTranslation();
+  const subagentLabel = useRunningSubagentLabel(presentation.runningSubagents);
   const isOptionActive = useCallback(
     ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) =>
       Boolean(hovered) || pressed || active,
@@ -175,7 +206,7 @@ export function WorkspaceTabOptionRow({
   );
   return (
     <View style={optionRowStyle}>
-      <Pressable onPress={onPress} style={pressableStyle}>
+      <Pressable onPress={onPress} style={pressableStyle} accessibilityHint={subagentLabel}>
         {(state) => {
           const optionActive = isOptionActive(state);
           return (
@@ -194,6 +225,7 @@ export function WorkspaceTabOptionRow({
                     : presentation.label}
                 </Text>
               </View>
+              <WorkspaceTabSubagentBadge count={presentation.runningSubagents} />
             </>
           );
         }}
@@ -214,6 +246,18 @@ export function WorkspaceTabOptionRow({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  subagentBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    flexShrink: 0,
+    pointerEvents: "none",
+  },
+  subagentCount: {
+    fontSize: theme.fontSize.sm,
+    fontVariant: ["tabular-nums"],
+    color: runningColorMapping(theme).color,
+  },
   iconActive: {
     color: theme.colors.foreground,
   },

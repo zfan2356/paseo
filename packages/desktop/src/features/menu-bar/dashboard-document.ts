@@ -25,6 +25,9 @@ main{flex:1;min-height:0;overflow-y:auto;padding:0 12px 12px;scrollbar-width:thi
 section{padding:4px 0 8px}h2{font-size:11px;margin:8px 8px 6px;font-weight:600;display:flex;justify-content:space-between;align-items:center}h2 span{color:var(--muted);font-weight:400}
 .task{width:100%;text-align:left;padding:8px;display:block}.row{display:flex;align-items:center;gap:8px}.title{color:var(--fg);font-size:13px;font-weight:550;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}.badge{color:var(--amber);font-size:10px;flex:none}.summary{margin:4px 0 0 14px;color:var(--muted);font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.dot.idle,.main-status.idle{color:var(--muted)}.dot.waiting,.main-status.waiting{color:var(--amber)}
+.task-status{margin:4px 0 0 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px}
+.subagents-running{color:var(--blue);background:var(--raised);border:1px solid var(--line);border-radius:5px;padding:0 5px;white-space:nowrap}
 .meta{display:flex;justify-content:space-between;gap:12px;margin:5px 0 0 14px;font-size:10px;color:var(--muted)}.host{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .empty{margin:0;padding:10px 8px 12px;color:var(--muted);font-size:12px}.more{font-size:11px;color:var(--blue);margin:2px 4px;padding:6px}
 .error{margin:0 20px 10px;color:var(--red);font-size:12px}.error:empty{display:none}
@@ -48,6 +51,7 @@ const main=document.querySelector('main');
 let latest=null, pending=false, deferred=false;
 const expandedQuotas=new Set();
 const names={running:'运行中',finished:'已完成',failed:'报错'};
+const mainStatuses={idle:'主会话空闲',running:'主会话运行中',waiting:'主会话待审批',finished:'主会话已完成',failed:'主会话报错'};
 function element(tag,className,text){const node=document.createElement(tag);node.className=className;node.textContent=text;return node;}
 function age(timestamp){if(!timestamp)return '';const minutes=Math.max(0,Math.floor((Date.now()-timestamp)/60000));if(minutes<1)return '刚刚';if(minutes<60)return minutes+' 分钟前';if(minutes<1440)return Math.floor(minutes/60)+' 小时前';return Math.floor(minutes/1440)+' 天前';}
 async function act(action,button){
@@ -107,9 +111,19 @@ function render(snapshot){
    const tasks=snapshot?snapshot.tasks.filter(t=>kind==='running'?(t.status==='running'||t.status==='waiting'):t.status===kind):[];
    for(const task of tasks){
      const button=element('button','task','');button.dataset.key=JSON.stringify([task.serverId,task.agentId]);button.setAttribute('aria-label','打开任务：'+task.title);
-     const row=element('div','row','');row.append(element('span','dot',''),element('span','title',task.title));
+     const mainStatus=task.mainStatus||task.status;
+     const row=element('div','row','');row.append(element('span','dot '+mainStatus,''),element('span','title',task.title));
      if(task.status==='waiting')row.append(element('span','badge','待审批'));
-     button.append(row,element('div','summary',task.summary||({waiting:'等待你的审批后继续执行',running:'正在执行任务',finished:'本轮任务已结束，点击查看结果',failed:'执行出错，点击查看详情'})[task.status]));
+     button.append(row);
+     if(task.runningSubagents>0){
+       const mainLabel=mainStatuses[mainStatus];
+       const subagentLabel=task.runningSubagents+' 个子代理运行中';
+       const status=element('div','task-status','');
+       status.append(element('span','main-status '+mainStatus,mainLabel),element('span','subagents-running',subagentLabel));
+       button.setAttribute('aria-description',mainLabel+'，'+subagentLabel);
+       button.append(status);
+     }
+     button.append(element('div','summary',task.summary||({idle:'等待子代理执行',waiting:'等待你的审批后继续执行',running:'正在执行任务',finished:'本轮任务已结束，点击查看结果',failed:'执行出错，点击查看详情'})[mainStatus]));
      const host=snapshot.hosts.find(h=>h.serverId===task.serverId);
      const meta=element('div','meta','');meta.append(element('span','host',host?host.label:task.serverId),element('span','time',age(task.updatedAt)));button.append(meta);
      button.addEventListener('click',()=>act({kind:'task',serverId:task.serverId,agentId:task.agentId},button));section.append(button);

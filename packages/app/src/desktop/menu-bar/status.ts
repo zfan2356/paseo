@@ -1,5 +1,11 @@
+import { isDelegatedAgent } from "@getpaseo/protocol/agent-labels";
 import type { AgentDirectoryEntry } from "@/types/agent-directory";
 import type { HostRuntimeSnapshot } from "@/runtime/host-runtime";
+import {
+  deriveRunningSubagentCounts,
+  subagentActivityKey,
+  type ProviderSubagentActivity,
+} from "@/subagents/activity";
 import type { MenuBarSnapshot, MenuBarTask } from "../../../../desktop/src/features/menu-bar/state";
 
 export type MenuBarAgent = Pick<
@@ -9,6 +15,7 @@ export type MenuBarAgent = Pick<
   | "title"
   | "status"
   | "turn"
+  | "backgroundWork"
   | "pendingPermissionCount"
   | "archivedAt"
   | "requiresAttention"
@@ -17,6 +24,7 @@ export type MenuBarAgent = Pick<
   | "cwd"
   | "provider"
   | "lastActivityAt"
+  | "labels"
 >;
 export type MenuBarHost = Pick<
   HostRuntimeSnapshot,
@@ -38,6 +46,7 @@ const priority = { waiting: 0, failed: 1, running: 2, finished: 3 };
 export function deriveMenuBarSnapshot(
   agents: readonly MenuBarAgent[],
   hosts: readonly MenuBarHost[],
+  providerSubagents?: ProviderSubagentActivity,
 ): MenuBarSnapshot {
   const snapshot: MenuBarSnapshot = {
     hosts: hosts.map((host) => {
@@ -58,13 +67,20 @@ export function deriveMenuBarSnapshot(
   const ready = new Set(
     snapshot.hosts.filter((host) => host.status === "ready").map((host) => host.serverId),
   );
+  const readyAgents = agents.filter((agent) => ready.has(agent.serverId) && !agent.archivedAt);
+  const runningCounts = deriveRunningSubagentCounts(readyAgents, providerSubagents);
   const seen = new Set<string>();
-  for (const agent of agents) {
-    if (agent.archivedAt || !ready.has(agent.serverId)) continue;
-    const key = JSON.stringify([agent.serverId, agent.id]);
+  for (const agent of readyAgents) {
+    if (isDelegatedAgent(agent)) continue;
+    const key = subagentActivityKey(agent.serverId, agent.id);
     if (seen.has(key)) continue;
     seen.add(key);
-    const status = taskStatus(agent);
+    const mainStatus = taskStatus(agent);
+    const runningSubagents = runningCounts.get(key) ?? 0;
+    const status =
+      runningSubagents > 0 && (mainStatus === null || mainStatus === "finished")
+        ? "running"
+        : mainStatus;
     if (!status) continue;
     snapshot[status]++;
     snapshot.tasks.push({
@@ -72,6 +88,7 @@ export function deriveMenuBarSnapshot(
       agentId: agent.id,
       title: (agent.title?.trim() || "Untitled task").slice(0, 200),
       status,
+      ...(runningSubagents > 0 ? { runningSubagents, mainStatus: mainStatus ?? "idle" } : {}),
       summary: (status === "failed" && agent.lastError
         ? agent.lastError
         : `${agent.provider} · ${

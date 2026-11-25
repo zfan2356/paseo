@@ -76,6 +76,8 @@ import {
   resolveLeftSidebarPresentation,
 } from "@/components/desktop-sidebar-layout";
 import { isNative, isWeb } from "@/constants/platform";
+import { useAggregatedAgents } from "@/hooks/use-aggregated-agents";
+import { SubagentActivityProvider } from "@/subagents/activity-context";
 import { HorizontalScrollProvider } from "@/contexts/horizontal-scroll-context";
 import { SessionProvider } from "@/contexts/session-context";
 import { SidebarCalloutProvider } from "@/contexts/sidebar-callout-context";
@@ -709,7 +711,6 @@ function ProvidersWrapper({ children }: { children: ReactNode }) {
         <DesktopWindowControlsSync />
         <OfferLinkListener />
         <HostSessionManager />
-        <FaviconStatusSync />
         {children}
       </VoiceProvider>
     </AppearanceProvider>
@@ -904,9 +905,10 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
   return <AppContainer chromeEnabled={shouldShowAppChrome}>{children}</AppContainer>;
 }
 
-function FaviconStatusSync() {
-  useFaviconStatus();
-  return null;
+function AgentActivityScope({ children }: { children: ReactNode }) {
+  const { agents } = useAggregatedAgents({ demand: !isNative, readCached: true });
+  useFaviconStatus(agents);
+  return <SubagentActivityProvider agents={agents}>{children}</SubagentActivityProvider>;
 }
 
 const ROOT_STACK_SCREEN_OPTIONS = {
@@ -1001,12 +1003,14 @@ function RuntimeProviders({ children }: { children: ReactNode }) {
 function RootOverlayProviders({ children }: { children: ReactNode }) {
   return (
     <ToastProvider>
-      <PortalProvider>
-        <BottomSheetModalProvider>
-          {children}
-          <WindowLayoutActionsHost />
-        </BottomSheetModalProvider>
-      </PortalProvider>
+      <AgentActivityScope>
+        <PortalProvider>
+          <BottomSheetModalProvider>
+            {children}
+            <WindowLayoutActionsHost />
+          </BottomSheetModalProvider>
+        </PortalProvider>
+      </AgentActivityScope>
     </ToastProvider>
   );
 }

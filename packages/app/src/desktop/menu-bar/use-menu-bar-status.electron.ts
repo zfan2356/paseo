@@ -6,6 +6,7 @@ import { readMenuBarQuota, useMenuBarQuotas } from "./use-menu-bar-quotas.electr
 import { executeMagpieAction } from "./actions.electron";
 import { queryClient } from "@/data/query-client";
 import { useDesktopSettings } from "@/desktop/settings/desktop-settings";
+import { useProviderSubagentStore } from "@/subagents/provider-store";
 
 export function useMenuBarStatus(agents: readonly MenuBarAgent[]): void {
   const hosts = useHosts();
@@ -49,7 +50,11 @@ export function useMenuBarStatus(agents: readonly MenuBarAgent[]): void {
         };
       });
       const snapshot = current.registryLoaded
-        ? deriveMenuBarSnapshot(current.agents, snapshots)
+        ? deriveMenuBarSnapshot(
+            current.agents,
+            snapshots,
+            useProviderSubagentStore.getState().descriptors,
+          )
         : null;
       if (snapshot) {
         snapshot.quotaPreference = current.quotaPreference;
@@ -68,6 +73,9 @@ export function useMenuBarStatus(agents: readonly MenuBarAgent[]): void {
     publishRef.current = () => publish();
     publish();
     const unsubscribe = runtime.subscribeAll(() => publish());
+    const unsubscribeSubagents = useProviderSubagentStore.subscribe((state, previousState) => {
+      if (state.descriptors !== previousState.descriptors) publish();
+    });
     // Read the cache at publish time, not a React render's earlier async snapshot.
     const unsubscribeQueries = queryClient.getQueryCache().subscribe((event) => {
       if (
@@ -79,6 +87,7 @@ export function useMenuBarStatus(agents: readonly MenuBarAgent[]): void {
     const heartbeat = setInterval(() => publish(true), 15_000);
     return () => {
       unsubscribe();
+      unsubscribeSubagents();
       unsubscribeQueries();
       clearInterval(heartbeat);
       removeAction?.();

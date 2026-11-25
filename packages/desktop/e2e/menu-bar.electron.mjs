@@ -230,6 +230,8 @@ app.whenReady().then(() => {
           title: "优化推理服务性能",
           summary: "codex · inference-service",
           status: "running",
+          mainStatus: "idle",
+          runningSubagents: 2,
           updatedAt: Date.now() - 120000,
         },
         {
@@ -260,6 +262,9 @@ app.whenReady().then(() => {
     await expect(board.locator("#section-finished .task")).toHaveCount(1);
     await expect(board.locator("#section-failed .summary")).toContainText("SSH connection refused");
     await expect(board.locator(".badge")).toHaveText("待审批");
+    const delegatedTask = board.getByRole("button", { name: "打开任务：优化推理服务性能" });
+    await expect(delegatedTask.getByText("主会话空闲", { exact: true })).toBeVisible();
+    await expect(delegatedTask.getByText("2 个子代理运行中", { exact: true })).toBeVisible();
     await expect(board.locator(".notice")).toContainText("GPU");
     const quotaReport = {
       hostId: "local",

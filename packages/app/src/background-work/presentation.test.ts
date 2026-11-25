@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { backgroundWorkText } from "./presentation";
+import { backgroundWorkStatusLead, backgroundWorkText } from "./presentation";
 
 test("shows descriptions and commands once, with useful fallbacks", () => {
   expect(
@@ -17,4 +17,12 @@ test("shows descriptions and commands once, with useful fallbacks", () => {
     title: "Shell",
     command: null,
   });
+});
+
+test("leads the status line with model and thinking when the agent has them", () => {
+  expect(backgroundWorkStatusLead("GPT-6.1 Terra · Medium", "Shell")).toBe(
+    "GPT-6.1 Terra · Medium · ",
+  );
+  expect(backgroundWorkStatusLead("  ", "Shell")).toBe("Shell · ");
+  expect(backgroundWorkStatusLead(null, "Shell")).toBe("Shell · ");
 });

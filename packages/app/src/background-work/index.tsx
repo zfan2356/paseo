@@ -6,9 +6,10 @@ import { StyleSheet } from "react-native-unistyles";
 import { ComposerTrackPill, ComposerTrackRow } from "@/composer/tracks";
 import { LiveElapsed } from "@/components/message";
 import { Button } from "@/components/ui/button";
+import { useAgentFactsLine } from "@/panels/agent-facts-line";
 import type { PaseoAgentBackgroundWorkItem } from "@getpaseo/client";
 import { createHostBackgroundWorkModel } from "./host";
-import { backgroundWorkText } from "./presentation";
+import { backgroundWorkStatusLead, backgroundWorkText } from "./presentation";
 export { createHostBackgroundWorkModel } from "./host";
 
 function kindKey(kind: string): "shell" | "monitor" | "heartbeat" | "other" {
@@ -19,11 +20,16 @@ function kindKey(kind: string): "shell" | "monitor" | "heartbeat" | "other" {
 export function BackgroundWorkTrack({
   model,
   count,
+  serverId,
+  agentId,
 }: {
   model: ReturnType<typeof createHostBackgroundWorkModel>;
   count: number;
+  serverId: string;
+  agentId: string;
 }) {
   const { t } = useTranslation();
+  const agentFacts = useAgentFactsLine(serverId, agentId);
   const { items, status, stops } = useSyncExternalStore(
     model.subscribe,
     model.getSnapshot,
@@ -78,6 +84,7 @@ export function BackgroundWorkTrack({
           key={item.stopToken ?? item.id}
           item={item}
           model={model}
+          agentFacts={agentFacts}
           live={Boolean(
             items?.some((entry) => entry.id === item.id && entry.stopToken === item.stopToken),
           )}
@@ -92,12 +99,14 @@ export function BackgroundWorkTrack({
 function BackgroundWorkRow({
   item,
   model,
+  agentFacts,
   live,
   ready,
   stopStatus,
 }: {
   item: PaseoAgentBackgroundWorkItem;
   model: ReturnType<typeof createHostBackgroundWorkModel>;
+  agentFacts: string | null;
   live: boolean;
   ready: boolean;
   stopStatus?: "pending" | "error";
@@ -114,6 +123,7 @@ function BackgroundWorkRow({
   let detail = t("message.backgroundWork.notRunning");
   if (stopStatus === "pending") detail = t("message.backgroundWork.stopping");
   const { title, command } = backgroundWorkText(item, kind);
+  const statusLead = backgroundWorkStatusLead(agentFacts, kind);
   const external = item.external;
   const action = item.canStop && ready && live && (!external || external.freshness === "ready");
   const stopLabel = external
@@ -123,13 +133,19 @@ function BackgroundWorkRow({
   return (
     <ComposerTrackRow>
       <View style={styles.row}>
-        <Text style={styles.title}>{title}</Text>
-        {command ? <Text style={styles.facts}>{command}</Text> : null}
+        <Text style={styles.title} numberOfLines={1}>
+          {title}
+        </Text>
+        {command ? (
+          <Text style={styles.facts} numberOfLines={1}>
+            {command}
+          </Text>
+        ) : null}
         {external ? (
           <ExternalWorkFacts item={item} ready={ready && live} />
         ) : (
-          <Text style={styles.facts}>
-            {kind} ·{" "}
+          <Text style={styles.facts} numberOfLines={1}>
+            {statusLead}
             {live ? (
               <LiveElapsed startedAt={new Date(item.startedAt)} active style={styles.facts} />
             ) : (

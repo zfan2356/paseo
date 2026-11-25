@@ -108,19 +108,27 @@ function parentPrefix(serverId: string, parentAgentId: string): string {
 
 /**
  * Updates are not replayed across a reconnect, so a child that finished or started while the
- * update feed was down stays stale until its parent is listed again. Call this once the feed has
- * resubscribed, so every update after the list is delivered.
+ * update feed was down stays stale until its parent is listed again. This includes running children
+ * received by the app before the user opened their parent's subagent track.
  */
 export async function resyncProviderSubagents(
   client: ProviderSubagentListClient,
   serverId: string,
 ): Promise<void> {
   const serverPrefix = `${serverId}\0`;
-  const parentAgentIds = [...useProviderSubagentStore.getState().trackedParents]
-    .filter((key) => key.startsWith(serverPrefix))
-    .map((key) => key.slice(serverPrefix.length, -1));
+  const { trackedParents, descriptors } = useProviderSubagentStore.getState();
+  const parentAgentIds = new Set(
+    [...trackedParents]
+      .filter((key) => key.startsWith(serverPrefix))
+      .map((key) => key.slice(serverPrefix.length, -1)),
+  );
+  for (const [key, subagent] of descriptors) {
+    if (key.startsWith(serverPrefix) && subagent.status === "running") {
+      parentAgentIds.add(subagent.parentAgentId);
+    }
+  }
   await Promise.all(
-    parentAgentIds.map((parentAgentId) =>
+    [...parentAgentIds].map((parentAgentId) =>
       // A parent that was archived meanwhile has nothing left to catch up.
       refreshProviderSubagents(client, serverId, parentAgentId).catch(() => undefined),
     ),
