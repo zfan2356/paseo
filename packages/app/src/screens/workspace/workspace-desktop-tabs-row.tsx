@@ -58,6 +58,8 @@ import { retainWorkspaceTabMeasuredWidth } from "@/screens/workspace/workspace-t
 import {
   WorkspaceTabPresentationResolver,
   WorkspaceTabIcon,
+  WorkspaceTabSubagentBadge,
+  useRunningSubagentLabel,
   type WorkspaceTabPresentation,
 } from "@/screens/workspace/workspace-tab-presentation";
 import { buildDeterministicWorkspaceTabId } from "@/workspace-tabs/identity";
@@ -167,10 +169,12 @@ function AgentTabTooltipBody({
   serverId,
   agentId,
   title,
+  subagentLabel,
 }: {
   serverId: string;
   agentId: string;
   title: string;
+  subagentLabel?: string;
 }) {
   const lastActivityAt = useSessionStore((state) => {
     const session = state.sessions[serverId];
@@ -194,6 +198,7 @@ function AgentTabTooltipBody({
           </>
         ) : null}
       </View>
+      {subagentLabel ? <Text style={styles.tooltipAgentActivity}>{subagentLabel}</Text> : null}
     </View>
   );
 }
@@ -704,6 +709,7 @@ function TabHandleContent({
       <View style={styles.tabIcon}>
         <WorkspaceTabIcon presentation={presentation} active={isHighlighted} backdrop={backdrop} />
       </View>
+      <WorkspaceTabSubagentBadge count={presentation.runningSubagents} />
       {showLabel && presentation.titleState === "loading" ? (
         <View style={tabLabelSkeletonStyle} />
       ) : null}
@@ -850,6 +856,7 @@ function TabChip({
   );
 
   const tabAccessibilityState = useMemo(() => ({ selected: isActive }), [isActive]);
+  const subagentLabel = useRunningSubagentLabel(presentation.runningSubagents);
   const testIdentity =
     tab.target.kind === "new_tab" ? tab.tabId : buildDeterministicWorkspaceTabId(tab.target);
   const tabLabelSkeletonStyle = styles.tabLabelSkeleton;
@@ -877,6 +884,7 @@ function TabChip({
               onPress={handleNavigateTab}
               accessibilityRole="button"
               accessibilityLabel={accessibilityLabel}
+              accessibilityHint={subagentLabel}
               accessibilityState={tabAccessibilityState}
               aria-selected={isActive}
             >
@@ -903,6 +911,7 @@ function TabChip({
                 serverId={serverId}
                 agentId={tab.target.agentId}
                 title={tooltipLabel}
+                subagentLabel={subagentLabel}
               />
             ) : (
               <Text style={styles.newTabTooltipText}>{tooltipLabel}</Text>

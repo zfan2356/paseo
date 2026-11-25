@@ -1,10 +1,11 @@
 import type { Locator } from "@playwright/test";
 import { expect, test, type Page } from "../support/fixtures";
-import { createIdleAgent } from "../support/helpers/archive-tab";
+import { createMockIdleAgent } from "../support/helpers/archive-tab";
 import { seedWorkspace } from "../support/helpers/seed-client";
 import { getServerId } from "../support/helpers/server-id";
 import { waitForWorkspaceTabsVisible } from "../support/helpers/workspace-tabs";
 import { buildHostAgentDetailRoute } from "@/utils/host-routes";
+import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 
 const TITLE_MAX_LENGTH = 80;
 
@@ -60,7 +61,7 @@ test.describe("Workspace agent tab tooltip", () => {
         "Short first line",
         "followed by a much longer continuation that should be joined before the complete title is truncated to a useful tooltip length",
       ].join("\n");
-      const agent = await createIdleAgent(workspace.client, {
+      const agent = await createMockIdleAgent(workspace.client, {
         cwd: workspace.repoPath,
         workspaceId: workspace.workspaceId,
         title,
@@ -70,6 +71,46 @@ test.describe("Workspace agent tab tooltip", () => {
       const tooltip = await openAgentTabTooltip(page, agent.id, title);
 
       await expectTwoRowAgentSummary(tooltip, { title, agentId: agent.id });
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  test("shows a live subagent count independently of the main turn indicator", async ({ page }) => {
+    const workspace = await seedWorkspace({ repoPrefix: "workspace-tab-subagent-activity-" });
+    try {
+      const setup = {
+        provider: "mock",
+        cwd: workspace.repoPath,
+        workspaceId: workspace.workspaceId,
+        modeId: "load-test",
+        model: "five-minute-stream",
+      };
+      const title = "Subagent activity parent";
+      const parent = await workspace.client.createAgent({ ...setup, title });
+      const child = await workspace.client.createAgent({
+        ...setup,
+        title: "Subagent activity child",
+        labels: { [PARENT_AGENT_ID_LABEL]: parent.id },
+      });
+      await openAgent(page, { id: parent.id, workspaceId: workspace.workspaceId });
+      const tab = page.getByTestId(`workspace-tab-agent_${parent.id}`);
+      const badge = tab.getByTestId("workspace-tab-running-subagents");
+      const ownRunning = tab.getByRole("progressbar", { name: "Agent running" });
+
+      await workspace.client.sendAgentMessage(child.id, "Keep working");
+      await expect(badge).toHaveText("1");
+      await expect(ownRunning).toHaveCount(0);
+      const tooltip = await openAgentTabTooltip(page, parent.id, title);
+      await expect(tooltip.getByText("1 subagent running", { exact: true })).toBeVisible();
+
+      await workspace.client.sendAgentMessage(parent.id, "Keep working too");
+      await expect(ownRunning).toBeVisible();
+      await expect(badge).toHaveText("1");
+
+      await workspace.client.cancelAgent(child.id);
+      await expect(badge).toHaveCount(0);
+      await expect(ownRunning).toBeVisible();
     } finally {
       await workspace.cleanup();
     }

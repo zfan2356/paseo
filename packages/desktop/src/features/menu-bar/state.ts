@@ -30,6 +30,8 @@ export const MenuBarSnapshotSchema = z
           summary: z.string().max(300).optional(),
           updatedAt: z.number().nonnegative().optional(),
           status: z.enum(["waiting", "failed", "running", "finished"]),
+          mainStatus: z.enum(["idle", "waiting", "failed", "running", "finished"]).optional(),
+          runningSubagents: count.optional(),
         }),
       )
       .max(48),

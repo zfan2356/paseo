@@ -26,11 +26,13 @@ const NO_AGENTS: AggregatedAgent[] = [];
 export function useAggregatedAgents(options?: {
   includeArchived?: boolean;
   demand?: boolean;
+  readCached?: boolean;
 }): AggregatedAgentsResult {
   const daemons = useHosts();
   const runtime = getHostRuntimeStore();
   const includeArchived = options?.includeArchived ?? false;
   const demand = options?.demand ?? true;
+  const readAgents = demand || options?.readCached === true;
   const serverIds = useMemo(() => daemons.map((daemon) => daemon.serverId), [daemons]);
   useAllDirectoryDemand({ serverIds, enabled: demand });
   const runtimeVersion = useSyncExternalStore(
@@ -44,7 +46,7 @@ export function useAggregatedAgents(options?: {
   // that is not on screen (the command center while it is closed).
   const sessionAgents = useSessionStore(
     useShallow((state) => {
-      if (!demand) {
+      if (!readAgents) {
         return NO_AGENT_MAPS;
       }
       const result: Record<string, Map<string, Agent> | undefined> = {};
@@ -70,7 +72,7 @@ export function useAggregatedAgents(options?: {
   const result = useMemo(() => {
     // runtimeVersion is referenced so the memo recomputes when runtime state changes.
     void runtimeVersion;
-    if (!demand) {
+    if (!readAgents) {
       prevAgentsRef.current = new Map();
       prevSortedRef.current = NO_AGENTS;
       return {
@@ -175,7 +177,7 @@ export function useAggregatedAgents(options?: {
       isInitialLoad,
       isRevalidating,
     };
-  }, [daemons, demand, includeArchived, runtime, runtimeVersion, sessionAgents]);
+  }, [daemons, readAgents, includeArchived, runtime, runtimeVersion, sessionAgents]);
 
   return {
     ...result,

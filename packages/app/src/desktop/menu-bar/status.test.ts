@@ -149,6 +149,76 @@ describe("menu bar task snapshot", () => {
 });
 
 describe("main-session task board", () => {
+  it("shows one running task for an idle parent with active descendants", () => {
+    const secondHost = { ...host, serverId: "remote" };
+    const child = agent({
+      id: "worker",
+      serverId: "remote",
+      status: "running",
+      labels: { "paseo.parent-agent-id": "task", "paseo.parent-server-id": "local" },
+    });
+    const grandchild = agent({
+      id: "grandchild",
+      serverId: "remote",
+      status: "running",
+      labels: { "paseo.parent-agent-id": "worker" },
+    });
+    const snapshot = deriveMenuBarSnapshot(
+      [agent(), child, grandchild, grandchild],
+      [host, secondHost],
+    );
+
+    expect(snapshot.running).toBe(1);
+    expect(snapshot.tasks).toEqual([
+      expect.objectContaining({
+        agentId: "task",
+        serverId: "local",
+        status: "running",
+        mainStatus: "idle",
+        runningSubagents: 2,
+      }),
+    ]);
+    expect(MenuBarSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+
+    const disconnected = deriveMenuBarSnapshot(
+      [agent(), child, grandchild],
+      [host, { ...secondHost, connectionStatus: "offline" }],
+    );
+    expect(disconnected.running).toBe(0);
+    expect(disconnected.tasks).toEqual([]);
+  });
+
+  it("keeps the main turn state distinct and drops the child badge when work ends", () => {
+    const parent = agent({ status: "running" });
+    const waiting = agent({
+      id: "waiting-for-permission",
+      status: "running",
+      pendingPermissionCount: 1,
+      labels: { "paseo.parent-agent-id": parent.id },
+    });
+    const nativeKey = ["local", parent.id, "provider-child"].join("\0");
+    const snapshot = deriveMenuBarSnapshot(
+      [parent, waiting],
+      [host],
+      new Map([[nativeKey, { parentAgentId: parent.id, status: "running" }]]),
+    );
+    expect(snapshot).toMatchObject({
+      running: 1,
+      waiting: 0,
+      tasks: [
+        { agentId: parent.id, status: "running", mainStatus: "running", runningSubagents: 1 },
+      ],
+    });
+
+    const settled = deriveMenuBarSnapshot(
+      [parent, waiting],
+      [host],
+      new Map([[nativeKey, { parentAgentId: parent.id, status: "completed" }]]),
+    );
+    expect(settled.running).toBe(1);
+    expect(settled.tasks[0]).not.toHaveProperty("runningSubagents");
+  });
+
   it("excludes subagents from every status count and task list even when their parent is absent", () => {
     const labels = { "paseo.parent-agent-id": "parent-not-in-directory" };
     const snapshot = deriveMenuBarSnapshot(

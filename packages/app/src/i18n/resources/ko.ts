@@ -2192,6 +2192,8 @@ export const ko: TranslationResources = {
     title: "하위 에이전트",
     pillLabelOne: "하위 에이전트 1개",
     pillLabelMany: "하위 에이전트 {{count}}개",
+    runningOne: "하위 에이전트 1개 실행 중",
+    runningMany: "하위 에이전트 {{count}}개 실행 중",
     pillLabelWorking: "{{count}}개 실행 중",
     pillLabelFailed: "{{count}}개 실패",
     pillLabelNeedsInputOne: "1개 입력 필요",

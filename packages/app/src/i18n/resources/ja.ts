@@ -2205,6 +2205,8 @@ export const ja: TranslationResources = {
     title: "サブエージェント",
     pillLabelOne: "サブエージェント 1 件",
     pillLabelMany: "サブエージェント {{count}} 件",
+    runningOne: "サブエージェント 1 件が実行中",
+    runningMany: "サブエージェント {{count}} 件が実行中",
     pillLabelWorking: "{{count}} 件実行中",
     pillLabelFailed: "{{count}} 件失敗",
     pillLabelNeedsInputOne: "1 件が入力待ち",

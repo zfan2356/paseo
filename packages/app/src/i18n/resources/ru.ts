@@ -2218,6 +2218,8 @@ export const ru: TranslationResources = {
     title: "Субагенты",
     pillLabelOne: "1 субагент",
     pillLabelMany: "Субагентов: {{count}}",
+    runningOne: "В работе 1 субагент",
+    runningMany: "Субагентов в работе: {{count}}",
     pillLabelWorking: "{{count}} в работе",
     pillLabelFailed: "{{count}} с ошибкой",
     pillLabelNeedsInputOne: "1 ожидает ввода",

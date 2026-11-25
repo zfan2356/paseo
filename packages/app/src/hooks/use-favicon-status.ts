@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getIsElectronRuntimeMac } from "@/constants/layout";
-import { useAllDirectoryDemand } from "./use-directory-demand";
+import type { AgentDirectoryEntry } from "@/types/agent-directory";
 import { getDesktopHost } from "@/desktop/host";
 import { createMacDockBadgeCountSelector } from "@/utils/desktop-badge-state";
 import { createFaviconStatusSelector, type FaviconStatus } from "@/utils/favicon-status";
 import { isNative } from "@/constants/platform";
 import { useSessionStore } from "@/stores/session-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
-import { useHosts } from "@/runtime/host-runtime";
 import { useMenuBarStatus } from "@/desktop/menu-bar/use-menu-bar-status";
-import { useAggregatedAgents } from "./use-aggregated-agents";
 
 type ColorScheme = "dark" | "light";
 
@@ -82,12 +80,7 @@ async function updateMacDockBadge(count?: number) {
   }
 }
 
-export function useFaviconStatus() {
-  const daemons = useHosts();
-  const serverIds = useMemo(() => daemons.map((daemon) => daemon.serverId), [daemons]);
-  // The favicon reads the whole fleet, so it has to keep every host's directory loading even
-  // though it no longer subscribes to the agent maps.
-  useAllDirectoryDemand({ serverIds, enabled: !isNative });
+export function useFaviconStatus(agents: readonly AgentDirectoryEntry[]) {
   // Background workspaces count exactly when the sidebar shows them.
   const showBackground = useSidebarViewStore((state) => state.showBackground);
   const selectFaviconStatus = useMemo(
@@ -100,7 +93,6 @@ export function useFaviconStatus() {
   );
   const status = useSessionStore(selectFaviconStatus);
   const dockBadgeCount = useSessionStore(selectMacDockBadgeCount);
-  const { agents } = useAggregatedAgents({ demand: !isNative });
   useMenuBarStatus(agents);
   const [colorScheme, setColorScheme] = useState<ColorScheme>(getSystemColorScheme);
   const lastDockBadgeCountRef = useRef<number | undefined>(undefined);

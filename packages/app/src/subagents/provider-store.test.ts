@@ -904,6 +904,19 @@ describe("resyncing after the update feed resubscribes", () => {
     expect(status(PARENT_ID, "child-1")).toBe("completed");
   });
 
+  test("clears a running count received before the parent was opened", async () => {
+    useProviderSubagentStore.getState().applyUpdate(SERVER_ID, {
+      kind: "upsert",
+      subagent: child(SUBAGENT_ID, PARENT_ID, "running"),
+    });
+    const daemon = fakeDaemon({ [PARENT_ID]: [child(SUBAGENT_ID, PARENT_ID, "completed")] });
+
+    await resyncProviderSubagents(daemon.client, SERVER_ID);
+
+    expect(daemon.requested).toEqual([PARENT_ID]);
+    expect(status(PARENT_ID, SUBAGENT_ID)).toBe("completed");
+  });
+
   test("lists again only the parents this server was showing", async () => {
     const daemon = fakeDaemon({});
     await refreshProviderSubagents(daemon.client, SERVER_ID, PARENT_ID);
